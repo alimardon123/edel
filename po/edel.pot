@@ -1805,6 +1805,12 @@ msgstr ""
 msgid "refused: {location} is plain http; a settings file can make administrators and add ssh keys, so give it over https:// or as a file"
 msgstr ""
 
+msgid "{path} is over 1 MiB, which no settings file is; check that it is the right file"
+msgstr ""
+
+msgid "{person} may not read {path}, and through doas edel reads as root; give a file {person} can read"
+msgstr ""
+
 msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
 msgstr ""
 

@@ -17,8 +17,9 @@ use anyhow::{Context, Result, bail};
 use edel::i18n::trf;
 use edel::places;
 
-/// The most a downloaded settings file may hold: a whole machine's file is
-/// a few kilobytes, so anything near this is the wrong address.
+/// The most a settings file read for someone else may hold (a download, or
+/// a file read through doas): a whole machine's file is a few kilobytes,
+/// so anything near this is the wrong file.
 pub const MOST_BYTES: u64 = 1 << 20;
 
 /// Where a settings file comes from.
@@ -49,12 +50,13 @@ fn source_of(location: &str) -> Result<Source<'_>> {
     }
 }
 
-/// A settings file on this machine: the path given, or a downloaded copy
-/// that is removed when this is dropped.
+/// A settings file on this machine: the path given, or a copy only root
+/// reads (a download, or a file read through doas) that is removed when
+/// this is dropped.
 pub struct Local {
     path: PathBuf,
     shown: String,
-    downloaded: bool,
+    copy: bool,
 }
 
 impl Local {
@@ -71,22 +73,37 @@ impl Local {
 
 impl Drop for Local {
     fn drop(&mut self) {
-        if self.downloaded {
+        if self.copy {
             let _ = fs::remove_file(&self.path);
         }
     }
 }
 
 /// The settings file at `location` as a file on this machine: a path as
-/// it is, an `https://` address downloaded into a file only its owner
-/// reads.
+/// it is (through doas, a copy of it, read as checked), an `https://`
+/// address downloaded into a file only its owner reads.
 pub fn local(location: &str) -> Result<Local> {
     match source_of(location)? {
-        Source::Path(path) => Ok(Local {
-            path: PathBuf::from(path),
-            shown: location.to_string(),
-            downloaded: false,
-        }),
+        Source::Path(path) => match read_as_caller(Path::new(path))? {
+            // Through doas: the bytes read once, as checked, and kept in a
+            // file only root reads, so nothing swapped in after the check
+            // is ever read.
+            Some(bytes) => {
+                let copy =
+                    std::env::temp_dir().join(format!("edel-settings-{}.toml", std::process::id()));
+                write_private(&copy, &bytes)?;
+                Ok(Local {
+                    path: copy,
+                    shown: location.to_string(),
+                    copy: true,
+                })
+            }
+            None => Ok(Local {
+                path: PathBuf::from(path),
+                shown: location.to_string(),
+                copy: false,
+            }),
+        },
         Source::Https(address) => {
             let bytes = download(address)?;
             let path =
@@ -95,10 +112,139 @@ pub fn local(location: &str) -> Result<Local> {
             Ok(Local {
                 path,
                 shown: location.to_string(),
-                downloaded: true,
+                copy: true,
             })
         }
     }
+}
+
+/// When this runs as root through doas, the file's bytes, read only if the
+/// person who ran doas could read it themselves, else refused (M6.17, the
+/// review of 2026-10-13): an administrator runs `edel` with no password,
+/// and a file read as root shows its lines in a parse error, so
+/// `/etc/shadow` would have shown. None when not through doas: the file is
+/// read as it is, with the caller's own rights.
+fn read_as_caller(path: &Path) -> Result<Option<Vec<u8>>> {
+    let Ok(person) = std::env::var(places::AS_ROOT_USER) else {
+        return Ok(None);
+    };
+    if edel::users::current() != Some(0) || person.is_empty() {
+        return Ok(None);
+    }
+    let read = |file: &str| fs::read_to_string(file).unwrap_or_default();
+    let ids = ids_of(
+        &person,
+        &read(edel::users::PASSWD),
+        &read(edel::users::GROUP),
+    );
+    let shown = path.display().to_string();
+    let read = ids.map_or(Err(Refused::NotAllowed), |(uid, gids)| {
+        read_if_allowed(uid, &gids, path)
+    });
+    if read == Err(Refused::TooBig) {
+        bail!(
+            "{}",
+            trf(
+                "{path} is over 1 MiB, which no settings file is; check that it is the right file",
+                &[("path", &shown)]
+            )
+        );
+    }
+    let Ok(bytes) = read else {
+        bail!(
+            "{}",
+            trf(
+                "{person} may not read {path}, and through doas edel reads as root; give a file {person} can read",
+                &[("person", &person), ("path", &shown)]
+            )
+        );
+    };
+    Ok(Some(bytes))
+}
+
+/// The user id and group ids of login `name`: its own group, then every
+/// group that lists it, from `/etc/passwd`'s and `/etc/group`'s text.
+fn ids_of(name: &str, passwd: &str, group: &str) -> Option<(u32, Vec<u32>)> {
+    let fields: Vec<&str> = passwd
+        .lines()
+        .map(|line| line.split(':').collect::<Vec<_>>())
+        .find(|f| f.len() >= 4 && f[0] == name)?;
+    let uid = fields[2].parse().ok()?;
+    let mut gids: Vec<u32> = fields[3].parse().ok().into_iter().collect();
+    for line in group.lines() {
+        let f: Vec<&str> = line.split(':').collect();
+        if f.len() >= 4 && f[3].split(',').any(|m| m == name) {
+            if let Ok(gid) = f[2].parse() {
+                gids.push(gid);
+            }
+        }
+    }
+    Some((uid, gids))
+}
+
+/// Whether the permission bits let `uid` in `gids` take `bit` (4 read, 1
+/// search) on a file of `owner`, `group` and `mode`.
+fn allows(uid: u32, gids: &[u32], owner: u32, group: u32, mode: u32, bit: u32) -> bool {
+    if uid == 0 {
+        return true;
+    }
+    let shift = if owner == uid {
+        6
+    } else if gids.contains(&group) {
+        3
+    } else {
+        0
+    };
+    mode >> shift & bit != 0
+}
+
+/// Why a file was not read for the one who ran doas.
+#[derive(Debug, PartialEq)]
+enum Refused {
+    /// Missing, not a plain file, swapped, or not theirs to read.
+    NotAllowed,
+    /// Over [`MOST_BYTES`].
+    TooBig,
+}
+
+/// The bytes of `path`, at most [`MOST_BYTES`], when `uid` in `gids` may
+/// read it: every folder on its real path searchable, then the file opened
+/// and the opened file itself readable by them and the one the folders led
+/// to (its device and inode), so a link or file swapped in between the
+/// look and the open is refused. Only a plain file is opened, so a pipe
+/// never holds the command waiting.
+fn read_if_allowed(uid: u32, gids: &[u32], path: &Path) -> Result<Vec<u8>, Refused> {
+    use std::io::Read;
+    use std::os::unix::fs::MetadataExt;
+    let not = |_| Refused::NotAllowed;
+    let real = fs::canonicalize(path).map_err(not)?;
+    let searchable = |dir: &Path| {
+        fs::metadata(dir).is_ok_and(|m| allows(uid, gids, m.uid(), m.gid(), m.mode(), 1))
+    };
+    if !real.ancestors().skip(1).all(searchable) {
+        return Err(Refused::NotAllowed);
+    }
+    let looked = fs::symlink_metadata(&real).map_err(not)?;
+    if !looked.is_file() {
+        return Err(Refused::NotAllowed);
+    }
+    let file = fs::File::open(&real).map_err(not)?;
+    let opened = file.metadata().map_err(not)?;
+    let same = (opened.dev(), opened.ino()) == (looked.dev(), looked.ino());
+    if !same
+        || !opened.is_file()
+        || !allows(uid, gids, opened.uid(), opened.gid(), opened.mode(), 4)
+    {
+        return Err(Refused::NotAllowed);
+    }
+    let mut bytes = Vec::new();
+    file.take(MOST_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(not)?;
+    if bytes.len() as u64 > MOST_BYTES {
+        return Err(Refused::TooBig);
+    }
+    Ok(bytes)
 }
 
 /// Writes `bytes` to a new file that only its owner may read.
@@ -166,6 +312,54 @@ fn agent() -> ureq::Agent {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_is_read_through_doas_only_when_its_caller_could_read_it() {
+        // M6.17: `doas edel settings check /etc/shadow` showed its lines.
+        let passwd = "root:x:0:0::/root:/bin/sh\nali:x:1000:1000::/home/ali:/bin/sh\n";
+        let group = "root:x:0:\nali:x:1000:\nadmin:x:10:ali\nshadow:x:42:\n";
+        assert_eq!(ids_of("ali", passwd, group), Some((1000, vec![1000, 10])));
+        assert_eq!(ids_of("nobody", passwd, group), None);
+        let ali = |owner, group, mode, bit| allows(1000, &[1000, 10], owner, group, mode, bit);
+        // /etc/shadow, root's and group shadow's, 0640: not ali's.
+        assert!(!ali(0, 42, 0o640, 4));
+        // A file of ali's own, a file for the admin group, a public one.
+        assert!(ali(1000, 1000, 0o600, 4));
+        assert!(ali(0, 10, 0o640, 4));
+        assert!(ali(0, 0, 0o644, 4));
+        // A folder ali may not search hides what lies in it.
+        assert!(!ali(0, 0, 0o700, 1));
+        assert!(ali(0, 0, 0o755, 1));
+        // Root reads everything.
+        assert!(allows(0, &[0], 1000, 1000, 0o000, 4));
+        // On this machine: a file the test made is readable by its owner.
+        let file = std::env::temp_dir().join(format!("edel-source-read-{}", std::process::id()));
+        fs::write(&file, "format = 1\n").unwrap();
+        let me = edel::users::current().unwrap();
+        assert_eq!(
+            read_if_allowed(me, &[], &file).as_deref(),
+            Ok(&b"format = 1\n"[..])
+        );
+        assert_eq!(
+            read_if_allowed(me, &[], &file.with_extension("missing")),
+            Err(Refused::NotAllowed)
+        );
+        // A folder is no file to read, and a pipe is never opened.
+        assert_eq!(
+            read_if_allowed(me, &[], &std::env::temp_dir()),
+            Err(Refused::NotAllowed)
+        );
+        let pipe = file.with_extension("pipe");
+        let _ = fs::remove_file(&pipe);
+        let made = std::process::Command::new("mkfifo").arg(&pipe).status();
+        assert!(made.unwrap().success());
+        assert_eq!(read_if_allowed(me, &[], &pipe), Err(Refused::NotAllowed));
+        fs::remove_file(&pipe).unwrap();
+        // Over MOST_BYTES: refused for its size.
+        fs::write(&file, vec![b'#'; MOST_BYTES as usize + 1]).unwrap();
+        assert_eq!(read_if_allowed(me, &[], &file), Err(Refused::TooBig));
+        fs::remove_file(&file).unwrap();
+    }
 
     #[test]
     fn https_is_downloaded_and_a_path_or_file_address_read_as_it_is() {
