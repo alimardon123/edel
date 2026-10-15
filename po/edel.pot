@@ -1331,6 +1331,9 @@ msgstr ""
 msgid "refused: http: {location} is plain http; use an https:// address, or pass --allow-http for a local test server"
 msgstr ""
 
+msgid "refused: expired: this release list has no expires date, so it could be replayed for ever; nothing was changed; ask the publisher for a list signed with an expiry date"
+msgstr ""
+
 msgid "refused: expired: release.toml's expires {date} is not a date (YYYY-MM-DD); nothing was changed"
 msgstr ""
 
