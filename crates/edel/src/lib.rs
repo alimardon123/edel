@@ -16,6 +16,7 @@ pub mod app_permissions;
 pub mod app_use;
 pub mod apps;
 pub mod backlight;
+pub mod base;
 pub mod bluetooth;
 pub mod features;
 pub mod firmware;

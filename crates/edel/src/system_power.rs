@@ -1,7 +1,6 @@
 //! `edel restart`, `edel shutdown` and `edel suspend` (M5.10c): the power
 //! menu's three actions, one way for the lock screen, Settings and people
-//! at a terminal. Each runs the system's own program: `/sbin/reboot`,
-//! `/sbin/poweroff` or `/usr/sbin/zzz`.
+//! at a terminal. Each runs the base's own program (`edel::base`).
 //!
 //! Root runs the program directly. Anyone else runs it through `doas -n`,
 //! which the login feature's rule file lets group `seat` run with no
@@ -14,12 +13,7 @@ use anyhow::{Result, bail};
 
 use edel::i18n::{tr, trf};
 
-/// The reboot program of the base (busybox or OpenRC's), run as root.
-const REBOOT: &str = "/sbin/reboot";
-/// The poweroff program of the base, run as root.
-const POWEROFF: &str = "/sbin/poweroff";
-/// Alpine's zzz, which suspends to memory, run as root (M5.10c).
-const SUSPEND: &str = "/usr/sbin/zzz";
+use edel::base::{POWEROFF, REBOOT, SUSPEND};
 
 /// One of the three power actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

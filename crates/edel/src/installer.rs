@@ -15,6 +15,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use edel::base;
 use edel::i18n::{n_, tr, trf};
 use edel::install::{
     Answers, Disk, Partition, Plan, SLOT_MIB, asked, is_candidate, list_entry, parse_blkid,
@@ -308,28 +309,29 @@ fn ask_password() -> Result<Password> {
 }
 
 /// Hashes `password` as `/etc/shadow` keeps it (SHA-512 crypt), with
-/// busybox's `cryptpw` reading it on standard input, so it is never on a
+/// the base's hasher reading it on standard input, so it is never on a
 /// command line.
 pub(crate) fn hash(password: &Password) -> Result<String> {
-    let mut child = Command::new("cryptpw")
-        .args(["-m", "sha512", "-P", "0"])
+    let tool = [("tool", base::PASSWORD_HASHER)];
+    let mut child = base::hash_password()
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .context(tr(
-            "could not start cryptpw, which hashes the password (busybox)",
-        ))?;
+        .with_context(|| trf("could not start {tool}, which hashes the password", &tool))?;
     child
         .stdin
         .take()
-        .context(tr("cryptpw has no input"))?
+        .with_context(|| trf("{tool} has no input", &tool))?
         .write_all(password.text().unwrap_or_default().as_bytes())?;
     let out = child.wait_with_output()?;
     let hash = String::from_utf8_lossy(&out.stdout).trim().to_string();
     if !out.status.success() || !hash.starts_with("$6$") {
         bail!(
             "{}",
-            tr("cryptpw could not hash the password; nothing was changed")
+            trf(
+                "{tool} could not hash the password; nothing was changed",
+                &tool
+            )
         );
     }
     Ok(hash)
@@ -612,7 +614,7 @@ fn wait_for(device: &Path) -> Result<()> {
             return Ok(());
         }
         if tick == 10 {
-            let _ = Command::new("mdev").arg("-s").status();
+            let _ = base::scan_devices().status();
         }
         sleep(Duration::from_millis(100));
     }

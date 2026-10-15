@@ -236,13 +236,13 @@ msgstr ""
 msgid "a password cannot be empty"
 msgstr ""
 
-msgid "could not start cryptpw, which hashes the password (busybox)"
+msgid "could not start {tool}, which hashes the password"
 msgstr ""
 
-msgid "cryptpw has no input"
+msgid "{tool} has no input"
 msgstr ""
 
-msgid "cryptpw could not hash the password; nothing was changed"
+msgid "{tool} could not hash the password; nothing was changed"
 msgstr ""
 
 msgid "Edel OS asks a few questions, then shows the plan before it changes anything. Press Return to take the suggestion in brackets."
@@ -908,7 +908,7 @@ msgstr ""
 msgid "could not write {home}/.ssh/authorized_keys as {user}; check that the home directory exists and {user} owns it"
 msgstr ""
 
-msgid "{service} did not start ({status}); rc-service {service} start says why"
+msgid "{service} did not start ({status}); {command} says why"
 msgstr ""
 
 msgid "could not add Flathub for {user}; check the network and run edel settings apply again"
