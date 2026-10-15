@@ -7793,14 +7793,16 @@ if [ "$*" = live ]; then
 	! echo "$installed" | grep -q 'edel-file-test' || fail "the password is in the installed settings file"
 	slots=$(sfdisk -d "$target" | grep -c 'start=')
 	[ "$slots" = 4 ] || fail "the installed disk has $slots partitions, not 4"
-	# The installed disk alone, as a computer's own disk: its first boot
-	# applies the answers, so the greeter asks who logs in, live is never
-	# made, and ssh stays off.
+	# The installed disk alone, plugged in as a removable USB disk, as a
+	# machine installed onto a USB disk is (M6.17): the mark edel install
+	# left makes it no stick, so its first boot applies the answers, the
+	# greeter asks who logs in, live is never made, and ssh stays off.
 	installed_log=out/desktop-installed.log
 	keep_vm=1 run_vm "$installed_log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-drive if=none,id=installed,format=raw,file="$target" \
-		-device virtio-blk-pci,drive=installed,bootindex=0
+		-device qemu-xhci,id=xhci \
+		-device usb-storage,bus=xhci.0,drive=installed,removable=on,bootindex=0
 	[ "$found" = 1 ] || { cat "$installed_log"; fail "the disk the installer page wrote did not confirm its slot"; }
 	i=0
 	until tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
@@ -7809,8 +7811,8 @@ if [ "$*" = live ]; then
 	done
 	stop_vm
 	tr -d '\r' <"$installed_log" | grep -a 'edel boot live: '
-	tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
-		fail "the installed disk did not leave the login to the greeter: live was made, or nobody had an account"
+	tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: sd[a-z] is a removable disk Edel OS was installed on, not a stick, and people have accounts, so the greeter asks who logs in' ||
+		fail "the disk installed onto a removable USB disk did not leave the login to the greeter: it was taken for a stick, or nobody had an account"
 	! tr -d '\r' <"$installed_log" | grep -qa 'Starting sshd' || fail "the installed disk started sshd"
 	tr -d '\r' <"$installed_log" | grep -qa 'network.hostname: set to from-file' ||
 		fail "the disk installed from the settings file did not take its computer name, from-file"

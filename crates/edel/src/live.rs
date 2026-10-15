@@ -26,11 +26,12 @@ const GREETD_LIVE: &str = edel::places::GREETD_LIVE;
 /// The person's session: the one command greetd starts after a login.
 const SESSION: &str = "/usr/libexec/edel-session";
 
-/// Whether the live person logs in: on a removable disk (a USB stick), or
-/// when no person has an account yet, as in a virtual machine started
-/// from the image, where the greeter could log nobody in.
-fn wants_live(removable: bool, passwd: &str) -> bool {
-    removable || !machine::has_person(passwd)
+/// Whether the live person logs in: on a stick (a removable disk
+/// `edel install` did not write, M6.17), or when no person has an account
+/// yet, as in a virtual machine started from the image, where the greeter
+/// could log nobody in.
+fn wants_live(stick: bool, passwd: &str) -> bool {
+    stick || !machine::has_person(passwd)
 }
 
 /// greetd's `config` with an initial session for the live person; `None`
@@ -50,12 +51,20 @@ fn with_live_session(config: &str) -> Option<String> {
 /// `edel boot live`, run at boot by the login feature's `edel-live`.
 pub fn live() -> Result<()> {
     let disk = Disk::find()?;
-    let removable = report::is_removable(Path::new("/sys"), &disk.name);
-    if !wants_live(removable, &fs::read_to_string("/etc/passwd")?) {
-        println!(
-            "edel boot live: {} is not a removable disk and people have accounts, so the greeter asks who logs in",
-            disk.name
-        );
+    let sys = Path::new("/sys");
+    let stick = edel::install::running_from_stick(sys, &disk.name);
+    if !wants_live(stick, &fs::read_to_string("/etc/passwd")?) {
+        if report::is_removable(sys, &disk.name) {
+            println!(
+                "edel boot live: {} is a removable disk Edel OS was installed on, not a stick, and people have accounts, so the greeter asks who logs in",
+                disk.name
+            );
+        } else {
+            println!(
+                "edel boot live: {} is not a removable disk and people have accounts, so the greeter asks who logs in",
+                disk.name
+            );
+        }
         return Ok(());
     }
     let config = fs::read_to_string(GREETD).with_context(|| format!("could not read {GREETD}"))?;
@@ -68,7 +77,7 @@ pub fn live() -> Result<()> {
         fs::create_dir_all(dir)?;
     }
     fs::write(GREETD_LIVE, live).with_context(|| format!("could not write {GREETD_LIVE}"))?;
-    let why = if removable {
+    let why = if stick {
         format!("started from a removable disk, {}", disk.name)
     } else {
         "nobody has an account yet".to_string()

@@ -80,6 +80,10 @@ pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");
 /// `edel settings apply` gives them to the people the settings file makes
 /// and deletes the file, so no password is ever in the settings file.
 pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
+/// Written by `edel install` on the new disk's data partition: the machine
+/// was installed, so a removable disk that holds it is no stick, which
+/// logs `live` in by itself and installs without a password (M6.17).
+pub const INSTALLED: &str = data!("/edel/installed");
 /// This device's own identity key (M6.12, ADR-011): an ed25519 secret key
 /// in hex, root's only, made once at the first boot, for pairing devices
 /// (M7.10b) and passkeys (M9.11) later; nothing reads it yet.
@@ -255,6 +259,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
         ("first_passwords", FIRST_PASSWORDS.to_string()),
+        ("installed_mark", INSTALLED.to_string()),
         ("greeter_dir", GREETER_DIR.to_string()),
         ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
