@@ -7,7 +7,11 @@
 //! counts the try. A machine with no watchdog at all, such as a cloud VM
 //! that offers none on a kernel without softdog, is restarted by the
 //! guard itself, forced, so a hung service cannot hold the restart up
-//! (M1.10).
+//! (M1.10). A restart only helps while some slot has a try left in GRUB's
+//! environment: once none has, GRUB starts a slot anyway, so the guard
+//! stops the watchdog and keeps the machine running, says why on the
+//! console and in `edel status`, and still confirms the slot should it
+//! become healthy later (M6.17).
 //!
 //! Early in boot the only watchdog is often softdog, a kernel timer that a
 //! frozen kernel never fires, or none at all (linux-virt has no softdog).
@@ -26,6 +30,8 @@ use anyhow::Result;
 
 use edel::places;
 
+use crate::boot::TRIES;
+use crate::grubenv::{Env, Slot};
 use crate::release::os_release_value;
 use crate::update;
 
@@ -189,8 +195,12 @@ pub fn guard() -> Result<()> {
         println!("edel guard: using the hardware watchdog (watchdog0)");
     }
     let start = Instant::now();
+    let mut stood_down = false;
     loop {
-        take_hardware(&mut watchdog, &mut on_hardware);
+        // Once it stood down, no watchdog is taken again.
+        if !stood_down {
+            take_hardware(&mut watchdog, &mut on_hardware);
+        }
         if let Some(dog) = watchdog.as_mut() {
             let _ = dog.write_all(b".");
         }
@@ -207,14 +217,27 @@ pub fn guard() -> Result<()> {
             if let Err(err) = fs::write(CONFIRMED, lines.join("\n") + "\n") {
                 eprintln!("warning: edel guard: could not write {CONFIRMED}: {err}");
             }
+            if stood_down {
+                let _ = fs::remove_file(places::NO_HEALTHY_SLOT);
+                println!("edel guard: this slot became healthy after all and is confirmed");
+            }
             return Ok(());
         }
-        if start.elapsed() >= Duration::from_secs(timeout) {
+        if !stood_down && start.elapsed() >= Duration::from_secs(timeout) {
             eprintln!(
                 "edel guard: health not reached after {timeout} s: {}",
                 not_reached(&files)
             );
-            match on_timeout(watchdog.is_some()) {
+            let retry = match update::boot_env() {
+                Ok(env) => may_retry(&env),
+                Err(err) => {
+                    eprintln!(
+                        "warning: edel guard: could not read how many tries the slots have left, so the machine restarts as before: {err:#}"
+                    );
+                    true
+                }
+            };
+            match on_timeout(watchdog.is_some(), retry) {
                 Timeout::LetTheWatchdog => {
                     eprintln!(
                         "edel guard: this slot is not healthy after {timeout} s; letting the watchdog restart the machine"
@@ -229,12 +252,29 @@ pub fn guard() -> Result<()> {
                     );
                     restart_now();
                 }
+                Timeout::StandDown => {
+                    if let Some(mut dog) = watchdog.take() {
+                        let _ = dog.write_all(b"V");
+                    }
+                    let note = format!(
+                        "this slot is not healthy after {timeout} s ({} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; run edel report to see what failed",
+                        not_reached(&files)
+                    );
+                    eprintln!("edel guard: {note}");
+                    if let Err(err) = fs::write(places::NO_HEALTHY_SLOT, note + "\n") {
+                        eprintln!(
+                            "warning: edel guard: could not write {}: {err}",
+                            places::NO_HEALTHY_SLOT
+                        );
+                    }
+                    stood_down = true;
+                }
             }
         }
         // Looked at ten times a second, so the slot is confirmed as soon as
         // it is healthy, not up to a second later; petting the watchdog
-        // as often costs nothing.
-        sleep(Duration::from_millis(100));
+        // as often costs nothing. Once it stood down, every 2 s is enough.
+        sleep(Duration::from_millis(if stood_down { 2000 } else { 100 }));
     }
 }
 
@@ -246,14 +286,28 @@ enum Timeout {
     LetTheWatchdog,
     /// No watchdog at all: the guard restarts the machine itself.
     RestartItself,
+    /// No slot has a try left, so a restart would start this one again:
+    /// the machine keeps running (M6.17).
+    StandDown,
 }
 
-fn on_timeout(has_watchdog: bool) -> Timeout {
-    if has_watchdog {
+fn on_timeout(has_watchdog: bool, may_retry: bool) -> Timeout {
+    if !may_retry {
+        Timeout::StandDown
+    } else if has_watchdog {
         Timeout::LetTheWatchdog
     } else {
         Timeout::RestartItself
     }
+}
+
+/// Whether a restart could start a slot afresh: one that is OK and has a
+/// try left, GRUB having counted this boot's already. Once none has, GRUB
+/// starts a slot without counting, so restarting would only loop.
+fn may_retry(env: &Env) -> bool {
+    [Slot::A, Slot::B]
+        .into_iter()
+        .any(|slot| env.ok(slot) && env.tries(slot) < TRIES)
 }
 
 /// Writes what is cached to the disks, then restarts at once, as a
@@ -323,9 +377,33 @@ mod tests {
     #[test]
     fn without_any_watchdog_the_guard_restarts_the_machine_itself() {
         // A hardware watchdog, or softdog only: the watchdog does it.
-        assert_eq!(on_timeout(true), Timeout::LetTheWatchdog);
+        assert_eq!(on_timeout(true, true), Timeout::LetTheWatchdog);
         // None, as on linux-virt with no watchdog device.
-        assert_eq!(on_timeout(false), Timeout::RestartItself);
+        assert_eq!(on_timeout(false, true), Timeout::RestartItself);
+        // No slot has a try left: nothing restarts, watchdog or not.
+        assert_eq!(on_timeout(true, false), Timeout::StandDown);
+        assert_eq!(on_timeout(false, false), Timeout::StandDown);
+    }
+
+    #[test]
+    fn restarts_only_while_some_slot_has_a_try_left() {
+        let env = |text: &str| Env::parse(text).unwrap();
+        // A stick's third failed boot: slot A used its tries, B is empty.
+        assert!(!may_retry(&env(
+            "ORDER=A B\nA_OK=1\nA_TRY=3\nB_OK=0\nB_TRY=0\n"
+        )));
+        // Its first: A may try again.
+        assert!(may_retry(&env(
+            "ORDER=A B\nA_OK=1\nA_TRY=1\nB_OK=0\nB_TRY=0\n"
+        )));
+        // An update in B failing: A, the slot to fall back to, has tries.
+        assert!(may_retry(&env(
+            "ORDER=B A\nA_OK=1\nA_TRY=0\nB_OK=1\nB_TRY=3\n"
+        )));
+        // Both used their tries, the boot GRUB started anyway.
+        assert!(!may_retry(&env(
+            "ORDER=B A\nA_OK=1\nA_TRY=3\nB_OK=1\nB_TRY=3\n"
+        )));
     }
 
     #[test]

@@ -462,6 +462,13 @@ pub(crate) fn hash_prefix(path: &Path, len: u64) -> Result<Vec<u8>> {
     Ok(hasher.finalize().to_vec())
 }
 
+/// GRUB's environment, read from the EFI system partition, for the guard
+/// (M6.17).
+pub(crate) fn boot_env() -> Result<Env> {
+    let disk = Disk::find()?;
+    Esp::mount(&disk)?.load()
+}
+
 /// Prints both slots and which one is running.
 pub fn status() -> Result<()> {
     let disk = Disk::find()?;
@@ -484,6 +491,11 @@ pub fn status() -> Result<()> {
             env.tries(slot),
             device.display()
         );
+    }
+    // The guard kept an unhealthy slot running, as no slot had a try left
+    // (M6.17).
+    if let Ok(note) = fs::read_to_string(edel::places::NO_HEALTHY_SLOT) {
+        println!("health: {}", note.trim());
     }
     // The desktop's effect tier (M5.11), while a session runs.
     if let Some(tier) = crate::shell::tier_now() {
