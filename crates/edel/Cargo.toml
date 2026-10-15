@@ -19,7 +19,13 @@ required-features = ["cli"]
 default = ["cli"]
 # What only the command needs: arguments, hashing, signing and downloads.
 # The compositor, shell-ui and Settings link the library without them.
-cli = ["dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "dep:ureq"]
+cli = ["os", "dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "dep:ureq"]
+# The system's own work (M6.17): the install plan, the feature file reader,
+# the base's tools (edel::base), firmware, what an image keeps, scripts,
+# services and speaker profiles.
+# The command and Settings take it; the compositor and shell-ui never do,
+# so the desktop links only the settings format and its models.
+os = []
 # The shell's own icons (M5.5d), drawn for the compositor, shell-ui and
 # Settings, and apps' icons from the icon themes (M5.4c, M5.6a), whose
 # PNGs tiny-skia reads; the same tiny-skia resvg draws with.
