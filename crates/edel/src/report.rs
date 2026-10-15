@@ -75,7 +75,7 @@ fn sessions(people: &[session_log::Person]) -> Vec<Session> {
     for person in people {
         for name in [places::SESSION_LOG_BEFORE, places::SESSION_LOG] {
             let path = person.dir.join(name);
-            let Ok(text) = fs::read_to_string(&path) else {
+            let Some(text) = session_log::read_log(person, name) else {
                 continue;
             };
             found.push(Session {
@@ -609,6 +609,9 @@ mod tests {
         let person = session_log::Person {
             name: "ci".into(),
             dir: dir.clone(),
+            owner: Some(std::os::unix::fs::MetadataExt::uid(
+                &fs::metadata(&dir).unwrap(),
+            )),
         };
         let found = sessions(&[person]);
         assert_eq!(found.len(), 2);
