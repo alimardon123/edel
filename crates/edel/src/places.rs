@@ -111,6 +111,13 @@ pub const READY_FILE: &str = run!("/session/ready");
 pub const HEALTH_DIR: &str = run!("/health");
 /// The default runlevel's health (M1.5).
 pub const DEFAULT_REACHED: &str = run!("/default-reached");
+/// The fonts the compositor's title bars and shell-ui fall back to when
+/// the interface font cannot be found (M6.17: shell-ui loads them itself
+/// when fontconfig finds no font at all).
+pub const FALLBACK_FONTS: [&str; 2] = [
+    "/usr/share/fonts/inter/InterVariable.ttf",
+    "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+];
 /// Written once the guard confirmed this boot's slot (M1.5).
 pub const CONFIRMED: &str = run!("/confirmed");
 /// The boot's "Started in" line, for `edel report` (M3.2).

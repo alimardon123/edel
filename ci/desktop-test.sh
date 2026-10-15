@@ -5370,6 +5370,27 @@ case_lock() {
 	shot lock-power 640 790 "$deep" >/dev/null || true
 	python3 ci/qmp.py key esc
 	wait_for 'edel-shell-ui: power menu hidden$' || fail "Escape did not close the power menu"
+	# A shell-ui that keeps failing while the screen is locked (M6.17): it
+	# is killed six times, each before it has run 10 s, and the compositor,
+	# which gives up after five such failures while unlocked, goes on
+	# starting it, as nothing else unlocks the screen; shell-ui puts its
+	# lock up again, and ci's password below still unlocks it.
+	kept=$(count 'edel-compositor: edel-shell-ui .* keeps failing, but the screen is locked')
+	k=0
+	while [ "$k" -lt 6 ]; do
+		started=$(count 'edel-compositor: started edel-shell-ui, pid')
+		# The lock lines before the last kill: the shell-ui started after
+		# it must lock again.
+		locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+		guest 'kill panel'
+		wait_more 'edel-compositor: started edel-shell-ui, pid' "$started" 40 ||
+			fail "the compositor did not start shell-ui again while the screen was locked (kill $((k + 1)) of 6)"
+		k=$((k + 1))
+	done
+	wait_more 'edel-compositor: edel-shell-ui .* keeps failing, but the screen is locked' "$kept" 5 ||
+		fail "the compositor did not say it keeps starting shell-ui for the lock"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" 60 ||
+		fail "shell-ui, started again while the screen was locked, did not put its lock screen back up"
 	# The lock's parts (M5.10c5): a list in the settings file is read when
 	# the screen locks, so ci unlocks, sets the list (`lock parts`), locks
 	# again and reads the last places line: the clock at the top left (x
