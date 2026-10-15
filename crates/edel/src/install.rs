@@ -590,15 +590,29 @@ pub fn is_removable(sys: &Path, name: &str) -> bool {
     removable || on_usb
 }
 
-/// Whether this system runs from a stick, a removable disk: Settings then
-/// shows its installer page, and the stick's live account may install
-/// (M6.6a).
+/// Whether a disk is a stick: removable, and not one `edel install` wrote,
+/// which leaves [`places::INSTALLED`] on it (M6.17). A machine installed
+/// onto a USB disk is a computer like any other.
+pub fn is_stick(removable: bool, installed: bool) -> bool {
+    removable && !installed
+}
+
+/// Whether the disk `name`, which the running system is on, is a stick.
+pub fn running_from_stick(sys: &Path, name: &str) -> bool {
+    is_stick(
+        is_removable(sys, name),
+        Path::new(crate::places::INSTALLED).exists(),
+    )
+}
+
+/// Whether this system runs from a stick: Settings then shows its
+/// installer page, and the stick's live account may install (M6.6a).
 pub fn from_a_stick() -> bool {
     let sys = Path::new("/sys");
     fs::read_to_string("/proc/self/mountinfo")
         .ok()
         .and_then(|m| running_disk(&m, sys))
-        .is_some_and(|disk| is_removable(sys, &disk))
+        .is_some_and(|disk| running_from_stick(sys, &disk))
 }
 
 /// A disk the installer page offers: its name, such as `sda`, and how
@@ -693,6 +707,14 @@ pub fn list_entry(disk: &Disk, removable: bool, running: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_removable_disk_edel_install_wrote_is_no_stick() {
+        assert!(is_stick(true, false));
+        assert!(!is_stick(true, true));
+        assert!(!is_stick(false, false));
+        assert!(!is_stick(false, true));
+    }
 
     fn plan(partitions: Vec<Partition>) -> Plan {
         Plan {

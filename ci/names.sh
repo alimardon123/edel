@@ -15,6 +15,7 @@ started_file=/run/edel/started
 greetd_live=/run/edel/greetd.toml
 last_fallback=/data/edel/last-fallback.toml
 first_passwords=/data/edel/first-passwords
+installed_mark=/data/edel/installed
 greeter_dir=/data/edel/greeter
 greeter_sessions=/data/edel/greeter/sessions.toml
 share_dir=/usr/share/edel
