@@ -117,6 +117,10 @@ pub const HEALTH_DIR: &str = run!("/health");
 pub const DEFAULT_REACHED: &str = run!("/default-reached");
 /// Written once the guard confirmed this boot's slot (M1.5).
 pub const CONFIRMED: &str = run!("/confirmed");
+/// Written when the slot is not healthy and no slot has a try left, so the
+/// guard keeps the machine running rather than restarting it for ever;
+/// `edel status` shows it (M6.17).
+pub const NO_HEALTHY_SLOT: &str = run!("/no-healthy-slot");
 /// The boot's "Started in" line, for `edel report` (M3.2).
 pub const STARTED: &str = run!("/started");
 /// Written by `edel update` and `edel rollback` once a slot waits for a
@@ -250,6 +254,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("default_reached", DEFAULT_REACHED.to_string()),
         ("health_dir", HEALTH_DIR.to_string()),
         ("confirmed_file", CONFIRMED.to_string()),
+        ("no_healthy_slot", NO_HEALTHY_SLOT.to_string()),
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),

@@ -110,6 +110,9 @@ msgstr ""
 msgid "could not write {path}"
 msgstr ""
 
+msgid "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed"
+msgstr ""
+
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
 msgstr ""
 
