@@ -9,6 +9,13 @@
 //! lists and the compositor shows in title bars (M5.4c, M5.6a), and the
 //! session's log, which the compositor writes and `edel` reads (M5.28a). It needs no
 //! network or signing; those sit behind the binary's `cli` feature.
+//!
+//! Two of its three parts, the settings format and the desktop's models,
+//! are always built; the third, the system's own work (the install plan,
+//! the feature file reader, firmware, what an image keeps, scripts,
+//! services and speaker profiles), sits behind the `os` feature, which
+//! the `edel` command and Settings take and the compositor and shell-ui
+//! never do (M6.17, ADR-010; `ci/seams.sh` checks it).
 
 #[cfg(feature = "icons")]
 pub mod app_icons;
@@ -18,12 +25,15 @@ pub mod apps;
 pub mod backlight;
 pub mod bluetooth;
 pub mod features;
+#[cfg(feature = "os")]
 pub mod firmware;
 pub mod first_start;
 pub mod i18n;
 #[cfg(feature = "icons")]
 pub mod icons;
+#[cfg(feature = "os")]
 pub mod install;
+#[cfg(feature = "os")]
 pub mod keep;
 pub mod key_help;
 pub mod keyboard;
@@ -37,12 +47,15 @@ pub mod pictures;
 pub mod places;
 pub mod power;
 pub mod presets;
+#[cfg(feature = "os")]
 pub mod scripts;
+#[cfg(feature = "os")]
 pub mod services;
 pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
 pub mod sound;
+#[cfg(feature = "os")]
 pub mod speakers;
 pub mod theme_file;
 pub mod themes;

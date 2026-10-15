@@ -10,6 +10,11 @@
 #   the test client  nothing depends on edel-testclient
 #   the cli feature  the desktop parts take edel without its cli feature
 #                    (arguments, hashing, signing and downloads)
+#   the os feature   the compositor and shell-ui take edel without its os
+#                    feature, the system's own work (the install plan, the
+#                    feature file reader, firmware, services and the like),
+#                    so the desktop links only the settings format and its
+#                    models; Settings, the system's own app, takes it (M6.17)
 #   the settings     the settings file is written only through
 #   file             edel::settings (crates/edel/src/settings.rs); a file
 #                    that names it and writes a file of its own must be in
@@ -92,7 +97,7 @@ check_test_client() {
 }
 
 # check_features ROOT LOCK: the desktop parts take edel without its cli
-# feature.
+# feature, and the compositor and shell-ui without its os feature.
 check_features() {
 	for part in edel-compositor edel-shell-ui edel-settings; do
 		feats=$(cargo_tree "$1" "$2" -p "$part" -e features --prefix none) || {
@@ -101,6 +106,10 @@ check_features() {
 		}
 		if printf '%s\n' "$feats" | grep -qxF 'edel feature "cli"'; then
 			fail "$part takes edel's cli feature (arguments, hashing, signing, downloads); set default-features = false on its edel dependency"
+		fi
+		[ "$part" = edel-settings ] && continue
+		if printf '%s\n' "$feats" | grep -qxF 'edel feature "os"'; then
+			fail "$part takes edel's os feature (the system's own work); the desktop links only the settings format and its models, so move what it needs out of the os modules or ask through a file or a command"
 		fi
 	done
 }
@@ -216,18 +225,23 @@ if [ "${1:-}" = --self-test ]; then
 	edit "$copy/crates/compositor/Cargo.toml" '/^edel = / { sub(/default-features = false, /, "") } { print }'
 	caught "$copy" "edel-compositor takes edel's cli feature"
 
+	copy="$work/os"
+	seed "$copy"
+	edit "$copy/crates/shell-ui/Cargo.toml" '/^edel = / { sub(/features = \[/, "features = [\"os\", ") } { print }'
+	caught "$copy" "edel-shell-ui takes edel's os feature"
+
 	copy="$work/seam"
 	seed "$copy"
 	printf '%s\n' 'fn probe() {' '    let path = places::person_settings();' '    let _ = std::fs::write(path, "[layout]");' '}' >"$copy/crates/shell-ui/src/seam_probe.rs"
 	caught "$copy" "crates/shell-ui/src/seam_probe.rs names the settings file"
 
-	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor and a settings write in shell-ui"
+	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui and a settings write in shell-ui"
 	[ "$ok" = 1 ]
 	exit
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, and the settings file is written by edel::settings, bar the known gaps in the NOTE lines)"
+	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, and the settings file is written by edel::settings, bar the known gaps in the NOTE lines)"
 else
 	exit 1
 fi

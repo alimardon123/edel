@@ -296,10 +296,12 @@ pub fn label(language: &Language) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::install::language_answer;
 
+    // The installer's answers are the system's own work (the os feature).
+    #[cfg(feature = "os")]
     #[test]
     fn every_code_is_a_language_answer_and_none_is_twice() {
+        use crate::install::language_answer;
         let mut seen = std::collections::BTreeSet::new();
         for language in LANGUAGES {
             assert!(
