@@ -120,9 +120,12 @@ impl Layout {
 }
 
 /// Watchdog timeouts the guard relies on (roadmap M1.5): QEMU's, softdog,
-/// and the hardware watchdogs of Intel and AMD laptops.
-pub const WATCHDOG_ARGS: &str =
-    "i6300esb.heartbeat=15 softdog.soft_margin=15 iTCO_wdt.heartbeat=15 sp5100_tco.heartbeat=15";
+/// and the hardware watchdogs of Intel and AMD laptops. The kernel's own
+/// lockup detectors panic too, and `panic=10` restarts the machine, so a
+/// kernel that locks up while the slot starts costs a try even before the
+/// guard runs or where no hardware watchdog exists; the guard turns that
+/// off once the slot is confirmed or it stands down (M6.17).
+pub const WATCHDOG_ARGS: &str = "i6300esb.heartbeat=15 softdog.soft_margin=15 iTCO_wdt.heartbeat=15 sp5100_tco.heartbeat=15 softlockup_panic=1 nmi_watchdog=panic";
 
 /// CPU microcode a slot may carry in `/boot` (intel-ucode, amd-ucode). GRUB
 /// loads each one present before the initramfs, so the kernel applies it
@@ -317,7 +320,9 @@ mod tests {
         assert!(cfg.contains(
             "linux /boot/vmlinuz-virt root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules=ext4,overlay i6300esb."
         ));
-        assert!(cfg.contains(" sp5100_tco.heartbeat=15 console=ttyS0\n"));
+        assert!(cfg.contains(
+            " sp5100_tco.heartbeat=15 softlockup_panic=1 nmi_watchdog=panic console=ttyS0\n"
+        ));
         assert!(cfg.contains("initrd /boot/initramfs-virt\n"));
         let laptop = grub_cfg("lts", "ext4", "", MICROCODE);
         assert!(

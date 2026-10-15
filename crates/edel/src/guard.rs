@@ -17,7 +17,13 @@
 //! frozen kernel never fires, or none at all (linux-virt has no softdog).
 //! A hardware watchdog (a laptop's iTCO_wdt or sp5100_tco, QEMU's
 //! i6300esb) loads later, from hwdrivers, so the guard takes the first one
-//! that appears and stops softdog.
+//! that appears and stops softdog. Until the slot is confirmed, the
+//! kernel's lockup detectors panic and so restart it too (`softlockup_panic=1`
+//! and `nmi_watchdog=panic` on the command line, `boot::WATCHDOG_ARGS`): a
+//! kernel that locks up before the guard runs, or with no hardware
+//! watchdog, costs a try instead of hanging for ever. Once the slot is
+//! confirmed, or the guard stands down, [`calm_lockups`] turns that off,
+//! so a running machine only logs a lockup, as before (M6.17).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -214,6 +220,7 @@ pub fn guard() -> Result<()> {
                 // The magic close: stop the watchdog instead of resetting.
                 let _ = dog.write_all(b"V");
             }
+            calm_lockups(Path::new(LOCKUP_PANICS));
             if let Err(err) = fs::write(CONFIRMED, lines.join("\n") + "\n") {
                 eprintln!("warning: edel guard: could not write {CONFIRMED}: {err}");
             }
@@ -256,6 +263,7 @@ pub fn guard() -> Result<()> {
                     if let Some(mut dog) = watchdog.take() {
                         let _ = dog.write_all(b"V");
                     }
+                    calm_lockups(Path::new(LOCKUP_PANICS));
                     let missing = not_reached(&files);
                     eprintln!("edel guard: {}", stood_down_text(timeout, &missing));
                     // The facts alone, so edel status says them in the
@@ -277,6 +285,26 @@ pub fn guard() -> Result<()> {
         // it is healthy, not up to a second later; petting the watchdog
         // as often costs nothing. Once it stood down, every 2 s is enough.
         sleep(Duration::from_millis(if stood_down { 2000 } else { 100 }));
+    }
+}
+
+/// Where the kernel keeps whether its lockup detectors panic.
+const LOCKUP_PANICS: &str = "/proc/sys/kernel";
+
+/// Turns off the lockup detectors' panic the command line turned on, in
+/// `kernel` (`/proc/sys/kernel`): a running machine logs a lockup and goes
+/// on, as before. A kernel without a detector has no file, which is fine.
+fn calm_lockups(kernel: &Path) {
+    for name in ["softlockup_panic", "hardlockup_panic"] {
+        let path = kernel.join(name);
+        if path.exists()
+            && let Err(err) = fs::write(&path, "0\n")
+        {
+            eprintln!(
+                "warning: edel guard: could not write {}: {err}",
+                path.display()
+            );
+        }
     }
 }
 
@@ -433,6 +461,22 @@ mod tests {
         assert!(!may_retry(&env(
             "ORDER=B A\nA_OK=1\nA_TRY=3\nB_OK=1\nB_TRY=3\n"
         )));
+    }
+
+    #[test]
+    fn lockups_stop_panicking_once_the_guard_is_done() {
+        let dir = std::env::temp_dir().join(format!("edel-lockups-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("softlockup_panic"), "1\n").unwrap();
+        // No hardlockup_panic: a kernel without that detector.
+        calm_lockups(&dir);
+        assert_eq!(
+            fs::read_to_string(dir.join("softlockup_panic")).unwrap(),
+            "0\n"
+        );
+        assert!(!dir.join("hardlockup_panic").exists());
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(crate::boot::WATCHDOG_ARGS.contains("softlockup_panic=1 nmi_watchdog=panic"));
     }
 
     #[test]

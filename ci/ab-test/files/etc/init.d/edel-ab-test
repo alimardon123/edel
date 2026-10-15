@@ -4,8 +4,10 @@
 # Each boot runs the next step of the test, then restarts the VM. The step
 # number lives on the EFI system partition, which both slots share.
 #
-#   1. Slot A runs with a read-only root. A release.toml past its date
-#      and one with one byte changed are refused. The update comes over HTTP from the host. Write markers into /home and
+#   1. Slot A runs with a read-only root, and the guard turned the
+#      kernel's lockup panic off once it confirmed the slot (M6.17). A
+#      release.toml past its date and one with one byte changed are
+#      refused. The update comes over HTTP from the host. Write markers into /home and
 #      /var, delete /var/lib/ci-new, change the hostname, note the ssh
 #      host key, add a user and drop a system user from this machine's
 #      /etc/passwd, then install the update into slot B.
@@ -196,6 +198,10 @@ start() {
 		ab_check "slot A as it was signed, not grown" slot_as_signed || return 0
 		ab_check "slot A's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		cp /usr/lib/edel/boot/loader.toml /data/ab-loader-a
+		# A lockup panics while the slot starts, and no longer once the
+		# guard confirmed it (M6.17).
+		ab_check "softlockup_panic=1 on the command line" grep -qw softlockup_panic=1 /proc/cmdline || return 0
+		ab_check "lockups no longer panic once confirmed" grep -qx 0 /proc/sys/kernel/softlockup_panic || return 0
 		if refused=$(/usr/bin/edel update --allow-http http://10.0.2.2:8000/expired.toml 2>&1); then
 			ab_end "FAIL: step 1 installed a release list past its date"
 			return 0
