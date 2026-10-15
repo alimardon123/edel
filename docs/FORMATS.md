@@ -52,7 +52,7 @@ The file that describes a whole machine, `/data/edel/settings.toml`; [settings.m
 
 ## `loader.toml` (format 1, M1.8)
 
-`format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. A `loader.toml` in another format counts as no version: the slot's loader is then not installed, and the partition's is replaced. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel boot mark-good` installs that slot's loader when the versions differ.
+`format = 1` and `version`, a hash of the GRUB binary and `grub.cfg`. A `loader.toml` in another format counts as no version: the slot's loader is then not installed, and the partition's is replaced. Each slot carries one in `/usr/lib/edel/boot/` beside its loader, and the EFI system partition keeps the installed one in `/EFI/edel/`. Once a slot is confirmed, `edel boot mark-good` installs that slot's loader when the versions differ. The loader only picks a slot: how to start it, its kernel and command line, is the slot's own `slot.cfg` beside its loader, two lines GRUB reads from that slot (`linux` and `initrd`), so an update that changes them starts right the first time, under the loader before it (M6.17); a slot without one is started by the loader's own lines.
 
 ## The disk layout (M1.2, slot size M3.3b)
 

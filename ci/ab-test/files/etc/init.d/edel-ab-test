@@ -14,7 +14,8 @@
 #   2. Slot B runs and is confirmed. The markers, the hostname, the host
 #      key and the new user survived, the dropped system user came back
 #      from the slot, and so did /var/lib/ci-new; slot B's bytes are still
-#      the signed image's, after a boot (M1.12), and its tagged boot loader
+#      the signed image's, after a boot (M1.12), it was started by its own
+#      slot.cfg under slot A's loader (M6.17), and its tagged boot loader
 #      replaced slot A's on the ESP once the slot was confirmed. Roll back
 #      by command.
 #   3. Slot A runs again. Install the update into slot B, then break slot
@@ -237,6 +238,9 @@ start() {
 		ab_check "a read-only root" root_is_ro || return 0
 		ab_check "slot B as it was signed, not grown" slot_as_signed || return 0
 		ab_check "slot B byte for byte the signed image" slot_matches_release B || return 0
+		# Its first boot ran under slot A's loader with slot B's own lines
+		# (slot.cfg), which carry the update's tag (M6.17).
+		ab_check "slot B started by its own slot.cfg" grep -qw edel.tag=ci /proc/cmdline || return 0
 		ab_check "slot B's boot loader on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /usr/lib/edel/boot/loader.toml || return 0
 		ab_check "a boot loader that differs from slot A's" sh -c '! cmp -s /data/ab-loader-a /usr/lib/edel/boot/loader.toml' || return 0
 		ab_check "the previous boot loader kept" test -e "$esp/EFI/BOOT/BOOTX64.EFI.prev" || return 0
