@@ -427,6 +427,9 @@ enum ReleaseCommands {
         /// Write release.toml here instead of beside the images
         #[arg(long, value_name = "DIR")]
         out: Option<PathBuf>,
+        /// An add-on, IMAGE.NAME.ext4.gz beside the images, with its feature file IMAGE.NAME.toml beside it; can be given more than once
+        #[arg(long = "addon", value_name = "FILE")]
+        addons: Vec<PathBuf>,
         /// The update images, all in one directory
         #[arg(required = true)]
         images: Vec<PathBuf>,
@@ -698,6 +701,7 @@ fn run(command: Commands) -> Result<()> {
                 channel,
                 base_url,
                 out,
+                addons,
                 images,
             } => release::make(
                 &version,
@@ -705,6 +709,7 @@ fn run(command: Commands) -> Result<()> {
                 base_url.as_deref(),
                 out.as_deref(),
                 &images,
+                &addons,
             )
             .map(|_| ()),
             ReleaseCommands::Sign {
