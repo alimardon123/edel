@@ -22,7 +22,8 @@
 //! either: they ask xdg-desktop-portal for a screenshot or to share the
 //! screen, as an app does, and print what it answers (`portal.rs`, M6.3).
 //! `--location` draws nothing either: it asks the Location portal for the
-//! device's position and prints the first update (`portal.rs`, M6.14c).
+//! device's position and prints the first update (`portal.rs`, M6.14c),
+//! holding the session SECONDS more when given, so the in-use sign stays.
 //! `--recolour RRGGBB@FILE` draws the window in that
 //! colour once FILE exists, so a test can see whether a picture of it
 //! follows it live (M5.2j-b4).
@@ -38,6 +39,7 @@
 //!     edel-testclient --screenshot
 //!     edel-testclient --screencast
 //!     edel-testclient --location
+//!     edel-testclient --location SECONDS
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -227,7 +229,13 @@ fn main() -> Result<()> {
         ["--mpris"] => return mpris::run(None),
         ["--screenshot"] => return portal::screenshot(),
         ["--screencast"] => return portal::screencast(),
-        ["--location"] => return portal::location(),
+        ["--location"] => return portal::location(0),
+        ["--location", seconds] => {
+            let seconds = seconds
+                .parse()
+                .with_context(|| format!("--location takes whole seconds, not {seconds}"))?;
+            return portal::location(seconds);
+        }
         ["--mpris", name] => return mpris::run(Some(name)),
         ["--globals"] => return sandbox::run(false),
         ["--security-context"] => return sandbox::run(true),

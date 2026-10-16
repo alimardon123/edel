@@ -294,8 +294,9 @@ fn first_stream(streams: Option<&OwnedValue>) -> Option<(u32, i32, i32)> {
     Some((node, width, height))
 }
 
-/// `--location`: asks for the device's position, then closes the session.
-pub fn location() -> Result<()> {
+/// `--location [SECONDS]`: asks for the device's position, holds the
+/// session SECONDS more, then closes it.
+pub fn location(hold: u64) -> Result<()> {
     let mut portal = Portal::connect()?;
     let Some(session) = create_location_session(&mut portal) else {
         return Ok(());
@@ -328,6 +329,7 @@ pub fn location() -> Result<()> {
             Ok(Some(location)) => say(&location_line(&location)),
             _ => say("location failed update timeout"),
         }
+        std::thread::sleep(Duration::from_secs(hold));
     }
 
     // The session ends here: the portal stops the updates with it.
