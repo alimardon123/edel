@@ -334,6 +334,10 @@ enum SettingsCommands {
         /// The keys, such as network.hostname
         #[arg(value_name = "KEY", required = true)]
         keys: Vec<String>,
+        /// Delete developer mode's changes with system.developer_mode
+        /// without asking
+        #[arg(long)]
+        yes: bool,
     },
     /// Show what apply would change, changing nothing; exits 1 when
     /// there is anything to change
@@ -794,7 +798,7 @@ fn run(command: Commands) -> Result<()> {
             }
             Some(SettingsCommands::Get { what, toml }) => machine::get(what.as_deref(), toml),
             Some(SettingsCommands::Set { assignments }) => machine::set(&assignments),
-            Some(SettingsCommands::Reset { keys }) => machine::reset(&keys),
+            Some(SettingsCommands::Reset { keys, yes }) => machine::reset(&keys, yes),
             Some(SettingsCommands::Diff { file }) => {
                 if machine::diff(file.as_deref())? {
                     std::process::exit(1);

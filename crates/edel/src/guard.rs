@@ -236,7 +236,15 @@ pub fn guard() -> Result<()> {
                 not_reached(&files)
             );
             let retry = match update::boot_env() {
-                Ok(env) => may_retry(&env),
+                // With developer mode's layer on, a restart is no loop: no
+                // slot has a try left, so the next start is a safe one,
+                // without the layer (M7.1).
+                Ok(env) => {
+                    may_retry(&env)
+                        || layer_is_on(
+                            &fs::read_to_string(places::DEVELOPER_NOW).unwrap_or_default(),
+                        )
+                }
                 Err(err) => {
                     eprintln!(
                         "warning: edel guard: could not read how many tries the slots have left, so the machine restarts as before: {err:#}"
@@ -355,6 +363,12 @@ fn may_retry(env: &Env) -> bool {
         .any(|slot| env.ok(slot) && env.tries(slot) < TRIES)
 }
 
+/// Whether developer mode's layer is mounted in this boot, from what
+/// `places::DEVELOPER_NOW` holds (M7.1).
+fn layer_is_on(now: &str) -> bool {
+    now.trim() == "on"
+}
+
 /// Writes what is cached to the disks, then restarts at once, as a
 /// watchdog reset would: through the kernel, not init, which could wait
 /// on the service that hung (`reboot -f`).
@@ -396,6 +410,13 @@ mod tests {
     use super::*;
 
     const OS_RELEASE: &str = "NAME=\"Edel OS\"\nEDEL_HEALTH=\"default-runlevel network Bad_Name\"\nEDEL_HEALTH_TIMEOUT=30\n";
+
+    #[test]
+    fn restarts_once_more_only_while_the_layer_is_on() {
+        assert!(layer_is_on("on\n"));
+        assert!(!layer_is_on("held\n"));
+        assert!(!layer_is_on(""));
+    }
 
     #[test]
     fn reads_health_names_and_timeout_and_skips_what_is_no_name() {

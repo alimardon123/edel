@@ -109,6 +109,12 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
 build "$version" images/vm.toml --files "$seed" --no-compress --out out/system-test
 
+# The developer mode test image (roadmap M7.1): the VM image with the
+# test's steps (ci/developer-test.sh); health_timeout 30 keeps the hang
+# to a minute.
+build "$version" images/vm.toml --files ci/developer-test/files --health-timeout 30 \
+	--no-compress --out out/developer-test
+
 # The install test image (roadmap M2.4, M2.5): the VM image plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
@@ -199,6 +205,6 @@ rm -f out/install-file.img
 mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
-hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/desktop-test/update \
+hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
 	out/flatpak out/install-test out/keys out/release out/system-test
 ls -ls out out/install-test
