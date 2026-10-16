@@ -42,7 +42,14 @@ pub fn why(
     if old.scheme != new.scheme {
         return Some(format!("the colour scheme is now {}", new.scheme.name()));
     }
-    if old_tokens != new_tokens {
+    // The windows' opacity (M5.12b3) is the compositor's alone: shell-ui
+    // draws no window, so a change of it alone changes nothing here.
+    let drawn = |t: &Tokens| Tokens {
+        window_opacity: 0,
+        window_opacity_unfocused: 0,
+        ..t.clone()
+    };
+    if drawn(old_tokens) != drawn(new_tokens) {
         let text = old_tokens.font != new_tokens.font
             || old_tokens.panel_text_size != new_tokens.panel_text_size;
         return Some(if text {
@@ -95,9 +102,11 @@ impl Shell {
             &tokens,
             language.as_ref().map(|(name, _)| name),
         ) else {
-            // A name that changes nothing on screen is still the one now.
+            // What changes nothing on screen (a preset name this release
+            // lacks, the windows' opacity) is still what is chosen now.
             self.quick_tiles = tiles;
             self.chosen = new;
+            self.tokens = tokens;
             return;
         };
         eprintln!("edel-shell-ui: follows the settings: {why}");
@@ -190,6 +199,13 @@ mod tests {
         assert_eq!(
             why(&classic, &classic, &tokens, &icons, None).as_deref(),
             Some("the icons changed")
+        );
+        let mut see_through = tokens.clone();
+        see_through.window_opacity = 80;
+        assert_eq!(
+            why(&classic, &classic, &tokens, &see_through, None),
+            None,
+            "the windows' opacity is the compositor's"
         );
         let xx = Some("xx".to_string());
         assert_eq!(
