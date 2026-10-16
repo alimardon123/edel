@@ -241,14 +241,14 @@ fn developer(content: &gtk::Box) -> Rc<Developer> {
         .xalign(0.0)
         .wrap(true)
         .visible(false)
-        .css_classes(["edel-row-subtitle"])
+        .css_classes(["edel-row", "edel-row-subtitle"])
         .build();
     group.append(&state);
 
-    let reset_group = widgets::group(content);
-    reset_group.set_visible(false);
-    let reset = widgets::action(tr("Reset developer mode"), false);
-    let reset_row = widgets::row(&reset_group, tr("Developer changes"), reset.upcast_ref());
+    // The reset is the group's second row, there only while the layer is.
+    let reset = widgets::action(tr("Reset"), false);
+    let reset_row = widgets::row(&group, tr("Reset developer mode"), reset.upcast_ref());
+    let reset_shown = group.last_child().expect("the row just added");
     reset_row.subtitle.set_label(tr(
         "Deletes the changes developer mode made under /usr when the computer next starts, and takes its key out of the settings file.",
     ));
@@ -260,12 +260,12 @@ fn developer(content: &gtk::Box) -> Rc<Developer> {
         widgets::copied(button);
     });
     // What `edel` refused, in its words, under the switch and the reset.
-    let problem = widgets::output_row(content);
+    let problem = widgets::output_row(&group);
 
     let dev = Rc::new(Developer {
         switch: switch.clone(),
         state,
-        reset_group,
+        reset_shown,
         reset: reset.clone(),
         problem,
         quiet: Cell::new(false),
@@ -300,7 +300,7 @@ fn developer(content: &gtk::Box) -> Rc<Developer> {
         if !dev.armed.get() {
             // Deleting the changes is not undone: ask twice.
             dev.armed.set(true);
-            button.set_label(tr("Click again to reset"));
+            button.set_label(tr("Click again"));
             let weak = weak.clone();
             glib::timeout_add_local_once(CONFIRM, move || {
                 if let Some(dev) = weak.upgrade() {
@@ -326,7 +326,7 @@ fn developer(content: &gtk::Box) -> Rc<Developer> {
 struct Developer {
     switch: gtk::Switch,
     state: gtk::Label,
-    reset_group: gtk::Box,
+    reset_shown: gtk::Widget,
     reset: gtk::Button,
     problem: gtk::Label,
     /// Set while the page itself moves the switch, so that is no choice.
@@ -348,7 +348,7 @@ impl Developer {
             Some(text) => widgets::say(&self.state, text, false),
             None => widgets::say(&self.state, "", false),
         }
-        self.reset_group.set_visible(layer);
+        self.reset_shown.set_visible(layer);
     }
 
     /// Moves the switch without asking, as the page's own change.
@@ -360,7 +360,7 @@ impl Developer {
 
     fn disarm(&self) {
         self.armed.set(false);
-        self.reset.set_label(tr("Reset developer mode"));
+        self.reset.set_label(tr("Reset"));
     }
 
     /// Runs `args` as root, then `edel settings apply` when that worked, on

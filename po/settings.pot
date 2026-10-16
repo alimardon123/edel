@@ -1814,16 +1814,13 @@ msgstr ""
 msgid "Change Edel OS's own files under /usr and install packages with apk. Takes effect when the computer next starts."
 msgstr ""
 
+msgid "Reset"
+msgstr ""
+
 msgid "Reset developer mode"
 msgstr ""
 
-msgid "Developer changes"
-msgstr ""
-
 msgid "Deletes the changes developer mode made under /usr when the computer next starts, and takes its key out of the settings file."
-msgstr ""
-
-msgid "Click again to reset"
 msgstr ""
 
 msgid "Turn on developer mode?"
@@ -1857,9 +1854,6 @@ msgid "{first} and {second}"
 msgstr ""
 
 msgid "{first}, {second} and {more} more"
-msgstr ""
-
-msgid "Reset"
 msgstr ""
 
 msgid "Keep as new"

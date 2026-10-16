@@ -33,7 +33,7 @@ edel settings reset system.developer_mode
 edel settings apply
 ```
 
-turns developer mode off and, after you type `yes` (or with `--yes`), deletes every change it made under `/usr` when the computer next starts, with apk's list of wanted packages. Settings' Reset developer mode button does the same. Files that packages wrote to `/etc` stay, as `/etc` is this machine's own (ADR-006); `edel settings export` lists them. Switching developer mode off instead keeps the layer, ready for switching it on again.
+turns developer mode off and, after you type `yes` (or with `--yes`), deletes every change it made under `/usr` when the computer next starts, with apk's list of wanted packages. Settings' Reset developer mode row does the same. Files that packages wrote to `/etc` stay, as `/etc` is this machine's own (ADR-006); `edel settings export` lists them. Switching developer mode off instead keeps the layer, ready for switching it on again.
 
 ## Updates
 
