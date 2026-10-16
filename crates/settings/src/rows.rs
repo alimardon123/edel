@@ -382,6 +382,12 @@ pub const ROWS: &[Row] = &[
         key: "updates.channel",
         title: n_("Channel"),
     },
+    // The System page's developer mode (M7.1): a switch that changes the
+    // machine's key as root, as the Region page's machine keys do.
+    Row {
+        key: "system.developer_mode",
+        title: n_("Developer mode"),
+    },
     // The Shortcuts page (M5.13b): one row per action of `edel::shortcuts`,
     // so search finds each by its name; the keys are the page's own.
     Row {
@@ -753,10 +759,6 @@ mod tests {
     /// false`) needs neither, as no page shows a row that does not work yet,
     /// and a retired key needs neither either.
     const NO_ROW: &[(&str, &str)] = &[
-        (
-            "system.developer_mode",
-            "the System page gains it with developer mode (M7.1); until then an administrator sets it in the file",
-        ),
         (
             "users.*.ssh_keys",
             "a key is pasted on the command line or written in the file, as a server's administrator does",

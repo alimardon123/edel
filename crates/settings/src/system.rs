@@ -9,9 +9,11 @@
 //! a click that lacks the right reads `edel`'s refusal. The page runs
 //! nothing in the background.
 
-use std::cell::RefCell;
-use std::path::PathBuf;
+use std::cell::{Cell, RefCell};
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::Duration;
 
 use gtk::gio;
 use gtk::glib;
@@ -19,9 +21,39 @@ use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
 
-use crate::{actions, cmd, widgets};
+use crate::{actions, cmd, rows, widgets};
 
 const INTRO: &str = n_("Copy this machine to another, or set it up from a file.");
+
+/// The machine key developer mode is, and the switch that sets it (M7.1).
+const DEVELOPER_KEY: &str = "system.developer_mode";
+
+/// How long a first click on Reset developer mode waits for the second,
+/// as Updates' Roll back does (M7.1): resetting deletes the changes made
+/// under /usr, so it is asked twice.
+const CONFIRM: Duration = Duration::from_secs(5);
+
+/// The line under developer mode's switch: what this boot is, from the
+/// flag (is it on now), the boot's own mark `places::DEVELOPER_NOW`
+/// (trimmed, `None` when it is not there) and whether the reset mark
+/// `places::DEVELOPER_RESET` is there (M7.1). A reset is said first, as it
+/// wins at the next start (`edel`'s `developer_state` says the same
+/// order); nothing is said while it is on and running as set, or off and
+/// nothing is pending.
+fn state_line(flag: bool, now: Option<&str>, reset: bool) -> Option<&'static str> {
+    if reset {
+        return Some(tr("Its changes are deleted when the computer next starts."));
+    }
+    match (flag, now) {
+        (true, Some("held")) => Some(tr(
+            "Held back: a start found no slot with a try left, so your changes are off. Switch developer mode off and on again to keep them, or reset it.",
+        )),
+        (true, Some(_)) => None,
+        (true, None) => Some(tr("On after a restart.")),
+        (false, Some(_)) => Some(tr("Off after a restart.")),
+        (false, None) => None,
+    }
+}
 
 /// What `edel settings diff FILE` said, ready to show.
 #[derive(Debug, PartialEq, Eq)]
@@ -118,6 +150,10 @@ pub fn page() -> gtk::Widget {
     apply_row.reset.set_visible(false);
     let apply_out = widgets::output_row(&group);
 
+    // Developer mode (M7.1), after the file: the switch, its line and the
+    // reset, which is shown only while developer mode has changes to delete.
+    let dev = developer(&content);
+
     let ui = Rc::new(Ui {
         page: page.clone(),
         export_out,
@@ -166,11 +202,255 @@ pub fn page() -> gtk::Widget {
             ui.apply(button);
         }
     });
-    let keep = ui.clone();
+    let keep = (ui.clone(), dev);
     page.connect_destroy(move |_| {
         let _ = &keep;
     });
     page
+}
+
+/// The Developer mode group (M7.1): a switch for `system.developer_mode`
+/// with its line and what this boot is, and Reset developer mode, shown
+/// while developer mode has changes under /usr. The switch's state is the
+/// flag file's; a change runs as root through `edel` (as Region's machine
+/// keys do), then applies, on a thread of its own. Turning it on asks
+/// first, and Cancel puts the switch back off.
+fn developer(content: &gtk::Box) -> Rc<Developer> {
+    widgets::heading(content, tr("Developer mode"));
+    let group = widgets::group(content);
+    let switch = gtk::Switch::new();
+    let row = widgets::row(&group, rows::title(DEVELOPER_KEY), switch.upcast_ref());
+    row.subtitle.set_label(tr(
+        "Change Edel OS's own files under /usr and install packages with apk. Takes effect when the computer next starts.",
+    ));
+    // The reset below is the way back, so the row's Reset would repeat it.
+    row.reset.set_visible(false);
+    let copy_switch = switch.clone();
+    row.copy.connect_clicked(move |button| {
+        let value = if copy_switch.is_active() {
+            "true"
+        } else {
+            "false"
+        };
+        button
+            .clipboard()
+            .set_text(&rows::command(&[(DEVELOPER_KEY, value.to_string())]));
+        widgets::copied(button);
+    });
+    let state = gtk::Label::builder()
+        .xalign(0.0)
+        .wrap(true)
+        .visible(false)
+        .css_classes(["edel-row-subtitle"])
+        .build();
+    group.append(&state);
+
+    let reset_group = widgets::group(content);
+    reset_group.set_visible(false);
+    let reset = widgets::action(tr("Reset developer mode"), false);
+    let reset_row = widgets::row(&reset_group, tr("Developer changes"), reset.upcast_ref());
+    reset_row.subtitle.set_label(tr(
+        "Deletes the changes developer mode made under /usr when the computer next starts, and takes its key out of the settings file.",
+    ));
+    reset_row.reset.set_visible(false);
+    reset_row.copy.connect_clicked(|button| {
+        button
+            .clipboard()
+            .set_text(&cmd::line(actions::RESET_DEVELOPER.args));
+        widgets::copied(button);
+    });
+    // What `edel` refused, in its words, under the switch and the reset.
+    let problem = widgets::output_row(content);
+
+    let dev = Rc::new(Developer {
+        switch: switch.clone(),
+        state,
+        reset_group,
+        reset: reset.clone(),
+        problem,
+        quiet: Cell::new(false),
+        armed: Cell::new(false),
+    });
+    dev.update();
+
+    let weak = Rc::downgrade(&dev);
+    switch.connect_active_notify(move |switch| {
+        let Some(dev) = weak.upgrade() else { return };
+        if dev.quiet.get() {
+            return;
+        }
+        if switch.is_active() {
+            let weak = Rc::downgrade(&dev);
+            ask_turn_on(switch.upcast_ref(), move |confirmed| {
+                let Some(dev) = weak.upgrade() else { return };
+                if confirmed {
+                    dev.run(set_words(true), "true");
+                } else {
+                    dev.set_switch(false);
+                }
+            });
+        } else {
+            dev.run(set_words(false), "false");
+        }
+    });
+
+    let weak = Rc::downgrade(&dev);
+    reset.connect_clicked(move |button| {
+        let Some(dev) = weak.upgrade() else { return };
+        if !dev.armed.get() {
+            // Deleting the changes is not undone: ask twice.
+            dev.armed.set(true);
+            button.set_label(tr("Click again to reset"));
+            let weak = weak.clone();
+            glib::timeout_add_local_once(CONFIRM, move || {
+                if let Some(dev) = weak.upgrade() {
+                    dev.disarm();
+                }
+            });
+            return;
+        }
+        dev.disarm();
+        dev.run(reset_words(), "reset");
+    });
+
+    let weak = Rc::downgrade(&dev);
+    content.connect_map(move |_| {
+        if let Some(dev) = weak.upgrade() {
+            dev.update();
+        }
+    });
+    dev
+}
+
+/// The Developer mode group's controls and what they show (M7.1).
+struct Developer {
+    switch: gtk::Switch,
+    state: gtk::Label,
+    reset_group: gtk::Box,
+    reset: gtk::Button,
+    problem: gtk::Label,
+    /// Set while the page itself moves the switch, so that is no choice.
+    quiet: Cell<bool>,
+    /// Set after the first click on Reset developer mode.
+    armed: Cell<bool>,
+}
+
+impl Developer {
+    /// Shows what the files and the boot say now: the switch, the line
+    /// under it and whether the reset is there.
+    fn update(&self) {
+        let flag = Path::new(edel::places::DEVELOPER_FLAG).exists();
+        let now = fs::read_to_string(edel::places::DEVELOPER_NOW).ok();
+        let reset = Path::new(edel::places::DEVELOPER_RESET).exists();
+        let layer = Path::new(edel::places::DEVELOPER_LAYER).exists();
+        self.set_switch(flag);
+        match state_line(flag, now.as_deref().map(str::trim), reset) {
+            Some(text) => widgets::say(&self.state, text, false),
+            None => widgets::say(&self.state, "", false),
+        }
+        self.reset_group.set_visible(layer);
+    }
+
+    /// Moves the switch without asking, as the page's own change.
+    fn set_switch(&self, on: bool) {
+        self.quiet.set(true);
+        self.switch.set_active(on);
+        self.quiet.set(false);
+    }
+
+    fn disarm(&self) {
+        self.armed.set(false);
+        self.reset.set_label(tr("Reset developer mode"));
+    }
+
+    /// Runs `args` as root, then `edel settings apply` when that worked, on
+    /// a thread of its own. The controls wait meanwhile; a refusal is shown
+    /// as `edel` said it, and the line and the switch are read again after.
+    fn run(self: &Rc<Self>, args: Vec<String>, value: &'static str) {
+        self.switch.set_sensitive(false);
+        self.reset.set_sensitive(false);
+        widgets::say(&self.problem, "", false);
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let done = gio::spawn_blocking(move || {
+                let words: Vec<&str> = args.iter().map(String::as_str).collect();
+                let set = cmd::edel_as_root(&words, None);
+                let apply = set.ok.then(|| cmd::edel_as_root(actions::APPLY.args, None));
+                (set, apply)
+            })
+            .await;
+            let Some(dev) = weak.upgrade() else { return };
+            if let Ok((set, apply)) = done {
+                eprintln!(
+                    "edel-settings: system {DEVELOPER_KEY} {value} asked, exit {}",
+                    exit_text(set.code)
+                );
+                let refused = if set.ok {
+                    apply.and_then(|run| {
+                        eprintln!(
+                            "edel-settings: system apply asked, exit {}",
+                            exit_text(run.code)
+                        );
+                        (!run.ok).then(|| run.shown())
+                    })
+                } else {
+                    Some(set.shown())
+                };
+                match refused {
+                    Some(text) => widgets::say(&dev.problem, &text, true),
+                    None => widgets::say(&dev.problem, "", false),
+                }
+            }
+            dev.switch.set_sensitive(true);
+            dev.reset.set_sensitive(true);
+            dev.update();
+        });
+    }
+}
+
+/// Asks before developer mode is turned on: Cancel is the default, and
+/// `done` gets whether the person chose Turn on.
+fn ask_turn_on(near: &gtk::Widget, done: impl FnOnce(bool) + 'static) {
+    let parent = near.root().and_downcast::<gtk::Window>();
+    let dialog = gtk::AlertDialog::builder()
+        .modal(true)
+        .message(tr("Turn on developer mode?"))
+        .detail(tr(
+            "Developer mode lets you change Edel OS's own files and install packages with apk. If a change stops the computer from starting, Edel OS starts without your changes until you switch developer mode off and on again or reset it.",
+        ))
+        .buttons(vec![tr("Cancel"), tr("Turn on")])
+        .cancel_button(0)
+        .default_button(0)
+        .build();
+    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
+        done(matches!(answer, Ok(1)));
+    });
+}
+
+/// The words that set developer mode: the Region page's `set` words, then
+/// the assignment (M7.1).
+fn set_words(on: bool) -> Vec<String> {
+    actions::SET
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .chain(std::iter::once(format!("{DEVELOPER_KEY}={on}")))
+        .collect()
+}
+
+/// The words that reset developer mode, as the action names them.
+fn reset_words() -> Vec<String> {
+    actions::RESET_DEVELOPER
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .collect()
+}
+
+/// An exit status as the log shows it: its number, or `none` when there
+/// was none (a signal).
+fn exit_text(code: Option<i32>) -> String {
+    code.map_or_else(|| "none".to_string(), |code| code.to_string())
 }
 
 impl Ui {
@@ -311,6 +591,39 @@ mod tests {
         assert_eq!(seen.changes, 0);
         assert!(!seen.failed);
         assert!(seen.text.starts_with("This machine already matches"));
+    }
+
+    #[test]
+    fn a_running_developer_mode_says_nothing() {
+        assert_eq!(state_line(true, Some("on"), false), None);
+        assert_eq!(state_line(false, None, false), None);
+    }
+
+    #[test]
+    fn developer_mode_turned_on_or_off_waits_for_a_restart() {
+        assert_eq!(state_line(true, None, false), Some("On after a restart."));
+        assert_eq!(
+            state_line(false, Some("on"), false),
+            Some("Off after a restart.")
+        );
+    }
+
+    #[test]
+    fn a_held_layer_is_said_with_what_to_do() {
+        assert_eq!(
+            state_line(true, Some("held"), false),
+            Some(
+                "Held back: a start found no slot with a try left, so your changes are off. Switch developer mode off and on again to keep them, or reset it."
+            )
+        );
+    }
+
+    #[test]
+    fn a_pending_reset_is_said_first() {
+        let deleted = Some("Its changes are deleted when the computer next starts.");
+        assert_eq!(state_line(true, Some("on"), true), deleted);
+        assert_eq!(state_line(false, None, true), deleted);
+        assert_eq!(state_line(true, Some("held"), true), deleted);
     }
 
     #[test]
