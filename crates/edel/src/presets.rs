@@ -75,16 +75,18 @@ pub const TILES: &[&str] = &[
     "bluetooth",
     "airplane",
     "do_not_disturb",
+    "location",
     "dark_style",
 ];
 
-/// The tiles a preset that names none shows, in this order: the five every
-/// built-in preset lists today.
+/// The tiles a preset that names none shows, in this order: the six every
+/// built-in preset lists today (Location only where its feature is there).
 pub const DEFAULT_TILES: &[&str] = &[
     "wifi",
     "bluetooth",
     "airplane",
     "do_not_disturb",
+    "location",
     "dark_style",
 ];
 
@@ -1191,7 +1193,7 @@ mod tests {
             check(&with("[\"wifi\", \"night_light\"]")).unwrap_err()
         );
         assert!(
-            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, do_not_disturb, dark_style"),
+            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, do_not_disturb, location, dark_style"),
             "{e}"
         );
         let e = format!("{:#}", check(&with("[\"wifi\", \"wifi\"]")).unwrap_err());

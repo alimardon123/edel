@@ -10,7 +10,8 @@ use std::io::ErrorKind;
 use std::path::Path;
 
 use edel::app_permissions::{
-    Entry, STORE_BUS, STORE_INTERFACE, STORE_PATH, dropped, entries, files_asked, override_text,
+    Entry, STORE_BUS, STORE_INTERFACE, STORE_PATH, asked_every_time, dropped, entries, files_asked,
+    override_text,
 };
 use edel::places;
 
@@ -74,25 +75,27 @@ fn plan(last: Option<&Applied>, now: &Applied) -> Plan {
 /// overrides, at start and whenever the settings files change (M6.14a).
 /// `last` is what was laid on before, and nothing is done when the choices
 /// are the same. With no `connection` the store is skipped and the files
-/// are still written.
+/// are still written. Returns the apps set to ask for the place
+/// (`apps.location`, M6.14c), which `location.rs` asks every time.
 pub fn follow(
     connection: Option<&zbus::blocking::Connection>,
     last: &mut Option<Applied>,
     machine: Option<&str>,
     person: Option<&str>,
-) {
+) -> Vec<String> {
     let choices = edel::app_permissions::choices_between(machine, person);
+    let asked = asked_every_time(&choices, "apps.location");
     let now = Applied {
         entries: entries(&choices),
         files: files_asked(&choices),
     };
     if last.as_ref() == Some(&now) {
-        return;
+        return asked;
     }
     let plan = plan(last.as_ref(), &now);
     *last = Some(now);
     if plan.set.is_empty() && plan.delete.is_empty() && plan.files.is_empty() {
-        return;
+        return asked;
     }
     let connection = connection.cloned();
     // The bus answers when the portal does, so the work runs off the panel's
@@ -103,6 +106,7 @@ pub fn follow(
         }
         write_files(&plan.files);
     });
+    asked
 }
 
 /// Sets and deletes the store's entries over the bus. One failure never

@@ -39,6 +39,7 @@ mod in_use_card;
 mod in_use_menu;
 mod launcher;
 mod link;
+mod location;
 mod lock;
 mod lock_card;
 mod lock_editor;
@@ -114,6 +115,7 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
@@ -286,8 +288,14 @@ struct Shell {
     /// The apps using the camera, the microphone or the screen now, as
     /// `in_use.rs` reads them, and when each (app, kind) use began, seconds
     /// since 1970, for the record of use (M6.14b). `in_use_sign` is the sign's
-    /// place as last logged.
+    /// place as last logged. `in_use` is the sign's list: PipeWire's uses
+    /// (`pipewire_uses`) and the place's (`location_uses`, M6.14c) joined.
     in_use: Vec<in_use::InUse>,
+    pipewire_uses: Vec<in_use::InUse>,
+    location_uses: Vec<in_use::InUse>,
+    /// The apps set to ask for the place every time, as `app_permissions`
+    /// reads them, which `location.rs` deletes the entries of (M6.14c).
+    location_asked: Arc<Mutex<Vec<String>>>,
     in_use_since: HashMap<(String, edel::app_use::Kind), u64>,
     in_use_sign: String,
     /// Scrolling over a panel not yet a whole step.
@@ -521,6 +529,12 @@ fn run() -> Result<()> {
         let (machine, person) = settings_texts();
         button_layout(machine.as_deref(), person.as_deref())
     };
+    // The portal's Location switch (M6.14c): the person's file over the
+    // machine's, the way the Do not disturb key is read.
+    let location_off = {
+        let (machine, person) = settings_texts();
+        !location::enabled(machine.as_deref(), person.as_deref())
+    };
     let mut shell = Shell {
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -578,6 +592,9 @@ fn run() -> Result<()> {
         status_again: None,
         status_tx,
         in_use: Vec::new(),
+        pipewire_uses: Vec::new(),
+        location_uses: Vec::new(),
+        location_asked: Arc::default(),
         in_use_since: HashMap::new(),
         in_use_sign: String::new(),
         flip: None,
@@ -588,7 +605,7 @@ fn run() -> Result<()> {
         chosen: chosen(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens, &buttons, edits),
+        _portal: portal::serve(&tokens, &buttons, edits, location_off),
         app_permissions: None,
         player_tx: None,
         tokens,
@@ -603,12 +620,28 @@ fn run() -> Result<()> {
     // What each app may use (M6.14a): laid on at start, then at each change
     // of the settings files (`settings_changed`).
     let (machine, person) = settings_texts();
-    app_permissions::follow(
+    let asked = app_permissions::follow(
         shell._portal.as_ref(),
         &mut shell.app_permissions,
         machine.as_deref(),
         person.as_deref(),
     );
+    location::set_asked(&shell.location_asked, asked);
+    // The place (M6.14c): followed on the portal's connection, where the
+    // location feature is installed and the portal is served. Its uses join
+    // the sign's (`location_changed`).
+    if let (true, Some(connection)) = (location::feature_there(features), shell._portal.clone()) {
+        let (place_tx, place) = channel::channel::<Vec<in_use::InUse>>();
+        event_loop
+            .handle()
+            .insert_source(place, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(uses) = event {
+                    shell.location_changed(uses);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the place: {e}"))?;
+        location::watch(connection, shell.location_asked.clone(), place_tx);
+    }
     // The portal and the tray share the session's bus and zbus's thread
     // for it; the tray's news reaches the loop over a channel (M5.2e), but
     // only when a panel holds the widget. Served once the panel's fonts

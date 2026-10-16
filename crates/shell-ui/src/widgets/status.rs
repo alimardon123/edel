@@ -548,9 +548,11 @@ mod tests {
             label(&camera_and_mic),
             "Camera and microphone in use, Status: Wi-Fi Home 5G, volume 64 percent, battery 82 percent"
         );
-        let three = [Kind::Camera, Kind::Microphone, Kind::Screen];
-        let all = encode(&full(), false, &three);
-        assert!(label(&all).starts_with("Camera, microphone and screen in use, Status: "));
+        let four = [Kind::Camera, Kind::Microphone, Kind::Screen, Kind::Location];
+        let all = encode(&full(), false, &four);
+        assert!(
+            label(&all).starts_with("Camera, microphone, screen and location in use, Status: ")
+        );
         let alone = encode(&Status::default(), false, &[Kind::Screen]);
         assert_eq!(label(&alone), "Screen in use");
     }
