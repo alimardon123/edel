@@ -1,0 +1,716 @@
+//! Add-ons (M7.2a, docs/FEATURES.md): the rules of building, fetching and
+//! mounting them. They are pure functions over paths and file stamps, so
+//! the tests run without root, Alpine or a disk; `edel image build` and the
+//! updater call them and do the copying, mounting and packing themselves.
+//!
+//! An add-on is a feature (`addon = true`) that a machine mounts beside the
+//! slot's root, so a newer slot never has to ship it and an old one never
+//! breaks it. What it installs lands in the folders below; anything it
+//! would change in the slot itself is refused.
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::os::unix::fs::MetadataExt;
+use std::path::{Path, PathBuf};
+
+use anyhow::{Context, Result, bail};
+use edel::places;
+
+/// The files of the account database an add-on may add lines to: its new
+/// users and groups are merged into the slot's files, never replace them.
+pub const ACCOUNT_FILES: [&str; 3] = ["etc/passwd", "etc/group", "etc/shadow"];
+
+/// The folders at the root whose contents [`scan`] skips: the kernel's and
+/// the run-time's, which no add-on ships.
+const SKIPPED: [&str; 5] = ["proc", "sys", "dev", "run", "tmp"];
+
+/// Folders whose every file is a cache a package trigger or apk rewrites
+/// for the whole system.
+const CACHE_DIRS: [&str; 3] = ["lib/apk", "usr/lib/apk", "var/cache"];
+
+/// Single files that are caches (and so left out of an add-on).
+const CACHE_FILES: [&str; 5] = [
+    "etc/apk/world",
+    "etc/shells",
+    "etc/udev/hwdb.bin",
+    "usr/lib/udev/hwdb.bin",
+    "usr/share/info/dir",
+];
+
+/// Paths that may use `*` for one component, that are caches.
+const CACHE_PATTERNS: [&str; 5] = [
+    "usr/share/icons/*/icon-theme.cache",
+    "usr/share/applications/mimeinfo.cache",
+    "usr/share/glib-2.0/schemas/gschemas.compiled",
+    "usr/lib/gdk-pixbuf-2.0/*/loaders.cache",
+    "usr/lib/gio/modules/giomodule.cache",
+];
+
+/// Files the system rewrites for itself, which an add-on never ships.
+const DISCARDED: [&str; 4] = ["etc/passwd-", "etc/group-", "etc/shadow-", "etc/machine-id"];
+
+/// `place` without its leading slash, for a path relative to a root.
+fn rel(place: &'static str) -> &'static str {
+    place.trim_start_matches('/')
+}
+
+/// The folder an add-on's own `/etc` files are in, relative to a root.
+pub fn etc_dir(name: &str) -> String {
+    format!("{}/{name}", rel(places::ADDON_ETC_DIR))
+}
+
+/// The folder an add-on's own `/var` files are in, relative to a root.
+pub fn var_dir(name: &str) -> String {
+    format!("{}/{name}", rel(places::ADDON_VAR_DIR))
+}
+
+/// The folder an add-on's account lines are in, relative to a root.
+pub fn accounts_dir(name: &str) -> String {
+    format!("{}/{name}", rel(places::ADDON_ACCOUNTS_DIR))
+}
+
+/// Where a file of an add-on goes in the slot's layout, for a path relative
+/// to the add-on's root: `etc/init.d/X` (one component) is run at boot, any
+/// other `etc/...` is kept in the add-on's own `/etc` folder, `var/...` in
+/// its own `/var` folder, and `usr/...` stays where it is. Anything else,
+/// and the runlevels (which `apply` owns), gives `None`.
+pub fn relocate(path: &str, name: &str) -> Option<String> {
+    if let Some(rest) = path.strip_prefix("etc/") {
+        if let Some(file) = rest.strip_prefix("init.d/") {
+            let one = !file.is_empty() && !file.contains('/');
+            return one.then(|| format!("{}/{file}", rel(places::ADDON_INIT_DIR)));
+        }
+        if rest.is_empty() || rest == "runlevels" || rest.starts_with("runlevels/") {
+            return None;
+        }
+        return Some(format!("{}/{rest}", etc_dir(name)));
+    }
+    if let Some(rest) = path.strip_prefix("var/") {
+        return (!rest.is_empty()).then(|| format!("{}/{rest}", var_dir(name)));
+    }
+    if let Some(rest) = path.strip_prefix("usr/") {
+        return (!rest.is_empty()).then(|| path.to_string());
+    }
+    None
+}
+
+/// Whether `path` (relative to a root) is a cache the system rewrites for
+/// itself. A cache is left out of an add-on, so the slot's own is used.
+pub fn is_system_cache(path: &str) -> bool {
+    let under = |dir: &str| {
+        path.strip_prefix(dir)
+            .is_some_and(|rest| rest.starts_with('/'))
+    };
+    let font = rel(places::FONT_CACHE_DIR);
+    CACHE_DIRS.iter().any(|dir| under(dir))
+        || path == font
+        || under(font)
+        || (under("usr/share/mime") && !under("usr/share/mime/packages"))
+        || (path.starts_with("usr/lib/") && path.ends_with("/immodules.cache"))
+        || CACHE_FILES.contains(&path)
+        || CACHE_PATTERNS
+            .iter()
+            .any(|pattern| glob_matches(path, pattern))
+}
+
+/// Whether `pattern` matches `path`, where `*` stands for one component.
+fn glob_matches(path: &str, pattern: &str) -> bool {
+    let want: Vec<&str> = pattern.split('/').collect();
+    let got: Vec<&str> = path.split('/').collect();
+    want.len() == got.len()
+        && want
+            .iter()
+            .zip(got.iter())
+            .all(|(w, g)| *w == "*" || w == g)
+}
+
+/// Whether the system writes `path` for itself (a copy of the account
+/// database, a machine's id), so an add-on never ships it.
+pub fn is_discarded(path: &str) -> bool {
+    DISCARDED.contains(&path)
+}
+
+/// What a file of a root looks like, without following links: enough to see
+/// that it changed, not its contents.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stamp {
+    /// Whether it is a folder.
+    pub dir: bool,
+    /// Its size in bytes (for a link, the length of its target).
+    pub size: u64,
+    /// Its modification time, in seconds.
+    pub mtime: i64,
+    /// Its mode, with the file type bits.
+    pub mode: u32,
+    /// Where a link points, as written.
+    pub link: Option<String>,
+}
+
+/// Every entry under `root`, by its path relative to it (no leading slash).
+/// Links are not followed. The folders `proc`, `sys`, `dev`, `run` and
+/// `tmp` at the root are entries, but their contents are not.
+pub fn scan(root: &Path) -> Result<BTreeMap<String, Stamp>> {
+    let mut map = BTreeMap::new();
+    scan_into(root, "", &mut map)?;
+    Ok(map)
+}
+
+fn scan_into(root: &Path, under: &str, map: &mut BTreeMap<String, Stamp>) -> Result<()> {
+    let dir = if under.is_empty() {
+        root.to_path_buf()
+    } else {
+        root.join(under)
+    };
+    let entries = fs::read_dir(&dir).with_context(|| format!("cannot read {}", dir.display()))?;
+    for entry in entries {
+        let entry = entry.with_context(|| format!("cannot read {}", dir.display()))?;
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let key = if under.is_empty() {
+            name.clone()
+        } else {
+            format!("{under}/{name}")
+        };
+        let meta = fs::symlink_metadata(&path)
+            .with_context(|| format!("cannot read {}", path.display()))?;
+        let link = if meta.file_type().is_symlink() {
+            let target = fs::read_link(&path)
+                .with_context(|| format!("cannot read the link {}", path.display()))?;
+            Some(target.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+        let is_dir = meta.is_dir();
+        map.insert(
+            key.clone(),
+            Stamp {
+                dir: is_dir,
+                size: meta.len(),
+                mtime: meta.mtime(),
+                mode: meta.mode(),
+                link,
+            },
+        );
+        if is_dir && !(under.is_empty() && SKIPPED.contains(&name.as_str())) {
+            scan_into(root, &key, map)?;
+        }
+    }
+    Ok(())
+}
+
+/// What changed between two scans, each list sorted.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Diff {
+    /// Paths that are new, folders included.
+    pub new: Vec<String>,
+    /// Files whose stamp differs. A folder never counts as changed.
+    pub changed: Vec<String>,
+    /// Paths that are gone.
+    pub removed: Vec<String>,
+}
+
+/// The difference between two scans.
+pub fn diff(before: &BTreeMap<String, Stamp>, after: &BTreeMap<String, Stamp>) -> Diff {
+    let mut out = Diff::default();
+    for (path, now) in after {
+        match before.get(path) {
+            None => out.new.push(path.clone()),
+            Some(was) => {
+                if !now.dir && was != now {
+                    out.changed.push(path.clone());
+                }
+            }
+        }
+    }
+    for path in before.keys() {
+        if !after.contains_key(path) {
+            out.removed.push(path.clone());
+        }
+    }
+    out
+}
+
+/// One path an add-on copies into the slot's layout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Copy {
+    /// The path in the add-on's root.
+    pub from: String,
+    /// The path in the add-on's tree, relative to the root.
+    pub to: String,
+    /// For a link, the target to write (already absolute where it was
+    /// rewritten); none for a file or a folder.
+    pub link: Option<String>,
+}
+
+/// What an add-on's tree holds and what it does to the account database.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct TreePlan {
+    /// The paths to copy into the tree.
+    pub copies: Vec<Copy>,
+    /// The account files it adds lines to, to be merged at boot.
+    pub accounts: Vec<String>,
+    /// The caches it changed or made, which are left out.
+    pub caches: Vec<String>,
+}
+
+/// Sorts the changes of an add-on's root into what its tree keeps. Every
+/// refusal is gathered and reported together, so one build names them all.
+pub fn plan_tree(diff: &Diff, after: &BTreeMap<String, Stamp>, name: &str) -> Result<TreePlan> {
+    let mut plan = TreePlan::default();
+    let mut problems = Vec::new();
+    for path in &diff.new {
+        let Some(stamp) = after.get(path) else {
+            continue;
+        };
+        if is_discarded(path) {
+            continue;
+        }
+        if is_system_cache(path) {
+            if !stamp.dir {
+                plan.caches.push(path.clone());
+            }
+            continue;
+        }
+        match relocate(path, name) {
+            Some(to) => plan.copies.push(copy_of(path, to, stamp)),
+            None => problems.push(format!("{path} is outside /usr, /etc and /var")),
+        }
+    }
+    for path in &diff.changed {
+        if is_discarded(path) {
+            continue;
+        }
+        if ACCOUNT_FILES.contains(&path.as_str()) {
+            plan.accounts.push(path.clone());
+        } else if is_system_cache(path) {
+            plan.caches.push(path.clone());
+        } else {
+            problems.push(format!("{path} is a file of the image the add-on changes"));
+        }
+    }
+    for path in &diff.removed {
+        if !is_system_cache(path) {
+            problems.push(format!(
+                "{path} is a file of the image the add-on takes out"
+            ));
+        }
+    }
+    if !problems.is_empty() {
+        bail!(
+            "add-on {name} cannot be built: {}; an add-on adds files under /usr, /etc and /var only",
+            problems.join("; ")
+        );
+    }
+    Ok(plan)
+}
+
+/// The copy of one new path: a relocated link with a relative target gets
+/// the absolute target it had, resolved from its original folder.
+fn copy_of(path: &str, to: String, stamp: &Stamp) -> Copy {
+    let link = stamp.link.as_ref().map(|target| {
+        if to.as_str() != path && !target.starts_with('/') {
+            absolute(path, target)
+        } else {
+            target.clone()
+        }
+    });
+    Copy {
+        from: path.to_string(),
+        to,
+        link,
+    }
+}
+
+/// `target`, a relative link at `link`, as the absolute path it names.
+fn absolute(link: &str, target: &str) -> String {
+    let parent = link.rsplit_once('/').map_or("", |(parent, _)| parent);
+    let mut parts: Vec<&str> = Vec::new();
+    for part in parent.split('/').chain(target.split('/')) {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    format!("/{}", parts.join("/"))
+}
+
+/// The account lines of `after` that `before` does not have, each by its
+/// first field (the name), in order, each ending in a newline.
+pub fn new_accounts(before: &str, after: &str) -> String {
+    let known: std::collections::BTreeSet<&str> = before
+        .lines()
+        .map(|line| line.split(':').next().unwrap_or_default())
+        .collect();
+    let mut out = String::new();
+    for line in after.lines().filter(|line| !line.is_empty()) {
+        let name = line.split(':').next().unwrap_or_default();
+        if !known.contains(name) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// The users, groups, user ids and group ids that two add-ons both add.
+/// Each input is an add-on's name and its new `passwd` or `group` lines; a
+/// `passwd` line has seven fields, a `group` line four.
+pub fn account_clashes(sets: &[(String, String)]) -> Vec<String> {
+    let mut owners: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
+    for (name, text) in sets {
+        for line in text.lines() {
+            let fields: Vec<&str> = line.split(':').collect();
+            let (name_kind, id_kind) = match fields.len() {
+                7 => ("user", "uid"),
+                4 => ("group", "gid"),
+                _ => continue,
+            };
+            for (kind, value) in [(name_kind, fields[0]), (id_kind, fields[2])] {
+                let list = owners.entry((kind, value)).or_default();
+                if !list.contains(&name.as_str()) {
+                    list.push(name.as_str());
+                }
+            }
+        }
+    }
+    owners
+        .into_iter()
+        .filter(|(_, list)| list.len() >= 2)
+        .map(|((kind, value), list)| {
+            format!("{kind} {value} is used by {} and {}", list[0], list[1])
+        })
+        .collect()
+}
+
+/// The paths two or more add-on trees both ship, as `"PATH is shipped by A
+/// and B"`, sorted by path. Each input is an add-on's name and its paths.
+pub fn collisions(trees: &[(String, Vec<String>)]) -> Vec<String> {
+    let mut owners: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (name, paths) in trees {
+        for path in paths {
+            let list = owners.entry(path.as_str()).or_default();
+            if !list.contains(&name.as_str()) {
+                list.push(name.as_str());
+            }
+        }
+    }
+    owners
+        .into_iter()
+        .filter(|(_, list)| list.len() >= 2)
+        .map(|(path, list)| format!("{path} is shipped by {} and {}", list[0], list[1]))
+        .collect()
+}
+
+/// The `lowerdir` of the slot's overlay for `/usr`: each mounted add-on's
+/// `usr` folder in the order given, then the slot's own `usr` last, so the
+/// lowest layer is the slot's.
+pub fn lowerdirs(mounts: &[PathBuf], usr: &Path) -> String {
+    let mut parts: Vec<String> = mounts
+        .iter()
+        .map(|mount| mount.join("usr").to_string_lossy().into_owned())
+        .collect();
+    parts.push(usr.to_string_lossy().into_owned());
+    parts.join(":")
+}
+
+/// The names of the installed slot versions that are not kept, sorted.
+pub fn stale_versions(present: &[String], keep: &[&str]) -> Vec<String> {
+    let mut stale: Vec<String> = present
+        .iter()
+        .filter(|name| !keep.contains(&name.as_str()))
+        .cloned()
+        .collect();
+    stale.sort();
+    stale
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::fs::symlink;
+    use std::process;
+
+    use super::*;
+
+    fn file(size: u64) -> Stamp {
+        Stamp {
+            dir: false,
+            size,
+            mtime: 0,
+            mode: 0o100644,
+            link: None,
+        }
+    }
+
+    fn dir(mtime: i64) -> Stamp {
+        Stamp {
+            dir: true,
+            size: 0,
+            mtime,
+            mode: 0o040755,
+            link: None,
+        }
+    }
+
+    fn link(target: &str) -> Stamp {
+        Stamp {
+            dir: false,
+            size: target.len() as u64,
+            mtime: 0,
+            mode: 0o120777,
+            link: Some(target.to_string()),
+        }
+    }
+
+    fn tree(entries: &[(&str, Stamp)]) -> BTreeMap<String, Stamp> {
+        entries
+            .iter()
+            .map(|(path, stamp)| (path.to_string(), stamp.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn relocate_puts_each_part_where_its_rule_says() {
+        assert_eq!(
+            relocate("etc/init.d/svc", "ci-hello").as_deref(),
+            Some("usr/lib/edel/init.d/svc")
+        );
+        assert_eq!(relocate("etc/init.d/a/b", "ci-hello"), None);
+        assert_eq!(
+            relocate("etc/foo/bar", "ci-hello").as_deref(),
+            Some("usr/lib/edel/etc/ci-hello/foo/bar")
+        );
+        assert_eq!(relocate("etc/runlevels/default/x", "ci-hello"), None);
+        assert_eq!(relocate("etc", "ci-hello"), None);
+        assert_eq!(
+            relocate("var/lib/x", "ci-hello").as_deref(),
+            Some("usr/lib/edel/var/ci-hello/lib/x")
+        );
+        assert_eq!(relocate("var", "ci-hello"), None);
+        assert_eq!(
+            relocate("usr/bin/tool", "ci-hello").as_deref(),
+            Some("usr/bin/tool")
+        );
+        assert_eq!(relocate("usr", "ci-hello"), None);
+        for other in ["bin/x", "lib/x", "sbin/x", "opt/x"] {
+            assert_eq!(relocate(other, "ci-hello"), None, "{other}");
+        }
+    }
+
+    #[test]
+    fn a_system_cache_is_recognised_by_its_path() {
+        for cache in [
+            "lib/apk/db/installed",
+            "usr/lib/apk/db/x",
+            "etc/apk/world",
+            "var/cache/apk/index",
+            "usr/share/icons/hicolor/icon-theme.cache",
+            "usr/share/glib-2.0/schemas/gschemas.compiled",
+            "usr/share/applications/mimeinfo.cache",
+            "usr/share/mime/mime.cache",
+            "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache",
+            "usr/lib/gio/modules/giomodule.cache",
+            "usr/share/info/dir",
+            "etc/shells",
+            "etc/udev/hwdb.bin",
+            "usr/lib/udev/hwdb.bin",
+            "usr/lib/gtk-3.0/3.0.0/immodules.cache",
+            "usr/lib/fontconfig/cache/a.cache-9",
+        ] {
+            assert!(is_system_cache(cache), "{cache}");
+        }
+        assert!(!is_system_cache("usr/share/mime/packages/x.xml"));
+        assert!(!is_system_cache("usr/share/icons/hicolor/48x48/a.png"));
+        assert!(!is_system_cache("usr/bin/tool"));
+        assert!(!is_system_cache("etc/conf"));
+    }
+
+    #[test]
+    fn diff_counts_new_paths_and_changed_files_only() {
+        let before = tree(&[
+            ("usr", dir(1)),
+            ("etc/a", file(1)),
+            ("etc/gone", file(1)),
+            ("etc/l", link("a")),
+        ]);
+        let after = tree(&[
+            ("usr", dir(2)),
+            ("usr/new", file(1)),
+            ("var", dir(1)),
+            ("etc/a", file(2)),
+            ("etc/l", link("b")),
+        ]);
+        assert_eq!(
+            diff(&before, &after),
+            Diff {
+                new: vec!["usr/new".into(), "var".into()],
+                changed: vec!["etc/a".into(), "etc/l".into()],
+                removed: vec!["etc/gone".into()],
+            }
+        );
+        // A folder whose only change is its time is not changed.
+        let same = tree(&[("usr", dir(9))]);
+        assert_eq!(diff(&before, &same).changed, Vec::<String>::new());
+    }
+
+    #[test]
+    fn plan_tree_keeps_each_kind_of_change_in_its_place() {
+        let before = tree(&[("etc/passwd", file(10)), ("usr/lib/libc.so", file(5))]);
+        let after = tree(&[
+            ("etc/conf", file(1)),
+            ("etc/init.d/svc", file(1)),
+            ("etc/passwd", file(11)),
+            ("etc/passwd-", file(10)),
+            ("usr/bin/tool", file(1)),
+            ("usr/lib/libc.so", file(5)),
+            ("var/cache/apk/index", file(1)),
+            ("var/lib/x", file(1)),
+        ]);
+        let plan = plan_tree(&diff(&before, &after), &after, "ci-hello").unwrap();
+        let copies: Vec<(&str, &str)> = plan
+            .copies
+            .iter()
+            .map(|c| (c.from.as_str(), c.to.as_str()))
+            .collect();
+        assert_eq!(
+            copies,
+            vec![
+                ("etc/conf", "usr/lib/edel/etc/ci-hello/conf"),
+                ("etc/init.d/svc", "usr/lib/edel/init.d/svc"),
+                ("usr/bin/tool", "usr/bin/tool"),
+                ("var/lib/x", "usr/lib/edel/var/ci-hello/lib/x"),
+            ]
+        );
+        assert_eq!(plan.accounts, vec!["etc/passwd".to_string()]);
+        assert_eq!(plan.caches, vec!["var/cache/apk/index".to_string()]);
+    }
+
+    #[test]
+    fn plan_tree_refuses_a_tree_and_names_every_refusal() {
+        let before = tree(&[("usr/lib/libc.so", file(5)), ("usr/share/doc/x", file(1))]);
+        let after = tree(&[("bin/x", file(1)), ("usr/lib/libc.so", file(6))]);
+        let error = plan_tree(&diff(&before, &after), &after, "ci-hello")
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.starts_with("add-on ci-hello cannot be built: "),
+            "{error}"
+        );
+        assert!(
+            error.contains("bin/x is outside /usr, /etc and /var"),
+            "{error}"
+        );
+        assert!(
+            error.contains("usr/lib/libc.so is a file of the image the add-on changes"),
+            "{error}"
+        );
+        assert!(
+            error.contains("usr/share/doc/x is a file of the image the add-on takes out"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn plan_tree_rewrites_a_relocated_relative_link() {
+        let after = tree(&[("etc/foo", dir(1)), ("etc/foo/a", link("../b"))]);
+        let plan = plan_tree(&diff(&BTreeMap::new(), &after), &after, "ci-hello").unwrap();
+        assert_eq!(plan.copies.len(), 2);
+        assert_eq!(plan.copies[0].to, "usr/lib/edel/etc/ci-hello/foo");
+        assert_eq!(plan.copies[0].link, None);
+        assert_eq!(plan.copies[1].to, "usr/lib/edel/etc/ci-hello/foo/a");
+        assert_eq!(plan.copies[1].link.as_deref(), Some("/etc/b"));
+        assert_eq!(absolute("usr/bin/l", "../lib/x"), "/usr/lib/x");
+    }
+
+    #[test]
+    fn new_accounts_keeps_only_names_the_image_does_not_have() {
+        let before = "root:x:0:0:root:/root:/bin/sh\n";
+        let after = "root:x:0:0:root:/root:/bin/sh\napp:x:1001:1001::/:/bin/sh\n";
+        assert_eq!(new_accounts(before, after), "app:x:1001:1001::/:/bin/sh\n");
+    }
+
+    #[test]
+    fn account_clashes_name_a_user_or_id_two_add_ons_use() {
+        let sets = [
+            (
+                "a".to_string(),
+                "app:x:1001:1001::/:/bin/sh\ngrp:x:2000:\n".to_string(),
+            ),
+            (
+                "b".to_string(),
+                "app:x:1002:1002::/:/bin/sh\nother:x:1001:1001::/:/bin/sh\n".to_string(),
+            ),
+        ];
+        assert_eq!(
+            account_clashes(&sets),
+            vec![
+                "uid 1001 is used by a and b".to_string(),
+                "user app is used by a and b".to_string(),
+            ]
+        );
+        assert!(account_clashes(&sets[..1]).is_empty());
+    }
+
+    #[test]
+    fn collisions_name_each_path_two_trees_ship() {
+        let trees = [
+            (
+                "a".to_string(),
+                vec!["usr/x".to_string(), "usr/y".to_string()],
+            ),
+            ("b".to_string(), vec!["usr/y".to_string()]),
+            ("c".to_string(), vec!["usr/x".to_string()]),
+        ];
+        assert_eq!(
+            collisions(&trees),
+            vec![
+                "usr/x is shipped by a and c".to_string(),
+                "usr/y is shipped by a and b".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn lowerdirs_stacks_the_add_ons_above_the_slot() {
+        let mounts = [PathBuf::from("/run/edel/addons/a"), PathBuf::from("/x")];
+        assert_eq!(
+            lowerdirs(&mounts, Path::new("/slot/usr")),
+            "/run/edel/addons/a/usr:/x/usr:/slot/usr"
+        );
+        assert_eq!(lowerdirs(&[], Path::new("/slot/usr")), "/slot/usr");
+    }
+
+    #[test]
+    fn stale_versions_are_the_present_ones_not_kept() {
+        let present = [
+            "edel-2".to_string(),
+            "edel-0".to_string(),
+            "edel-1".to_string(),
+        ];
+        assert_eq!(
+            stale_versions(&present, &["edel-2"]),
+            vec!["edel-0".to_string(), "edel-1".to_string()]
+        );
+    }
+
+    #[test]
+    fn scan_lists_every_entry_but_not_the_inside_of_proc() {
+        let root = std::env::temp_dir().join(format!("edel-addons-scan-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("d")).unwrap();
+        fs::create_dir_all(root.join("proc")).unwrap();
+        fs::write(root.join("file"), "x").unwrap();
+        fs::write(root.join("d/inner"), "y").unwrap();
+        fs::write(root.join("proc/x"), "z").unwrap();
+        symlink("file", root.join("link")).unwrap();
+        let map = scan(&root).unwrap();
+        let keys: Vec<&str> = map.keys().map(String::as_str).collect();
+        assert_eq!(keys, vec!["d", "d/inner", "file", "link", "proc"]);
+        assert!(map["d"].dir && !map["file"].dir);
+        assert_eq!(map["file"].size, 1);
+        assert_eq!(map["link"].link.as_deref(), Some("file"));
+        fs::remove_dir_all(root).unwrap();
+    }
+}
