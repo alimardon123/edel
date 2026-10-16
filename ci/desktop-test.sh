@@ -38,11 +38,11 @@
 #   cursor      appearance.cursor_size = 48 and icon_size = 150 through the
 #               machine's file: the compositor logs cursor default at 48 px,
 #               the arrow is drawn at 48 px (black where a 24 px one is not),
-#               shell-ui starts again with its icons at a new count, the
+#               shell-ui follows with its icons at a new count, the
 #               Arabic and Hindi faces are on the image, and cursor default
 #               brings 24 px back (M5.12b5)
 #   contrast    appearance.contrast = high, sent to the VM, logs contrast high
-#               and restarts shell-ui for the colours; the panel at 640,790
+#               and shell-ui follows the colours; the panel at 640,790
 #               is the light scheme's high-contrast panel colour, and
 #               contrast default takes the key out, logged as contrast
 #               normal, and the release's light panel is back (M6.9)
@@ -156,7 +156,7 @@
 #   everyday    the five everyday protocols are offered, a locked pointer
 #               gives its window relative motion, and a window keeping the
 #               screen on is counted in the state file (M5.23)
-#   language    region.language = "xx" restarts shell-ui in a made-up
+#   language    region.language = "xx" puts shell-ui in a made-up
 #               language, whose launcher draws its one long word where
 #               English leaves the search line empty; unset, English
 #               (M5.24a)
@@ -217,7 +217,7 @@
 #   welcome     the Welcome (edel-settings --welcome, M6.12), full screen:
 #               its language, keyboard, layout and style pages each log where
 #               their buttons lie; Next on the first two writes nothing,
-#               mac-like's card restarts the desktop as mac-like, Dark gives
+#               mac-like's card makes the desktop mac-like, Dark gives
 #               the dark scheme, Start using Edel OS closes it, and both keys
 #               are in ci's file until `welcome mine default` takes them out;
 #               a second Welcome, skipped on its first page, writes nothing
@@ -1245,31 +1245,31 @@ case_settings() {
 	[ "$top" != none ] || fail "no chosen card's accent border at $left in Settings"
 	classic=$((top + 40))
 	mac=$((left + cell + 12 + cell / 2))
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now mac-like')
 	python3 ci/qmp.py click "$mac" "$classic"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now mac-like' "$followed" ||
 		fail "a click on Mac-like at $mac,$classic did not switch the desktop to Mac-like"
 	guest 'settings file'
 	wait_for 'DESKTOP-TEST: settings_file ' || fail "the service did not read ci's settings file"
 	value settings_file | grep -q '\[layout\];preset = "mac-like"' ||
 		fail "ci's settings file is not what edel settings set layout.preset=mac-like writes: $(value settings_file)"
 	shot settings-mac 640 12 "$panel" >/dev/null || fail "Mac-like's bar is not along the top"
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now classic')
 	python3 ci/qmp.py click $((left + cell / 2)) "$classic"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now classic' "$followed" ||
 		fail "a click on Classic did not bring Classic back"
 	# Reset (M5.6b), at the end of the Preset heading, left of Copy as
 	# command, about 32 px above where the accent border was found:
 	# Mac-like again, then Reset takes the key out of ci's file, and the
 	# desktop goes back to Classic.
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now mac-like')
 	python3 ci/qmp.py click "$mac" "$classic"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now mac-like' "$followed" ||
 		fail "a second click on Mac-like did not switch the desktop to Mac-like"
 	sleep 1
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now classic')
 	python3 ci/qmp.py click $((left + inner - 50)) $((top - 32))
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now classic' "$followed" ||
 		fail "a click on Reset at $((left + inner - 50)),$((top - 32)) did not bring Classic back"
 	guest 'settings file'
 	sleep 1
@@ -1972,7 +1972,7 @@ case_settings_theme() {
 	sleep 2
 	wallpaper_seen=$(count 'edel-compositor: wallpaper .*/aurora-light[.]png$')
 	accents=$(count 'edel-compositor: accent #')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	placed=$(count 'edel-shell-ui: panel places')
 	python3 ci/qmp.py click "$cx" "$cy"
 	if ! wait_more 'edel-compositor: wallpaper .*/aurora-light[.]png$' "$wallpaper_seen"; then
@@ -1982,11 +1982,11 @@ case_settings_theme() {
 		fail "a click on the aurora tile at $cx,$cy did not make the compositor take aurora-light.png (settings-theme-miss.png); ci's file: $(value settings_file)"
 	fi
 	wait_more 'edel-compositor: accent #' "$accents" || fail "the compositor did not take an accent for aurora-light.png"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui for the aurora accent"
-	# The restarted shell-ui's own places, not the last ones before it.
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the aurora accent"
+	# The places laid out again in the new look, not the last ones before it.
 	wait_more 'edel-shell-ui: panel places' "$placed" ||
-		fail "shell-ui did not lay its panel out again after the restart"
+		fail "shell-ui did not lay its panel out again in the new look"
 	accent=$(tr -d '\r' <"$log" | sed -n 's/.*edel-compositor: accent #\([0-9a-f]\{6\}\)$/\1/p' | tail -n 1)
 	[ -n "$accent" ] || fail "the compositor logged no accent after the click on the aurora tile"
 	[ "$accent" != "$(token accent)" ] ||
@@ -2112,7 +2112,7 @@ case_settings_accent() {
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
 	sleep 2
 	said=$(count 'edel-compositor: accent #d0363f')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	placed=$(count 'edel-shell-ui: panel places')
 	python3 ci/qmp.py click "$cx" "$cy"
 	if ! wait_more 'edel-compositor: accent #d0363f' "$said"; then
@@ -2121,11 +2121,11 @@ case_settings_accent() {
 		sleep 2
 		fail "a click on the red swatch at $cx,$cy did not make the compositor take #d0363f (settings-accent-miss.png); ci's file: $(value settings_file)"
 	fi
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui for the red accent"
-	# The restarted shell-ui's own places, not the last ones before it.
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the red accent"
+	# The places laid out again in the new look, not the last ones before it.
 	wait_more 'edel-shell-ui: panel places' "$placed" ||
-		fail "shell-ui did not lay its panel out again after the restart"
+		fail "shell-ui did not lay its panel out again in the new look"
 	place=$(panel_places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
 	[ -n "$place" ] || fail "shell-ui did not say where the workspace switcher lies"
 	shot settings-accent $((place + 29)) 780 d0363f >/dev/null ||
@@ -2138,11 +2138,11 @@ case_settings_accent() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	placed=$(count 'edel-shell-ui: panel places')
 	guest 'accent mine default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui after the accent was taken out"
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the settings after the accent was taken out"
 	wait_more 'edel-shell-ui: panel places' "$placed" ||
 		fail "shell-ui did not lay its panel out again after the reset"
 	shot settings-accent-default $((place + 29)) 780 "$(token accent)" >/dev/null ||
@@ -2455,7 +2455,7 @@ case_welcome() {
 	# where its buttons and cards lie once laid out, which the case reads
 	# from the service's log to click them. Next on language and keyboard
 	# writes nothing; a click on mac-like's card writes layout.preset (the
-	# desktop restarts for it), a click on Dark writes appearance.mode (the
+	# desktop follows it), a click on Dark writes appearance.mode (the
 	# compositor takes the dark scheme), and Start using Edel OS, on Done,
 	# closes the Welcome. The service then takes both keys out of ci's file.
 	# A second run is skipped on its first page: it closes with nothing
@@ -2484,9 +2484,9 @@ case_welcome() {
 	fi
 	welcome_click language 'places next'
 	welcome_click keyboard 'places next'
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now mac-like')
 	welcome_click layout 'mac-like'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" 30 ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now mac-like' "$followed" 30 ||
 		fail "a click on the mac-like card did not change the preset: $(value welcome_log)"
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-layout.png"
@@ -2513,10 +2513,10 @@ case_welcome() {
 		fail "the Welcome did not write layout.preset = \"mac-like\" to ci's file: $settings"
 	echo "$settings" | grep -q 'mode = "dark"' ||
 		fail "the Welcome did not write appearance.mode = \"dark\" to ci's file: $settings"
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now classic')
 	scheme=$(count 'edel-compositor: colour scheme light')
 	guest 'welcome mine default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$restarts" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now classic' "$followed" ||
 		fail "taking layout.preset out did not bring Classic back"
 	wait_more 'edel-compositor: colour scheme light' "$scheme" ||
 		fail "taking appearance.mode out did not bring the light scheme back"
@@ -3344,24 +3344,25 @@ search_line() {
 
 case_language() {
 	# Translations (M5.24a): region.language = "xx", a made-up language
-	# the test feature ships a catalogue for, restarts shell-ui, which
-	# reads its words in it; the launcher's "Type to search", 14 letters
-	# from 28,428, becomes a line long enough to reach past 160, where
-	# English leaves the search line empty. Unset, English is back. Kept
+	# the test feature ships a catalogue for, is followed by shell-ui,
+	# which reads its words in it without starting again (M6.17); the
+	# launcher's "Type to search", 14 letters from 28,428, becomes a line
+	# long enough to reach past 160, where English leaves the search line
+	# empty. Unset, English is back. Kept
 	# as language-xx.png and language-en.png.
 	for language in en xx en; do
 		if [ "$language" = xx ]; then
-			restarts=$(count 'edel-compositor: restarting edel-shell-ui: the language is now xx')
+			followed=$(count 'edel-shell-ui: follows the settings: the language is now xx')
 			guest 'language xx'
-			wait_more 'edel-compositor: restarting edel-shell-ui: the language is now xx' "$restarts" ||
-				fail "setting region.language=xx did not restart shell-ui"
+			wait_more 'edel-shell-ui: follows the settings: the language is now xx' "$followed" ||
+				fail "setting region.language=xx was not followed by shell-ui"
 			wait_for 'edel-shell-ui: words in xx, 1 translated' || fail "shell-ui did not read xx's one word"
 			want=varied
 		elif [ "$(count 'edel-shell-ui: words in xx')" -gt 0 ]; then
-			restarts=$(count 'edel-compositor: restarting edel-shell-ui: the language is now English')
+			followed=$(count 'edel-shell-ui: follows the settings: the language is now English')
 			guest 'language default'
-			wait_more 'edel-compositor: restarting edel-shell-ui: the language is now English' "$restarts" ||
-				fail "unsetting region.language did not restart shell-ui"
+			wait_more 'edel-shell-ui: follows the settings: the language is now English' "$followed" ||
+				fail "unsetting region.language was not followed by shell-ui"
 			want=uniform
 		else
 			want=uniform
@@ -3379,7 +3380,7 @@ case_language() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Translations (M5.24a): language-xx.png and language-en.png are in the edel-desktop-test artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: region.language = \"xx\" restarted shell-ui, which read xx's one word, and the launcher drew it past 160, where English leaves the search line empty; unset, English came back"
+	echo "PASS: region.language = \"xx\" was followed by shell-ui, which read xx's one word, and the launcher drew it past 160, where English leaves the search line empty; unset, English came back"
 }
 
 case_launcher() {
@@ -3860,27 +3861,23 @@ case_quick() {
 		guest 'settings file'
 		sleep 1
 	done
-	# Back to light, as the person's file without the key; shell-ui starts
-	# again in each scheme, which closes the card.
+	# Back to light, as the person's file without the key; shell-ui follows
+	# each scheme, and the open card opens again in it (M6.17).
 	said=$(count 'edel-compositor: colour scheme light')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colour scheme is now light')
+	followed=$(count 'edel-shell-ui: follows the settings: the colour scheme is now light')
+	shown=$(count 'edel-shell-ui: quick settings shown')
 	guest 'scheme mine default'
 	wait_more 'edel-compositor: colour scheme light' "$said" || fail "taking appearance.mode out of ci's file did not bring the light scheme back"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colour scheme is now light' "$restarts" || fail "shell-ui did not start again for the light scheme"
+	wait_more 'edel-shell-ui: follows the settings: the colour scheme is now light' "$followed" || fail "shell-ui did not follow the light scheme"
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "quick settings, open, did not open again in the light scheme"
 	shot quick 640 790 "$panel" >/dev/null || fail "the panel at 640,790 is not the light scheme's #$panel"
-	sleep 3
-	# Escape closes the card.
-	set -- $(pill)
-	pill_x=$(($1 + $2 / 2))
-	shown=$(count 'edel-shell-ui: quick settings shown')
-	python3 ci/qmp.py click "$pill_x" 780
-	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "the status area did not open quick settings after shell-ui started again"
-	shot quick 1000 745 "$panel" >/dev/null || fail "the card is not drawn at 1000,745 in the panel's colour"
+	# Escape closes the card, drawn in the light scheme's panel colour.
+	shot quick 1000 745 "$panel" >/dev/null || fail "the card is not drawn at 1000,745 in the light scheme's panel colour"
 	hidden=$(count 'edel-shell-ui: quick settings hidden')
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: quick settings hidden' "$hidden" || fail "Escape did not close quick settings"
 	shot quick 1000 745 "$background" >/dev/null || fail "1000,745 is not the background after Escape"
-	echo "PASS: a click on the status area opened quick settings in the panel's colour, a drag on the volume slider took the sink from 0.20 to $volume as wpctl status shows, a second click on the pill closed the card, a click on Dark style wrote appearance.mode to ci's file and the compositor took the dark colours, and Escape closed the card"
+	echo "PASS: a click on the status area opened quick settings in the panel's colour, a drag on the volume slider took the sink from 0.20 to $volume as wpctl status shows, a second click on the pill closed the card, a click on Dark style wrote appearance.mode to ci's file and the compositor took the dark colours, the card stayed open in each scheme as shell-ui followed it, and Escape closed the card"
 }
 
 case_notify() {
@@ -4301,8 +4298,8 @@ case_switcher() {
 }
 
 case_presets() {
-	# Presets (M5.4a): edel settings set layout.preset=hive restarts
-	# shell-ui with Hive's bar along the top and tiles the windows, and
+	# Presets (M5.4a): edel settings set layout.preset=hive gives
+	# shell-ui Hive's bar along the top and tiles the windows, and
 	# unsetting it brings Classic back, the panel along the bottom and the
 	# windows floating, live; each is kept as preset-NAME.png with the
 	# screenshots, for Alimardon to look at.
@@ -4312,19 +4309,19 @@ case_presets() {
 	guest 'preset hive'
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "edel settings set layout.preset=hive did not bring shell-ui's bar to the top"
-	tr -d '\r' <"$log" | grep -aq 'edel-compositor: restarting edel-shell-ui: the preset is now hive' ||
-		fail "the compositor did not restart shell-ui for the Hive preset"
+	tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: follows the settings: the preset is now hive' ||
+		fail "shell-ui did not follow the Hive preset"
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Hive preset did not tile the windows"
 	shot preset-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
 	# Zen (M5.18b): tiling in the split style with no title bars, from the
 	# preset alone, and one slim bar along the top. Every window the test
 	# has open is then tiled with no title bar of its own (the state file's
 	# title_bar is false for each), and there is at least one.
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now zen')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now zen')
 	top=$(count 'edel-shell-ui: panel edel-panel along the top')
 	guest 'preset zen'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now zen' "$restarts" ||
-		fail "edel settings set layout.preset=zen did not restart shell-ui"
+	wait_more 'edel-shell-ui: follows the settings: the preset is now zen' "$followed" ||
+		fail "edel settings set layout.preset=zen was not followed by shell-ui"
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "Zen did not bring shell-ui's bar to the top"
 	# Hive tiles too, so no policy switch is logged; the state file says it.
@@ -4353,7 +4350,7 @@ case_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive restarted shell-ui with Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_own_presets() {
@@ -4376,14 +4373,14 @@ case_own_presets() {
 	panel=$(token panel)
 	top=$(count 'edel-shell-ui: panel edel-panel along the top')
 	left=$(count 'edel-compositor: window buttons on the left')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now hive')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now hive')
 	guest 'own preset hive'
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "layout.preset=hive did not bring shell-ui's bar to the top"
 	wait_more 'edel-compositor: window buttons on the left' "$left" ||
 		fail "layout.window_buttons = \"left\" did not put the buttons on the left"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now hive' "$restarts" ||
-		fail "the compositor did not restart shell-ui for the Hive preset"
+	wait_more 'edel-shell-ui: follows the settings: the preset is now hive' "$followed" ||
+		fail "shell-ui did not follow the Hive preset"
 	shot own-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
 	asked own_preset_save 'own preset save'
 	value own_preset_save | grep -q '^0 ' || fail "edel preset save mine failed: $(value own_preset_save)"
@@ -4394,10 +4391,10 @@ case_own_presets() {
 		fail "edel preset save mine did not leave [layout] with preset = \"mine\": $(value own_preset_machine)"
 	# Saving moves nothing on screen: the compositor logs no preset change
 	# after Hive's, and Hive's bar is still on top.
-	changes=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now')
+	changes=$(count 'edel-shell-ui: follows the settings: the preset is now')
 	sleep 2
-	[ "$(count 'edel-compositor: restarting edel-shell-ui: the preset is now')" = "$changes" ] ||
-		fail "saving mine restarted shell-ui: $(tr -d '\r' <"$log" | grep -a 'the preset is now' | tail -n 1)"
+	[ "$(count 'edel-shell-ui: follows the settings: the preset is now')" = "$changes" ] ||
+		fail "saving mine changed the preset shell-ui follows: $(tr -d '\r' <"$log" | grep -a 'the preset is now' | tail -n 1)"
 	shot own-saved 640 12 "$panel" >/dev/null || fail "after saving mine, Hive's bar is not at 640,12"
 	asked own_preset_list 'own preset list'
 	value own_preset_list | grep -q 'mine .*(in use)' || fail "edel preset list does not mark mine in use: $(value own_preset_list)"
@@ -4527,17 +4524,17 @@ case_app_windows() {
 
 case_taskbar() {
 	# Windows-like (M5.4c): edel settings set layout.preset=windows-like
-	# restarts shell-ui with one taskbar along the bottom, the menu button
+	# gives shell-ui one taskbar along the bottom, the menu button
 	# at its left edge, the search field beside it and the apps in its
 	# centre. Of the apps it pins (files, browser, terminal, mail, music) the VM
 	# has only foot, the terminal, so foot's cell comes first: a click
 	# starts foot, a second minimizes it, a third brings it back. Kept as
 	# preset-windows-like.png.
 	panel=$(token panel)
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now windows-like')
 	guest 'preset windows-like'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now windows-like' "$restarts" ||
-		fail "edel settings set layout.preset=windows-like did not restart shell-ui"
+	wait_more 'edel-shell-ui: follows the settings: the preset is now windows-like' "$followed" ||
+		fail "edel settings set layout.preset=windows-like was not followed by shell-ui"
 	wait_for 'edel-shell-ui: panel places menu 0\+[0-9]+, search [0-9]+\+188, apps [0-9]+\+[0-9]+' ||
 		fail "Windows-like's bar does not start with the menu button and the search field before the apps"
 	# The open windows' apps join the pinned ones as shell-ui learns of
@@ -4567,9 +4564,9 @@ case_taskbar() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot, which should have had the keyboard"
-	back=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	back=$(count 'edel-shell-ui: follows the settings: the preset is now classic')
 	guest 'preset default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$back" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now classic' "$back" ||
 		fail "unsetting layout.preset did not bring Classic back"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Windows-like (M5.4c): preset-windows-like.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
@@ -4578,20 +4575,20 @@ case_taskbar() {
 }
 
 case_dock() {
-	# Mac-like (M5.4d): edel settings set layout.preset=mac-like restarts
-	# shell-ui with a bar along the top and a dock along the bottom, a
+	# Mac-like (M5.4d): edel settings set layout.preset=mac-like gives
+	# shell-ui a bar along the top and a dock along the bottom, a
 	# card in the panel's colour as wide as its apps, centred, 60 px high
 	# and 8 px above the screen's bottom (732 to 792), and moves the
 	# window buttons to the left. Of the apps it pins the VM has foot, so
 	# foot's cell comes first; a click there starts foot. Kept as
 	# preset-mac-like.png.
 	panel=$(token panel)
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like')
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now mac-like')
 	docks=$(count 'edel-shell-ui: panel edel-dock along the bottom')
 	left=$(count 'edel-compositor: window buttons on the left')
 	guest 'preset mac-like'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now mac-like' "$restarts" ||
-		fail "edel settings set layout.preset=mac-like did not restart shell-ui"
+	wait_more 'edel-shell-ui: follows the settings: the preset is now mac-like' "$followed" ||
+		fail "edel settings set layout.preset=mac-like was not followed by shell-ui"
 	wait_more 'edel-shell-ui: panel edel-dock along the bottom' "$docks" || fail "Mac-like has no dock along the bottom"
 	wait_more 'edel-compositor: window buttons on the left' "$left" || fail "Mac-like did not move the window buttons to the left"
 	wait_for 'edel-shell-ui: panel places apps 8\+[0-9]+$' || fail "the dock does not hold the apps 8 px from its start"
@@ -4613,10 +4610,10 @@ case_dock() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
-	back=$(count 'edel-compositor: restarting edel-shell-ui: the preset is now classic')
+	back=$(count 'edel-shell-ui: follows the settings: the preset is now classic')
 	right=$(count 'edel-compositor: window buttons on the right')
 	guest 'preset default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the preset is now classic' "$back" ||
+	wait_more 'edel-shell-ui: follows the settings: the preset is now classic' "$back" ||
 		fail "unsetting layout.preset did not bring Classic back"
 	wait_more 'edel-compositor: window buttons on the right' "$right" || fail "back on Classic, the window buttons did not go back to the right"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
@@ -4701,7 +4698,7 @@ case_panels() {
 	# Then a floating large bar (M5.31c) holds the menu and the clock, 48 px
 	# high, 8 px in from each side and 8 px above the bottom.
 	panel=$(token panel)
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')
+	started=$(count 'edel-compositor: started edel-shell-ui')
 	clock=$(count 'edel-shell-ui: panels now bottom \(1 widgets\)')
 	guest 'panels clock'
 	wait_more 'edel-shell-ui: panels now bottom \(1 widgets\)' "$clock" ||
@@ -4731,8 +4728,8 @@ case_panels() {
 	wait_more 'edel-shell-ui: panels now bottom \(10 widgets\)' "$classic_panel" ||
 		fail "edel settings reset panels.list did not bring Classic's panel back"
 	wait_more 'edel-shell-ui: panel places menu 0\+' "$classic" || fail "unsetting panels.list did not bring Classic's menu button back"
-	[ "$(count 'edel-compositor: restarting edel-shell-ui: the panels changed')" = "$restarts" ] ||
-		fail "panels.list restarted shell-ui, which it no longer does"
+	[ "$(count 'edel-compositor: started edel-shell-ui')" = "$started" ] ||
+		fail "panels.list started shell-ui again, which it no longer does"
 	echo "PASS: panels.list with only the clock replaced Classic's panel at once, without a restart; a floating large bar stood at $fx,$fy, $fw x $fh, 8 px in from the sides and the bottom; unsetting panels.list brought Classic's panel back"
 }
 
@@ -5838,11 +5835,18 @@ case_lock_edit() {
 case_scheme() {
 	# Light and dark (M5.5c): edel settings set appearance.mode=dark
 	# gives the compositor the tokens' [colour], drawing the title bars
-	# and the background again, and restarts shell-ui, whose panel and
-	# portal follow; the portal tells apps already open with
+	# and the background again, and shell-ui follows, its panel and
+	# portal too (M6.17); the portal tells apps already open with
 	# SettingChanged, which xdg-desktop-portal passes on. Unset, it is
 	# light again, the release's default (M5.12a). Kept as
-	# scheme-dark.png and scheme-light.png.
+	# scheme-dark.png and scheme-light.png. shell-ui follows both without
+	# starting again (M6.17): a notification sent before is still listed
+	# in the notification centre after, and the compositor starts no
+	# shell-ui meanwhile.
+	sent=$(count 'ci-test: Hello from CI')
+	guest 'notify one'
+	wait_more 'ci-test: Hello from CI' "$sent" || fail "shell-ui did not log the notification sent before the scheme changed"
+	started=$(count 'edel-compositor: started edel-shell-ui')
 	guest 'portal watch'
 	opened=$(count 'edel-compositor: mapped window keys')
 	guest 'shortcut window'
@@ -5860,12 +5864,12 @@ case_scheme() {
 			command='scheme default'
 		fi
 		said=$(count "edel-compositor: colour scheme $scheme")
-		restarts=$(count "edel-compositor: restarting edel-shell-ui: the colour scheme is now $scheme")
+		followed=$(count "edel-shell-ui: follows the settings: the colour scheme is now $scheme")
 		guest "$command"
 		wait_more "edel-compositor: colour scheme $scheme" "$said" ||
 			fail "the compositor did not take the $scheme scheme"
-		wait_more "edel-compositor: restarting edel-shell-ui: the colour scheme is now $scheme" "$restarts" ||
-			fail "the compositor did not restart shell-ui for the $scheme scheme"
+		wait_more "edel-shell-ui: follows the settings: the colour scheme is now $scheme" "$followed" ||
+			fail "shell-ui did not follow the $scheme scheme"
 		shot "scheme-$scheme" 640 790 "$(token panel "$table")" >/dev/null ||
 			fail "the panel at 640,790 is not the $scheme scheme's #$(token panel "$table")"
 		shot "scheme-$scheme-bar" $((x + 5)) $((y - 24)) "$(token title_bar_focused "$table")" >/dev/null ||
@@ -5893,10 +5897,27 @@ case_scheme() {
 	closed=$(count 'edel-compositor: unmapped window keys')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close keys"
+	# Followed, not started again (M6.17): the same shell-ui still lists the
+	# notification sent before both changes.
+	[ "$(count 'edel-compositor: started edel-shell-ui')" = "$started" ] ||
+		fail "the compositor started shell-ui again for a change of the colour scheme"
+	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 |
+		sed -n 's/.*clock \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where its clock lies after the scheme changed"
+	shown=$(count 'edel-shell-ui: notification centre shown')
+	python3 ci/qmp.py click $(($1 + $2 / 2)) 780
+	wait_more 'edel-shell-ui: notification centre shown' "$shown" ||
+		fail "a click on the clock did not open the notification centre after the scheme changed"
+	listed=$(tr -d '\r' <"$log" | sed -n 's/.*edel-shell-ui: notification centre shown, \([0-9]*\) notification.*/\1/p' | tail -n 1)
+	[ "${listed:-0}" -ge 1 ] ||
+		fail "the notification centre lists no notification after the scheme changed: shell-ui lost them"
+	hidden=$(count 'edel-shell-ui: notification centre hidden')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-shell-ui: notification centre hidden' "$hidden" || fail "Escape did not close the notification centre"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Light and dark (M5.5c): scheme-dark.png and scheme-light.png are in the edel-desktop-test artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default"
+	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default; shell-ui followed both without starting again, and still listed $listed notifications"
 }
 
 terminal_colours() {
@@ -6017,16 +6038,16 @@ case_accent() {
 	python3 ci/qmp.py key meta_l-1
 	# Counted before the change, so a line logged at once is not missed.
 	said=$(count 'edel-compositor: accent #ff0000')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	placed=$(count 'edel-shell-ui: panel places')
 	guest 'accent red'
 	wait_more 'edel-compositor: accent #ff0000' "$said" ||
 		fail "appearance.accent=#ff0000 did not reach the compositor's log"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui for the new accent"
-	# The restarted shell-ui's own places, not the last ones before it.
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the new accent"
+	# The places laid out again in the new look, not the last ones before it.
 	wait_more 'edel-shell-ui: panel places' "$placed" ||
-		fail "shell-ui did not lay its panel out again after the restart"
+		fail "shell-ui did not lay its panel out again in the new look"
 	place=$(panel_places | sed -n 's/.*workspaces \([0-9]*\)+.*/\1/p')
 	[ -n "$place" ] || fail "shell-ui did not say where the workspace switcher lies"
 	shot accent-red $((place + 29)) 780 ff0000 >/dev/null ||
@@ -6039,16 +6060,16 @@ case_accent() {
 	*"(1.0, 0.0, 0.0)"*) ;;
 	*) fail "the portal's accent is not red after appearance.accent=#ff0000: $accent" ;;
 	esac
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	guest 'panel colour'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui for the panel colour"
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the panel colour"
 	shot panel-colour 640 790 d8e0f0 >/dev/null ||
 		fail "the panel at 640,790 is not d8e0f0 after appearance.colours.light.panel"
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	guest 'colours default'
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui after the colours were taken out"
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the settings after the colours were taken out"
 	shot colours-default 640 790 "$(token panel)" >/dev/null ||
 		fail "the panel at 640,790 is not the light panel #$(token panel) after reset"
 	shot colours-default-accent $((place + 29)) 780 "$(token accent)" >/dev/null ||
@@ -6062,21 +6083,21 @@ case_contrast() {
 	# 640,790 is that table's panel colour; taking the key out brings the
 	# release's back. Counted before each change, as case_accent does.
 	said=$(count 'edel-compositor: contrast high')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	guest 'contrast high'
 	wait_more 'edel-compositor: contrast high' "$said" ||
 		fail "appearance.contrast=high did not reach the compositor's log"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui for high contrast"
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow high contrast"
 	shot contrast 640 790 "$(raw_token panel colour.light.contrast)" >/dev/null ||
 		fail "the panel at 640,790 is not the high-contrast panel #$(raw_token panel colour.light.contrast) after appearance.contrast=high"
 	said=$(count 'edel-compositor: contrast normal')
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	guest 'contrast default'
 	wait_more 'edel-compositor: contrast normal' "$said" ||
 		fail "taking appearance.contrast out did not reach the compositor's log"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "the compositor did not restart shell-ui after high contrast was taken out"
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "shell-ui did not follow the settings after high contrast was taken out"
 	shot contrast-normal 640 790 "$(token panel)" >/dev/null ||
 		fail "the panel at 640,790 is not the light panel #$(token panel) after reset"
 	echo "PASS: appearance.contrast=high turned the panel at 640,790 to the high-contrast panel #$(raw_token panel colour.light.contrast), and taking it out brought the light panel #$(token panel) back"
@@ -6177,17 +6198,17 @@ case_wallpaper() {
 }
 
 # glass_step COMMAND [BLUR]: runs COMMAND in the VM and waits for what the
-# change of the glass makes: the compositor restarts shell-ui (the tokens
-# changed), shell-ui draws its panel, and with BLUR, the glass is made at
-# that blur on 1280x800 (M5.12b3). The restart and the panel are logged
+# change of the glass makes: shell-ui follows the settings (the tokens
+# changed) and draws its panel, and with BLUR, the glass is made at
+# that blur on 1280x800 (M5.12b3). The change and the panel are logged
 # after each count, so a run before this one does not satisfy the wait.
 glass_step() {
-	restarts=$(count 'edel-compositor: restarting edel-shell-ui: the colours changed')
+	followed=$(count 'edel-shell-ui: follows the settings: the colours changed')
 	places=$(count 'edel-shell-ui: panel places')
 	glassed=$(count "edel-shell-ui: glass blur ${2:-x} on 1280x800")
 	guest "$1"
-	wait_more 'edel-compositor: restarting edel-shell-ui: the colours changed' "$restarts" ||
-		fail "'$1' did not restart edel-shell-ui (the colours changed)"
+	wait_more 'edel-shell-ui: follows the settings: the colours changed' "$followed" ||
+		fail "'$1' was not followed by shell-ui (the colours changed)"
 	wait_more 'edel-shell-ui: panel places' "$places" ||
 		fail "shell-ui did not draw its panel after '$1'"
 	[ -z "${2:-}" ] ||
@@ -6205,8 +6226,8 @@ case_glass() {
 	# its right half #3a8fc0 (wallpaper picture), so the bar's pixel just
 	# right of their meeting, 642,790, is the right half's colour under the
 	# panel's colour at 40 percent when sharp (blur 0), and when blur is 100
-	# the left half's colour mixes into it. Each change restarts shell-ui,
-	# which logs the glass it made. Kept as glass-sharp.png and glass.png.
+	# the left half's colour mixes into it. Each change is followed by
+	# shell-ui, which logs the glass it made. Kept as glass-sharp.png and glass.png.
 	panel=$(token panel)
 	logged=$(count 'edel-compositor: wallpaper on Virtual-1 1280x800')
 	guest 'wallpaper picture'
@@ -6662,7 +6683,7 @@ case_cursor() {
 	# Settings writes it: appearance.cursor_size = 48 and icon_size = 150. The
 	# compositor logs its cursor at 48 px, and draws the arrow at that size
 	# (the release's default theme is the drawn arrow, as the pointer case
-	# logs). shell-ui starts again with a new `icons at` count: the panel's
+	# logs). shell-ui follows with a new `icons at` line (M6.17): the panel's
 	# icon is 30 px at 150 percent, capped at 26 px under its 30 px button.
 	# The pointer's tip is at 100,700, and the arrow's body reaches 20 px
 	# below the tip at 24 px, so 106,723, 23 px below it, is black only at 48
@@ -6674,7 +6695,7 @@ case_cursor() {
 	wait_for 'edel-compositor: cursor default at 48 px' ||
 		fail "the compositor did not take appearance.cursor_size = 48: $(count 'edel-compositor: cursor')"
 	wait_more 'edel-shell-ui: icons at' "$icons" ||
-		fail "shell-ui did not start again with the icons at 150 percent: $(count 'edel-shell-ui: icons at') icons lines"
+		fail "shell-ui did not follow the icons at 150 percent: $(count 'edel-shell-ui: icons at') icons lines"
 	python3 ci/qmp.py move 100 700
 	shot cursor-big 106 723 000000 >/dev/null ||
 		fail "no 48 px cursor at 100,700: 106,723 is not black, so the arrow does not reach past the 24 px one"
@@ -6690,7 +6711,7 @@ case_cursor() {
 	hi=$(value fonts_hi)
 	[ -n "$ar" ] || fail "the image has no font for Arabic"
 	[ -n "$hi" ] || fail "the image has no font for Hindi"
-	echo "PASS: cursor size 48 drew the arrow past the 24 px one at 106,723 (cursor-big.png) and logged cursor default at 48 px, the icons started again at 150 percent, cursor default gave 24 px back, and the image has fonts for Arabic ($ar) and Hindi ($hi)"
+	echo "PASS: cursor size 48 drew the arrow past the 24 px one at 106,723 (cursor-big.png) and logged cursor default at 48 px, shell-ui followed the icons at 150 percent, cursor default gave 24 px back, and the image has fonts for Arabic ($ar) and Hindi ($hi)"
 }
 
 case_styles() {

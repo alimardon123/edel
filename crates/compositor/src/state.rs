@@ -613,7 +613,6 @@ impl Edel {
         // machine reads them. A change that leaves the tokens as they were
         // does nothing.
         let colours_changed = new.colours_changed(&old);
-        let mut tokens_changed = false;
         // The title font and its size (M5.12b5), as they were.
         let old_text = (self.tokens.font.clone(), self.tokens.title_text_size);
         // The shape (M5.12b2b) is read with the tokens, and the windows'
@@ -637,19 +636,18 @@ impl Edel {
                 eprintln!("edel-compositor: {}: {note}", edel::tokens::PATH);
             }
             if tokens != self.tokens {
-                // Light or dark (M5.5c): the tokens' other colours, the title
-                // bars drawn again with them, and shell-ui started again,
-                // unless only the windows' opacity changed (M5.12b3), which
-                // shell-ui never draws.
+                // Light or dark (M5.5c): the tokens' other colours and the
+                // title bars drawn again with them; shell-ui reads the tokens
+                // itself on the `settings` event (M6.17). The accent is
+                // logged unless only the windows' opacity changed (M5.12b3).
                 let mut seen = tokens.clone();
                 seen.window_opacity = self.tokens.window_opacity;
                 seen.window_opacity_unfocused = self.tokens.window_opacity_unfocused;
-                let for_shell = seen != self.tokens;
+                let more = seen != self.tokens;
                 self.tokens = tokens;
                 self.repaint = true;
                 self.dirty = true;
-                if for_shell {
-                    tokens_changed = true;
+                if more {
                     eprintln!("edel-compositor: accent {}", self.tokens.accent.hex());
                 }
             }
@@ -689,25 +687,6 @@ impl Edel {
                 new.button_side().name()
             );
             self.dirty = true;
-        }
-        if old.preset_differs(&new) {
-            let name = new.preset.as_deref().unwrap_or(edel::presets::DEFAULT);
-            crate::shellui::restart(self, &format!("the preset is now {name}"));
-        } else if old.color_scheme != new.color_scheme {
-            let name = new.color_scheme.name();
-            crate::shellui::restart(self, &format!("the colour scheme is now {name}"));
-        } else if tokens_changed {
-            let why = if old.text != new.text {
-                "the text changed"
-            } else if old.icons != new.icons {
-                "the icons changed"
-            } else {
-                "the colours changed"
-            };
-            crate::shellui::restart(self, why);
-        } else if old.language != new.language {
-            let name = new.language.as_deref().unwrap_or("English");
-            crate::shellui::restart(self, &format!("the language is now {name}"));
         }
         if old.tiling_style != new.tiling_style {
             eprintln!("edel-compositor: tiling style {}", new.tiling_style.name());

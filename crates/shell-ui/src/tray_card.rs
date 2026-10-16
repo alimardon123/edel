@@ -495,6 +495,8 @@ impl Shell {
     /// at once. shell-ui's own writes come back here too and change
     /// nothing more.
     pub fn settings_changed(&mut self) {
+        // The look first (M6.17), so what follows reads the new tokens.
+        self.follow_look();
         // The glass follows the wallpaper the files name (M5.12b3): the
         // panels draw again when it changes, as their glass is drawn.
         let wallpaper = crate::read_wallpaper();
@@ -511,9 +513,8 @@ impl Shell {
             self.tray_split_changed();
             self.draw_all();
         }
-        // panels.list (M5.31b): the panels follow the files at once; a
-        // change of preset restarts shell-ui instead, as the compositor
-        // says.
+        // panels.list and the preset's panels (M5.31b, M6.17): the panels
+        // follow the files at once.
         let (machine, person) = crate::settings_texts();
         // What each app may use (M6.14a).
         crate::app_permissions::follow(
@@ -522,10 +523,11 @@ impl Shell {
             machine.as_deref(),
             person.as_deref(),
         );
-        // The header bars' button layout (M6.16): apps already open follow.
+        // The colour scheme, the accent (M5.5c, M6.17) and the header bars'
+        // button layout (M6.16): apps already open follow.
         if let Some(connection) = &self._portal {
             let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
-            crate::portal::buttons_changed(connection, &buttons);
+            crate::portal::follow(connection, &self.tokens, &buttons);
         }
         let wanted = edel::panel_edit::applying(machine.as_deref(), person.as_deref());
         if wanted != self.panel_specs {

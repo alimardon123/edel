@@ -3,8 +3,8 @@
 //! in their state folder) with the scheme the settings give, and when that
 //! changed, tells a running foot to repaint: SIGUSR1 for dark, SIGUSR2 for
 //! light. foot's config includes the file (features/terminal), so a new
-//! window starts in the same scheme. The compositor starts shell-ui again
-//! when the scheme changes, so this runs again then.
+//! window starts in the same scheme. shell-ui follows a change of the
+//! scheme (`follow.rs`, M6.17), which runs this again.
 
 use std::path::Path;
 use std::process::{Command, Stdio};

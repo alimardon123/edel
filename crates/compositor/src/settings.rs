@@ -67,9 +67,6 @@ pub struct Settings {
     /// `region.keyboard` (M5.21), as `edel::keyboard` writes it: absent
     /// means xkb's default, the US layout.
     pub keyboard: Option<String>,
-    /// `region.language` (M5.24a): shell-ui reads its words in it, and
-    /// the compositor only restarts it when it changes.
-    pub language: Option<String>,
     /// `region.input_method` (M6.8): `fcitx5` starts it with the session;
     /// absent or `none` runs none (`session.rs`).
     pub input_method: Option<String>,
@@ -125,8 +122,8 @@ pub struct Settings {
     /// `appearance.cursor_theme` (M5.12b5 part A), the person's over the
     /// machine's; absent is the release's `default`.
     pub cursor_theme: Option<String>,
-    /// The icon scale (M5.12b5 part A); the tokens read it, and a change
-    /// starts shell-ui again with them.
+    /// The icon scale (M5.12b5 part A); the tokens read it, and shell-ui
+    /// follows a change itself (M6.17).
     pub icons: edel::tokens::IconSize,
     /// `appearance.contrast` (M6.9): high contrast on, the person's over the
     /// machine's. The tokens read it too, so a change reads them again.
@@ -301,9 +298,6 @@ impl Settings {
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);
             }
-            if file.region.language.is_some() {
-                settings.language.clone_from(&file.region.language);
-            }
             if file.region.input_method.is_some() {
                 settings.input_method.clone_from(&file.region.input_method);
             }
@@ -409,13 +403,6 @@ impl Settings {
             .iter()
             .find(|(id, _)| id == app_id)
             .map(|(_, workspace)| *workspace)
-    }
-
-    /// Whether `other` lays the desktop out by another preset (M5.4a): a
-    /// name this release lacks is Classic, so it differs from Classic only
-    /// in name and restarts nothing.
-    pub fn preset_differs(&self, other: &Settings) -> bool {
-        presets::named(self.preset.as_deref()).0 != presets::named(other.preset.as_deref()).0
     }
 
     /// Whether a dock hides while a window covers it (M5.4f): from
@@ -607,18 +594,6 @@ mod tests {
                 maximize: true,
             }
         );
-    }
-
-    #[test]
-    fn only_another_preset_counts_as_a_change_of_preset() {
-        let named = |name: Option<&str>| Settings {
-            preset: name.map(str::to_string),
-            ..Settings::default()
-        };
-        assert!(named(None).preset_differs(&named(Some("hive"))));
-        assert!(!named(None).preset_differs(&named(Some("classic"))));
-        assert!(!named(Some("classic")).preset_differs(&named(Some("tablet"))));
-        assert!(named(Some("hive")).preset_differs(&named(Some("tablet"))));
     }
 
     #[test]

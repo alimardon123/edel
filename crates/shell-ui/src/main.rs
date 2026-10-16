@@ -30,6 +30,7 @@ mod corner;
 mod edit_kit;
 mod editor;
 mod editor_card;
+mod follow;
 mod glass;
 mod greetd;
 mod greeter;
@@ -292,6 +293,9 @@ struct Shell {
     flipped: switcher::View,
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
+    /// The preset and the colour scheme the settings files choose, as the
+    /// look last followed them (M6.17, `follow.rs`).
+    chosen: follow::Chosen,
     tokens: Tokens,
     /// The wallpaper behind the panels in the shown scheme, as the settings
     /// files name it (M5.12b3), read at start and when they change, and the
@@ -577,6 +581,7 @@ fn run() -> Result<()> {
         scrolled: widgets::Scrolled::default(),
         qh: qh.clone(),
         handle: event_loop.handle(),
+        chosen: chosen(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
         _portal: portal::serve(&tokens, &buttons, edits),
@@ -786,45 +791,9 @@ fn make_panel(
     // from its edge and both sides, and keeps that much free as well.
     let dock = spec.style == Style::Dock;
     let namespace = if dock { DOCK } else { NAMESPACE };
-    let height = paint::height(spec.style, spec.size, tokens);
-    let strip = paint::strip(spec.style, spec.floating, tokens);
-    let gap = tokens.gap as i32;
     let surface = compositor.create_surface(qh);
     let surface = layers.create_layer_surface(qh, surface, Layer::Top, Some(namespace), output);
-    let edge = match spec.edge {
-        Edge::Top => Anchor::TOP,
-        Edge::Bottom => Anchor::BOTTOM,
-    };
-    if dock {
-        surface.set_anchor(edge);
-        surface.set_size(height, height);
-        let (top, bottom) = match spec.edge {
-            Edge::Top => (DOCK_MARGIN, 0),
-            Edge::Bottom => (0, DOCK_MARGIN),
-        };
-        surface.set_margin(top, 0, bottom, 0);
-    } else if spec.floating {
-        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-        surface.set_size(0, height);
-        let (top, bottom) = match spec.edge {
-            Edge::Top => (gap, 0),
-            Edge::Bottom => (0, gap),
-        };
-        surface.set_margin(top, gap, bottom, gap);
-    } else {
-        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-        surface.set_size(0, height + strip);
-    }
-    // A dock that hides while a window covers it (M5.4f) keeps
-    // nothing free; the compositor hides it. The compositor adds a
-    // surface's margin to its zone, so a floating bar's gap and a dock's
-    // margin stay free too.
-    let zone = if dock && spec.hide == Hide::Covered {
-        0
-    } else {
-        height as i32
-    };
-    surface.set_exclusive_zone(zone);
+    place_panel(&surface, spec, tokens, None);
     surface.set_keyboard_interactivity(KeyboardInteractivity::None);
     surface.commit();
     eprintln!(
@@ -852,6 +821,51 @@ fn make_panel(
     }
 }
 
+/// Asks for a panel's place along its edge, its size and the room it keeps
+/// free of windows, from `spec` and the tokens, as it is made and when the
+/// look changes its height (M6.17); a dock asks for `width`, else a square
+/// until it is drawn. The caller commits.
+fn place_panel(surface: &LayerSurface, spec: &presets::Panel, tokens: &Tokens, width: Option<u32>) {
+    let dock = spec.style == Style::Dock;
+    let height = paint::height(spec.style, spec.size, tokens);
+    let strip = paint::strip(spec.style, spec.floating, tokens);
+    let gap = tokens.gap as i32;
+    let edge = match spec.edge {
+        Edge::Top => Anchor::TOP,
+        Edge::Bottom => Anchor::BOTTOM,
+    };
+    if dock {
+        surface.set_anchor(edge);
+        surface.set_size(width.unwrap_or(height), height);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (DOCK_MARGIN, 0),
+            Edge::Bottom => (0, DOCK_MARGIN),
+        };
+        surface.set_margin(top, 0, bottom, 0);
+    } else if spec.floating {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, height);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (gap, 0),
+            Edge::Bottom => (0, gap),
+        };
+        surface.set_margin(top, gap, bottom, gap);
+    } else {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, height + strip);
+    }
+    // A dock that hides while a window covers it (M5.4f) keeps
+    // nothing free; the compositor hides it. The compositor adds a
+    // surface's margin to its zone, so a floating bar's gap and a dock's
+    // margin stay free too.
+    let zone = if dock && spec.hide == Hide::Covered {
+        0
+    } else {
+        height as i32
+    };
+    surface.set_exclusive_zone(zone);
+}
+
 /// The wallpaper behind the panels in the scheme the settings files pick,
 /// the person's over the machine's, as the lock screen reads it (M5.12b3).
 fn read_wallpaper() -> edel::wallpapers::Wallpaper {
@@ -872,8 +886,8 @@ fn load_tokens(scheme: Scheme) -> Tokens {
         "edel-shell-ui: text {} at {} px",
         tokens.font, tokens.panel_text_size
     );
-    // The icons the panel draws with (M5.12b5 part A): the compositor starts
-    // shell-ui again when the icon size changes, so each start says it.
+    // The icons the panel draws with (M5.12b5 part A), said again when they
+    // change (`follow.rs`, M6.17).
     eprintln!("edel-shell-ui: icons at {} px", tokens.panel_icon);
     tokens
 }
@@ -882,6 +896,31 @@ fn load_tokens(scheme: Scheme) -> Tokens {
 /// they pick (M5.5c), the person's over the machine's; a broken file or an
 /// unknown name is reported, never fatal (ADR-008).
 fn from_system_files() -> (presets::Preset, Scheme) {
+    let (name, panels, scheme) = read_choices();
+    let (mut preset, note) = presets::named(name.as_deref());
+    if let Some(note) = note {
+        eprintln!("edel-shell-ui: {note}");
+    }
+    // panels.list, when set, in place of the preset's (M5.4e).
+    if let Some(panels) = panels {
+        preset.panels = panels;
+    }
+    (preset, scheme)
+}
+
+/// The preset's name and the colour scheme the settings files choose now,
+/// which the look follows (M6.17).
+fn chosen() -> follow::Chosen {
+    let (name, _, scheme) = read_choices();
+    follow::Chosen {
+        preset: name.unwrap_or_else(|| presets::DEFAULT.to_string()),
+        scheme,
+    }
+}
+
+/// `layout.preset`, `panels.list` and the colour scheme, the person's over
+/// the machine's.
+fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
     let (mut name, mut panels, mut scheme) = (None, None, None);
     let files = [Some(places::machine_settings()), places::person_settings()];
     for path in files.into_iter().flatten().map(|p| places::found(&p)) {
@@ -903,19 +942,11 @@ fn from_system_files() -> (presets::Preset, Scheme) {
             ),
         }
     }
-    let (mut preset, note) = presets::named(name.as_deref());
-    if let Some(note) = note {
-        eprintln!("edel-shell-ui: {note}");
-    }
-    // panels.list, when set, in place of the preset's (M5.4e).
-    if let Some(panels) = panels {
-        preset.panels = panels;
-    }
     let scheme = scheme
         .as_deref()
         .and_then(Scheme::parse)
         .unwrap_or_default();
-    (preset, scheme)
+    (name, panels, scheme)
 }
 
 /// Whether the fillets are drawn: not on the Lite tier, which keeps
@@ -1361,6 +1392,30 @@ impl Shell {
                 )
             })
             .collect();
+    }
+
+    /// The look changed from `old` (M6.17): each panel whose height, fillet
+    /// strip or gap changed with it asks for its new place and size, its
+    /// surface kept, and draws once the compositor agrees.
+    fn place_panels(&mut self, old: &Tokens) {
+        for panel in &mut self.panels {
+            let Some(spec) = self.panel_specs.iter().find(|s| s.edge == panel.edge) else {
+                continue;
+            };
+            let shape = |t: &Tokens| {
+                (
+                    paint::height(spec.style, spec.size, t),
+                    paint::strip(spec.style, spec.floating, t),
+                    t.gap,
+                )
+            };
+            if shape(old) == shape(&self.tokens) {
+                continue;
+            }
+            let width = (panel.asked > 0).then_some(panel.asked);
+            place_panel(&panel.surface, spec, &self.tokens, width);
+            panel.surface.commit();
+        }
     }
 
     /// Logs the panels that are up, as `panels now EDGE (N widgets), ...`.

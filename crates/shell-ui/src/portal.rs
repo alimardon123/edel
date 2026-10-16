@@ -4,7 +4,7 @@
 //! which D-Bus starts when an app first asks, passes on what it says: the
 //! colour scheme and the accent, from the design tokens, so GTK,
 //! libadwaita and Flatpak apps follow the desktop's look, and says them
-//! again whenever shell-ui starts (M5.5c). It also serves
+//! again whenever shell-ui starts (M5.5c) and when they change (M6.17). It also serves
 //! `org.freedesktop.impl.portal.Access` (M6.3): the screenshot portal asks
 //! through it before an app may take a picture, and shell-ui draws the
 //! dialog itself (`access_card.rs`). It is no process of its own: zbus
@@ -254,55 +254,66 @@ impl Backend {
     ) -> zbus::Result<()>;
 }
 
-/// Says the header bars' button layout again when it changed (M6.16), so
-/// apps already open put their buttons where the bars now have them: the
-/// stored value is replaced and `setting_changed` goes out for
-/// `org.gnome.desktop.wm.preferences`. An unchanged value says nothing.
-pub fn buttons_changed(connection: &zbus::blocking::Connection, layout: &str) {
+/// Says again each setting apps read that changed (M5.5c, M6.16, M6.17):
+/// the colour scheme, the accent and the fonts from `tokens`, and the
+/// header bars' button layout; each changed value is stored and
+/// `setting_changed` goes out for it, so apps already open follow. Values
+/// that did not change say nothing.
+pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: &str) {
     let backend = match connection.object_server().interface::<_, Backend>(PATH) {
         Ok(backend) => backend,
         Err(e) => {
-            eprintln!(
-                "edel-shell-ui: {}",
-                crate::messages::button_layout_not_said(e)
-            );
+            eprintln!("edel-shell-ui: {}", crate::messages::portal_not_said(e));
             return;
         }
     };
-    let stored = backend
-        .get()
-        .settings
-        .get(WM)
-        .and_then(|keys| keys.get(BUTTON_LAYOUT))
-        .and_then(|value| String::try_from(value.try_clone().ok()?).ok());
-    if stored.as_deref() == Some(layout) {
-        return;
-    }
+    let mut changed = Vec::new();
     {
         let mut backend = backend.get_mut();
-        let keys = backend.settings.entry(WM.to_string()).or_default();
-        put(keys, BUTTON_LAYOUT, Value::from(layout));
+        for (namespace, keys) in settings(tokens, layout) {
+            let stored = backend.settings.entry(namespace.clone()).or_default();
+            for (key, value) in keys {
+                if stored.get(&key) == Some(&value) {
+                    continue;
+                }
+                if let Ok(copy) = value.try_clone() {
+                    changed.push((namespace.clone(), key.clone(), copy));
+                }
+                stored.insert(key, value);
+            }
+        }
     }
-    eprintln!("edel-shell-ui: button layout {layout} told to apps");
-    let said = zbus::block_on(Backend::setting_changed(
-        backend.signal_emitter(),
-        WM,
-        BUTTON_LAYOUT,
-        Value::from(layout),
-    ));
-    if let Err(e) = said {
-        eprintln!(
-            "edel-shell-ui: {}",
-            crate::messages::button_layout_not_said(e)
-        );
+    for (namespace, key, value) in changed {
+        if key == BUTTON_LAYOUT {
+            if let Ok(layout) = <&str>::try_from(&value) {
+                eprintln!("edel-shell-ui: button layout {layout} told to apps");
+            }
+        } else {
+            eprintln!("edel-shell-ui: {key} told to apps");
+        }
+        let said = zbus::block_on(Backend::setting_changed(
+            backend.signal_emitter(),
+            &namespace,
+            &key,
+            value.into(),
+        ));
+        if let Err(e) = said {
+            let message = if key == BUTTON_LAYOUT {
+                crate::messages::button_layout_not_said(e)
+            } else {
+                crate::messages::portal_not_said(e)
+            };
+            eprintln!("edel-shell-ui: {message}");
+        }
     }
 }
 
 /// Serves the portal on the session's bus for as long as the connection
 /// it returns lives; none, with a line saying why, without a session bus.
-/// It then says each setting changed, as shell-ui starts again when the
-/// colour scheme does (M5.5c), so apps already open follow at once; an app
-/// told a value it has does nothing.
+/// It then says each setting changed, as a shell-ui started again may say
+/// other values than the one before it (M5.5c), so apps already open follow
+/// at once; an app told a value it has does nothing. Later changes go out
+/// through [`follow`] (M6.17).
 ///
 /// The panel editor is served on the same connection (M5.31d, `shell_bus.rs`):
 /// its object at `SHELL_PATH` is built in, and its name is requested once

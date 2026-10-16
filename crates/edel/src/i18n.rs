@@ -14,10 +14,16 @@
 //! `po/edel.pot`, owns everything marked in this crate's sources, the
 //! pages' titles and descriptions and the presets' names among them, and
 //! [`init`] gives the Settings app that catalogue under its own.
+//!
+//! A part that runs for a whole session follows a change of the language
+//! with [`follow`] (M6.17: shell-ui, which once started again for it). Each
+//! language's catalogue is read once and kept for the process's life, so a
+//! word [`tr`] gave stays valid when the language changes, and going back
+//! to a language reads nothing again.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Mutex, PoisonError, RwLock};
 
 use crate::places;
 
@@ -161,7 +167,12 @@ pub fn language() -> Option<String> {
     crate::settings::chosen("region.language", machine.as_deref(), person.as_deref())
 }
 
-static WORDS: OnceLock<Catalogue> = OnceLock::new();
+/// The words in use: their language (None for English, which needs no
+/// catalogue) and its catalogue.
+static WORDS: RwLock<(Option<String>, Option<&'static Catalogue>)> = RwLock::new((None, None));
+
+/// Each language's catalogue as read the first time it was used.
+static READ: Mutex<Vec<(String, &'static Catalogue)>> = Mutex::new(Vec::new());
 
 thread_local! {
     /// A catalogue one thread uses instead of the machine's, for tests.
@@ -190,17 +201,58 @@ fn read_catalogue(language: &str, part: &str) -> Catalogue {
         .unwrap_or_default()
 }
 
-/// Reads `part`'s catalogue in the person's language, once, at start;
-/// returns the language and how many words it translates.
+/// `part`'s catalogue in `language` with the parts' it shares, read the
+/// first time and kept from then on.
+fn catalogue_of(language: &str, part: &str) -> &'static Catalogue {
+    let mut read = READ.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((_, kept)) = read.iter().find(|(name, _)| name == language) {
+        return kept;
+    }
+    let mut catalogue = read_catalogue(language, part);
+    for shared in shared_with(part) {
+        catalogue = catalogue.under(read_catalogue(language, shared));
+    }
+    let kept: &'static Catalogue = Box::leak(Box::new(catalogue));
+    read.push((language.to_string(), kept));
+    kept
+}
+
+/// Makes `language`'s words, `catalogue`, the ones [`tr`] gives.
+fn use_words(language: Option<String>, catalogue: Option<&'static Catalogue>) {
+    *WORDS.write().unwrap_or_else(PoisonError::into_inner) = (language, catalogue);
+}
+
+/// Reads `part`'s catalogue in the person's language at start; returns the
+/// language and how many words it translates.
 pub fn init(part: &str) -> Option<(String, usize)> {
     let language = language()?;
-    let mut catalogue = read_catalogue(&language, part);
-    for shared in shared_with(part) {
-        catalogue = catalogue.under(read_catalogue(&language, shared));
+    let catalogue = catalogue_of(&language, part);
+    use_words(Some(language.clone()), Some(catalogue));
+    Some((language, catalogue.len()))
+}
+
+/// Follows a change of `region.language` while `part` runs (M6.17): None
+/// when the files name the language in use, else the language now (None
+/// for English) and how many words it translates, its words then the ones
+/// [`tr`] gives.
+pub fn follow(part: &str) -> Option<(Option<String>, usize)> {
+    let language = language();
+    let now = WORDS
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .0
+        .clone();
+    if now == language {
+        return None;
     }
-    let count = catalogue.len();
-    let _ = WORDS.set(catalogue);
-    Some((language, count))
+    let catalogue = language.as_deref().map(|name| catalogue_of(name, part));
+    use_words(language.clone(), catalogue);
+    Some((language, catalogue.map_or(0, Catalogue::len)))
+}
+
+/// The catalogue in use, if any.
+fn in_use() -> Option<&'static Catalogue> {
+    WORDS.read().unwrap_or_else(PoisonError::into_inner).1
 }
 
 /// Runs `f` with `catalogue` as this thread's words, whatever the machine
@@ -233,7 +285,7 @@ pub fn translate(english: &str) -> Option<String> {
     });
     match mine {
         Some(found) => found,
-        None => WORDS.get()?.get(english).map(str::to_string),
+        None => in_use()?.get(english).map(str::to_string),
     }
 }
 
@@ -249,8 +301,7 @@ pub fn tr(english: &'static str) -> &'static str {
         // Only a test's words get here, and they are few.
         return found.unwrap_or(english);
     }
-    WORDS
-        .get()
+    in_use()
         .and_then(|c| c.words.get(english))
         .map_or(english, String::as_str)
 }
@@ -412,6 +463,26 @@ pub fn template(part: &str, words: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn words_change_with_the_language_and_earlier_words_stay() {
+        // A word no other test reads, so the words in use, which every
+        // thread shares, change nothing for them while this runs.
+        const WORD: &str = "edel-i18n-language-change-test";
+        let first: &'static Catalogue = Box::leak(Box::new(parse_po(&format!(
+            "msgid \"{WORD}\"\nmsgstr \"eins\"\n"
+        ))));
+        let second: &'static Catalogue = Box::leak(Box::new(parse_po(&format!(
+            "msgid \"{WORD}\"\nmsgstr \"zwei\"\n"
+        ))));
+        use_words(Some("xx".to_string()), Some(first));
+        let before = tr(WORD);
+        use_words(Some("yy".to_string()), Some(second));
+        assert_eq!(tr(WORD), "zwei");
+        assert_eq!(before, "eins", "a word given before the change stays");
+        use_words(None, None);
+        assert_eq!(tr(WORD), WORD, "English again");
+    }
 
     #[test]
     fn a_po_file_gives_its_translated_words_and_skips_the_rest() {
