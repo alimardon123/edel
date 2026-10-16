@@ -1082,7 +1082,11 @@ impl Build<'_> {
                 clashes.join("; ")
             );
         }
-        let collisions = addons::collisions(&trees);
+        let tree_of = |name: &str| work.join("addons").join(name).join("tree");
+        let same = |path: &str, a: &str, b: &str| {
+            same_entry(&tree_of(a).join(path), &tree_of(b).join(path))
+        };
+        let collisions = addons::collisions(&trees, &same);
         if !collisions.is_empty() {
             bail!("add-ons ship the same files: {}", collisions.join("; "));
         }
@@ -1310,6 +1314,26 @@ fn keep_addon(
         );
     }
     Ok(())
+}
+
+/// Whether two add-ons' trees hold the same entry at `a` and `b`: links
+/// to one target, or files with the same mode and bytes (M7.2a).
+fn same_entry(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let (Ok(ma), Ok(mb)) = (fs::symlink_metadata(a), fs::symlink_metadata(b)) else {
+        return false;
+    };
+    if ma.file_type().is_symlink() || mb.file_type().is_symlink() {
+        return fs::read_link(a)
+            .ok()
+            .is_some_and(|t| fs::read_link(b).ok() == Some(t));
+    }
+    ma.mode() == mb.mode()
+        && ma.len() == mb.len()
+        && fs::read(a)
+            .ok()
+            .is_some_and(|bytes| fs::read(b).ok() == Some(bytes))
 }
 
 /// Copies one path of an add-on's root into its tree (M7.2a): a folder or

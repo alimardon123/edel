@@ -31,12 +31,12 @@ const SKIPPED: [&str; 5] = ["proc", "sys", "dev", "run", "tmp"];
 
 /// Folders whose every file is a cache a package trigger or apk rewrites
 /// for the whole system.
-const CACHE_DIRS: [&str; 3] = ["lib/apk", "usr/lib/apk", "var/cache"];
+const CACHE_DIRS: [&str; 4] = ["etc/apk", "lib/apk", "usr/lib/apk", "var/cache"];
 
 /// Single files that are caches (and so left out of an add-on).
 const CACHE_FILES: [&str; 5] = [
-    "etc/apk/world",
     "etc/shells",
+    "var/log/apk.log",
     "etc/udev/hwdb.bin",
     "usr/lib/udev/hwdb.bin",
     "usr/share/info/dir",
@@ -95,6 +95,17 @@ pub fn relocate(path: &str, name: &str) -> Option<String> {
     }
     if let Some(rest) = path.strip_prefix("usr/") {
         return (!rest.is_empty()).then(|| path.to_string());
+    }
+    // Programs and libraries Alpine still puts at the root go under /usr,
+    // which is on every search path; the kernel's modules and firmware
+    // never come from an add-on.
+    for top in ["bin/", "sbin/", "lib/"] {
+        if let Some(rest) = path.strip_prefix(top) {
+            let kernel = ["modules", "firmware"]
+                .iter()
+                .any(|dir| rest == *dir || rest.starts_with(&format!("{dir}/")));
+            return (!rest.is_empty() && !kernel).then(|| format!("usr/{path}"));
+        }
     }
     None
 }
@@ -214,6 +225,15 @@ pub struct Diff {
     pub removed: Vec<String>,
 }
 
+/// Whether a file is unchanged: a link by its target alone, as copying a
+/// root gives every link a new time; anything else by its whole stamp.
+fn same(was: &Stamp, now: &Stamp) -> bool {
+    match (&was.link, &now.link) {
+        (Some(a), Some(b)) => a == b,
+        _ => was == now,
+    }
+}
+
 /// The difference between two scans.
 pub fn diff(before: &BTreeMap<String, Stamp>, after: &BTreeMap<String, Stamp>) -> Diff {
     let mut out = Diff::default();
@@ -221,7 +241,7 @@ pub fn diff(before: &BTreeMap<String, Stamp>, after: &BTreeMap<String, Stamp>) -
         match before.get(path) {
             None => out.new.push(path.clone()),
             Some(was) => {
-                if !now.dir && was != now {
+                if !now.dir && !same(was, now) {
                     out.changed.push(path.clone());
                 }
             }
@@ -360,10 +380,13 @@ pub fn new_accounts(before: &str, after: &str) -> String {
     out
 }
 
-/// The users, groups, user ids and group ids that two add-ons both add.
-/// Each input is an add-on's name and its new `passwd` or `group` lines; a
-/// `passwd` line has seven fields, a `group` line four.
+/// The users, groups, user ids and group ids that two add-ons both add in
+/// different lines. Each input is an add-on's name and its new `passwd` or
+/// `group` lines; a `passwd` line has seven fields, a `group` line four.
+/// The same line from both is no clash: a package two add-ons share adds
+/// it the same way in each, and the boot adds it once.
 pub fn account_clashes(sets: &[(String, String)]) -> Vec<String> {
+    let mut first: BTreeMap<(&str, &str), (&str, &str)> = BTreeMap::new();
     let mut owners: BTreeMap<(&str, &str), Vec<&str>> = BTreeMap::new();
     for (name, text) in sets {
         for line in text.lines() {
@@ -374,9 +397,12 @@ pub fn account_clashes(sets: &[(String, String)]) -> Vec<String> {
                 _ => continue,
             };
             for (kind, value) in [(name_kind, fields[0]), (id_kind, fields[2])] {
-                let list = owners.entry((kind, value)).or_default();
-                if !list.contains(&name.as_str()) {
-                    list.push(name.as_str());
+                let (owner, same) = *first.entry((kind, value)).or_insert((name.as_str(), line));
+                if owner != name.as_str() && same != line {
+                    let list = owners.entry((kind, value)).or_insert_with(|| vec![owner]);
+                    if !list.contains(&name.as_str()) {
+                        list.push(name.as_str());
+                    }
                 }
             }
         }
@@ -390,9 +416,15 @@ pub fn account_clashes(sets: &[(String, String)]) -> Vec<String> {
         .collect()
 }
 
-/// The paths two or more add-on trees both ship, as `"PATH is shipped by A
-/// and B"`, sorted by path. Each input is an add-on's name and its paths.
-pub fn collisions(trees: &[(String, Vec<String>)]) -> Vec<String> {
+/// The paths two or more add-on trees both ship unalike, as `"PATH is
+/// shipped by A and B"`, sorted by path. Each input is an add-on's name and
+/// its paths; `same(path, a, b)` says whether add-ons `a` and `b` ship the
+/// same file there, as two add-ons needing one package do, which is no
+/// clash: the overlay shows one of the two, and either serves.
+pub fn collisions(
+    trees: &[(String, Vec<String>)],
+    same: &dyn Fn(&str, &str, &str) -> bool,
+) -> Vec<String> {
     let mut owners: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for (name, paths) in trees {
         for path in paths {
@@ -404,8 +436,10 @@ pub fn collisions(trees: &[(String, Vec<String>)]) -> Vec<String> {
     }
     owners
         .into_iter()
-        .filter(|(_, list)| list.len() >= 2)
-        .map(|(path, list)| format!("{path} is shipped by {} and {}", list[0], list[1]))
+        .filter_map(|(path, list)| {
+            let other = list[1..].iter().find(|b| !same(path, list[0], b))?;
+            Some(format!("{path} is shipped by {} and {other}", list[0]))
+        })
         .collect()
 }
 
@@ -686,10 +720,25 @@ pub fn account_lines(file: &str) -> String {
         .map(|entries| entries.flatten().map(|e| e.path()).collect())
         .unwrap_or_default();
     names.sort();
-    names
+    let texts: Vec<String> = names
         .iter()
         .filter_map(|d| fs::read_to_string(d.join(file)).ok())
-        .collect()
+        .collect();
+    first_of_each(&texts)
+}
+
+/// The lines of `texts`, each name (the first field) once, in order: two
+/// add-ons sharing a package add its user in the same line.
+fn first_of_each(texts: &[String]) -> String {
+    let mut seen = BTreeSet::new();
+    let mut out = String::new();
+    for line in texts.iter().flat_map(|t| t.lines()) {
+        if !line.is_empty() && seen.insert(line.split(':').next().unwrap_or_default()) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 /// The folders of `/var` the mounted add-ons bring, one per add-on.
@@ -979,6 +1028,28 @@ mod tests {
     }
 
     #[test]
+    fn a_link_copied_with_a_new_time_is_unchanged() {
+        let later = Stamp {
+            mtime: 9,
+            ..link("busybox")
+        };
+        let before = tree(&[("bin/ls", link("busybox")), ("etc/x", file(1))]);
+        let after = tree(&[
+            ("bin/ls", later),
+            (
+                "etc/x",
+                Stamp {
+                    mtime: 9,
+                    ..file(1)
+                },
+            ),
+        ]);
+        assert_eq!(diff(&before, &after).changed, ["etc/x"]);
+        let moved = tree(&[("bin/ls", link("toybox")), ("etc/x", file(1))]);
+        assert_eq!(diff(&before, &moved).changed, ["bin/ls"]);
+    }
+
+    #[test]
     fn relocate_puts_each_part_where_its_rule_says() {
         assert_eq!(
             relocate("etc/init.d/svc", "ci-hello").as_deref(),
@@ -1001,7 +1072,14 @@ mod tests {
             Some("usr/bin/tool")
         );
         assert_eq!(relocate("usr", "ci-hello"), None);
-        for other in ["bin/x", "lib/x", "sbin/x", "opt/x"] {
+        for (top, to) in [
+            ("bin/x", "usr/bin/x"),
+            ("sbin/x", "usr/sbin/x"),
+            ("lib/libx.so", "usr/lib/libx.so"),
+        ] {
+            assert_eq!(relocate(top, "ci-hello").as_deref(), Some(to), "{top}");
+        }
+        for other in ["lib/modules/6.1/x.ko", "lib/firmware/x.bin", "opt/x", "bin"] {
             assert_eq!(relocate(other, "ci-hello"), None, "{other}");
         }
     }
@@ -1097,7 +1175,7 @@ mod tests {
     #[test]
     fn plan_tree_refuses_a_tree_and_names_every_refusal() {
         let before = tree(&[("usr/lib/libc.so", file(5)), ("usr/share/doc/x", file(1))]);
-        let after = tree(&[("bin/x", file(1)), ("usr/lib/libc.so", file(6))]);
+        let after = tree(&[("opt/x", file(1)), ("usr/lib/libc.so", file(6))]);
         let error = plan_tree(&diff(&before, &after), &after, "ci-hello")
             .unwrap_err()
             .to_string();
@@ -1106,7 +1184,7 @@ mod tests {
             "{error}"
         );
         assert!(
-            error.contains("bin/x is outside /usr, /etc and /var"),
+            error.contains("opt/x is outside /usr, /etc and /var"),
             "{error}"
         );
         assert!(
@@ -1158,6 +1236,15 @@ mod tests {
             ]
         );
         assert!(account_clashes(&sets[..1]).is_empty());
+        let shared = [
+            ("a".to_string(), "kvm:x:34:\n".to_string()),
+            ("b".to_string(), "kvm:x:34:\n".to_string()),
+        ];
+        assert!(account_clashes(&shared).is_empty());
+        assert_eq!(
+            first_of_each(&[shared[0].1.clone(), shared[1].1.clone()]),
+            "kvm:x:34:\n"
+        );
     }
 
     #[test]
@@ -1171,11 +1258,16 @@ mod tests {
             ("c".to_string(), vec!["usr/x".to_string()]),
         ];
         assert_eq!(
-            collisions(&trees),
+            collisions(&trees, &|_, _, _| false),
             vec![
                 "usr/x is shipped by a and c".to_string(),
                 "usr/y is shipped by a and b".to_string(),
             ]
+        );
+        let alike = |path: &str, _: &str, _: &str| path == "usr/y";
+        assert_eq!(
+            collisions(&trees, &alike),
+            vec!["usr/x is shipped by a and c".to_string()]
         );
     }
 
