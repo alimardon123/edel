@@ -21,6 +21,8 @@
 //! (`mpris.rs`, M5.9d). `--screenshot` and `--screencast` draw nothing
 //! either: they ask xdg-desktop-portal for a screenshot or to share the
 //! screen, as an app does, and print what it answers (`portal.rs`, M6.3).
+//! `--location` draws nothing either: it asks the Location portal for the
+//! device's position and prints the first update (`portal.rs`, M6.14c).
 //! `--recolour RRGGBB@FILE` draws the window in that
 //! colour once FILE exists, so a test can see whether a picture of it
 //! follows it live (M5.2j-b4).
@@ -35,6 +37,7 @@
 //!     edel-testclient --mpris NAME
 //!     edel-testclient --screenshot
 //!     edel-testclient --screencast
+//!     edel-testclient --location
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -136,7 +139,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context, --sni or --mpris alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
             ),
         }
     }
@@ -224,6 +227,7 @@ fn main() -> Result<()> {
         ["--mpris"] => return mpris::run(None),
         ["--screenshot"] => return portal::screenshot(),
         ["--screencast"] => return portal::screencast(),
+        ["--location"] => return portal::location(),
         ["--mpris", name] => return mpris::run(Some(name)),
         ["--globals"] => return sandbox::run(false),
         ["--security-context"] => return sandbox::run(true),
