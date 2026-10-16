@@ -1,7 +1,7 @@
 //! Pictures for the wallpaper and the overview (M5.10c4c): `load` reads a
 //! JPEG or PNG and fits it to a screen as CSS `object-fit: cover` does, and
 //! `blur` softens one for the frosted glass behind the overview (ADR-002).
-//! `box_blur`, the blur shell-ui's shadows use, is kept here once (ADR-010).
+//! `box_blur`, the blur `edel::draw`'s shadows use, is kept here once (ADR-010).
 //! The compositor and shell-ui link this module through the `pictures`
 //! feature.
 
@@ -120,32 +120,57 @@ pub fn blur(pixmap: &mut Pixmap, radius: f32) {
 }
 
 /// Blurs `values`, a `w` by `h` grid, by averaging each with its
-/// neighbours up to `radius` away, across and then down.
+/// neighbours up to `radius` away, across and then down. Both passes read
+/// the grid row by row, as it lies in memory: down keeps a running sum for
+/// every column at once, and the last `radius + 1` rows as they were
+/// before it wrote them.
 pub fn box_blur(values: &mut [f32], w: usize, h: usize, radius: usize) {
-    if radius == 0 {
+    if radius == 0 || w == 0 {
         return;
     }
-    let mut line = Vec::new();
-    let mut pass =
-        |values: &mut [f32], len: usize, count: usize, at: &dyn Fn(usize, usize) -> usize| {
-            let span = (2 * radius + 1) as f32;
-            for i in 0..count {
-                line.clear();
-                line.extend((0..len).map(|j| values[at(i, j)]));
-                let mut sum: f32 = line.iter().take(radius + 1).sum();
-                for j in 0..len {
-                    values[at(i, j)] = sum / span;
-                    if j + radius + 1 < len {
-                        sum += line[j + radius + 1];
-                    }
-                    if j >= radius {
-                        sum -= line[j - radius];
-                    }
-                }
+    let values = &mut values[..w * h];
+    let span = (2 * radius + 1) as f32;
+    let mut line = vec![0.0_f32; w];
+    for row in values.chunks_exact_mut(w) {
+        line.copy_from_slice(row);
+        let mut sum: f32 = line.iter().take(radius + 1).sum();
+        for j in 0..w {
+            row[j] = sum / span;
+            if j + radius + 1 < w {
+                sum += line[j + radius + 1];
             }
-        };
-    pass(values, w, h, &|row, col| row * w + col);
-    pass(values, h, w, &|col, row| row * w + col);
+            if j >= radius {
+                sum -= line[j - radius];
+            }
+        }
+    }
+    let mut sums = vec![0.0_f32; w];
+    for row in values.chunks_exact(w).take(radius + 1) {
+        for (sum, v) in sums.iter_mut().zip(row) {
+            *sum += v;
+        }
+    }
+    let kept = radius + 1;
+    let mut was = vec![0.0_f32; kept * w];
+    for i in 0..h {
+        let row = &mut values[i * w..(i + 1) * w];
+        was[(i % kept) * w..(i % kept + 1) * w].copy_from_slice(row);
+        for (v, sum) in row.iter_mut().zip(&sums) {
+            *v = sum / span;
+        }
+        if i + radius + 1 < h {
+            let next = &values[(i + radius + 1) * w..(i + radius + 2) * w];
+            for (sum, v) in sums.iter_mut().zip(next) {
+                *sum += v;
+            }
+        }
+        if i >= radius {
+            let gone = (i - radius) % kept;
+            for (sum, v) in sums.iter_mut().zip(&was[gone * w..(gone + 1) * w]) {
+                *sum -= v;
+            }
+        }
+    }
 }
 
 /// The side, in pixels, a picture is read at to find its accent (M5.12b1):
@@ -304,6 +329,40 @@ mod tests {
                 "the middle is grey at {x}: {}",
                 at(x)
             );
+        }
+    }
+
+    /// The blur as it was written first, a column at a time.
+    fn box_blur_by_columns(values: &mut [f32], w: usize, h: usize, radius: usize) {
+        let span = (2 * radius + 1) as f32;
+        let mut pass = |len: usize, count: usize, at: &dyn Fn(usize, usize) -> usize| {
+            for i in 0..count {
+                let line: Vec<f32> = (0..len).map(|j| values[at(i, j)]).collect();
+                let mut sum: f32 = line.iter().take(radius + 1).sum();
+                for j in 0..len {
+                    values[at(i, j)] = sum / span;
+                    if j + radius + 1 < len {
+                        sum += line[j + radius + 1];
+                    }
+                    if j >= radius {
+                        sum -= line[j - radius];
+                    }
+                }
+            }
+        };
+        pass(w, h, &|row, col| row * w + col);
+        pass(h, w, &|col, row| row * w + col);
+    }
+
+    #[test]
+    fn a_blur_read_row_by_row_gives_what_one_by_columns_gave() {
+        // Uneven values, and grids shorter and narrower than the radius.
+        for (w, h, radius) in [(37, 23, 4), (5, 40, 9), (40, 3, 6), (1, 1, 2)] {
+            let start: Vec<f32> = (0..w * h).map(|i| ((i * 7919) % 257) as f32).collect();
+            let (mut rows, mut columns) = (start.clone(), start);
+            box_blur(&mut rows, w, h, radius);
+            box_blur_by_columns(&mut columns, w, h, radius);
+            assert_eq!(rows, columns, "{w} by {h}, radius {radius}");
         }
     }
 
