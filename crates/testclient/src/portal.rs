@@ -300,8 +300,6 @@ pub fn location() -> Result<()> {
     let Some(session) = create_location_session(&mut portal) else {
         return Ok(());
     };
-    ObjectPath::try_from(session.as_str()).context("the portal's session path")?;
-
     // Listens before Start, so an update that comes at once is not missed.
     let rule = MatchRule::builder()
         .msg_type(Type::Signal)
@@ -341,35 +339,32 @@ pub fn location() -> Result<()> {
 }
 
 /// Creates the location session with the accuracy an app asks for, and
-/// returns its path, or prints why the portal did not make one.
+/// returns its path, or prints why the portal did not make one. Unlike the
+/// screen cast's, the Location portal's `CreateSession` answers at once
+/// with the session's path, with no request object.
 fn create_location_session(portal: &mut Portal) -> Option<String> {
-    let token = portal.token();
     let session_token = portal.token();
     let body = (HashMap::from([
-        ("handle_token", Value::from(token.as_str())),
         ("session_handle_token", Value::from(session_token.as_str())),
         ("distance-threshold", Value::from(0u32)),
         ("time-threshold", Value::from(0u32)),
         ("accuracy", Value::from(5u32)),
     ]),);
-    match portal.call("CreateSession", &token, |c| {
-        c.call_method(Some(DESKTOP), PATH, Some(LOCATION), "CreateSession", &body)
-    }) {
-        Ok((0, results)) => match results.get("session_handle").and_then(text) {
-            Some(session) => Some(session),
-            None => {
-                say("location failed create no session");
-                None
-            }
+    let reply =
+        portal
+            .connection
+            .call_method(Some(DESKTOP), PATH, Some(LOCATION), "CreateSession", &body);
+    let failed = |name: &str| {
+        say(&format!("location failed create {name}"));
+        None
+    };
+    match reply {
+        Ok(message) => match message.body().deserialize::<ObjectPath>() {
+            Ok(session) => Some(session.as_str().to_string()),
+            Err(_) => failed("no-session"),
         },
-        Ok((code, _)) => {
-            say(&format!("location failed create {code}"));
-            None
-        }
-        Err(why) => {
-            say(&format!("location failed create {}", why.name));
-            None
-        }
+        Err(zbus::Error::MethodError(name, _, _)) => failed(name.as_str()),
+        Err(e) => failed(&e.to_string()),
     }
 }
 
