@@ -1207,7 +1207,8 @@ commands() {
 			say "location_choice $?"
 			;;
 		'location ask')
-			as_ci "flatpak run --command=edel-testclient org.edel.TestA --location 8" </dev/null >/tmp/location.log 2>&1
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' flatpak run --command=edel-testclient org.edel.TestA --location 8" </dev/null >/tmp/location.log 2>&1
 			say "location_answer $(tr '\n' ';' </tmp/location.log | cut -c1-300)"
 			;;
 		'location off')
