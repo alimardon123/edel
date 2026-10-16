@@ -328,6 +328,20 @@ pub const ROWS: &[Row] = &[
         key: "region.time_servers",
         title: n_("Time servers"),
     },
+    // The Location page (M6.14c): the person's switch, then the machine's
+    // city and its online lookup.
+    Row {
+        key: "location.enabled",
+        title: n_("Location"),
+    },
+    Row {
+        key: "location.place",
+        title: n_("Place"),
+    },
+    Row {
+        key: "location.online",
+        title: n_("Look online"),
+    },
     // The Default apps page (M6.10): the app each role opens, one row each,
     // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
     Row {
@@ -800,18 +814,6 @@ mod tests {
         (
             "apps.installed",
             "the machine's list of apps installed for everyone, which an administrator changes as root with edel settings set apps.installed+=ID",
-        ),
-        (
-            "location.enabled",
-            "the Location page's switch is its own later piece (M6.14c); until it is built, edel settings set and the settings file change it",
-        ),
-        (
-            "location.place",
-            "the Location page's city is its own later piece (M6.14c); until it is built, edel settings set and the settings file change it",
-        ),
-        (
-            "location.online",
-            "the Location page's Wi-Fi lookup is its own later piece (M6.14c); until it is built, edel settings set and the settings file change it",
         ),
     ];
 

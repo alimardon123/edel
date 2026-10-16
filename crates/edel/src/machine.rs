@@ -2755,7 +2755,7 @@ mod tests {
         machine
     }
 
-    const TASHKENT_PLACE: &str = "# Written by edel settings apply from location.place (Asia/Tashkent); edit that, not this file.\nlatitude=41.333333\nlongitude=69.300000\naltitude=0\naccuracy=10000\n";
+    const TASHKENT_PLACE: &str = "# Written by edel settings apply from location.place (Asia/Tashkent); edit that, not this file.\n41.333333\n69.300000\n0\n10000\n";
 
     #[test]
     fn plans_the_place_for_geoclue_and_nothing_once_it_is_there() {

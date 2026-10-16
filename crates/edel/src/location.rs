@@ -27,15 +27,16 @@ pub fn zone_of(file: &SettingsFile) -> Option<&str> {
 }
 
 /// The text of GeoClue's static source for `zone` at the coordinates given:
-/// the place's latitude and longitude in degrees, an altitude of 0 and the
-/// accuracy `ACCURACY_METRES`, each line ending in a newline.
+/// as GeoClue reads it, one bare number a line after any comment, the
+/// latitude and longitude in degrees, the altitude (0) and the accuracy in
+/// metres (`ACCURACY_METRES`).
 pub fn geolocation_text(zone: &str, latitude: f64, longitude: f64) -> String {
     format!(
         "# Written by edel settings apply from location.place ({zone}); edit that, not this file.\n\
-         latitude={latitude:.6}\n\
-         longitude={longitude:.6}\n\
-         altitude=0\n\
-         accuracy={ACCURACY_METRES}\n"
+         {latitude:.6}\n\
+         {longitude:.6}\n\
+         0\n\
+         {ACCURACY_METRES}\n"
     )
 }
 
@@ -79,10 +80,10 @@ mod tests {
         assert_eq!(
             geolocation_text("Asia/Tashkent", 41.0 + 20.0 / 60.0, 69.3),
             "# Written by edel settings apply from location.place (Asia/Tashkent); edit that, not this file.\n\
-             latitude=41.333333\n\
-             longitude=69.300000\n\
-             altitude=0\n\
-             accuracy=10000\n"
+             41.333333\n\
+             69.300000\n\
+             0\n\
+             10000\n"
         );
     }
 

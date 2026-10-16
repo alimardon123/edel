@@ -1370,6 +1370,12 @@ msgstr ""
 msgid "Time servers"
 msgstr ""
 
+msgid "Place"
+msgstr ""
+
+msgid "Look online"
+msgstr ""
+
 msgid "Web browser"
 msgstr ""
 
