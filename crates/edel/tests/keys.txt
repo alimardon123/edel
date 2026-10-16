@@ -109,3 +109,6 @@ apps.microphone
 apps.screenshots
 apps.notifications
 apps.files
+install.disk
+install.erase
+install.then

@@ -1,0 +1,5 @@
+# Test only (roadmap M7.3): device A of CI's fleet, over base.toml.
+format = 1
+
+[network]
+hostname = "fleet-a"

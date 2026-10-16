@@ -973,8 +973,10 @@ mod tests {
             let mut old_services: Vec<(&str, &str)> = services.entries();
             if name != "container" {
                 // Added since format 1: the machine feature's clock (M1.13),
+                // its stick that installs itself (M7.3),
                 // and its doas, its sudo name and linux-pam, which login's doas moved to (M6.5).
                 old_services.push(("default", "edel-clock"));
+                old_services.push(("default", "edel-install"));
                 install.extend(["doas", "doas-sudo-shim", "linux-pam"].map(String::from));
             }
             let new = repo_def(name);

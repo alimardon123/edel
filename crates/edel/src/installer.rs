@@ -16,10 +16,11 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use edel::base;
+use edel::fleet;
 use edel::i18n::{n_, tr, trf};
 use edel::install::{
-    Answers, Disk, Partition, Plan, SLOT_MIB, asked, is_candidate, list_entry, parse_blkid,
-    suggested_hostname, suggested_keyboard,
+    Answers, Disk, ESP_MIB, MIN_DATA_MIB, Partition, Plan, SLOT_MIB, asked, is_candidate,
+    list_entry, parse_blkid, suggested_hostname, suggested_keyboard,
 };
 use edel::password::Password;
 use edel::settings;
@@ -914,6 +915,225 @@ impl Drop for HalfCopy {
             self.partition.display()
         );
     }
+}
+
+/// How long `erase = "yes"` counts down on the console before it erases a
+/// disk that is not empty (M7.3).
+const COUNTDOWN_SECONDS: u32 = 10;
+/// How much of a disk must be zeros for `erase = "empty-only"`: the
+/// partition tables and any file system's superblock are in it.
+const BLANK_BYTES: usize = 1024 * 1024;
+
+/// `edel install --unattended` (M7.3, docs/FLEET.md), which the
+/// `edel-install` service runs at every start: with an `[install]` table in
+/// the machine's settings file, it waits until this slot is confirmed,
+/// then installs onto the disk the table names with that file less the
+/// table, keeps the disk's id in `places::INSTALLED_TO` and powers off or
+/// restarts. Without the table, or on a machine `edel install` made, it
+/// does nothing.
+pub fn unattended() -> Result<()> {
+    let path = edel::places::machine_settings();
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    let Some(asked) = fleet::unattended(&text)? else {
+        return Ok(());
+    };
+    // An installed machine's slot is the stick's, its own settings file
+    // and all; only the stick acts on the table.
+    if Path::new(edel::places::INSTALLED).exists() {
+        return Ok(());
+    }
+    if let Some(id) = fs::read_to_string(edel::places::INSTALLED_TO)
+        .ok()
+        .and_then(|t| fleet::installed_to_id(&t))
+        .filter(|id| Path::new(edel::places::DISKS_BY_ID).join(id).exists())
+    {
+        println!(
+            "edel install: {}",
+            trf("already installed to {id}; nothing to do", &[("id", &id)])
+        );
+        return Ok(());
+    }
+    let file = settings::read(&text)?.file;
+    let shown = path.display().to_string();
+    if !fleet::someone_can_log_in(&file) {
+        bail!(
+            "{}",
+            trf(
+                "install refused: {path}: {why}",
+                &[("path", &shown), ("why", fleet::nobody_can_log_in())]
+            )
+        );
+    }
+    wait_until_confirmed();
+    let (name, id) = unattended_disk(&asked)?;
+    let device = format!("/dev/{name}");
+    if asked.erase_any {
+        count_down(&device, &id)?;
+    } else if !is_empty_disk(&name)? {
+        bail!(
+            "{}",
+            trf(
+                "install refused: {device} is not empty; erase = \"yes\" with its /dev/disk/by-id/ name erases a disk that is not",
+                &[("device", &device)]
+            )
+        );
+    }
+    println!(
+        "edel install: {}",
+        trf(
+            "installing onto {device} ({id}) with nobody at the keyboard",
+            &[("device", &device), ("id", &id)]
+        )
+    );
+    let target = PathBuf::from(edel::places::INSTALL_UNATTENDED);
+    fs::create_dir_all(edel::places::RUN_DIR)?;
+    fs::write(&target, fleet::without_install(&text)?)?;
+    install_on(&name, &target, None, false, true)?;
+    let date = crate::release::today_text();
+    crate::machine::write_whole(
+        Path::new(edel::places::INSTALLED_TO),
+        fleet::installed_to_text(&id, &date).as_bytes(),
+    )?;
+    let action = if asked.reboot {
+        crate::system_power::Action::Restart
+    } else {
+        crate::system_power::Action::ShutDown
+    };
+    println!(
+        "edel install: {}",
+        trf(
+            "installed to {id}; {next}",
+            &[
+                ("id", &id),
+                (
+                    "next",
+                    if asked.reboot {
+                        tr("restarting")
+                    } else {
+                        tr("powering off")
+                    }
+                )
+            ]
+        )
+    );
+    crate::system_power::run(action)
+}
+
+/// Waits until the guard confirmed this boot's slot, so a stick that
+/// cannot start well never writes a disk.
+fn wait_until_confirmed() {
+    let confirmed = Path::new(edel::places::CONFIRMED);
+    if confirmed.exists() {
+        return;
+    }
+    println!(
+        "edel install: {}",
+        tr("waiting until this slot is confirmed before installing")
+    );
+    while !confirmed.exists() {
+        sleep(Duration::from_secs(1));
+    }
+}
+
+/// The disk `[install]` names, as its kernel name and its id under
+/// `/dev/disk/by-id/`.
+fn unattended_disk(asked: &fleet::Unattended) -> Result<(String, String)> {
+    let links = by_id_links();
+    if let Some(id) = &asked.by_id {
+        let Some((_, name)) = links.iter().find(|(link, _)| link == id) else {
+            bail!(
+                "{}",
+                trf(
+                    "install refused: {path} is not in this machine",
+                    &[(
+                        "path",
+                        &Path::new(edel::places::DISKS_BY_ID)
+                            .join(id)
+                            .display()
+                            .to_string()
+                    )]
+                )
+            );
+        };
+        return Ok((name.clone(), id.clone()));
+    }
+    let running = update::Disk::find()?.name;
+    let disks: Vec<fleet::AutoDisk> = candidates()?
+        .into_iter()
+        .map(|d| fleet::AutoDisk {
+            removable: removable(&d.name),
+            id: fleet::by_id_of(&links, &d.name),
+            bytes: d.bytes,
+            name: d.name,
+        })
+        .collect();
+    let need = (2 + ESP_MIB + 2 * SLOT_MIB + MIN_DATA_MIB) * MIB;
+    let disk = fleet::pick_auto(&disks, &running, need)?;
+    let Some(id) = disk.id else {
+        bail!(
+            "{}",
+            trf(
+                "install refused: /dev/{name} has no /dev/disk/by-id/ name to remember it by, so starting from this stick again could install it twice",
+                &[("name", &disk.name)]
+            )
+        );
+    };
+    Ok((disk.name, id))
+}
+
+/// Every link in `/dev/disk/by-id/` with the kernel name it points at.
+fn by_id_links() -> Vec<(String, String)> {
+    let Ok(entries) = fs::read_dir(edel::places::DISKS_BY_ID) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(|e| e.ok())
+        .filter_map(|e| {
+            let target = fs::canonicalize(e.path()).ok()?;
+            Some((
+                e.file_name().to_string_lossy().into_owned(),
+                target.file_name()?.to_string_lossy().into_owned(),
+            ))
+        })
+        .collect()
+}
+
+/// Whether the disk `name` has no partitions and only zeros in its first
+/// MiB.
+fn is_empty_disk(name: &str) -> Result<bool> {
+    if !describe(name)?.partitions.is_empty() {
+        return Ok(false);
+    }
+    let device = Path::new("/dev").join(name);
+    let mut head = Vec::with_capacity(BLANK_BYTES);
+    File::open(&device)
+        .with_context(|| could_not_read(&device))?
+        .take(BLANK_BYTES as u64)
+        .read_to_end(&mut head)?;
+    Ok(fleet::is_blank(&head))
+}
+
+/// Counts down on the console before `erase = "yes"` erases a disk, so
+/// someone at the machine can still power it off.
+fn count_down(device: &str, id: &str) -> Result<()> {
+    for left in (1..=COUNTDOWN_SECONDS).rev() {
+        println!(
+            "edel install: {}",
+            trf(
+                "erasing {device} ({id}) in {seconds} s; power the machine off to stop",
+                &[
+                    ("device", device),
+                    ("id", id),
+                    ("seconds", &left.to_string())
+                ]
+            )
+        );
+        io::stdout().flush()?;
+        sleep(Duration::from_secs(1));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

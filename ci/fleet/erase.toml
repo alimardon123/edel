@@ -1,0 +1,16 @@
+# Test only (roadmap M7.3): the seed volume fleet-test.sh gives a fresh
+# copy of device B's stick, so it erases the disk it installed before,
+# after the countdown, and restarts.
+format = 1
+
+[users.fleet]
+admin = true
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEdlbE9TZmxlZXRDSW9ubHlub2JvZHlzS2V5MDAw fleet@ci"]
+
+[network]
+hostname = "fleet-erased"
+
+[install]
+disk = "/dev/disk/by-id/virtio-fleet-target"
+erase = "yes"
+then = "reboot"

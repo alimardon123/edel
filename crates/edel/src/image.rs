@@ -30,6 +30,9 @@ pub struct Build<'a> {
     /// for test images. Not part of the definition, so a release image can
     /// never pick them up by accident.
     pub extra_files: Vec<PathBuf>,
+    /// The merged settings file baked in as `places::slot_settings()`
+    /// (M7.3), checked already; none leaves the slot's own, if any.
+    pub settings: Option<String>,
     /// Another health timeout in seconds, for test images (M1.5).
     pub health_timeout: Option<u64>,
     /// Another slot size in MiB, for test images.
@@ -110,6 +113,8 @@ impl Build<'_> {
         self.install_packages(&root)?;
         // Our files first: some of them are services to enable.
         self.copy_files(&root)?;
+        // After the files, so `--settings` wins over a file of the same name.
+        self.install_settings(&root)?;
         self.install_features(&root)?;
         self.install_places(&root)?;
         self.bake_font_cache(&root)?;
@@ -338,6 +343,23 @@ impl Build<'_> {
                 .run(Command::new("cp").arg("-R").arg(src.join(".")).arg(root))?;
         }
         Ok(())
+    }
+
+    /// Writes the merged settings file as the slot's own (M7.3), which
+    /// seeds a machine's first boot when no stick or partition holds one.
+    fn install_settings(&self, root: &Path) -> Result<()> {
+        let Some(text) = &self.settings else {
+            return Ok(());
+        };
+        let slot = edel::places::slot_settings();
+        self.runner.step(&format!(
+            "write the fleet's settings file to {}",
+            slot.display()
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        edel::settings::write_slot_copy(root, text)
     }
 
     /// Copies the running `edel` into the image as `/usr/bin/edel`, the
