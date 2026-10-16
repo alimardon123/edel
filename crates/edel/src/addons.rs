@@ -234,14 +234,25 @@ fn same(was: &Stamp, now: &Stamp) -> bool {
     }
 }
 
-/// The difference between two scans.
+/// Whether an entry of the image is a link to the base's small tools'
+/// program, which an add-on's package may replace with its own copy of
+/// the tool (`bc` for printing): the add-on keeps the image's.
+fn is_applet(stamp: &Stamp) -> bool {
+    stamp
+        .link
+        .as_deref()
+        .is_some_and(|target| target.rsplit('/').next() == Some(edel::base::APPLETS))
+}
+
+/// The difference between two scans. A link to the base's small tools that
+/// a package replaced is not a change: the image's link stays.
 pub fn diff(before: &BTreeMap<String, Stamp>, after: &BTreeMap<String, Stamp>) -> Diff {
     let mut out = Diff::default();
     for (path, now) in after {
         match before.get(path) {
             None => out.new.push(path.clone()),
             Some(was) => {
-                if !now.dir && !same(was, now) {
+                if !now.dir && !same(was, now) && !is_applet(was) {
                     out.changed.push(path.clone());
                 }
             }
@@ -1031,9 +1042,9 @@ mod tests {
     fn a_link_copied_with_a_new_time_is_unchanged() {
         let later = Stamp {
             mtime: 9,
-            ..link("busybox")
+            ..link("coreutils")
         };
-        let before = tree(&[("bin/ls", link("busybox")), ("etc/x", file(1))]);
+        let before = tree(&[("bin/ls", link("coreutils")), ("etc/x", file(1))]);
         let after = tree(&[
             ("bin/ls", later),
             (
@@ -1138,6 +1149,10 @@ mod tests {
         // A folder whose only change is its time is not changed.
         let same = tree(&[("usr", dir(9))]);
         assert_eq!(diff(&before, &same).changed, Vec::<String>::new());
+        // A small tool of the base a package replaced keeps the base's link.
+        let applet = tree(&[("usr/bin/bc", link("/bin/busybox"))]);
+        let replaced = tree(&[("usr/bin/bc", file(7))]);
+        assert_eq!(diff(&applet, &replaced), Diff::default());
     }
 
     #[test]
