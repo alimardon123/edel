@@ -68,7 +68,11 @@ pub fn fill(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colo
 /// pixels in from each side of a pixmap that much bigger: two layers cast
 /// by one light above, a close sharp one and a far soft one, `blur` pixels
 /// soft and falling `fall` pixels at most, in `c` (its alpha the darkest
-/// the shadow gets). Drawn once per size by its callers.
+/// the shadow gets). Drawn once per size by its callers, and again on each
+/// frame a window is resized, so only the corners and the edges are
+/// blurred: a shape that wide is blurred at the smallest size whose middle
+/// no corner reaches, and its middle row and column are stretched to the
+/// size asked for, which gives the same pixels at a fraction of the work.
 pub fn shadow(
     w: u32,
     h: u32,
@@ -78,6 +82,61 @@ pub fn shadow(
     fall: f32,
     c: Colour,
 ) -> Option<Pixmap> {
+    // How far in from a side a corner's curve and the blur still change
+    // the shadow; past that every row (or column) is the same.
+    let near =
+        r.max(0.0).ceil() as u32 + blur.max(0.0).ceil() as u32 + fall.max(0.0).ceil() as u32 + 1;
+    let core = 2 * near + 1;
+    let (sw, sh) = (w.min(core), h.min(core));
+    let small = blurred(sw, sh, room, r, blur, fall, c)?;
+    if (sw, sh) == (w, h) {
+        return Some(small);
+    }
+    let (pw, ph) = (w + 2 * room, h + 2 * room);
+    let (spw, sph) = ((sw + 2 * room) as usize, sh + 2 * room);
+    // A row of the small shadow stretched: its left part, its middle
+    // pixel repeated, its right part.
+    let (left, right) = ((spw - 1) / 2, spw - (spw - 1) / 2 - 1);
+    let stretch = |from: &[u8], to: &mut [u8]| {
+        let middle = &from[left * 4..left * 4 + 4];
+        to[..left * 4].copy_from_slice(&from[..left * 4]);
+        let tail = to.len() - right * 4;
+        for pixel in to[left * 4..tail].chunks_exact_mut(4) {
+            pixel.copy_from_slice(middle);
+        }
+        to[tail..].copy_from_slice(&from[from.len() - right * 4..]);
+    };
+    // The same for the rows: the top ones, the middle one repeated, the
+    // bottom ones.
+    let (top, bottom) = ((sph - 1) / 2, sph - (sph - 1) / 2 - 1);
+    let mut out = Pixmap::new(pw, ph)?;
+    let from = small.data();
+    let to = out.data_mut();
+    let line = pw as usize * 4;
+    for y in 0..ph {
+        let sy = if y <= top {
+            y
+        } else if y >= ph - bottom {
+            y - (ph - sph)
+        } else if y > top + 1 {
+            // Every middle row is the one before it.
+            let at = y as usize * line;
+            to.copy_within(at - line..at, at);
+            continue;
+        } else {
+            top
+        };
+        let sy = sy as usize * spw * 4;
+        stretch(
+            &from[sy..sy + spw * 4],
+            &mut to[y as usize * line..(y as usize + 1) * line],
+        );
+    }
+    Some(out)
+}
+
+/// `shadow`'s every pixel, blurred at the size asked for.
+fn blurred(w: u32, h: u32, room: u32, r: f32, blur: f32, fall: f32, c: Colour) -> Option<Pixmap> {
     let (pw, ph) = (w + 2 * room, h + 2 * room);
     let mut cover = vec![0.0f32; (pw * ph) as usize];
     let black = Colour {
@@ -157,6 +216,23 @@ mod tests {
         assert_eq!(alpha(0, 0), 0);
         assert_eq!(alpha(20, 0), 255);
         assert_eq!(alpha(20, 10), 255);
+    }
+
+    #[test]
+    fn a_wide_shadow_is_its_corners_and_edges_stretched() {
+        // Wider and taller than the core in turn, and both, against every
+        // pixel blurred at full size.
+        for (w, h) in [(300, 40), (40, 260), (300, 260)] {
+            let fast = shadow(w, h, 30, 6.0, 24.0, 6.0, BLACK).unwrap();
+            let whole = blurred(w, h, 30, 6.0, 24.0, 6.0, BLACK).unwrap();
+            let worst = fast
+                .data()
+                .iter()
+                .zip(whole.data())
+                .map(|(a, b)| a.abs_diff(*b))
+                .max();
+            assert_eq!(worst, Some(0), "{w} by {h}");
+        }
     }
 
     #[test]
