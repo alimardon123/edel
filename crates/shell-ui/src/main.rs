@@ -275,6 +275,11 @@ struct Shell {
     /// wanted when they end (and whether with Bluetooth), the way back to
     /// the loop and the system bus's connection.
     status_wanted: bool,
+    /// The status channel's receiving end until the status area is first
+    /// wanted, and whether the tray is served (M6.17: both start when a
+    /// panel first holds their widget, at start or after a change).
+    status_rx: Option<channel::Channel<status::Msg>>,
+    tray_served: bool,
     status_busy: u32,
     status_again: Option<bool>,
     status_tx: channel::Sender<status::Msg>,
@@ -511,9 +516,6 @@ fn run() -> Result<()> {
     let mut event_loop: EventLoop<Shell> =
         EventLoop::try_new().context("starting the event loop")?;
     let (status_tx, status_rx) = channel::channel::<status::Msg>();
-    let status_wanted = panels
-        .iter()
-        .any(|p| p.row.all().any(|w| w.name == "status"));
     let (edits, asks) = channel::channel::<shell_bus::Edit>();
     let buttons = {
         let (machine, person) = settings_texts();
@@ -569,7 +571,9 @@ fn run() -> Result<()> {
         shift: false,
         ctrl: false,
         logo: false,
-        status_wanted,
+        status_wanted: false,
+        status_rx: Some(status_rx),
+        tray_served: false,
         status_busy: 0,
         status_again: None,
         status_tx,
@@ -610,23 +614,7 @@ fn run() -> Result<()> {
     // only when a panel holds the widget. Served once the panel's fonts
     // and icons are loaded, as the portal always was: served before them,
     // shell-ui kept 3.7 MiB of its own instead of 1.6 (#138's first run).
-    let tray_wanted = shell
-        .panels
-        .iter()
-        .any(|p| p.row.all().any(|w| w.name == "tray"));
-    if let (Some(connection), true) = (&shell._portal, tray_wanted) {
-        let (events, news) = channel::channel();
-        if tray::serve(connection, events) {
-            event_loop
-                .handle()
-                .insert_source(news, |event, _, shell: &mut Shell| {
-                    if let channel::Event::Msg(event) = event {
-                        shell.tray_changed(event);
-                    }
-                })
-                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
-        }
-    }
+    shell.serve_tray()?;
     // Notifications (M5.9b): served on the same connection, the calls
     // reaching the loop over a channel as the tray's news does; nothing
     // is kept until an app calls.
@@ -688,33 +676,7 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching what plays: {e}"))?;
         shell.player_tx = Some(events);
     }
-    // The status area (M5.9a): what the machine says is read once now, and
-    // again when the system bus says NetworkManager or UPower changed
-    // something; only when a panel holds the widget.
-    if status_wanted {
-        event_loop
-            .handle()
-            .insert_source(status_rx, |event, _, shell: &mut Shell| {
-                if let channel::Event::Msg(msg) = event {
-                    shell.status_msg(msg);
-                }
-            })
-            .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
-        watch::serve(features, &shell.status_tx, &event_loop.handle());
-        shell.request_status(false);
-        // The in-use sign (M6.14b): PipeWire's graph read on a thread of its
-        // own, its batches reaching the loop over a channel.
-        let (uses_tx, uses) = channel::channel::<Vec<in_use::InUse>>();
-        event_loop
-            .handle()
-            .insert_source(uses, |event, _, shell: &mut Shell| {
-                if let channel::Event::Msg(uses) = event {
-                    shell.in_use_changed(uses);
-                }
-            })
-            .map_err(|e| anyhow::anyhow!("watching what apps use: {e}"))?;
-        in_use::watch(uses_tx);
-    }
+    shell.watch_status()?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
@@ -1361,6 +1323,13 @@ impl Shell {
         self.panel_specs = wanted;
         self.log_panels();
         self.read_apps();
+        // A widget these panels bring for the first time starts its service
+        // now (M6.17).
+        for started in [self.serve_tray(), self.watch_status()] {
+            if let Err(e) = started {
+                eprintln!("edel-shell-ui: {e:#}");
+            }
+        }
     }
 
     /// Makes the surfaces of `specs` afresh on `outputs`: the open popups
@@ -1416,6 +1385,78 @@ impl Shell {
             place_panel(&panel.surface, spec, &self.tokens, width);
             panel.surface.commit();
         }
+    }
+
+    /// Serves the tray once a panel holds its widget (M5.2e): the portal
+    /// and the tray share the session's bus and zbus's thread for it, and
+    /// the tray's news reaches the loop over a channel. Served once the
+    /// panel's fonts and icons are loaded, as the portal always was: served
+    /// before them, shell-ui kept 3.7 MiB of its own instead of 1.6 (#138's
+    /// first run). At start, and after a change of the panels brings the
+    /// widget (M6.17), as shell-ui no longer starts again for one.
+    fn serve_tray(&mut self) -> Result<()> {
+        let wanted = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "tray"));
+        let Some(connection) = self
+            ._portal
+            .as_ref()
+            .filter(|_| wanted && !self.tray_served)
+        else {
+            return Ok(());
+        };
+        self.tray_served = true;
+        let (events, news) = channel::channel();
+        if tray::serve(connection, events) {
+            self.handle
+                .insert_source(news, |event, _, shell: &mut Shell| {
+                    if let channel::Event::Msg(event) = event {
+                        shell.tray_changed(event);
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Reads the status area once a panel holds its widget (M5.9a): what
+    /// the machine says is read now, and again when the kernel says the
+    /// network or the power changed; with it the in-use sign (M6.14b),
+    /// PipeWire's graph read on a thread of its own. At start, and after a
+    /// change of the panels brings the widget (M6.17).
+    fn watch_status(&mut self) -> Result<()> {
+        let wanted = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "status"));
+        if !wanted || self.status_wanted {
+            return Ok(());
+        }
+        let Some(status_rx) = self.status_rx.take() else {
+            return Ok(());
+        };
+        self.status_wanted = true;
+        self.handle
+            .insert_source(status_rx, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(msg) = event {
+                    shell.status_msg(msg);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
+        let features = edel::places::found_shared(edel::features::DIR);
+        watch::serve(&features, &self.status_tx, &self.handle);
+        self.request_status(false);
+        let (uses_tx, uses) = channel::channel::<Vec<in_use::InUse>>();
+        self.handle
+            .insert_source(uses, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(uses) = event {
+                    shell.in_use_changed(uses);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching what apps use: {e}"))?;
+        in_use::watch(uses_tx);
+        Ok(())
     }
 
     /// Logs the panels that are up, as `panels now EDGE (N widgets), ...`.
