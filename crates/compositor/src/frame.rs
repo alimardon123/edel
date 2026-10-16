@@ -256,12 +256,10 @@ impl Border {
             return self.start;
         }
         let t = (x as f32 / (width - 1) as f32).clamp(0.0, 1.0);
-        let mix = |a: f32, b: f32| a + (b - a) * t;
+        // The one colour mixing (`Colour::towards`), its alpha moving too.
         Colour {
-            r: mix(self.start.r, self.end.r),
-            g: mix(self.start.g, self.end.g),
-            b: mix(self.start.b, self.end.b),
-            a: mix(self.start.a, self.end.a),
+            a: self.start.a + (self.end.a - self.start.a) * t,
+            ..self.start.towards(self.end, t)
         }
     }
 

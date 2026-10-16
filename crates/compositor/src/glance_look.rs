@@ -10,6 +10,7 @@ use tiny_skia::{
     RadialGradient, Rect, SpreadMode, Stroke, Transform,
 };
 
+use edel::draw::{self, paint_of, rounded};
 use edel::tokens::{Colour, Tokens};
 use edel_compositor::overview::{LABEL, Plan, TRAY_PAD, TRAY_RADIUS};
 use smithay::utils::{Logical, Rectangle};
@@ -25,30 +26,6 @@ const PILL_PAD: f32 = 9.0;
 pub const NAME_ICON: u32 = 14;
 /// The close button's side.
 pub const CLOSE: i32 = 20;
-
-fn paint_of(colour: Colour) -> Paint<'static> {
-    let mut paint = Paint::default();
-    let [r, g, b, _] = colour.bytes();
-    paint.set_color_rgba8(r, g, b, (colour.a * 255.0).round() as u8);
-    paint.anti_alias = true;
-    paint
-}
-
-fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
-    let r = r.min(w / 2.0).min(h / 2.0);
-    let mut p = PathBuilder::new();
-    p.move_to(x + r, y);
-    p.line_to(x + w - r, y);
-    p.quad_to(x + w, y, x + w, y + r);
-    p.line_to(x + w, y + h - r);
-    p.quad_to(x + w, y + h, x + w - r, y + h);
-    p.line_to(x + r, y + h);
-    p.quad_to(x, y + h, x, y + h - r);
-    p.line_to(x, y + r);
-    p.quad_to(x, y, x + r, y);
-    p.close();
-    p.finish()
-}
 
 /// `text` centred on `middle`, its line's middle at `centre_y`, cut to
 /// `room` pixels.
@@ -135,9 +112,12 @@ pub fn veil(pixmap: &mut Pixmap, colour: Colour, alpha: f32) {
     pixmap.fill_rect(rect, &paint, Transform::identity(), None);
 }
 
+/// `colour` at `a` of its own alpha, as tiny-skia's colour.
 fn colour_of(colour: Colour, a: f32) -> tiny_skia::Color {
-    let [r, g, b, _] = colour.bytes();
-    tiny_skia::Color::from_rgba8(r, g, b, (colour.a * a * 255.0).round() as u8)
+    draw::colour(Colour {
+        a: colour.a * a,
+        ..colour
+    })
 }
 
 fn shaded(shader: tiny_skia::Shader<'static>) -> Paint<'static> {
@@ -470,41 +450,29 @@ pub fn ring(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i32)
 
 /// The soft shadow under a spread window `w` by `h` logical pixels at
 /// `scale`, cast by the one light above (`shadow`, `shadow_blur`,
-/// `shadow_offset`): a picture that lies `margin` pixels out from the
-/// window's corner on every side.
+/// `shadow_offset`, drawn by `edel::draw::shadow`): a picture that lies
+/// `margin` pixels out from the window's corner on every side.
 pub fn shadow(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i32)> {
     let s = scale as f32;
-    // A light lift, as the mockup has it: three quarters of the menus'
-    // blur, half their drop, about half their depth.
-    let blur = (tokens.shadow_blur.max(8) as f32 * 0.75 * s).ceil();
+    // A wide, light lift, as the mockup has it: the menus' shadow
+    // (`edel::draw::shadow`) spread 2.25 times as far, falling half as far,
+    // at three quarters of its depth; measured against the stacked rings
+    // the overview drew before M6.17, so the look stays as it was.
+    let blur = (tokens.shadow_blur.max(8) as f32 * 2.25 * s).ceil();
     let drop = tokens.shadow_offset as f32 * 0.5 * s;
     let margin = (blur + drop).ceil();
-    let (pw, ph) = (w as f32 * s, h as f32 * s);
-    let mut pixmap = Pixmap::new(
-        (pw + 2.0 * margin).ceil() as u32,
-        (ph + 2.0 * margin).ceil() as u32,
+    let pixmap = draw::shadow(
+        (w as f32 * s).round() as u32,
+        (h as f32 * s).round() as u32,
+        margin as u32,
+        6.0 * s,
+        blur,
+        drop,
+        Colour {
+            a: tokens.shadow.a * 0.75,
+            ..tokens.shadow
+        },
     )?;
-    // Rings growing out from the window, each fainter, add up to a blur.
-    let steps = 12;
-    for k in 0..steps {
-        let grow = blur * (k as f32 + 0.5) / steps as f32;
-        let a = tokens.shadow.a * 0.55 / steps as f32;
-        if let Some(path) = rounded(
-            margin - grow,
-            margin - grow + drop,
-            pw + 2.0 * grow,
-            ph + 2.0 * grow,
-            6.0 * s + grow,
-        ) {
-            pixmap.fill_path(
-                &path,
-                &paint_of(Colour { a, ..tokens.shadow }),
-                FillRule::Winding,
-                Transform::identity(),
-                None,
-            );
-        }
-    }
     Some((pixmap, margin as i32))
 }
 

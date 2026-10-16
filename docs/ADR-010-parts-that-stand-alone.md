@@ -66,6 +66,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | Settings keys, defaults, values, pages | `edel::settings` (`tests/keys.txt` its append-only record) | `edel`, the compositor, shell-ui, Settings, the settings reference (generated, M6.11) |
 | Shortcuts | `edel::shortcuts` | the compositor, Settings, `docs/SHORTCUTS.md` (generated) |
 | Paths and file names, the settings file's name included | `edel::places` | every part; `ci/names.sh`, held equal by a test (M5.25, M5.27) |
+| How the desktop draws a corner, a shadow and a colour mix | `edel::draw` (and `edel::tokens::Colour::towards`) | the compositor and shell-ui (M6.17) |
 | The base's tools (`rc-update`, `rc-service`, `adduser`, `cryptpw`, `chpasswd`, `mdev`, `zzz` and the like) and their arguments | `edel::base` | the tool's modules; `ci/seams.sh` fails another that names one (M6.17) |
 | Words people read, in English | the code that shows them, marked with `edel::i18n`'s `tr` (M5.24a) | `po/PART.pot` (generated), which translators' `LANG/PART.po` follow |
 | The channels and where each one's release list is served | `edel::settings::CHANNELS`, `edel::release::channel_list` (M5.8c) | `edel update`, Settings' Channel row |

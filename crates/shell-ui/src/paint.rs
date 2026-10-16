@@ -17,8 +17,10 @@ use tiny_skia::{
     Point, Rect, SpreadMode, Stroke, StrokeDash, Transform,
 };
 
+use edel::draw;
+/// What every part draws with, written once (M6.17).
+pub use edel::draw::{colour, fill, mix, paint_of, rounded};
 use edel::i18n::tr;
-use edel::pictures::box_blur;
 use edel::presets::{Edge, Size, Style};
 use edel::tokens::{Colour, Tokens};
 
@@ -339,29 +341,6 @@ impl Text {
     }
 }
 
-/// tiny-skia's colour for a token colour.
-fn colour(c: Colour) -> tiny_skia::Color {
-    tiny_skia::Color::from_rgba(c.r, c.g, c.b, c.a).unwrap_or(tiny_skia::Color::BLACK)
-}
-
-/// `a` moved towards `b` by `t`, 0 to 1, opaque: text dimmed towards the
-/// panel it lies on.
-pub fn mix(a: Colour, b: Colour, t: f32) -> Colour {
-    Colour {
-        r: a.r + (b.r - a.r) * t,
-        g: a.g + (b.g - a.g) * t,
-        b: a.b + (b.b - a.b) * t,
-        a: 1.0,
-    }
-}
-
-pub fn paint_of(c: Colour) -> Paint<'static> {
-    let mut paint = Paint::default();
-    paint.set_color(colour(c));
-    paint.anti_alias = true;
-    paint
-}
-
 /// The shell's icon `name` from `design/icons/` (M5.5d), `px` pixels
 /// square in `colour`, its top left corner at `x`, `y`.
 pub fn icon(pixmap: &mut Pixmap, name: &str, px: f32, x: f32, y: f32, colour: Colour) {
@@ -557,19 +536,6 @@ pub fn rounded_picture(
     );
 }
 
-/// Fills the rectangle with corners of radius `r` in `c`.
-pub fn fill(pixmap: &mut Pixmap, x: f32, y: f32, w: f32, h: f32, r: f32, c: Colour) {
-    if let Some(path) = rounded(x, y, w, h, r) {
-        pixmap.fill_path(
-            &path,
-            &paint_of(c),
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
-}
-
 /// How far a menu's shadow reaches past its card on every side, logical
 /// pixels: nothing on the Lite tier, which keeps surfaces flat (ADR-002,
 /// M5.5e).
@@ -583,73 +549,18 @@ pub fn shadow_room(tokens: &Tokens, flat: bool) -> u32 {
 
 /// The shadow of a card `w` by `h` pixels with corners `r`, at `room`
 /// pixels in from each side of a pixmap that much bigger, at scale `s`
-/// (M5.5e): two layers cast by one light above, a close sharp one and a
-/// far soft one, in the tokens' shadow colour; drawn once per size.
+/// (M5.5e): `edel::draw::shadow` with the tokens' blur, drop and colour;
+/// drawn once per size.
 pub fn shadow(w: u32, h: u32, room: u32, r: f32, tokens: &Tokens, s: f32) -> Option<Pixmap> {
-    let (pw, ph) = (w + 2 * room, h + 2 * room);
-    let mut cover = vec![0.0f32; (pw * ph) as usize];
-    let (blur, fall) = (
+    draw::shadow(
+        w,
+        h,
+        room,
+        r,
         tokens.shadow_blur as f32 * s,
         tokens.shadow_offset as f32 * s,
-    );
-    // (how far down, how soft, how strong)
-    for (down, soft, strength) in [(fall / 3.0, blur / 4.0, 0.55), (fall, blur, 0.45)] {
-        let mut mask = Pixmap::new(pw, ph)?;
-        fill(
-            &mut mask,
-            room as f32,
-            room as f32 + down,
-            w as f32,
-            h as f32,
-            r,
-            Colour {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
-        );
-        let mut layer: Vec<f32> = mask
-            .data()
-            .chunks_exact(4)
-            .map(|p| f32::from(p[3]) / 255.0)
-            .collect();
-        // Three box blurs, each a third as wide, come close to a Gaussian.
-        let radius = (soft / 3.0).round() as usize;
-        for _ in 0..3 {
-            box_blur(&mut layer, pw as usize, ph as usize, radius);
-        }
-        for (c, l) in cover.iter_mut().zip(layer) {
-            *c = (*c + l * strength).min(1.0);
-        }
-    }
-    let [cr, cg, cb, ca] = tokens.shadow.bytes();
-    let mut out = Pixmap::new(pw, ph)?;
-    for (pixel, c) in out.data_mut().chunks_exact_mut(4).zip(cover) {
-        let a = c * f32::from(ca) / 255.0;
-        let mul = |v: u8| (f32::from(v) * a).round() as u8;
-        pixel.copy_from_slice(&[mul(cr), mul(cg), mul(cb), (a * 255.0).round() as u8]);
-    }
-    Some(out)
-}
-
-/// A rectangle with corners of radius `r`, as a path.
-pub fn rounded(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<Path> {
-    let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
-    // The cubic Bézier that best follows a quarter circle.
-    let k = r * 0.552_284_8;
-    let mut p = PathBuilder::new();
-    p.move_to(x + r, y);
-    p.line_to(x + w - r, y);
-    p.cubic_to(x + w - r + k, y, x + w, y + r - k, x + w, y + r);
-    p.line_to(x + w, y + h - r);
-    p.cubic_to(x + w, y + h - r + k, x + w - r + k, y + h, x + w - r, y + h);
-    p.line_to(x + r, y + h);
-    p.cubic_to(x + r - k, y + h, x, y + h - r + k, x, y + h - r);
-    p.line_to(x, y + r);
-    p.cubic_to(x, y + r - k, x + r - k, y, x + r, y);
-    p.close();
-    p.finish()
+        tokens.shadow,
+    )
 }
 
 /// A fillet: the panel's colour filling the corner between the screen's
