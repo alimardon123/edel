@@ -64,7 +64,7 @@ Settings, the app for every setting (ADR-008, roadmap M5.6): GTK4 and libadwaita
 
 ## Checks
 
-The root CLAUDE.md's Rust checks cover it (the runner needs `libgtk-4-dev libadwaita-1-dev`); `ci/build.sh` builds it in Alpine with `gtk4.0-dev libadwaita-dev`, and the `settings` feature ships it. desktop-test's `settings` case opens it, checks our title bar and its colours, clicks Mac-like's card, Classic's and Reset, folds it on a narrow screen and holds its own memory to `settings_own_mib` in `ci/budgets.toml` (`ci/CLAUDE.md`). To see it without an image: run `edel-compositor` nested (it uses winit when `WAYLAND_DISPLAY` or `DISPLAY` is set, as under `Xvfb`) and start `edel-settings` on its socket; GTK 4.14 on Ubuntu warns about the light block of `gtk.css`, which 4.22 in the image reads; `ADW_DEBUG_COLOR_SCHEME=prefer-dark` shows the dark scheme, and `GSK_RENDERER=cairo` draws without a GPU.
+The root CLAUDE.md's Rust checks cover it (the runner needs `libgtk-4-dev libadwaita-1-dev`); `ci/build.sh` builds it in Alpine with `gtk4.0-dev libadwaita-dev`, and the `settings` feature ships it. desktop-test's `settings` case opens it, checks our title bar and its colours, clicks Mac-like's card, Classic's and Reset, folds it on a narrow screen and holds its own memory to `settings_own_mib` in `ci/budgets.toml` (`ci/CLAUDE.md`). To see it without an image: run `edel-compositor` nested (built with `--features winit`, it uses winit when `WAYLAND_DISPLAY` or `DISPLAY` is set, as under `Xvfb`) and start `edel-settings` on its socket; GTK 4.14 on Ubuntu warns about the light block of `gtk.css`, which 4.22 in the image reads; `ADW_DEBUG_COLOR_SCHEME=prefer-dark` shows the dark scheme, and `GSK_RENDERER=cairo` draws without a GPU.
 
 ## Coming (roadmap)
 
