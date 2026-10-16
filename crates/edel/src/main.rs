@@ -29,7 +29,7 @@ mod speaker_boot;
 mod system_power;
 mod update;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{FromArgMatches, Parser, Subcommand};
@@ -476,6 +476,14 @@ struct BuildArgs {
     /// own files; for test images. Can be given more than once.
     #[arg(long = "files", value_name = "DIR")]
     extra_files: Vec<PathBuf>,
+    /// An add-on to build from this image's root, beside the definition's
+    /// own; for test images. Can be given more than once.
+    #[arg(long = "addon", value_name = "NAME")]
+    addons: Vec<String>,
+    /// Another directory of feature files to find add-ons in; for test
+    /// images.
+    #[arg(long = "features", value_name = "DIR")]
+    feature_dirs: Vec<PathBuf>,
     /// Seconds the boot guard waits for health before the watchdog
     /// restarts the machine, instead of the definition's; for test images
     #[arg(long, value_name = "SECS")]
@@ -586,6 +594,43 @@ impl Commands {
     }
 }
 
+/// The add-ons `edel image build --addon` names (M7.2a), found beside the
+/// definition and in the `--features` directories, each checked by the
+/// rules the definition's own add-ons meet.
+fn resolve_addons(
+    definition: &Path,
+    image: &ImageDef,
+    names: &[String],
+    dirs: &[PathBuf],
+) -> Result<Vec<def::Listed>> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let def_dir = definition
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut all = def::feature_dirs(def_dir)?;
+    all.extend(dirs.iter().cloned());
+    let mut found = def::find_features(&all)?;
+    let known: Vec<String> = found.keys().cloned().collect();
+    let mut listed: Vec<def::Listed> = Vec::new();
+    for name in names {
+        if image.addons.iter().chain(&listed).any(|l| &l.name == name) {
+            bail!("add-on {name} is listed twice");
+        }
+        let Some(addon) = found.remove(name) else {
+            bail!(
+                "unknown feature {name}; the features are {}",
+                known.join(", ")
+            );
+        };
+        def::check_addon(image, &addon)?;
+        listed.push(addon);
+    }
+    Ok(listed)
+}
+
 fn run(command: Commands) -> Result<()> {
     match command {
         Commands::Image { command } => match command {
@@ -607,6 +652,8 @@ fn run(command: Commands) -> Result<()> {
                     dropped_apps,
                     no_compress,
                     plan,
+                    addons,
+                    feature_dirs,
                 } = *args;
                 if let Some(id) = apps
                     .iter()
@@ -631,6 +678,7 @@ fn run(command: Commands) -> Result<()> {
                     );
                 }
                 let def = ImageDef::load(&definition)?;
+                let extra_addons = resolve_addons(&definition, &def, &addons, &feature_dirs)?;
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
                 // apk and mount get absolute paths, so nothing depends on
                 // which directory a tool happens to run in.
@@ -652,6 +700,7 @@ fn run(command: Commands) -> Result<()> {
                     def: &def,
                     def_dir,
                     extra_files,
+                    extra_addons,
                     health_timeout,
                     slot_mib,
                     extra_keys: public_keys,
