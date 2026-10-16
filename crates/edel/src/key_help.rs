@@ -985,7 +985,7 @@ pub const HELP: &[Help] = &[
     },
     Help {
         key: "addons.installed",
-        help: n_("The add-ons this machine has, by name; this release does not act on them yet."),
+        help: n_("The add-ons this machine has, by name; each arrives with the next update and is in edel addon list."),
         default: "[]",
         from: DecidedBy::Release,
         belongs: Belongs::Device,

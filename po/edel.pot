@@ -629,7 +629,7 @@ msgstr ""
 msgid "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id."
 msgstr ""
 
-msgid "The add-ons this machine has, by name; this release does not act on them yet."
+msgid "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list."
 msgstr ""
 
 msgid "Whether banners stay away; notifications still arrive and are listed in the notification centre."
@@ -1740,6 +1740,12 @@ msgid "{item} is not a Flatpak app id; an id is the app's reverse-DNS name, thre
 msgstr ""
 
 msgid "a list of Flatpak app ids, such as [\"io.mpv.Mpv\"]"
+msgstr ""
+
+msgid "{item} is not an add-on name; a name is lowercase letters, digits and hyphens, such as \"fonts-cjk\" (edel addon list shows them)"
+msgstr ""
+
+msgid "a list of add-on names, such as [\"fonts-cjk\"]"
 msgstr ""
 
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
