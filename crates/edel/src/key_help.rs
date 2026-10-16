@@ -1051,9 +1051,7 @@ pub const HELP: &[Help] = &[
     },
     Help {
         key: "location.enabled",
-        help: n_(
-            "Off gives every app nothing, whatever each app may use.",
-        ),
+        help: n_("Off gives every app nothing, whatever each app may use."),
         default: "true",
         from: DecidedBy::Release,
         belongs: Belongs::Person,
@@ -1061,9 +1059,7 @@ pub const HELP: &[Help] = &[
     },
     Help {
         key: "location.place",
-        help: n_(
-            "The city apps are told, named by its time zone, such as Asia/Tashkent.",
-        ),
+        help: n_("The city apps are told, named by its time zone, such as Asia/Tashkent."),
         default: "the time zone's city",
         from: DecidedBy::Release,
         belongs: Belongs::Device,
