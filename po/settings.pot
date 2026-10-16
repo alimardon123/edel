@@ -1388,6 +1388,9 @@ msgstr ""
 msgid "Channel"
 msgstr ""
 
+msgid "Developer mode"
+msgstr ""
+
 msgid "Close window"
 msgstr ""
 
@@ -1760,6 +1763,18 @@ msgstr ""
 msgid "Copy this machine to another, or set it up from a file."
 msgstr ""
 
+msgid "Its changes are deleted when the computer next starts."
+msgstr ""
+
+msgid "Held back: a start found no slot with a try left, so your changes are off. Switch developer mode off and on again to keep them, or reset it."
+msgstr ""
+
+msgid "On after a restart."
+msgstr ""
+
+msgid "Off after a restart."
+msgstr ""
+
 msgid "This machine already matches this file; there is nothing to apply."
 msgstr ""
 
@@ -1794,6 +1809,30 @@ msgid "Apply the file"
 msgstr ""
 
 msgid "Makes the file this machine's settings. Choose a file first to see what it changes."
+msgstr ""
+
+msgid "Change Edel OS's own files under /usr and install packages with apk. Takes effect when the computer next starts."
+msgstr ""
+
+msgid "Reset developer mode"
+msgstr ""
+
+msgid "Developer changes"
+msgstr ""
+
+msgid "Deletes the changes developer mode made under /usr when the computer next starts, and takes its key out of the settings file."
+msgstr ""
+
+msgid "Click again to reset"
+msgstr ""
+
+msgid "Turn on developer mode?"
+msgstr ""
+
+msgid "Developer mode lets you change Edel OS's own files and install packages with apk. If a change stops the computer from starting, Edel OS starts without your changes until you switch developer mode off and on again or reset it."
+msgstr ""
+
+msgid "Turn on"
 msgstr ""
 
 msgid "Saved to {path}"
