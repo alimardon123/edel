@@ -59,7 +59,8 @@
 #               (M5.2g); with workspaces.per_screen on, Super+2 shows
 #               workspace 2 on Virtual-2 alone, and off, both screens switch
 #               together (M5.2k)
-#   one-screen  the second screen off, as outputs leaves it, for a part of
+#   one-screen  the second screen off and the pointer in the middle, as
+#               outputs leaves them, for a part of
 #               the cases that does not run outputs (M6.17)
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
@@ -7042,11 +7043,12 @@ screen_two_off() {
 }
 
 # one-screen (M6.17): the second screen off, for a part of the cases
-# that does not run outputs, so its cases see the one screen they see
-# after outputs in a single run.
+# that does not run outputs, so its cases see the one screen, and the
+# pointer in its middle, that they see after outputs in a single run.
 case_one_screen() {
 	screen_two_off
-	echo "PASS: displays.Virtual-2.enabled = false turned the second screen off"
+	python3 ci/qmp.py move 640 400
+	echo "PASS: displays.Virtual-2.enabled = false turned the second screen off, and the pointer is in the middle of the first"
 }
 
 case_outputs() {
