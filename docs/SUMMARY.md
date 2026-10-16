@@ -6,6 +6,7 @@
 
 - [Try it](TRY-IT.md)
 - [Install](INSTALL.md)
+- [Fleets](FLEET.md)
 - [How Edel OS works](guide/how-it-works.md)
 - [The settings file](settings.md)
 - [Defaults](defaults.md)
