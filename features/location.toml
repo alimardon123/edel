@@ -1,0 +1,16 @@
+# Location (roadmap M6.14c, Alimardon's choice of 2026-10-15): GeoClue,
+# which D-Bus starts on the system bus only while an app asks the location
+# portal for its place. Its drop-in (features/location/) keeps every source
+# off but the static one, a place the person picks in Settings, which
+# `edel settings apply` writes to /etc/geolocation; nothing leaves the
+# machine until location.online turns on the Wi-Fi lookup through BeaconDB.
+format = 1
+summary = "Location: GeoClue, started by D-Bus while an app asks, giving the place picked in Settings, and online only behind one switch"
+why = "Maps, weather and the clock's sunrise want to know where the machine is, and Flatpak apps ask the location portal of xdg-desktop-portal (the shell feature's), which asks GeoClue, the one Linux location service; there is no other way for a sandboxed app to get a place. GeoClue runs only while an app asks: the system bus starts it through dbus-daemon-launch-helper (about 50 KiB, the bus's own setuid helper, which no feature needed before) and it exits a minute after the last app stops, so nothing runs at rest. The drop-in turns off every source that could reach the network or a modem (the IP and Wi-Fi lookups, 3G, CDMA, the modem's GPS, NMEA over the local network, the compass) and keeps only the static one, the file /etc/geolocation that edel settings apply writes from location.place (else the time zone's city, from tzdata's own coordinates), so the default works offline and sends nothing anywhere. location.online, off by default, adds a second drop-in that turns the Wi-Fi lookup on, which sends the hardware addresses of nearby access points to BeaconDB, a community service (GeoClue's own default since Mozilla's closed in 2024). The portal is the only client GeoClue lets in (system = true in the drop-in): every other program is refused, as no GeoClue agent runs, so each app's apps.location and the person's location.enabled, which shell-ui's Lockdown portal backend turns into the portal's own switch, decide every request."
+packages = ["geoclue", "dbus-daemon-launch-helper"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Location"
+test = "location"
