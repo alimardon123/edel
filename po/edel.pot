@@ -2525,6 +2525,12 @@ msgstr ""
 msgid "Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once"
 msgstr ""
 
+msgid "An add-on to build from this image's root, beside the definition's own; for test images. Can be given more than once"
+msgstr ""
+
+msgid "Another directory of feature files to find add-ons in; for test images"
+msgstr ""
+
 msgid "Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images"
 msgstr ""
 
