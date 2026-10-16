@@ -230,6 +230,14 @@ impl Text {
         }
     }
 
+    /// Shapes in `family` from now on, as the look changed (M6.17): the
+    /// fonts are the system's, loaded once, so only the name changes.
+    pub fn set_family(&mut self, family: &str) {
+        if self.family != family {
+            self.family = family.to_string();
+        }
+    }
+
     /// `text` shaped in the interface font, falling back for other
     /// scripts, `size` pixels high.
     pub fn line(&mut self, text: &str, size: f32) -> Line {

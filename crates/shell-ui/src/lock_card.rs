@@ -327,6 +327,24 @@ impl Shell {
 
     /// Draws every configured lock surface whose view changed: on a key,
     /// an answer, the minute, a player's news and the card's second.
+    /// The look changed while the screen is locked (M6.17): the lock's
+    /// settings and wallpaper are read again, the backgrounds it made in
+    /// the old look are dropped and every screen is drawn again.
+    pub fn lock_relook(&mut self) {
+        let Some(card) = &mut self.lock else {
+            return;
+        };
+        let (machine, person) = crate::settings_texts();
+        let dark = quick::is_dark(machine.as_deref(), person.as_deref());
+        card.lock = lock::lock_settings(machine.as_deref(), person.as_deref());
+        card.wallpaper = lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark);
+        card.backdrops = lock::Backdrops::default();
+        for screen in &mut card.screens {
+            screen.drawn = None;
+        }
+        self.draw_lock();
+    }
+
     pub fn draw_lock(&mut self) {
         let Some(view) = self.lock_view() else {
             return;

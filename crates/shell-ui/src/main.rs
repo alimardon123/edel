@@ -30,6 +30,7 @@ mod corner;
 mod edit_kit;
 mod editor;
 mod editor_card;
+mod follow;
 mod glass;
 mod greetd;
 mod greeter;
@@ -274,6 +275,11 @@ struct Shell {
     /// wanted when they end (and whether with Bluetooth), the way back to
     /// the loop and the system bus's connection.
     status_wanted: bool,
+    /// The status channel's receiving end until the status area is first
+    /// wanted, and whether the tray is served (M6.17: both start when a
+    /// panel first holds their widget, at start or after a change).
+    status_rx: Option<channel::Channel<status::Msg>>,
+    tray_served: bool,
     status_busy: u32,
     status_again: Option<bool>,
     status_tx: channel::Sender<status::Msg>,
@@ -292,6 +298,9 @@ struct Shell {
     flipped: switcher::View,
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
+    /// The preset and the colour scheme the settings files choose, as the
+    /// look last followed them (M6.17, `follow.rs`).
+    chosen: follow::Chosen,
     tokens: Tokens,
     /// The wallpaper behind the panels in the shown scheme, as the settings
     /// files name it (M5.12b3), read at start and when they change, and the
@@ -507,9 +516,6 @@ fn run() -> Result<()> {
     let mut event_loop: EventLoop<Shell> =
         EventLoop::try_new().context("starting the event loop")?;
     let (status_tx, status_rx) = channel::channel::<status::Msg>();
-    let status_wanted = panels
-        .iter()
-        .any(|p| p.row.all().any(|w| w.name == "status"));
     let (edits, asks) = channel::channel::<shell_bus::Edit>();
     let buttons = {
         let (machine, person) = settings_texts();
@@ -565,7 +571,9 @@ fn run() -> Result<()> {
         shift: false,
         ctrl: false,
         logo: false,
-        status_wanted,
+        status_wanted: false,
+        status_rx: Some(status_rx),
+        tray_served: false,
         status_busy: 0,
         status_again: None,
         status_tx,
@@ -577,6 +585,7 @@ fn run() -> Result<()> {
         scrolled: widgets::Scrolled::default(),
         qh: qh.clone(),
         handle: event_loop.handle(),
+        chosen: chosen(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
         _portal: portal::serve(&tokens, &buttons, edits),
@@ -605,23 +614,7 @@ fn run() -> Result<()> {
     // only when a panel holds the widget. Served once the panel's fonts
     // and icons are loaded, as the portal always was: served before them,
     // shell-ui kept 3.7 MiB of its own instead of 1.6 (#138's first run).
-    let tray_wanted = shell
-        .panels
-        .iter()
-        .any(|p| p.row.all().any(|w| w.name == "tray"));
-    if let (Some(connection), true) = (&shell._portal, tray_wanted) {
-        let (events, news) = channel::channel();
-        if tray::serve(connection, events) {
-            event_loop
-                .handle()
-                .insert_source(news, |event, _, shell: &mut Shell| {
-                    if let channel::Event::Msg(event) = event {
-                        shell.tray_changed(event);
-                    }
-                })
-                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
-        }
-    }
+    shell.serve_tray()?;
     // Notifications (M5.9b): served on the same connection, the calls
     // reaching the loop over a channel as the tray's news does; nothing
     // is kept until an app calls.
@@ -683,33 +676,7 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching what plays: {e}"))?;
         shell.player_tx = Some(events);
     }
-    // The status area (M5.9a): what the machine says is read once now, and
-    // again when the system bus says NetworkManager or UPower changed
-    // something; only when a panel holds the widget.
-    if status_wanted {
-        event_loop
-            .handle()
-            .insert_source(status_rx, |event, _, shell: &mut Shell| {
-                if let channel::Event::Msg(msg) = event {
-                    shell.status_msg(msg);
-                }
-            })
-            .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
-        watch::serve(features, &shell.status_tx, &event_loop.handle());
-        shell.request_status(false);
-        // The in-use sign (M6.14b): PipeWire's graph read on a thread of its
-        // own, its batches reaching the loop over a channel.
-        let (uses_tx, uses) = channel::channel::<Vec<in_use::InUse>>();
-        event_loop
-            .handle()
-            .insert_source(uses, |event, _, shell: &mut Shell| {
-                if let channel::Event::Msg(uses) = event {
-                    shell.in_use_changed(uses);
-                }
-            })
-            .map_err(|e| anyhow::anyhow!("watching what apps use: {e}"))?;
-        in_use::watch(uses_tx);
-    }
+    shell.watch_status()?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
@@ -786,45 +753,9 @@ fn make_panel(
     // from its edge and both sides, and keeps that much free as well.
     let dock = spec.style == Style::Dock;
     let namespace = if dock { DOCK } else { NAMESPACE };
-    let height = paint::height(spec.style, spec.size, tokens);
-    let strip = paint::strip(spec.style, spec.floating, tokens);
-    let gap = tokens.gap as i32;
     let surface = compositor.create_surface(qh);
     let surface = layers.create_layer_surface(qh, surface, Layer::Top, Some(namespace), output);
-    let edge = match spec.edge {
-        Edge::Top => Anchor::TOP,
-        Edge::Bottom => Anchor::BOTTOM,
-    };
-    if dock {
-        surface.set_anchor(edge);
-        surface.set_size(height, height);
-        let (top, bottom) = match spec.edge {
-            Edge::Top => (DOCK_MARGIN, 0),
-            Edge::Bottom => (0, DOCK_MARGIN),
-        };
-        surface.set_margin(top, 0, bottom, 0);
-    } else if spec.floating {
-        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-        surface.set_size(0, height);
-        let (top, bottom) = match spec.edge {
-            Edge::Top => (gap, 0),
-            Edge::Bottom => (0, gap),
-        };
-        surface.set_margin(top, gap, bottom, gap);
-    } else {
-        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
-        surface.set_size(0, height + strip);
-    }
-    // A dock that hides while a window covers it (M5.4f) keeps
-    // nothing free; the compositor hides it. The compositor adds a
-    // surface's margin to its zone, so a floating bar's gap and a dock's
-    // margin stay free too.
-    let zone = if dock && spec.hide == Hide::Covered {
-        0
-    } else {
-        height as i32
-    };
-    surface.set_exclusive_zone(zone);
+    place_panel(&surface, spec, tokens, None);
     surface.set_keyboard_interactivity(KeyboardInteractivity::None);
     surface.commit();
     eprintln!(
@@ -852,6 +783,51 @@ fn make_panel(
     }
 }
 
+/// Asks for a panel's place along its edge, its size and the room it keeps
+/// free of windows, from `spec` and the tokens, as it is made and when the
+/// look changes its height (M6.17); a dock asks for `width`, else a square
+/// until it is drawn. The caller commits.
+fn place_panel(surface: &LayerSurface, spec: &presets::Panel, tokens: &Tokens, width: Option<u32>) {
+    let dock = spec.style == Style::Dock;
+    let height = paint::height(spec.style, spec.size, tokens);
+    let strip = paint::strip(spec.style, spec.floating, tokens);
+    let gap = tokens.gap as i32;
+    let edge = match spec.edge {
+        Edge::Top => Anchor::TOP,
+        Edge::Bottom => Anchor::BOTTOM,
+    };
+    if dock {
+        surface.set_anchor(edge);
+        surface.set_size(width.unwrap_or(height), height);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (DOCK_MARGIN, 0),
+            Edge::Bottom => (0, DOCK_MARGIN),
+        };
+        surface.set_margin(top, 0, bottom, 0);
+    } else if spec.floating {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, height);
+        let (top, bottom) = match spec.edge {
+            Edge::Top => (gap, 0),
+            Edge::Bottom => (0, gap),
+        };
+        surface.set_margin(top, gap, bottom, gap);
+    } else {
+        surface.set_anchor(edge | Anchor::LEFT | Anchor::RIGHT);
+        surface.set_size(0, height + strip);
+    }
+    // A dock that hides while a window covers it (M5.4f) keeps
+    // nothing free; the compositor hides it. The compositor adds a
+    // surface's margin to its zone, so a floating bar's gap and a dock's
+    // margin stay free too.
+    let zone = if dock && spec.hide == Hide::Covered {
+        0
+    } else {
+        height as i32
+    };
+    surface.set_exclusive_zone(zone);
+}
+
 /// The wallpaper behind the panels in the scheme the settings files pick,
 /// the person's over the machine's, as the lock screen reads it (M5.12b3).
 fn read_wallpaper() -> edel::wallpapers::Wallpaper {
@@ -872,8 +848,8 @@ fn load_tokens(scheme: Scheme) -> Tokens {
         "edel-shell-ui: text {} at {} px",
         tokens.font, tokens.panel_text_size
     );
-    // The icons the panel draws with (M5.12b5 part A): the compositor starts
-    // shell-ui again when the icon size changes, so each start says it.
+    // The icons the panel draws with (M5.12b5 part A), said again when they
+    // change (`follow.rs`, M6.17).
     eprintln!("edel-shell-ui: icons at {} px", tokens.panel_icon);
     tokens
 }
@@ -882,6 +858,31 @@ fn load_tokens(scheme: Scheme) -> Tokens {
 /// they pick (M5.5c), the person's over the machine's; a broken file or an
 /// unknown name is reported, never fatal (ADR-008).
 fn from_system_files() -> (presets::Preset, Scheme) {
+    let (name, panels, scheme) = read_choices();
+    let (mut preset, note) = presets::named(name.as_deref());
+    if let Some(note) = note {
+        eprintln!("edel-shell-ui: {note}");
+    }
+    // panels.list, when set, in place of the preset's (M5.4e).
+    if let Some(panels) = panels {
+        preset.panels = panels;
+    }
+    (preset, scheme)
+}
+
+/// The preset's name and the colour scheme the settings files choose now,
+/// which the look follows (M6.17).
+fn chosen() -> follow::Chosen {
+    let (name, _, scheme) = read_choices();
+    follow::Chosen {
+        preset: name.unwrap_or_else(|| presets::DEFAULT.to_string()),
+        scheme,
+    }
+}
+
+/// `layout.preset`, `panels.list` and the colour scheme, the person's over
+/// the machine's.
+fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
     let (mut name, mut panels, mut scheme) = (None, None, None);
     let files = [Some(places::machine_settings()), places::person_settings()];
     for path in files.into_iter().flatten().map(|p| places::found(&p)) {
@@ -903,19 +904,11 @@ fn from_system_files() -> (presets::Preset, Scheme) {
             ),
         }
     }
-    let (mut preset, note) = presets::named(name.as_deref());
-    if let Some(note) = note {
-        eprintln!("edel-shell-ui: {note}");
-    }
-    // panels.list, when set, in place of the preset's (M5.4e).
-    if let Some(panels) = panels {
-        preset.panels = panels;
-    }
     let scheme = scheme
         .as_deref()
         .and_then(Scheme::parse)
         .unwrap_or_default();
-    (preset, scheme)
+    (name, panels, scheme)
 }
 
 /// Whether the fillets are drawn: not on the Lite tier, which keeps
@@ -1330,6 +1323,13 @@ impl Shell {
         self.panel_specs = wanted;
         self.log_panels();
         self.read_apps();
+        // A widget these panels bring for the first time starts its service
+        // now (M6.17).
+        for started in [self.serve_tray(), self.watch_status()] {
+            if let Err(e) = started {
+                eprintln!("edel-shell-ui: {e:#}");
+            }
+        }
     }
 
     /// Makes the surfaces of `specs` afresh on `outputs`: the open popups
@@ -1361,6 +1361,102 @@ impl Shell {
                 )
             })
             .collect();
+    }
+
+    /// The look changed from `old` (M6.17): each panel whose height, fillet
+    /// strip or gap changed with it asks for its new place and size, its
+    /// surface kept, and draws once the compositor agrees.
+    fn place_panels(&mut self, old: &Tokens) {
+        for panel in &mut self.panels {
+            let Some(spec) = self.panel_specs.iter().find(|s| s.edge == panel.edge) else {
+                continue;
+            };
+            let shape = |t: &Tokens| {
+                (
+                    paint::height(spec.style, spec.size, t),
+                    paint::strip(spec.style, spec.floating, t),
+                    t.gap,
+                )
+            };
+            if shape(old) == shape(&self.tokens) {
+                continue;
+            }
+            let width = (panel.asked > 0).then_some(panel.asked);
+            place_panel(&panel.surface, spec, &self.tokens, width);
+            panel.surface.commit();
+        }
+    }
+
+    /// Serves the tray once a panel holds its widget (M5.2e): the portal
+    /// and the tray share the session's bus and zbus's thread for it, and
+    /// the tray's news reaches the loop over a channel. Served once the
+    /// panel's fonts and icons are loaded, as the portal always was: served
+    /// before them, shell-ui kept 3.7 MiB of its own instead of 1.6 (#138's
+    /// first run). At start, and after a change of the panels brings the
+    /// widget (M6.17), as shell-ui no longer starts again for one.
+    fn serve_tray(&mut self) -> Result<()> {
+        let wanted = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "tray"));
+        let Some(connection) = self
+            ._portal
+            .as_ref()
+            .filter(|_| wanted && !self.tray_served)
+        else {
+            return Ok(());
+        };
+        self.tray_served = true;
+        let (events, news) = channel::channel();
+        if tray::serve(connection, events) {
+            self.handle
+                .insert_source(news, |event, _, shell: &mut Shell| {
+                    if let channel::Event::Msg(event) = event {
+                        shell.tray_changed(event);
+                    }
+                })
+                .map_err(|e| anyhow::anyhow!("watching the tray: {e}"))?;
+        }
+        Ok(())
+    }
+
+    /// Reads the status area once a panel holds its widget (M5.9a): what
+    /// the machine says is read now, and again when the kernel says the
+    /// network or the power changed; with it the in-use sign (M6.14b),
+    /// PipeWire's graph read on a thread of its own. At start, and after a
+    /// change of the panels brings the widget (M6.17).
+    fn watch_status(&mut self) -> Result<()> {
+        let wanted = self
+            .panels
+            .iter()
+            .any(|p| p.row.all().any(|w| w.name == "status"));
+        if !wanted || self.status_wanted {
+            return Ok(());
+        }
+        let Some(status_rx) = self.status_rx.take() else {
+            return Ok(());
+        };
+        self.status_wanted = true;
+        self.handle
+            .insert_source(status_rx, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(msg) = event {
+                    shell.status_msg(msg);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the status: {e}"))?;
+        let features = edel::places::found_shared(edel::features::DIR);
+        watch::serve(&features, &self.status_tx, &self.handle);
+        self.request_status(false);
+        let (uses_tx, uses) = channel::channel::<Vec<in_use::InUse>>();
+        self.handle
+            .insert_source(uses, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(uses) = event {
+                    shell.in_use_changed(uses);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching what apps use: {e}"))?;
+        in_use::watch(uses_tx);
+        Ok(())
     }
 
     /// Logs the panels that are up, as `panels now EDGE (N widgets), ...`.

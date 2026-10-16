@@ -272,7 +272,7 @@ impl Shell {
     /// Opens the card above the status area's panel (below it on a panel
     /// along the top), a sheet across the screen when Compact, with the
     /// keyboard; and reads the machine again, Bluetooth too.
-    fn open_quick(&mut self) {
+    pub(crate) fn open_quick(&mut self) {
         self.close_launcher();
         self.close_styles();
         self.close_app_windows();
@@ -893,8 +893,8 @@ impl Shell {
 
     /// Dark style: `appearance.mode` in the person's settings file, as
     /// Settings writes it (the key is taken out when what applies without
-    /// it is already what was asked); the compositor follows the file and
-    /// starts shell-ui again in the new colours.
+    /// it is already what was asked); the compositor and shell-ui follow the
+    /// file, and the card opens again in the new colours (M6.17).
     fn toggle_dark(&mut self, dark: bool) {
         let (machine, _) = settings_texts();
         let value = quick::mode_to_write(machine.as_deref(), dark);

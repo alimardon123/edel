@@ -114,13 +114,6 @@ pub fn shell_ui_kept_for_lock(name: &str, how: &str, secs: f32) -> String {
     )
 }
 
-/// shell-ui cannot be ended to start again with new settings.
-pub fn shell_ui_not_ended(name: &str, why: impl Display) -> String {
-    format!(
-        "could not end {name} to start it again: {why}; it keeps its old settings until the next login"
-    )
-}
-
 /// A program of the session's list (`[session] start`) is not in this image.
 pub fn session_program_missing(name: &str) -> String {
     format!(
@@ -313,10 +306,6 @@ mod tests {
         assert_eq!(
             shell_ui_given_up("edel-shell-ui", "ended (exit status: 1)", 5, 10),
             "edel-shell-ui ended (exit status: 1), and failed 5 times in a row within 10 s of starting; it is not started again, so there is no panel until the next login, and the lines above say why"
-        );
-        assert_eq!(
-            shell_ui_not_ended("edel-shell-ui", "no such process"),
-            "could not end edel-shell-ui to start it again: no such process; it keeps its old settings until the next login"
         );
     }
 
