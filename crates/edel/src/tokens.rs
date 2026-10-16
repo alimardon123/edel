@@ -61,6 +61,18 @@ impl Colour {
         [self.r, self.g, self.b, self.a]
     }
 
+    /// This colour moved towards `other` by `t`, 0 to 1, its alpha kept:
+    /// the one colour mixing every part draws with (M6.17).
+    pub fn towards(self, other: Colour, t: f32) -> Colour {
+        let mix = |a: f32, b: f32| a + (b - a) * t;
+        Colour {
+            r: mix(self.r, other.r),
+            g: mix(self.g, other.g),
+            b: mix(self.b, other.b),
+            a: self.a,
+        }
+    }
+
     /// Red, green, blue and alpha, 0 to 255.
     pub fn bytes(self) -> [u8; 4] {
         [self.r, self.g, self.b, self.a].map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
@@ -503,14 +515,7 @@ fn from_hsl(hue: f32, saturation: f32, lightness: f32, alpha: f32) -> Colour {
 /// `base` with `percent` of `accent` mixed in, its alpha kept: the
 /// focused title bar's tint.
 fn tinted(base: Colour, accent: Colour, percent: u32) -> Colour {
-    let k = percent.min(100) as f32 / 100.0;
-    let mix = |a: f32, b: f32| a + (b - a) * k;
-    Colour {
-        r: mix(base.r, accent.r),
-        g: mix(base.g, accent.g),
-        b: mix(base.b, accent.b),
-        a: base.a,
-    }
+    base.towards(accent, percent.min(100) as f32 / 100.0)
 }
 
 fn text_on(accent: Colour) -> Colour {

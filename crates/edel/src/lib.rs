@@ -26,6 +26,8 @@ pub mod backlight;
 #[cfg(feature = "os")]
 pub mod base;
 pub mod bluetooth;
+#[cfg(feature = "pictures")]
+pub mod draw;
 pub mod features;
 #[cfg(feature = "os")]
 pub mod firmware;
