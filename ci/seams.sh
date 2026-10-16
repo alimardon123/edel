@@ -26,6 +26,13 @@
 #                    edel::base (crates/edel/src/base.rs), so the base
 #                    stays replaceable (ADR-010, roadmap M6.17)
 #
+#   the programs     the compositor and shell-ui run only the programs
+#                    allowed_program() lists, each with its reason and what
+#                    happens where it is missing, so the desktop's run-time
+#                    ties are written down like its build-time ones (M6.17);
+#                    a program chosen at run time (a person's app, a
+#                    preset's session list) is not a tie
+#
 #   sh ci/seams.sh               check this checkout ("Rust checks")
 #   sh ci/seams.sh --self-test   plant one violation of each kind in a copy
 #                                and check that each is caught
@@ -188,6 +195,72 @@ check_base() {
 	done
 }
 
+# allowed_program PART PROGRAM: the programs each desktop part runs by name,
+# each with its reason and what happens where it is missing (M6.17).
+allowed_program() {
+	case "$1 $2" in
+	# The compositor starts the shell; without it there is no panel, and the
+	# compositor says so.
+	"compositor edel-shell-ui") return 0 ;;
+	# X11 apps' bridge, started when the first one connects; without it X11
+	# apps do not open and Wayland ones do.
+	"compositor xwayland-satellite") return 0 ;;
+	# The input method region.input_method names; without it typing works
+	# with the keyboard's own layouts.
+	"compositor fcitx5") return 0 ;;
+	# Edel OS's own tool: the update check and the power menu, both only
+	# where it is on PATH; elsewhere the check is skipped and the power menu
+	# asks logind over D-Bus.
+	"shell-ui edel") return 0 ;;
+	# Settings, opened on a page; without it the buttons say it could not
+	# open.
+	"shell-ui edel-settings") return 0 ;;
+	# PipeWire's own tools, for the in-use sign and its Stop; without them
+	# the sign stays away and shell-ui says so once.
+	"shell-ui pw-dump" | "shell-ui pw-cli") return 0 ;;
+	# Tells foot that the colour scheme changed (procps or busybox); without
+	# it a terminal follows at its next start.
+	"shell-ui pkill") return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+# check_programs ROOT: the compositor and shell-ui run only what
+# allowed_program() lists, read from each Command::new: a "NAME", or a
+# constant of the same file, else of the part, holding one.
+check_programs() {
+	for part in compositor shell-ui; do
+		files=$(cd "$1" && find "crates/$part/src" -name '*.rs' -type f | sort)
+		all=$(for file in $files; do code_of "$1/$file"; done)
+		for file in $files; do
+			code=$(code_of "$1/$file")
+			args=$(printf '%s\n' "$code" | grep -o 'Command::new([^)]*)' | sed 's/^Command::new(//; s/)$//' | sort -u)
+			for arg in $args; do
+				case "$arg" in
+				\"*\") program=${arg#\"} program=${program%\"} ;;
+				*)
+					name=${arg#&}
+					name=${name##*::}
+					case "$name" in
+					[A-Z]*) ;;
+					# A program chosen at run time, not a tie.
+					*) continue ;;
+					esac
+					program=$(printf '%s\n' "$code" | sed -n "s/.*const $name: &str = \"\([^\"]*\)\";.*/\1/p" | head -n 1)
+					[ -n "$program" ] || program=$(printf '%s\n' "$all" | sed -n "s/.*const $name: &str = \"\([^\"]*\)\";.*/\1/p" | head -n 1)
+					if [ -z "$program" ]; then
+						fail "$file runs Command::new($arg), whose program ci/seams.sh cannot read; name it in a const of the part, or as a string"
+						continue
+					fi
+					;;
+				esac
+				allowed_program "$part" "$program" ||
+					fail "$file runs $program, which ci/seams.sh does not list for $part; the desktop runs only what allowed_program() names, so add it there with the reason and what happens where it is missing"
+			done
+		done
+	done
+}
+
 # check ROOT LOCK: every rule over the checkout at ROOT.
 check() {
 	root=$1 lock=$2
@@ -198,6 +271,7 @@ check() {
 	check_features "$root" "$lock"
 	check_seam "$root"
 	check_base "$root"
+	check_programs "$root"
 	[ "$failed" = 0 ]
 }
 
@@ -258,13 +332,18 @@ if [ "${1:-}" = --self-test ]; then
 	printf '%s\n' 'fn probe() {' '    let _ = std::process::Command::new("rc-update");' '}' >"$copy/crates/edel/src/base_probe.rs"
 	caught "$copy" "crates/edel/src/base_probe.rs names the base's tool rc-update"
 
-	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui, a settings write in shell-ui and rc-update outside edel::base"
+	copy="$work/program"
+	seed "$copy"
+	printf '%s\n' 'fn probe() {' '    let _ = std::process::Command::new("edel-secret-tool");' '}' >"$copy/crates/shell-ui/src/program_probe.rs"
+	caught "$copy" "crates/shell-ui/src/program_probe.rs runs edel-secret-tool"
+
+	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui, a settings write in shell-ui, rc-update outside edel::base and an unlisted program in shell-ui"
 	[ "$ok" = 1 ]
 	exit
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the settings file is written by edel::settings, bar the known gaps in the NOTE lines, and only edel::base names the base's tools)"
+	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work and run only the programs listed, the settings file is written by edel::settings, bar the known gaps in the NOTE lines, and only edel::base names the base's tools)"
 else
 	exit 1
 fi

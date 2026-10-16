@@ -4,7 +4,11 @@
 //! update waits for a restart. No drawing. The command runs on a thread of
 //! its own (`lock_card.rs`), never the drawing one. The login feature ships
 //! the doas rule that lets the seat group run exactly the three programs
-//! with `-n`, so nothing asks for a password.
+//! with `-n`, so nothing asks for a password. Where `edel` is not
+//! installed, as on another distribution, the choice is asked of logind
+//! over the system bus instead (`org.freedesktop.login1`, which
+//! systemd-logind and elogind both serve), so the desktop's power menu
+//! needs nothing of Edel OS (M6.17, M5.15).
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -56,11 +60,36 @@ impl Choice {
     /// program, through doas when the seat is not root, so nothing asks
     /// for a password (M5.10c).
     pub fn command(self) -> [&'static str; 2] {
+        [crate::EDEL, self.name()]
+    }
+
+    /// The logind method the choice calls where `edel` is not installed;
+    /// each takes one argument, whether polkit may ask for a password,
+    /// which the power menu never lets it (M6.17).
+    pub fn logind_method(self) -> &'static str {
         match self {
-            Choice::Suspend => ["edel", "suspend"],
-            Choice::Restart => ["edel", "restart"],
-            Choice::ShutDown => ["edel", "shutdown"],
+            Choice::Suspend => "Suspend",
+            Choice::Restart => "Reboot",
+            Choice::ShutDown => "PowerOff",
         }
+    }
+}
+
+/// How the power menu carries a choice out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Way {
+    /// `edel`'s command, on Edel OS.
+    Edel,
+    /// logind's method over the system bus, anywhere else.
+    Logind,
+}
+
+/// The way this machine has: `edel` when it is installed, else logind.
+pub fn way(edel_installed: bool) -> Way {
+    if edel_installed {
+        Way::Edel
+    } else {
+        Way::Logind
     }
 }
 
@@ -70,10 +99,35 @@ pub fn restart_waiting() -> bool {
     Path::new(edel::places::RESTART_PENDING).exists()
 }
 
-/// Runs `choice`'s command and waits for it. Ok when it succeeds, else the
-/// message saying what failed, with the exit status and the first line of
-/// what the command wrote to its standard error.
+/// Carries `choice` out the way this machine has and waits for it. Ok when
+/// it succeeds, else the message saying what failed.
 pub fn run(choice: Choice) -> Result<(), String> {
+    match way(crate::on_path(crate::EDEL)) {
+        Way::Edel => run_edel(choice),
+        Way::Logind => run_logind(choice),
+    }
+}
+
+/// Asks logind for `choice` over the system bus, never letting polkit ask
+/// for a password, so a person allowed it gets it and anyone else a no.
+fn run_logind(choice: Choice) -> Result<(), String> {
+    let failed = |e: zbus::Error| messages::power_failed_logind(choice.name(), e);
+    let bus = zbus::blocking::Connection::system().map_err(failed)?;
+    bus.call_method(
+        Some("org.freedesktop.login1"),
+        "/org/freedesktop/login1",
+        Some("org.freedesktop.login1.Manager"),
+        choice.logind_method(),
+        &(false,),
+    )
+    .map_err(failed)?;
+    Ok(())
+}
+
+/// Runs `choice`'s `edel` command and waits for it. Ok when it succeeds,
+/// else the message saying what failed, with the exit status and the
+/// first line of what the command wrote to its standard error.
+fn run_edel(choice: Choice) -> Result<(), String> {
     let [program, args @ ..] = choice.command();
     let child = Command::new(program)
         .args(args)
@@ -130,5 +184,13 @@ mod tests {
         assert_eq!(Choice::Restart.command(), ["edel", "restart"]);
         assert_eq!(Choice::ShutDown.command(), ["edel", "shutdown"]);
         assert_eq!(Choice::Suspend.command(), ["edel", "suspend"]);
+    }
+
+    #[test]
+    fn without_edel_the_menu_asks_logind() {
+        assert_eq!(way(true), Way::Edel);
+        assert_eq!(way(false), Way::Logind);
+        let methods: Vec<&str> = CHOICES.iter().map(|c| c.logind_method()).collect();
+        assert_eq!(methods, ["Suspend", "Reboot", "PowerOff"]);
     }
 }

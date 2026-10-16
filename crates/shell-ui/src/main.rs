@@ -170,6 +170,10 @@ const TRAY_GRID: &str = "edel-tray";
 const TOOLTIP: &str = "edel-tooltip";
 /// What opens when the Settings button is pressed, and the way to a page.
 const SETTINGS: &str = "edel-settings";
+/// Edel OS's own tool, which checks for updates and carries out the power
+/// menu's choices; where it is not installed, as on another distribution,
+/// the update check is skipped and the power menu asks logind (M6.17).
+const EDEL: &str = "edel";
 /// The feature that brings it.
 const SETTINGS_FEATURE: &str = "settings";
 /// The launcher's distance from the panel and the screen's side.
@@ -931,7 +935,7 @@ fn fillets() -> bool {
 /// `edel` command is installed and a person has a state folder to keep
 /// their stamps in.
 fn check_updates(handle: &LoopHandle<'static, Shell>) {
-    if places::person_state_dir().is_none() || !edel_installed() {
+    if places::person_state_dir().is_none() || !on_path(EDEL) {
         return;
     }
     let first = std::env::var("EDEL_UPDATE_CHECK_SECS")
@@ -963,7 +967,7 @@ fn check_updates(handle: &LoopHandle<'static, Shell>) {
 
 /// `edel update --check`'s standard output, or why it did not run.
 fn run_update_check() -> Result<String, String> {
-    let out = std::process::Command::new("edel")
+    let out = std::process::Command::new(EDEL)
         .args(["update", "--check"])
         .stdin(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -976,10 +980,10 @@ fn run_update_check() -> Result<String, String> {
     }
 }
 
-/// Whether an `edel` program is in one of the `PATH` folders.
-fn edel_installed() -> bool {
+/// Whether a program called `name` is in one of the `PATH` folders.
+fn on_path(name: &str) -> bool {
     std::env::var_os("PATH")
-        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("edel").is_file()))
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(name).is_file()))
 }
 
 /// Draws the panels again when the minute changes, for the clock, and

@@ -340,6 +340,14 @@ pub fn power_failed(what: &str, why: impl Display) -> String {
     )
 }
 
+/// A power choice that logind refused or could not be asked, where `edel`
+/// is not installed (M6.17).
+pub fn power_failed_logind(what: &str, why: impl Display) -> String {
+    format!(
+        "could not {what} through logind: {why}; the power menu asks systemd-logind or elogind where Edel OS's edel is not installed, so check that one of them runs and lets this seat {what}"
+    )
+}
+
 /// The Access dialog cannot be drawn (M6.3): the question is answered no,
 /// so the app that asked takes no picture.
 pub const ACCESS_NOT_SHOWN: &str = "could not draw the dialog asking whether an app may take a screenshot; the request was cancelled, so no picture is taken";
@@ -404,6 +412,10 @@ mod tests {
         assert_eq!(
             power_failed("restart", "exit status: 1"),
             "could not restart: exit status: 1; the power rules come with the login feature (doas), so check that it is installed"
+        );
+        assert_eq!(
+            power_failed_logind("suspend", "Access denied"),
+            "could not suspend through logind: Access denied; the power menu asks systemd-logind or elogind where Edel OS's edel is not installed, so check that one of them runs and lets this seat suspend"
         );
     }
 
