@@ -6,7 +6,7 @@
 # the panel in its token colour and the test client in its own. "Rust
 # checks" runs it on GitHub's Ubuntu runner, outside the Alpine build.
 #
-#   cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient
+#   cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient --features edel-compositor/winit
 #   sh ci/elsewhere-test.sh
 #
 # Needs Xvfb, ImageMagick's import and convert, and Mesa's software

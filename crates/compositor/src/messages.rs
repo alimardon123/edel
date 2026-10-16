@@ -39,6 +39,10 @@ pub fn gpu_missing(path: &Path, seen: &str) -> String {
 pub const NO_EGL: &str =
     "could not start EGL on the graphics card; its Mesa driver is missing or too old";
 
+/// Started inside another desktop, but built without the development
+/// window (M6.17): it draws on the graphics card instead.
+pub const NO_DEVELOPMENT_WINDOW: &str = "WAYLAND_DISPLAY or DISPLAY is set, but this build has no development window, so it draws on the graphics card; to run inside another desktop, build with cargo build -p edel-compositor --features winit";
+
 /// The compositor stops with an error.
 pub fn stopped(why: impl Display) -> String {
     format!("the desktop stopped: {why}; the session ends")
@@ -366,11 +370,18 @@ mod tests {
     }
 
     #[test]
+    fn a_build_without_the_development_window_says_how_to_get_it() {
+        assert!(NO_DEVELOPMENT_WINDOW.contains("--features winit"));
+        assert!(NO_DEVELOPMENT_WINDOW.contains("draws on the graphics card"));
+    }
+
+    #[test]
     fn no_message_has_a_dash_or_a_final_full_stop() {
         let all = [
             NO_GPU.to_string(),
             GPU_LIST.to_string(),
             NO_EGL.to_string(),
+            NO_DEVELOPMENT_WINDOW.to_string(),
             SCREEN_LIST.to_string(),
             INPUT_LOST.to_string(),
             screens_lost("x"),
