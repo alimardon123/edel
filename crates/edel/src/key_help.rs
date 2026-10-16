@@ -1052,7 +1052,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "location.enabled",
         help: n_(
-            "Whether apps may know where this computer is at all; off gives every app nothing, whatever each app's choice.",
+            "Off gives every app nothing, whatever each app may use.",
         ),
         default: "true",
         from: DecidedBy::Release,
@@ -1062,7 +1062,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "location.place",
         help: n_(
-            "The city apps are told this computer is in, named by its time zone such as Asia/Tashkent.",
+            "The city apps are told, named by its time zone, such as Asia/Tashkent.",
         ),
         default: "the time zone's city",
         from: DecidedBy::Release,
@@ -1072,7 +1072,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "location.online",
         help: n_(
-            "Find where this computer is from the Wi-Fi networks around it, through the community service BeaconDB, which is sent their hardware addresses.",
+            "Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses.",
         ),
         default: "false",
         from: DecidedBy::Release,

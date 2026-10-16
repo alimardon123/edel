@@ -422,9 +422,9 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `location.enabled` | Whether apps may know where this computer is at all; off gives every app nothing, whatever each app's choice. | `true` | release |
-| `location.place` | The city apps are told this computer is in, named by its time zone such as Asia/Tashkent. | the time zone's city | release |
-| `location.online` | Find where this computer is from the Wi-Fi networks around it, through the community service BeaconDB, which is sent their hardware addresses. | `false` | release |
+| `location.enabled` | Off gives every app nothing, whatever each app may use. | `true` | release |
+| `location.place` | The city apps are told, named by its time zone, such as Asia/Tashkent. | the time zone's city | release |
+| `location.online` | Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses. | `false` | release |
 
 ### `addons`
 
