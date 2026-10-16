@@ -472,11 +472,17 @@ mod tests {
         assert_eq!(text_option(&options, "missing"), None);
     }
 
+    /// The tests that serve the portal's name on a session bus, one at a
+    /// time: two at once would each own it in turn, and a call would reach
+    /// the other's loop.
+    static ON_THE_BUS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// A question asked over the bus reaches the event loop as `Edit::Access`
     /// and its answer goes back to the caller (M6.3). Needs a session bus:
     /// without one, `serve` gives nothing and the test passes by saying so.
     #[test]
     fn an_access_question_is_asked_and_answered_over_the_bus() {
+        let _alone = ON_THE_BUS.lock();
         use smithay_client_toolkit::reexports::calloop::EventLoop;
         use std::time::Duration;
         let (edits, asks) = channel::channel::<Edit>();
@@ -573,6 +579,7 @@ mod tests {
     /// session bus the test passes by saying nothing.
     #[test]
     fn the_lockdown_is_served_and_follows_the_location_switch() {
+        let _alone = ON_THE_BUS.lock();
         let (edits, _asks) = channel::channel::<Edit>();
         let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, edits, true) else {
             return;
