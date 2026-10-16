@@ -109,3 +109,7 @@ apps.microphone
 apps.screenshots
 apps.notifications
 apps.files
+apps.location
+location.enabled
+location.place
+location.online

@@ -119,13 +119,15 @@ fn store(connection: &zbus::blocking::Connection, set: &[Entry], delete: &[Entry
                 true,
                 entry.id,
                 entry.app.as_str(),
-                vec![entry.value],
+                entry.values.to_vec(),
             ),
         );
         match told {
             Ok(_) => eprintln!(
                 "edel-shell-ui: app permission {} {} for {}",
-                entry.id, entry.value, entry.app
+                entry.id,
+                entry.values.join(" "),
+                entry.app
             ),
             Err(e) => eprintln!(
                 "edel-shell-ui: {}",
@@ -216,12 +218,12 @@ fn write_override(dir: &Path, app: &str, ask: bool) -> std::io::Result<bool> {
 mod tests {
     use super::*;
 
-    fn entry(app: &str, value: &'static str) -> Entry {
+    fn entry(app: &str, values: &'static [&'static str]) -> Entry {
         Entry {
             table: "devices",
             id: "camera",
             app: app.into(),
-            value,
+            values,
         }
     }
 
@@ -235,7 +237,7 @@ mod tests {
     #[test]
     fn at_start_every_entry_is_set_and_every_asked_file_written() {
         let now = applied(
-            vec![entry("org.a.A", "no"), entry("org.a.B", "ask")],
+            vec![entry("org.a.A", &["no"]), entry("org.a.B", &["ask"])],
             &["org.a.C"],
         );
         let p = plan(None, &now);
@@ -246,21 +248,27 @@ mod tests {
 
     #[test]
     fn a_changed_choice_sets_that_one_entry_and_deletes_none() {
-        let before = applied(vec![entry("org.a.A", "yes"), entry("org.a.B", "yes")], &[]);
-        let now = applied(vec![entry("org.a.A", "yes"), entry("org.a.B", "no")], &[]);
+        let before = applied(
+            vec![entry("org.a.A", &["yes"]), entry("org.a.B", &["yes"])],
+            &[],
+        );
+        let now = applied(
+            vec![entry("org.a.A", &["yes"]), entry("org.a.B", &["no"])],
+            &[],
+        );
         let p = plan(Some(&before), &now);
-        assert_eq!(p.set, [entry("org.a.B", "no")]);
+        assert_eq!(p.set, [entry("org.a.B", &["no"])]);
         assert!(p.delete.is_empty());
         assert!(p.files.is_empty());
     }
 
     #[test]
     fn a_removed_app_deletes_its_entry_and_allows_its_files_again() {
-        let before = applied(vec![entry("org.a.A", "no")], &["org.a.C"]);
+        let before = applied(vec![entry("org.a.A", &["no"])], &["org.a.C"]);
         let now = applied(vec![], &[]);
         let p = plan(Some(&before), &now);
         assert!(p.set.is_empty());
-        assert_eq!(p.delete, [entry("org.a.A", "no")]);
+        assert_eq!(p.delete, [entry("org.a.A", &["no"])]);
         assert_eq!(p.files, [("org.a.C".to_string(), false)]);
     }
 

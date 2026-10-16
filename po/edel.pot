@@ -20,6 +20,9 @@ msgstr ""
 msgid "Files"
 msgstr ""
 
+msgid "Location"
+msgstr ""
+
 msgid "Screen"
 msgstr ""
 
@@ -645,6 +648,18 @@ msgid "Where the notification list opens: hung on its button, or as a sheet on t
 msgstr ""
 
 msgid "The input method for typing languages a keyboard has no keys for: fcitx5 or none."
+msgstr ""
+
+msgid "Which apps may know where this computer is, by Flatpak app id: allow, ask every time or never."
+msgstr ""
+
+msgid "Whether apps may know where this computer is at all; off gives every app nothing, whatever each app's choice."
+msgstr ""
+
+msgid "The city apps are told this computer is in, named by its time zone such as Asia/Tashkent."
+msgstr ""
+
+msgid "Find where this computer is from the Wi-Fi networks around it, through the community service BeaconDB, which is sent their hardware addresses."
 msgstr ""
 
 msgid "English (United States)"
@@ -1509,6 +1524,9 @@ msgid "Apps"
 msgstr ""
 
 msgid "what each app may use"
+msgstr ""
+
+msgid "where apps may find this computer"
 msgstr ""
 
 msgid "Add-ons"
