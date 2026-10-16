@@ -125,11 +125,12 @@ When docs disagree, the newer ADR wins.
 
 ## Commands
 
-Run from the repository root. CI's "Rust checks" job runs exactly these; run all ten before every push. They work in any checkout with Rust and the libraries the compositor links, `libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev` on Ubuntu (crates.io and Ubuntu's archive were reachable from cloud sessions):
+Run from the repository root. CI's "Rust checks" job runs exactly these; run all eleven before every push. They work in any checkout with Rust and the libraries the compositor links, `libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev` on Ubuntu (crates.io and Ubuntu's archive were reachable from cloud sessions):
 
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo clippy -p edel-compositor --all-targets --locked --features winit -- -D warnings # the development window too (M6.17)
 cargo test --workspace --locked
 for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
 cargo build --locked --lib --no-default-features
@@ -157,7 +158,7 @@ sh ci/desktop-test.sh floating titlebar ...   # CI's "Desktop tests" job, after 
 CI's "Desktop on another distribution" job (M5.15a) needs only Ubuntu's libraries, Xvfb, ImageMagick and Mesa (`xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0`), on a machine without `/usr/share/edel`, `/data/edel` or `/run/edel`:
 
 ```sh
-cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient && sh ci/elsewhere-test.sh
+cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient --features edel-compositor/winit && sh ci/elsewhere-test.sh
 ```
 
 ## Environment
