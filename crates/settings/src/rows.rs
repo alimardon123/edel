@@ -366,6 +366,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Microphone"),
     },
     Row {
+        key: "apps.location",
+        title: n_("Location"),
+    },
+    Row {
         key: "apps.screenshots",
         title: n_("Screenshots"),
     },
@@ -796,6 +800,18 @@ mod tests {
         (
             "apps.installed",
             "the machine's list of apps installed for everyone, which an administrator changes as root with edel settings set apps.installed+=ID",
+        ),
+        (
+            "location.enabled",
+            "the Location page's switch is its own later piece (M6.14c); until it is built, edel settings set and the settings file change it",
+        ),
+        (
+            "location.place",
+            "the Location page's city is its own later piece (M6.14c); until it is built, edel settings set and the settings file change it",
+        ),
+        (
+            "location.online",
+            "the Location page's Wi-Fi lookup is its own later piece (M6.14c); until it is built, edel settings set and the settings file change it",
         ),
     ];
 
