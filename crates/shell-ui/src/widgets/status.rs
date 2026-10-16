@@ -15,7 +15,7 @@
 //! kind's icon in it, and a click on it opens the in-use card
 //! (`Action::InUse`), a click anywhere else `Action::Quick`.
 //!
-//! What it shows is text, tab-separated, `OPEN NET VOLUME BATTERY IN_USE`,
+//! What it shows is text, tab-separated, `OPEN NET VOLUME BATTERY IN_USE DEVELOPER`,
 //! the parts split by U+001F: `1` while quick settings are open; the network
 //! as `ICON WORDS`, the volume as `ICON PERCENT MUTED`, the battery as
 //! `PERCENT CHARGING`, the kinds in use as their names, `camera`,
@@ -23,6 +23,14 @@
 //! empty. A screen reader hears "Status: Wi-Fi Home 5G, volume 64 percent,
 //! battery 82 percent", and "Camera and microphone in use, Status: ..." while
 //! something uses them.
+//!
+//! While developer mode is in effect this boot (M7.1) the words "Developer
+//! mode" come first in the pill, before the icons, in the date's small text
+//! and the popup's secondary colour. The flag is read once from
+//! `edel::places::DEVELOPER_NOW` and is the last part of what it shows; a
+//! screen reader hears ", developer mode" at the end.
+
+use std::sync::OnceLock;
 
 use accesskit::Role;
 use edel::app_use::Kind;
@@ -32,6 +40,7 @@ use edel::tokens::Tokens;
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::in_use;
 use crate::paint::{self, fill};
+use crate::popup;
 use crate::status::{Link, Status};
 
 pub const WIDGET: Widget = Widget {
@@ -65,6 +74,9 @@ struct Parts {
     battery: Option<(u32, bool)>,
     /// The kinds an app uses now, in `Kind::ALL` order (M6.14b).
     in_use: Vec<Kind>,
+    /// Whether developer mode is in effect this boot (M7.1): the words
+    /// come before the icons.
+    developer: bool,
 }
 
 const SEP: char = '\u{1f}';
@@ -147,10 +159,12 @@ fn decode(shown: &str) -> Parts {
         .split(',')
         .filter_map(Kind::named)
         .collect();
+    let developer = fields.next() == Some("1");
     let number = |s: &String| s.parse::<u32>().unwrap_or(0);
     Parts {
         open,
         in_use,
+        developer,
         network: match &network[..] {
             [icon, words] => Some((icon.clone(), words.clone())),
             _ => None,
@@ -166,8 +180,31 @@ fn decode(shown: &str) -> Parts {
     }
 }
 
+/// What it shows: `encode`'s text and, as its last part, `1` while
+/// developer mode is in effect this boot (M7.1).
 fn shows(live: &Live) -> String {
-    encode(&live.status, live.quick, &live.in_use)
+    format!(
+        "{}\t{}",
+        encode(&live.status, live.quick, &live.in_use),
+        u8::from(developer_now())
+    )
+}
+
+/// Developer mode is in effect when the file `edel boot mount-data` writes
+/// says `on` or `held` (M7.1); a missing file, which every other
+/// distribution has, or anything else means it is not.
+pub fn developer_shown(now: Option<&str>) -> bool {
+    matches!(now.map(str::trim), Some("on" | "held"))
+}
+
+/// Whether developer mode is in effect this boot, read once, when the
+/// panel first shows the status area (M7.1).
+fn developer_now() -> bool {
+    static NOW: OnceLock<bool> = OnceLock::new();
+    *NOW.get_or_init(|| {
+        let file = std::fs::read_to_string(edel::places::DEVELOPER_NOW).ok();
+        developer_shown(file.as_deref())
+    })
 }
 
 /// How many icons it holds.
@@ -182,10 +219,24 @@ fn count(parts: &Parts) -> usize {
     .count()
 }
 
-/// What a screen reader hears: the sign's kinds in use, then the status.
+/// What a screen reader hears: the sign's kinds in use, then the status,
+/// then developer mode as ", developer mode" at the end (M7.1).
 fn label(shown: &str) -> String {
     let parts = decode(shown);
-    let status = status_words(&parts);
+    let said = spoken(&parts);
+    if !parts.developer {
+        return said;
+    }
+    if said.is_empty() {
+        tr("Developer mode").to_string()
+    } else {
+        format!("{said}, {}", tr("developer mode"))
+    }
+}
+
+/// The sign's kinds in use, then the status, as a screen reader says them.
+fn spoken(parts: &Parts) -> String {
+    let status = status_words(parts);
     if parts.in_use.is_empty() {
         return status;
     }
@@ -250,14 +301,18 @@ fn sign_width(tokens: &Tokens, kinds: usize) -> f32 {
     }
 }
 
-/// The status pill's part of the widget, none while it shows nothing.
-fn status_width(tokens: &Tokens, parts: &Parts) -> f32 {
+/// The status pill's part of the widget, none while it shows nothing. The
+/// developer words (M7.1), `developer` logical pixels wide, come first in
+/// the pill with a gap after them, as each icon has one after it.
+fn status_width(tokens: &Tokens, parts: &Parts, developer: f32) -> f32 {
     let n = count(parts);
-    if n == 0 {
+    if n == 0 && !parts.developer {
         return 0.0;
     }
     let glyph = tokens.panel_glyph as f32;
-    ROOM + PAD + n as f32 * glyph + (n - 1) as f32 * GAP + PAD + ROOM
+    let word = if parts.developer { developer } else { 0.0 };
+    let items = n + usize::from(parts.developer);
+    ROOM + PAD + n as f32 * glyph + word + (items - 1) as f32 * GAP + PAD + ROOM
 }
 
 /// Where the sign lies in the widget, from its left edge, and its width, in
@@ -281,14 +336,30 @@ fn input(tokens: &Tokens, shown: &str, input: Input) -> Option<Action> {
     Some(Action::Quick)
 }
 
-/// Its width in logical pixels: none while it shows nothing.
-pub fn logical_width(tokens: &Tokens, shown: &str) -> f32 {
+/// Its width in logical pixels, `developer` being the developer words'
+/// width from `developer_logical`: none while it shows nothing.
+pub fn logical_width(tokens: &Tokens, shown: &str, developer: f32) -> f32 {
     let parts = decode(shown);
-    sign_width(tokens, parts.in_use.len()) + status_width(tokens, &parts)
+    sign_width(tokens, parts.in_use.len()) + status_width(tokens, &parts, developer)
+}
+
+/// The developer words' width in logical pixels (M7.1), measured in the
+/// date's size as they are drawn; 0 while they are not shown, or when there
+/// is no text to measure them with.
+fn developer_logical(canvas: &mut Canvas, shown: bool) -> f32 {
+    if !shown {
+        return 0.0;
+    }
+    let scale = canvas.scale;
+    let size = canvas.tokens.panel_text_small_size as f32 * scale;
+    canvas.text.as_deref_mut().map_or(0.0, |text| {
+        text.line(tr("Developer mode"), size).width / scale
+    })
 }
 
 fn width(canvas: &mut Canvas, shown: &str) -> f32 {
-    logical_width(canvas.tokens, shown) * canvas.scale
+    let developer = developer_logical(canvas, decode(shown).developer);
+    logical_width(canvas.tokens, shown, developer) * canvas.scale
 }
 
 /// Draws the sign's pill at `x`: the in-use colour, each kind's icon in its
@@ -328,6 +399,18 @@ fn draw_sign(canvas: &mut Canvas, kinds: &[Kind], x: f32) {
     }
 }
 
+/// The developer words (M7.1): the date's small text in the popup's
+/// secondary colour, centred in the pill's height as the clock's date is.
+fn draw_developer(canvas: &mut Canvas, x: f32, py: f32, ph: f32) {
+    let size = canvas.tokens.panel_text_small_size as f32 * canvas.scale;
+    let ink = popup::dim(canvas.tokens);
+    let y = py + ((ph - size * 1.25) / 2.0).round();
+    if let Some(text) = canvas.text.as_deref_mut() {
+        let mut line = text.line(tr("Developer mode"), size);
+        text.draw(canvas.pixmap, &mut line, x, y, ink);
+    }
+}
+
 fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let parts = decode(shown);
     let tokens = canvas.tokens;
@@ -336,12 +419,12 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         draw_sign(canvas, &parts.in_use, x);
     }
     let x = x + sign_width(tokens, parts.in_use.len()) * s;
-    let n = count(&parts);
-    if n == 0 {
+    if count(&parts) == 0 && !parts.developer {
         return;
     }
+    let developer = developer_logical(canvas, parts.developer);
     let (pw, ph) = (
-        ((status_width(tokens, &parts) - 2.0 * ROOM) * s).round(),
+        ((status_width(tokens, &parts, developer) - 2.0 * ROOM) * s).round(),
         (tokens.panel_control as f32 * s).round(),
     );
     let px = (x + ROOM * s).round();
@@ -365,6 +448,10 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let gy = py + ((ph - glyph) / 2.0).round();
     let mut gx = px + (PAD * s).round();
     let step = glyph + (GAP * s).round();
+    if parts.developer {
+        draw_developer(canvas, gx, py, ph);
+        gx += (developer * s).round() + (GAP * s).round();
+    }
     let ink = tokens.panel_text;
     if let Some((icon, _)) = &parts.network {
         paint::icon(canvas.pixmap, icon, glyph, gx, gy, ink);
@@ -452,14 +539,14 @@ mod tests {
         // A machine with none of the three says nothing and takes no room.
         let nothing = encode(&Status::default(), false, &[]);
         assert_eq!(label(&nothing), "");
-        assert_eq!(logical_width(&Tokens::built_in(), &nothing), 0.0);
+        assert_eq!(logical_width(&Tokens::built_in(), &nothing, 0.0), 0.0);
     }
 
     #[test]
     fn it_is_as_wide_as_the_icons_it_holds() {
         let tokens = Tokens::built_in();
         let glyph = tokens.panel_glyph as f32;
-        let wide = |status: &Status| logical_width(&tokens, &encode(status, false, &[]));
+        let wide = |status: &Status| logical_width(&tokens, &encode(status, false, &[]), 0.0);
         let all = wide(&full());
         assert_eq!(all, 2.0 + 10.0 + 3.0 * glyph + 2.0 * 10.0 + 10.0 + 2.0);
         let mut two = full();
@@ -521,7 +608,7 @@ mod tests {
         // Each kind's icon is in the sign: its pill is wider by one icon and a gap.
         let one = encode(&full(), false, &[Kind::Screen]);
         assert_eq!(
-            logical_width(&tokens, &shown) - logical_width(&tokens, &one),
+            logical_width(&tokens, &shown, 0.0) - logical_width(&tokens, &one, 0.0),
             tokens.panel_glyph as f32 + GAP
         );
         let on_sign = Input::Click(at + width / 2.0, 100.0);
@@ -534,7 +621,7 @@ mod tests {
         assert_eq!(input(&tokens, &shown, past), Some(Action::Quick));
         // With no status, the sign alone is the widget.
         let alone = encode(&Status::default(), false, &[Kind::Screen]);
-        assert_eq!(logical_width(&tokens, &alone), sign_width(&tokens, 1));
+        assert_eq!(logical_width(&tokens, &alone, 0.0), sign_width(&tokens, 1));
         assert_eq!(
             input(&tokens, &alone, Input::Click(3.0, 9.0)),
             Some(Action::InUse(ROOM + pill_width(&tokens, 1) / 2.0))
@@ -636,5 +723,47 @@ mod tests {
         assert!(covered(&empty) < covered(&half) && covered(&half) < covered(&full));
         // The bolt over a full battery takes ink out as well as adding it.
         assert_ne!(draw(100, true).data(), full.data());
+    }
+
+    #[test]
+    fn developer_mode_is_shown_only_while_it_is_in_effect() {
+        assert!(developer_shown(Some("on")));
+        assert!(developer_shown(Some("held")));
+        assert!(developer_shown(Some(" on\n")));
+        assert!(!developer_shown(Some("")));
+        assert!(!developer_shown(None));
+        assert!(!developer_shown(Some("off")));
+    }
+
+    #[test]
+    fn developer_mode_comes_first_in_the_pill_and_widens_it_by_its_width() {
+        let tokens = Tokens::built_in();
+        let word = 40.0;
+        let plain = encode(&full(), false, &[]);
+        let with = format!("{plain}\t1");
+        assert!(decode(&with).developer);
+        assert!(!decode(&format!("{plain}\t0")).developer);
+        assert_eq!(
+            logical_width(&tokens, &with, word)
+                - logical_width(&tokens, &format!("{plain}\t0"), word),
+            word + GAP,
+            "the words and one gap"
+        );
+        // Shown with nothing else, the words are the whole pill.
+        let alone = format!("{}\t1", encode(&Status::default(), false, &[]));
+        assert_eq!(
+            logical_width(&tokens, &alone, word),
+            2.0 * ROOM + 2.0 * PAD + word
+        );
+        assert_eq!(label(&alone), "Developer mode");
+        // A screen reader hears it at the end of the status.
+        assert_eq!(
+            label(&with),
+            "Status: Wi-Fi Home 5G, volume 64 percent, battery 82 percent, developer mode"
+        );
+        assert_eq!(
+            label(&format!("{plain}\t0")),
+            "Status: Wi-Fi Home 5G, volume 64 percent, battery 82 percent"
+        );
     }
 }
