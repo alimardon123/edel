@@ -746,6 +746,18 @@ msgstr ""
 msgid "Name, such as my-hive"
 msgstr ""
 
+msgid "none"
+msgstr ""
+
+msgid "Time zone's city ({city})"
+msgstr ""
+
+msgid "Where apps may find this computer. The place stays on this computer unless you let it look online."
+msgstr ""
+
+msgid "Also a tile in quick settings."
+msgstr ""
+
 msgid "Pick a look. Each look keeps its own arrangement and background."
 msgstr ""
 

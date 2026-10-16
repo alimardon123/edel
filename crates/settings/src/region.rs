@@ -27,7 +27,8 @@ use edel::settings::{PAGES, Source};
 
 use crate::files::{self, Files};
 use crate::install::{self, LANGUAGE as ENGLISH};
-use crate::{actions, cmd, rows, widgets};
+use crate::widgets::{Line, exit_text, monitors, reset_words, root_command, set_words};
+use crate::{cmd, rows, widgets};
 
 /// The five keys, in the page's order.
 const LANGUAGE: &str = "region.language";
@@ -120,38 +121,6 @@ fn shown_words(language: &str, keyboard: &str, input: &str, zone: &str) -> Strin
     format!("language {language}, keyboard {keyboard}, input method {input}, time zone {zone}")
 }
 
-/// The words of an `edel settings set KEY=VALUE` line for a machine key,
-/// the Settings action's words first.
-fn set_words(key: &str, value: &str) -> Vec<String> {
-    actions::SET
-        .args
-        .iter()
-        .map(|word| word.to_string())
-        .chain(std::iter::once(format!("{key}={value}")))
-        .collect()
-}
-
-/// The words of an `edel settings reset KEY` for a machine key.
-fn reset_words(key: &str) -> Vec<String> {
-    actions::RESET
-        .args
-        .iter()
-        .map(|word| word.to_string())
-        .chain(std::iter::once(key.to_string()))
-        .collect()
-}
-
-/// The line an administrator types for a machine key: the doas line, as
-/// Copy as command gives it (`AS_ROOT` names the tool, written nowhere else).
-fn root_command(pairs: &[(&str, String)]) -> String {
-    format!("{} {}", edel::places::AS_ROOT, rows::command(pairs))
-}
-
-/// An exit status as the log shows it; `none` when the command did not run.
-fn exit_text(code: Option<i32>) -> String {
-    code.map_or_else(|| "none".to_string(), |code| code.to_string())
-}
-
 fn language_now(files: &Files) -> String {
     files
         .chosen(LANGUAGE)
@@ -204,77 +173,6 @@ fn command_now(key: &str) -> String {
         INPUT => rows::command(&[(INPUT, input_now(&files))]),
         ZONE => root_command(&[(ZONE, zone_now(&files))]),
         _ => root_command(&[(SERVERS, files::list_text(&servers_now(&files)))]),
-    }
-}
-
-/// One row's parts: its row, the key's words and the note of its value, and
-/// the message of a change the machine refused, which replaces the line
-/// until the next change.
-struct Line {
-    row: widgets::Row,
-    /// The key's help (`edel::key_help`), marked for translation.
-    help: &'static str,
-    /// A second sentence under the help, or nothing.
-    extra: &'static str,
-    /// Whether the key is the machine's, so its Reset shows when it is set
-    /// anywhere but the release.
-    machine: bool,
-    problem: RefCell<String>,
-}
-
-impl Line {
-    fn new(
-        group: &gtk::Box,
-        key: &str,
-        control: &gtk::Widget,
-        extra: &'static str,
-        machine: bool,
-    ) -> Line {
-        Line {
-            row: widgets::row(group, rows::title(key), control),
-            help: edel::key_help::find(key).map_or("", |line| line.help),
-            extra,
-            machine,
-            problem: RefCell::new(String::new()),
-        }
-    }
-
-    /// The line's words: the help, the extra sentence, then where the value
-    /// comes from (`Set by this machine`, `Your choice`, or nothing).
-    fn words(&self, source: &Source) -> String {
-        let mut text = [self.help, self.extra]
-            .into_iter()
-            .filter(|part| !part.is_empty())
-            .map(tr)
-            .collect::<Vec<&str>>()
-            .join(" ");
-        if let Some(note) = rows::note(source, false) {
-            text = if text.is_empty() {
-                note.to_string()
-            } else {
-                format!("{text} · {note}")
-            };
-        }
-        text
-    }
-
-    /// Shows the line and whether Reset is there: the words, or a refused
-    /// change's message in the problem colour.
-    fn show(&self, source: &Source) {
-        let problem = self.problem.borrow();
-        if problem.is_empty() {
-            self.row.subtitle.remove_css_class("edel-error");
-            self.row.subtitle.set_label(&self.words(source));
-        } else {
-            self.row.subtitle.add_css_class("edel-error");
-            self.row.subtitle.set_label(problem.as_str());
-        }
-        let reset = if self.machine {
-            !matches!(source, Source::Release)
-        } else {
-            rows::resettable(source)
-        };
-        self.row.reset.set_visible(reset);
     }
 }
 
@@ -617,13 +515,7 @@ fn change_machine(ui: &Rc<Ui>, key: &'static str, words: Vec<String>) {
     *ui.line(key).problem.borrow_mut() = String::new();
     let weak = Rc::downgrade(ui);
     glib::spawn_future_local(async move {
-        let done = gio::spawn_blocking(move || {
-            let args: Vec<&str> = words.iter().map(String::as_str).collect();
-            let set = cmd::edel_as_root(&args, None);
-            let apply = set.ok.then(|| cmd::edel_as_root(actions::APPLY.args, None));
-            (set, apply)
-        })
-        .await;
+        let done = gio::spawn_blocking(move || cmd::set_and_apply_as_root(words)).await;
         let Some(ui) = weak.upgrade() else { return };
         let Ok((set, apply)) = done else {
             ui.busy.set(false);
@@ -666,18 +558,6 @@ fn log_shown(page: &gtk::Widget) {
         eprintln!("edel-settings: region page shows {text}");
         glib::ControlFlow::Break
     });
-}
-
-/// The settings files this page follows: the machine's and the person's.
-fn monitors(files: &Files) -> Vec<gio::FileMonitor> {
-    std::iter::once(&files.machine)
-        .chain(files.person.as_ref())
-        .filter_map(|path| {
-            gio::File::for_path(path)
-                .monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
-                .ok()
-        })
-        .collect()
 }
 
 /// The line under the page's title, a sentence of its own, as other pages
@@ -831,6 +711,7 @@ pub fn page() -> gtk::Widget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::actions;
 
     #[test]
     fn the_rows_are_the_five_keys_in_the_pages_order() {
