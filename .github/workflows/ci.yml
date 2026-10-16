@@ -5,6 +5,9 @@ on:
     branches: [main]
     tags: ["v*"]
   pull_request:
+    # ready_for_review: a draft runs Rust checks only (ci/changes.sh), so
+    # marking it ready starts the rest.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -17,6 +20,30 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # What the change can affect (CI speed-ups, 2026-10-16): ci/changes.sh
+  # answers for the image build and VM tests and for the desktop tests, and
+  # names the VM test lanes. A job it skips ends as skipped; the checks
+  # "Build and boot images" and "Desktop tests" join them and pass, so a
+  # pull request stays mergeable.
+  changes:
+    name: What this change can affect
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.changes.outputs.images }}
+      desktop: ${{ steps.changes.outputs.desktop }}
+      lanes: ${{ steps.changes.outputs.lanes }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # A pull request's merge commit and its base, for the diff.
+          fetch-depth: 2
+      - id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          DRAFT: ${{ github.event.pull_request.draft }}
+          FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+        run: sh ci/changes.sh
+
   rust:
     name: Rust checks
     runs-on: ubuntu-latest
@@ -37,6 +64,10 @@ jobs:
       - name: No settings file key removed within a format
         # Against main, and against every kept release vVERSION (M6.11).
         run: sh ci/keys-check.sh
+      - name: What a change can affect is classified right
+        # The path lists that let a change skip the image build and the
+        # desktop tests (ci/changes.sh), checked on fixed lists.
+        run: sh ci/changes.sh --self-test
       - name: Visible defaults changed
         # The diff of design/, presets/ and docs/defaults.md against the
         # last kept release, or main before there is one, in the run's
@@ -82,24 +113,36 @@ jobs:
     # libraries, outside the Alpine build, and run nested under Xvfb with
     # none of Edel OS's folders, so the desktop stays one that other
     # distributions could ship (ADR-002's separable desktop decision).
+    needs: changes
     runs-on: ubuntu-latest
+    # Each step runs only when the change can affect the desktop's build,
+    # so the check still passes when it cannot (ci/changes.sh).
+    env:
+      RUN: ${{ needs.changes.outputs.images == 'yes' || needs.changes.outputs.desktop == 'yes' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: env.RUN == 'true'
       - name: Install the libraries, Xvfb and Mesa's software renderer
+        if: env.RUN == 'true'
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0
       - name: Keep the desktop's build between runs
+        if: env.RUN == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: target
           key: elsewhere-${{ hashFiles('Cargo.lock') }}
           restore-keys: elsewhere-
       - name: Build the compositor, shell-ui and the test client
+        if: env.RUN == 'true'
         run: cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient
       - name: The desktop runs without Edel OS's folders
+        if: env.RUN == 'true'
         run: sh ci/elsewhere-test.sh
 
-  images:
-    name: Build and boot images
+  build:
+    name: Build images
+    needs: changes
+    if: needs.changes.outputs.images == 'yes'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -176,13 +219,22 @@ jobs:
       - name: Check the kernels and the initramfs of the bootable images
         run: sh ci/initramfs-check.sh
 
-      - name: Run the VM tests, installed-disk lane and other lane at once
-        # install-test then ab-test, beside boot-test, system-test and
-        # flatpak-test; ci/vm-tests.sh says why they can share the runner.
-        run: sh ci/vm-tests.sh
+      - name: Pack each VM test lane's images
+        # One sparse archive per lane, without the builds' work/ folders,
+        # for the lanes' own runners (ci/vm-tests.sh).
+        run: for lane in $(sh ci/vm-tests.sh lanes); do sh ci/vm-tests.sh pack "$lane"; done
+
+      - name: Hand each lane its images
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-vm-lanes
+          retention-days: 1
+          # Already zstd: zipping them again gains nothing.
+          compression-level: 0
+          path: out/vm-*.tar.zst
 
       - name: List the desktop image to try
-        # The image CI just booted as a USB stick in desktop-test live
+        # The image the live lane boots as a USB stick in desktop-test live
         # (M3.6). A push to main keeps it as a download; every run lists
         # it with its size.
         run: |
@@ -245,6 +297,74 @@ jobs:
             out/*.packages
             out/desktop-live/*.png
 
+  # The VM tests, a lane per runner (CI speed-ups, 2026-10-16), each fed its
+  # images by the build job's archive; ci/vm-tests.sh names the lanes and
+  # what each needs.
+  vm:
+    name: VM tests ${{ matrix.lane }}
+    needs: [changes, build]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: ${{ fromJSON(needs.changes.outputs.lanes) }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Number this build
+        # As the build job numbered it: boot-test wants the version.
+        run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Take the lanes' images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: edel-vm-lanes
+          path: out
+
+      - name: Unpack this lane's images
+        run: |
+          sh ci/vm-tests.sh unpack ${{ matrix.lane }}
+          rm -f out/vm-*.tar.zst
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install QEMU and UEFI firmware
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
+
+      - name: Run the ${{ matrix.lane }} lane
+        run: sh ci/vm-tests.sh ${{ matrix.lane }}
+
+      - name: Keep the lane's logs and screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-vm-${{ matrix.lane }}
+          if-no-files-found: ignore
+          path: |
+            out/*.log
+            out/desktop-live/*.png
+
+  # Joins the build and its VM test lanes into the one check a merge waits
+  # for, which passes when ci/changes.sh found nothing they could test.
+  images:
+    name: Build and boot images
+    needs: [changes, build, vm]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: The images were built and every VM test lane passed
+        run: |
+          build=${{ needs.build.result }} vm=${{ needs.vm.result }}
+          if [ "${{ needs.changes.outputs.images }}" != yes ] && [ "${{ needs.changes.result }}" = success ]; then
+            echo "Nothing to build: ci/changes.sh found nothing the images could test (build $build, VM tests $vm)." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          [ "$build" = success ] && [ "$vm" = success ] || { echo "FAIL: build $build, VM tests $vm"; exit 1; }
+
   # The desktop tests on runners of their own, beside the VM tests, in four
   # parts at once (M6.17). Each part builds the desktop test image and boots
   # its own VM, so each part has its runner to itself, and the frame times
@@ -253,6 +373,8 @@ jobs:
   # case a case relies on (see ci/CLAUDE.md, "Desktop test cases").
   desktop-part:
     name: Desktop part ${{ matrix.part }}
+    needs: changes
+    if: needs.changes.outputs.desktop == 'yes'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -332,20 +454,27 @@ jobs:
   # and prints the basics checklist from every part's passed cases.
   desktop:
     name: Desktop tests
-    needs: desktop-part
+    needs: [changes, desktop-part]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Nothing to test
+        # ci/changes.sh found nothing the desktop tests could test.
+        if: needs.changes.result == 'success' && needs.changes.outputs.desktop != 'yes'
+        run: |
+          echo "Nothing to test: ci/changes.sh found nothing the desktop tests could test (parts ${{ needs.desktop-part.result }})." | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Gather the parts' passed cases
+        if: needs.changes.outputs.desktop == 'yes' || needs.changes.result != 'success'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: edel-desktop-test-*
           path: out/parts
 
       - name: Every part passed
-        if: always()
+        if: always() && (needs.changes.outputs.desktop == 'yes' || needs.changes.result != 'success')
         run: |
           mkdir -p out/desktop-test
           find out/parts -name passed ! -path '*/first/*' -exec cat {} + >out/desktop-test/passed 2>/dev/null || true
@@ -354,7 +483,7 @@ jobs:
       - name: Print the basics checklist
         # The rows of every feature's [[basics]] (M6.7): PASS for a case
         # that passed in any part, needs hardware, or the step that brings it.
-        if: always()
+        if: always() && (needs.changes.outputs.desktop == 'yes' || needs.changes.result != 'success')
         run: sh ci/basics-test.sh
 
   # Publishes the docs site to the gh-pages branch, which GitHub Pages
@@ -389,7 +518,7 @@ jobs:
   # throwaway key, which proves the path.
   sign:
     name: Sign the release
-    needs: images
+    needs: build
     runs-on: ubuntu-latest
     environment: ${{ github.event_name == 'push' && 'release' || '' }}
     steps:
