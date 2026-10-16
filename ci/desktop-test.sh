@@ -5851,6 +5851,12 @@ case_scheme() {
 	wait_more 'ci-test: Hello from CI' "$sent" || fail "shell-ui did not log the notification sent before the scheme changed"
 	started=$(count 'edel-compositor: started edel-shell-ui')
 	guest 'portal watch'
+	# One read first starts xdg-desktop-portal, as a part's earlier case
+	# may not have, so it already watches shell-ui's portal when the
+	# scheme changes below and passes on both changes (M6.17).
+	asked=$(count 'DESKTOP-TEST: portal accent-color ')
+	guest 'portal read'
+	wait_more 'DESKTOP-TEST: portal accent-color ' "$asked" 60 || fail "the service did not hear back from the portal"
 	opened=$(count 'edel-compositor: mapped window keys')
 	guest 'shortcut window'
 	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open"
