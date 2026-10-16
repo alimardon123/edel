@@ -36,6 +36,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [TRY-IT.md](TRY-IT.md) | Trying a preview in a VM or on a laptop, and sending a hardware report | Guide |
 | [index.md](index.md) | The docs site's front page: what Edel OS is and where to start (M8.10a) | Guide |
 | [guide/how-it-works.md](guide/how-it-works.md) | How the whole system works, from the disk and updates to the settings file and the desktop | Guide |
+| [guide/developer-mode.md](guide/developer-mode.md) | Developer mode: a writable `/usr`, `apk`, your own services, safe starts and reset | Guide |
 | [guide/commands.md](guide/commands.md) | Every `edel` command and option; generated from `crates/edel/src/main.rs` | Reference |
 | [guide/writing-docs.md](guide/writing-docs.md) | Writing these docs: pages, the table of contents, previewing, generated pages, the look | Guide |
 | [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |

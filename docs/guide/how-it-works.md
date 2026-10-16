@@ -95,7 +95,7 @@ How much a person can change follows three levels (ADR-007):
 
 1. **Settings:** any value in the settings file, for everyone, from Settings or `edel settings set`.
 2. **Add-ons and profiles:** signed extras that ride the same update path and roll back with the slot (roadmap M7.2).
-3. **Developer mode:** for the system's own files, off by default, where `apk` and the like are allowed (roadmap M7.1).
+3. **Developer mode:** for the system's own files, off by default: a layer over `/usr` on the data partition where `apk` and your own services are allowed, held back by a safe start and deleted by a reset ([Developer mode](developer-mode.md)).
 
 ## Apps
 

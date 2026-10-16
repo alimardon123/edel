@@ -79,7 +79,7 @@ Adding a setting is always cheaper than adding a part, and a setting that fiftee
 ## Action Items
 
 1. [ ] Define the add-on format: signed, versioned, tied to a base version, rolls back with it (roadmap M7.2a; the format is a feature file with `addon = true`, ADR-008).
-2. [ ] Design developer mode: separate change layer, `apk` inside it, reset button, warning text (roadmap M7.1).
+2. [x] Design developer mode: separate change layer, `apk` inside it, reset button, warning text (roadmap M7.1; done 2026-10-16: an overlay on the `/usr`-merged system, held back by a safe start, [guide](guide/developer-mode.md)).
 3. [ ] Pick the first add-ons: virtualization, and an NVIDIA driver path once NVK or a glibc-compatible option is proven.
 4. [ ] Define the level 1 settings as tables of the settings file: appearance, shortcuts, default apps, startup, power, services (roadmap M2.1, M5.12, M5.13, M6.10).
 
