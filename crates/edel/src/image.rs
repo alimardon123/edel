@@ -121,6 +121,9 @@ impl Build<'_> {
         }
         self.enable_services(&root)?;
         self.configure(&root)?;
+        // Last, once every file is in: what changes /usr alone then
+        // changes all of the system (M7.1).
+        self.merge_usr(&root)?;
 
         match def.variant {
             Variant::Container => self.pack_container(&root),
@@ -691,6 +694,16 @@ impl Build<'_> {
             self.runner.run(&mut point)?;
         }
         Ok(Some(data))
+    }
+
+    /// Makes the root `/usr`-merged with Alpine's `merge-usr` (M7.1):
+    /// `/bin`, `/sbin` and `/lib` become links into `/usr`, so busybox,
+    /// the C library and apk's database live there, and developer mode's
+    /// one layer over `/usr` takes `apk add` (ADR-007). The tool runs on
+    /// the build host, so the image carries none of it.
+    fn merge_usr(&self, root: &Path) -> Result<()> {
+        self.runner
+            .run(Command::new("merge-usr").arg("--root").arg(root))
     }
 
     fn configure(&self, root: &Path) -> Result<()> {
