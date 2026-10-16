@@ -628,11 +628,16 @@ pub fn mount_all() -> Result<()> {
         fs::create_dir_all(&at)?;
         if !crate::data::is_mounted(&at.to_string_lossy())? {
             let _ = Command::new("modprobe").arg("loop").status();
-            run(Command::new("mount")
+            let mounted = run(Command::new("mount")
                 .args(["-t", "ext4", "-o", "ro,loop,nodev"])
                 .arg(&file)
                 .arg(&at))
-            .with_context(|| trf("could not mount add-on {name}", &[("name", &name)]))?;
+            .with_context(|| trf("could not mount add-on {name}", &[("name", &name)]));
+            // One add-on that does not mount never keeps the others away.
+            if let Err(err) = mounted {
+                eprintln!("edel-data: {err:#}");
+                continue;
+            }
         }
         mounts.push(at);
     }
