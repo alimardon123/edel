@@ -5,7 +5,7 @@
 //! own, the look is `style.rs`'s from the tokens, and another toolkit
 //! would be these few functions again (ADR-004).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -971,6 +971,99 @@ pub fn ask_name(
     entry.select_region(0, -1);
 }
 
+/// A yes or no question in our own look: `message` as the heading,
+/// `detail` under it, then Cancel and `act`, in a small modal window over
+/// `near`'s, titled `act`. Cancel is the default (Return) and Escape
+/// closes, so the safe answer is the easy one; `danger` draws `act` in
+/// the problem colour, as a Delete is. `done` runs once, on `act`.
+pub fn confirm(
+    near: &gtk::Widget,
+    message: &str,
+    detail: &str,
+    act: &str,
+    danger: bool,
+    done: impl FnOnce() + 'static,
+) {
+    let window = gtk::Window::builder()
+        .title(act)
+        .modal(true)
+        .resizable(false)
+        .default_width(400)
+        .css_classes(["edel"])
+        .accessible_role(gtk::AccessibleRole::AlertDialog)
+        .build();
+    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    window.update_property(&[gtk::accessible::Property::Label(message)]);
+    let heading = gtk::Label::builder()
+        .label(message)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-prompt-title"])
+        .build();
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(6)
+        .margin_top(24)
+        .margin_bottom(20)
+        .margin_start(24)
+        .margin_end(24)
+        .build();
+    body.append(&heading);
+    if !detail.is_empty() {
+        let under = gtk::Label::builder()
+            .label(detail)
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-prompt-detail"])
+            .build();
+        body.append(&under);
+    }
+    let cancel = action(tr("Cancel"), false);
+    let act_button = action(act, !danger);
+    if danger {
+        act_button.add_css_class("edel-danger");
+    }
+    let buttons = gtk::Box::builder()
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .margin_top(14)
+        .build();
+    buttons.append(&cancel);
+    buttons.append(&act_button);
+    body.append(&buttons);
+    window.set_child(Some(&body));
+    window.set_default_widget(Some(&cancel));
+
+    let keys = gtk::EventControllerKey::new();
+    let closing = window.clone();
+    keys.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Escape {
+            closing.close();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    window.add_controller(keys);
+
+    let close = window.clone();
+    cancel.connect_clicked(move |_| close.close());
+    type Once = Box<dyn FnOnce()>;
+    let pending: Rc<RefCell<Option<Once>>> = Rc::new(RefCell::new(Some(Box::new(done))));
+    let (dialog, run) = (window.clone(), pending);
+    act_button.connect_clicked(move |_| {
+        dialog.close();
+        let next = run.borrow_mut().take();
+        if let Some(done) = next {
+            done();
+        }
+    });
+    window.present();
+    cancel.grab_focus();
+}
+
 /// Asks whether to delete `message` (Delete), with Cancel as the default and
 /// the escape key, and runs `delete` on Delete.
 pub fn ask_delete(
@@ -980,20 +1073,7 @@ pub fn ask_delete(
     delete: &str,
     done: impl FnOnce() + 'static,
 ) {
-    let parent = near.root().and_downcast::<gtk::Window>();
-    let dialog = gtk::AlertDialog::builder()
-        .modal(true)
-        .message(message)
-        .detail(detail)
-        .buttons(vec![tr("Cancel"), delete])
-        .cancel_button(0)
-        .default_button(0)
-        .build();
-    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
-        if matches!(answer, Ok(1)) {
-            done();
-        }
-    });
+    confirm(near, message, detail, delete, true, done);
 }
 
 /// Shows that `button` copied: its icon a check for a moment.
