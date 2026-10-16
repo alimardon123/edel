@@ -47,6 +47,24 @@ pub struct Manifest {
     pub expires: String,
     #[serde(default)]
     pub images: Vec<ImageEntry>,
+    /// The add-ons of this release (M7.2a), in the order they were given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub addons: Vec<AddonEntry>,
+}
+
+/// One add-on of a release (M7.2a): built for `image` (as `EDEL_IMAGE`) on
+/// the release `base`. `sha256` and `size` are of the uncompressed ext4 file
+/// as it lands on `/data`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AddonEntry {
+    pub name: String,
+    pub image: String,
+    pub base: String,
+    #[serde(default)]
+    pub summary: String,
+    pub file: String,
+    pub sha256: String,
+    pub size: u64,
 }
 
 /// What `edel update` accepts beyond a good signature (M3.8).
@@ -454,7 +472,7 @@ fn sha256_reader(reader: &mut dyn Read) -> Result<(String, u64)> {
 /// The manifest at `location` (a path or an http(s) URL), after its
 /// signature is checked against the keys this image carries and the list
 /// against its date, the machine's channel and `accept` (M3.8).
-fn verified_manifest(location: &str, accept: &Accept) -> Result<Manifest> {
+pub fn verified(location: &str, accept: &Accept) -> Result<Manifest> {
     check_location(location, accept.allow_http)?;
     let bytes = fetch(location)?;
     let sig = fetch(&format!("{location}.sig"))
@@ -475,18 +493,21 @@ pub struct Checked {
     pub sha256: Vec<u8>,
     pub size: u64,
     pub reader: Box<dyn Read>,
+    /// The whole signed list, for the add-ons beside the image (M7.2a).
+    pub manifest: Manifest,
 }
 
 /// Checks the release at `location` with this image's keys and opens the
 /// image for this machine.
 pub fn open_checked(location: &str, accept: &Accept) -> Result<Checked> {
-    let manifest = verified_manifest(location, accept)?;
+    let manifest = verified(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE")
         .context(tr("this system's /usr/lib/os-release has no EDEL_IMAGE, so edel cannot tell which image of the release to take"))?;
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let entry = pick_image(&manifest, &image, &running, accept.allow_downgrade)?;
     let sha256 = from_hex(&entry.sha256).context(tr("refused: release.toml has a sha256 for the image that is not 64 hex digits; nothing was changed"))?;
+    let size = entry.size;
     let image_at = beside(location, &entry.file);
     check_location(&image_at, accept.allow_http)?;
     println!(
@@ -498,14 +519,32 @@ pub fn open_checked(location: &str, accept: &Accept) -> Result<Checked> {
     );
     Ok(Checked {
         sha256,
-        size: entry.size,
+        size,
         reader: open_image(&image_at)?,
+        manifest,
     })
+}
+
+/// The add-ons of `manifest` built for `image`, in the order listed.
+pub fn addons_for<'a>(manifest: &'a Manifest, image: &str) -> Vec<&'a AddonEntry> {
+    manifest
+        .addons
+        .iter()
+        .filter(|a| a.image == image)
+        .collect()
+}
+
+/// Opens the add-on `entry` of the release at `location`, beside it and
+/// checked the way the image is (M7.2a), uncompressed as it lands on `/data`.
+pub fn open_addon(location: &str, entry: &AddonEntry, allow_http: bool) -> Result<Box<dyn Read>> {
+    let at = beside(location, &entry.file);
+    check_location(&at, allow_http)?;
+    open_image(&at)
 }
 
 /// `edel update --check`: the running version and the one at `location`.
 pub fn check(location: &str, accept: &Accept) -> Result<()> {
-    let manifest = verified_manifest(location, accept)?;
+    let manifest = verified(location, accept)?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE");
@@ -572,16 +611,36 @@ pub fn keygen(dir: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+/// The image and the add-on named by a file `IMAGE.NAME.ext4.gz` (M7.2a),
+/// as `edel image build` writes add-ons: the image's name has no dot or
+/// slash, the add-on's passes `features::is_name`. None for any other name.
+pub fn addon_parts(file_name: &str) -> Option<(&str, &str)> {
+    let mut parts = file_name.split('.');
+    let (Some(image), Some(name), Some("ext4"), Some("gz"), None) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return None;
+    };
+    (!image.is_empty() && !image.contains('/') && edel::features::is_name(name))
+        .then_some((image, name))
+}
+
 /// `edel release make`: `release.toml` beside the images it lists. With
 /// `base_url` the manifest names each image by its URL there instead, so
 /// it can be served from somewhere else (a channel, M3.4), and goes into
-/// `out_dir` when given.
+/// `out_dir` when given. `addons` are add-on files beside the images, each
+/// with its feature file `IMAGE.NAME.toml` beside it (M7.2a).
 pub fn make(
     version: &str,
     channel: &str,
     base_url: Option<&str>,
     out_dir: Option<&Path>,
     images: &[PathBuf],
+    addons: &[PathBuf],
 ) -> Result<PathBuf> {
     if let Some(url) = base_url.filter(|u| !is_url(u)) {
         bail!(
@@ -601,6 +660,9 @@ pub fn make(
             .context("an image needs a file name")?
             .to_string_lossy()
             .into_owned();
+        if addon_parts(&file).is_some() {
+            bail!("{file:?} is an add-on; pass it with --addon");
+        }
         let name = file.split('.').next().unwrap_or_default().to_string();
         let location = image.to_str().context("an image path must be UTF-8")?;
         let (sha256, size) = sha256_reader(&mut open_image(location)?)?;
@@ -610,6 +672,52 @@ pub fn make(
         };
         entries.push(ImageEntry {
             name,
+            file,
+            sha256,
+            size,
+        });
+    }
+    let mut addon_entries = Vec::new();
+    for addon in addons {
+        if addon.parent() != Some(dir) {
+            bail!("all images must be in one directory, beside release.toml");
+        }
+        let file = addon
+            .file_name()
+            .context("an add-on needs a file name")?
+            .to_string_lossy()
+            .into_owned();
+        let Some((image, name)) = addon_parts(&file).map(|(i, n)| (i.to_string(), n.to_string()))
+        else {
+            bail!("{file:?} is not named IMAGE.NAME.ext4.gz, as edel image build writes add-ons");
+        };
+        if !entries.iter().any(|e| e.name == image) {
+            bail!(
+                "{file:?} is an add-on of image {image:?}, which is not one of the images given; pass that image too"
+            );
+        }
+        let feature_path = dir.join(format!("{image}.{name}.toml"));
+        let feature_text = fs::read_to_string(&feature_path)
+            .with_context(|| could_not_read(&feature_path.display().to_string()))?;
+        let summary = edel::features::check(&name, &feature_text)
+            .with_context(|| {
+                trf(
+                    "could not check the add-on's feature file {path}",
+                    &[("path", &feature_path.display().to_string())],
+                )
+            })?
+            .summary;
+        let location = addon.to_str().context("an add-on path must be UTF-8")?;
+        let (sha256, size) = sha256_reader(&mut open_image(location)?)?;
+        let file = match base_url {
+            Some(url) => format!("{}/{file}", url.trim_end_matches('/')),
+            None => file,
+        };
+        addon_entries.push(AddonEntry {
+            name,
+            image,
+            base: version.to_string(),
+            summary,
             file,
             sha256,
             size,
@@ -627,6 +735,7 @@ pub fn make(
         date,
         expires: String::new(),
         images: entries,
+        addons: addon_entries,
     };
     let out = out_dir.unwrap_or(dir);
     fs::create_dir_all(out)?;
@@ -711,6 +820,7 @@ mod tests {
                 date: String::new(),
                 expires: "2020-01-01".into(),
                 images: Vec::new(),
+                addons: Vec::new(),
             };
             let late = check_list(
                 &old,
@@ -1058,5 +1168,97 @@ mod tests {
     fn hex_round_trips() {
         assert_eq!(from_hex(&to_hex(&[0, 15, 255])).unwrap(), [0, 15, 255]);
         assert!(from_hex("abc").is_err());
+    }
+
+    #[test]
+    fn reads_an_add_on_name_as_its_image_and_its_name() {
+        assert_eq!(
+            addon_parts("edel-vm-x86_64.ci-hello.ext4.gz"),
+            Some(("edel-vm-x86_64", "ci-hello"))
+        );
+    }
+
+    #[test]
+    fn refuses_an_add_on_name_with_the_wrong_suffix() {
+        assert_eq!(addon_parts("edel-vm-x86_64.ci-hello.ext4"), None);
+        assert_eq!(addon_parts("edel-vm-x86_64.ci-hello.gz.gz"), None);
+    }
+
+    #[test]
+    fn refuses_an_add_on_name_with_three_parts_or_a_capital_letter() {
+        assert_eq!(addon_parts("ci-hello.ext4.gz"), None);
+        assert_eq!(addon_parts("edel-vm-x86_64.Ci-hello.ext4.gz"), None);
+        assert_eq!(addon_parts(".ci-hello.ext4.gz"), None);
+    }
+
+    #[test]
+    fn a_manifest_without_add_ons_parses_with_none() {
+        let list = parse_manifest(MANIFEST).unwrap();
+        assert!(list.addons.is_empty());
+        assert!(!toml::to_string(&list).unwrap().contains("addons"));
+    }
+
+    #[test]
+    fn an_add_on_table_round_trips_through_the_manifest() {
+        let mut list = parse_manifest(MANIFEST).unwrap();
+        list.addons.push(AddonEntry {
+            name: "ci-hello".into(),
+            image: "edel-vm-x86_64".into(),
+            base: list.version.clone(),
+            summary: "Says hello".into(),
+            file: "edel-vm-x86_64.ci-hello.ext4.gz".into(),
+            sha256: "ab".repeat(32),
+            size: 4096,
+        });
+        let back = parse_manifest(&toml::to_string(&list).unwrap()).unwrap();
+        assert_eq!(back.addons.len(), 1);
+        assert_eq!(back.addons[0].name, "ci-hello");
+        assert_eq!(back.addons[0].size, 4096);
+        assert_eq!(addons_for(&back, "edel-vm-x86_64").len(), 1);
+        assert!(addons_for(&back, "edel-laptop-x86_64").is_empty());
+    }
+
+    #[test]
+    fn make_lists_an_add_on_with_its_summary_and_its_uncompressed_hash() {
+        use std::io::Write;
+        let dir = std::env::temp_dir().join(format!("edel-make-addon-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let gzip = |path: &Path, bytes: &[u8]| {
+            let mut enc = flate2::write::GzEncoder::new(
+                File::create(path).unwrap(),
+                flate2::Compression::default(),
+            );
+            enc.write_all(bytes).unwrap();
+            enc.finish().unwrap();
+        };
+        let image = dir.join("edel-vm-x86_64.ext4.gz");
+        let addon = dir.join("edel-vm-x86_64.ci-hello.ext4.gz");
+        gzip(&image, b"slot image");
+        gzip(&addon, b"hello file");
+        fs::write(
+            dir.join("edel-vm-x86_64.ci-hello.toml"),
+            "format = 1\nsummary = \"Says hello\"\n",
+        )
+        .unwrap();
+        let path = make(
+            "2026.10.1",
+            "stable",
+            None,
+            None,
+            std::slice::from_ref(&image),
+            std::slice::from_ref(&addon),
+        )
+        .unwrap();
+        let list = parse_manifest(&fs::read_to_string(&path).unwrap()).unwrap();
+        let entry = &list.addons[0];
+        assert_eq!(entry.name, "ci-hello");
+        assert_eq!(entry.image, "edel-vm-x86_64");
+        assert_eq!(entry.base, "2026.10.1");
+        assert_eq!(entry.summary, "Says hello");
+        assert_eq!(entry.file, "edel-vm-x86_64.ci-hello.ext4.gz");
+        assert_eq!(entry.sha256, to_hex(&Sha256::digest(b"hello file")));
+        assert_eq!(entry.size, 10);
+        assert_eq!(addons_for(&list, "edel-vm-x86_64")[0].name, "ci-hello");
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
