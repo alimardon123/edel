@@ -223,12 +223,26 @@ enum Commands {
         #[command(subcommand)]
         command: PresetCommands,
     },
+    /// addon: software beside the system, such as more fonts or printing,
+    /// that arrives with an update and goes as easily; the same as in the
+    /// settings file's addons.installed
+    Addon {
+        #[command(subcommand)]
+        command: AddonCommands,
+    },
     /// web-app: a website made an app, with its own window, name and icon in
     /// the launcher; it runs in Firefox with a profile of its own
     WebApp {
         #[command(subcommand)]
         command: WebAppCommands,
     },
+}
+
+#[derive(Subcommand)]
+enum AddonCommands {
+    /// List the add-ons of this machine's channel, marked installed, built
+    /// in or chosen
+    List,
 }
 
 #[derive(Subcommand)]
@@ -582,6 +596,7 @@ impl Commands {
             Commands::Theme { .. } => "theme",
             Commands::Preset { .. } => "preset",
             Commands::WebApp { .. } => "web-app",
+            Commands::Addon { .. } => "addon",
         }
     }
 }
@@ -821,6 +836,9 @@ fn run(command: Commands) -> Result<()> {
                 ..
             }) => first_boot::first_person(&user, &assignments),
             Some(SettingsCommands::FirstBoot { .. }) => first_boot::console(),
+        },
+        Commands::Addon { command } => match command {
+            AddonCommands::List => addons::list(),
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => machine::theme_list(),

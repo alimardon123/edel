@@ -283,12 +283,25 @@ enum Change {
     /// Write `/etc/xdg/mimeapps.list` with these default apps; an empty
     /// text removes the file (M6.10)
     MimeDefaults(String),
+    /// Link the mounted add-ons' files into `/etc` (`make`, path under
+    /// `/etc` and target) and take out the links of add-ons that went
+    /// (`remove`), their services first (M7.2a)
+    Addons {
+        make: Vec<(String, String)>,
+        remove: Vec<String>,
+    },
 }
 
 impl fmt::Display for Change {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Change::Hostname(h) => write!(f, "network.hostname: set to {h}"),
+            Change::Addons { make, remove } => write!(
+                f,
+                "addons: link {} files of the add-ons into /etc, take out {}",
+                make.len(),
+                remove.len()
+            ),
             Change::HostnameDefault => write!(f, "network.hostname: back to the release's"),
             Change::Timezone(z) => write!(f, "region.timezone: set to {z}"),
             Change::TimezoneDefault => write!(f, "region.timezone: back to the release's (UTC)"),
@@ -371,6 +384,10 @@ struct Machine {
     services_off: Vec<String>,
     /// The services in OpenRC's runlevels now
     runlevels: BTreeSet<services::Entry>,
+    /// The add-ons mounted now, by name (M7.2a)
+    addons: Vec<String>,
+    /// Their files and the links to them in `/etc`
+    addon_links: crate::addons::Links,
     /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
     mime_defaults: Option<String>,
     /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
@@ -425,6 +442,8 @@ impl Machine {
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
+            addons: crate::addons::mounted(),
+            addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
         })
@@ -621,6 +640,46 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
     }
+    // The mounted add-ons' files show in /etc before their services are
+    // added; the services of one that cannot be switched off are on, as a
+    // built-in feature's are (M7.2a).
+    let (make, remove) = machine.addon_links.plan();
+    if !make.is_empty() || !remove.is_empty() {
+        changes.push(Change::Addons { make, remove });
+    }
+    for (_, feature) in machine
+        .features
+        .iter()
+        .filter(|(name, f)| !f.switchable && machine.addons.contains(name))
+    {
+        for (level, service) in feature.services.entries() {
+            let entry = (level.to_string(), service.to_string());
+            if !machine.runlevels.contains(&entry) {
+                changes.push(Change::Service(services::Step {
+                    level: entry.0,
+                    service: entry.1,
+                    on: true,
+                }));
+            }
+        }
+    }
+    let built: BTreeSet<&str> = machine.features.iter().map(|(n, _)| n.as_str()).collect();
+    for name in file.addons.installed.iter().flatten() {
+        if !built.contains(name.as_str()) {
+            notes.push(trf(
+                "add-on {name} arrives with the next update",
+                &[("name", name)],
+            ));
+        }
+    }
+    for name in &machine.addons {
+        if !file.addons.installed.iter().flatten().any(|n| n == name) {
+            notes.push(trf(
+                "add-on {name} goes at the next restart",
+                &[("name", name)],
+            ));
+        }
+    }
     // Switchable features on or off (M6.10); a name the machine cannot
     // switch is a note, as apply is lenient on a machine.
     for problem in services::problems(&file.services, &machine.features) {
@@ -802,6 +861,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             fs::write(flag, "")?;
         }
         Change::Developer(false) => fs::remove_file(DEVELOPER_FLAG)?,
+        Change::Addons { make, remove } => link_addons(make, remove, boot)?,
         // At boot only the runlevel changes: OpenRC starts the default
         // runlevel after this boot service, so what was added starts then
         // and what was taken out never does. Later, it happens at once.
@@ -956,6 +1016,39 @@ pub(crate) fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
             &[("apps", &failed.join(", ")), ("user", &account.name)]
         )
     )
+}
+
+/// Takes out the links in `/etc` of add-ons that went, each service out of
+/// its runlevels first (stopped, unless at boot), then links the mounted
+/// add-ons' files in (M7.2a). A machine's own file is never touched.
+fn link_addons(make: &[(String, String)], remove: &[String], boot: bool) -> Result<()> {
+    let etc = Path::new("/etc");
+    for rest in remove {
+        if let Some(service) = rest.strip_prefix("init.d/") {
+            if !boot {
+                let _ = base::stop_service(service).status();
+            }
+            for (level, name) in services::enabled_in(&etc.join("runlevels")) {
+                if name == service {
+                    run(&mut base::remove_from_runlevel(service, &level))?;
+                }
+            }
+        }
+        let link = etc.join(rest);
+        match fs::remove_file(&link) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err).with_context(|| could_not_write(&link)),
+        }
+    }
+    for (rest, target) in make {
+        let link = etc.join(rest);
+        if let Some(dir) = link.parent() {
+            fs::create_dir_all(dir).with_context(|| could_not_write(dir))?;
+        }
+        std::os::unix::fs::symlink(target, &link).with_context(|| could_not_write(&link))?;
+    }
+    Ok(())
 }
 
 /// What apply says in place of `change` when it runs at boot (M6.1): the
@@ -2479,6 +2572,8 @@ mod tests {
             features: Vec::new(),
             services_off: Vec::new(),
             runlevels: BTreeSet::new(),
+            addons: Vec::new(),
+            addon_links: Default::default(),
             mime_defaults: None,
             first_passwords: None,
         }

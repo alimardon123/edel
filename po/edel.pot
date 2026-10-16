@@ -5,6 +5,60 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "add-on {name} is built into {version}, so it needs no download"
+msgstr ""
+
+msgid "add-on {name} is not in {version}; the update goes on without it, and edel addon list shows the add-ons there are"
+msgstr ""
+
+msgid "could not make {path}"
+msgstr ""
+
+msgid "add-on {name} is already here"
+msgstr ""
+
+msgid "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again"
+msgstr ""
+
+msgid "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; the new slot stays off and this system is unchanged; run edel update again"
+msgstr ""
+
+msgid "add-on {name} fetched and checked"
+msgstr ""
+
+msgid "could not take out {path}: {why}"
+msgstr ""
+
+msgid "add-on {name} is chosen but not here yet; it arrives with the next update"
+msgstr ""
+
+msgid "could not mount add-on {name}"
+msgstr ""
+
+msgid "could not lay the add-ons over /usr"
+msgstr ""
+
+msgid "add-ons mounted: {names}"
+msgstr ""
+
+msgid "installed"
+msgstr ""
+
+msgid "built in"
+msgstr ""
+
+msgid "chosen"
+msgstr ""
+
+msgid "could not read the release list ({why}), so only this machine's add-ons are shown"
+msgstr ""
+
+msgid "no add-ons for this image"
+msgstr ""
+
+msgid "to add one: edel settings set addons.installed+=NAME; it arrives with the next update"
+msgstr ""
+
 msgid "Camera"
 msgstr ""
 
@@ -893,6 +947,12 @@ msgstr ""
 msgid "could not replace {path}"
 msgstr ""
 
+msgid "add-on {name} arrives with the next update"
+msgstr ""
+
+msgid "add-on {name} goes at the next restart"
+msgstr ""
+
 msgid "{name} is not in /etc/passwd"
 msgstr ""
 
@@ -1563,9 +1623,6 @@ msgid "{path} is format {format}, newer than this release reads, and there is no
 msgstr ""
 
 msgid "format {format} is newer than this release, so {older} was read instead"
-msgstr ""
-
-msgid "could not make {path}"
 msgstr ""
 
 msgid "{key}: not supported yet; this release does not act on it, so it cannot be set"
@@ -2559,6 +2616,12 @@ msgid "Delete one of your presets; the preset in use cannot be deleted"
 msgstr ""
 
 msgid "The preset's name, as preset list shows it"
+msgstr ""
+
+msgid "addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed"
+msgstr ""
+
+msgid "List the add-ons of this machine's channel, marked installed, built in or chosen"
 msgstr ""
 
 msgid "web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own"

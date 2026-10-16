@@ -8,13 +8,18 @@
 //! breaks it. What it installs lands in the folders below; anything it
 //! would change in the slot itself is refused.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use edel::i18n::{tr, trf};
 use edel::places;
+
+use crate::release::{AddonEntry, Manifest, os_release_value, to_hex};
+use crate::update::run;
 
 /// The files of the account database an add-on may add lines to: its new
 /// users and groups are merged into the slot's files, never replace them.
@@ -427,6 +432,503 @@ pub fn stale_versions(present: &[String], keep: &[&str]) -> Vec<String> {
     stale
 }
 
+// ---- On a machine (M7.2a): fetching, mounting and linking. ----
+
+/// The add-ons the machine's settings file names (`addons.installed`),
+/// read leniently: none when the file is missing or unreadable.
+pub fn wanted_on_machine() -> Vec<String> {
+    let path = places::found(&places::machine_settings());
+    edel::settings::read_on_machine(&path)
+        .ok()
+        .and_then(|read| read.file.addons.installed)
+        .unwrap_or_default()
+}
+
+/// Where the add-ons of `version` are kept on the data partition.
+pub fn version_dir(version: &str) -> PathBuf {
+    Path::new(places::ADDONS_DIR).join(version)
+}
+
+/// Which of the `wanted` add-ons the release `version` has for this image
+/// (`entries`), and a note for each it has not: built into the new slot
+/// (`built_in` asks it), or not in the release at all.
+pub fn fetch_plan<'a>(
+    wanted: &[String],
+    entries: &[&'a AddonEntry],
+    version: &str,
+    built_in: &dyn Fn(&str) -> bool,
+) -> (Vec<&'a AddonEntry>, Vec<String>) {
+    let mut fetch = Vec::new();
+    let mut notes = Vec::new();
+    for name in wanted {
+        if let Some(entry) = entries.iter().find(|e| &e.name == name) {
+            fetch.push(*entry);
+        } else if built_in(name) {
+            notes.push(trf(
+                "add-on {name} is built into {version}, so it needs no download",
+                &[("name", name), ("version", version)],
+            ));
+        } else {
+            notes.push(trf(
+                "add-on {name} is not in {version}; the update goes on without it, and edel addon list shows the add-ons there are",
+                &[("name", name), ("version", version)],
+            ));
+        }
+    }
+    (fetch, notes)
+}
+
+/// Fetches the add-ons the machine names for `manifest`'s release into
+/// `/data/addons/VERSION/`, each checked by size and sha256 as the slot
+/// is, after the slot on `slot` is written and checked and before it is
+/// switched on, so a failure leaves it off. Then only the folders of the
+/// running and the new version are kept.
+pub fn fetch(location: &str, manifest: &Manifest, allow_http: bool, slot: &Path) -> Result<()> {
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let entries = crate::release::addons_for(manifest, &image);
+    let built_in = |name: &str| built_into(slot, name);
+    let (to_fetch, notes) =
+        fetch_plan(&wanted_on_machine(), &entries, &manifest.version, &built_in);
+    for note in notes {
+        println!("edel update: {note}");
+    }
+    let dir = version_dir(&manifest.version);
+    if !to_fetch.is_empty() {
+        fs::create_dir_all(&dir).with_context(|| {
+            trf(
+                "could not make {path}",
+                &[("path", &dir.display().to_string())],
+            )
+        })?;
+    }
+    for entry in to_fetch {
+        fetch_one(location, entry, allow_http, &dir)?;
+    }
+    prune(&[&running, &manifest.version]);
+    Ok(())
+}
+
+/// Whether the slot on `device` carries feature `name`, read with
+/// debugfs, so the slot is never mounted.
+fn built_into(device: &Path, name: &str) -> bool {
+    let file = format!("{}/{name}.toml", edel::features::DIR);
+    Command::new("debugfs")
+        .args(["-R", &format!("cat {file}")])
+        .arg(device)
+        .stderr(Stdio::null())
+        .output()
+        .is_ok_and(|out| out.status.success() && !out.stdout.is_empty())
+}
+
+/// Fetches one add-on to `dir/NAME.ext4` through a `.part` file renamed
+/// only once it is checked; one already there with the right sha256 is
+/// kept.
+fn fetch_one(location: &str, entry: &AddonEntry, allow_http: bool, dir: &Path) -> Result<()> {
+    let dest = dir.join(format!("{}.ext4", entry.name));
+    let here = fs::File::open(&dest)
+        .ok()
+        .and_then(|mut file| crate::update::copy_hashing(&mut file, &mut std::io::sink()).ok());
+    if here.is_some_and(|(size, sum)| size == entry.size && to_hex(&sum) == entry.sha256) {
+        println!(
+            "edel update: {}",
+            trf("add-on {name} is already here", &[("name", &entry.name)])
+        );
+        return Ok(());
+    }
+    let part = dir.join(format!("{}.ext4.part", entry.name));
+    let failed = || {
+        trf(
+            "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again",
+            &[("name", &entry.name)],
+        )
+    };
+    let mut source =
+        crate::release::open_addon(location, entry, allow_http).with_context(failed)?;
+    let mut file = fs::File::create(&part).with_context(failed)?;
+    let (size, sum) = crate::update::copy_hashing(&mut source, &mut file).with_context(failed)?;
+    file.sync_all().with_context(failed)?;
+    drop(file);
+    if size != entry.size || to_hex(&sum) != entry.sha256 {
+        let _ = fs::remove_file(&part);
+        bail!(
+            "{}",
+            trf(
+                "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; the new slot stays off and this system is unchanged; run edel update again",
+                &[("name", &entry.name)],
+            )
+        );
+    }
+    fs::rename(&part, &dest).with_context(failed)?;
+    println!(
+        "edel update: {}",
+        trf(
+            "add-on {name} fetched and checked",
+            &[("name", &entry.name)]
+        )
+    );
+    Ok(())
+}
+
+/// Takes out the add-on folders of versions in neither slot.
+fn prune(keep: &[&str]) {
+    let Ok(entries) = fs::read_dir(places::ADDONS_DIR) else {
+        return;
+    };
+    let present: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    for old in stale_versions(&present, keep) {
+        let path = Path::new(places::ADDONS_DIR).join(&old);
+        if let Err(err) = fs::remove_dir_all(&path) {
+            eprintln!(
+                "warning: {}",
+                trf(
+                    "could not take out {path}: {why}",
+                    &[
+                        ("path", &path.display().to_string()),
+                        ("why", &err.to_string())
+                    ]
+                )
+            );
+        }
+    }
+}
+
+/// `edel boot mount-data`, first: mounts each add-on the settings file
+/// names that this slot's version has on `/data`, read-only at
+/// `/run/edel/addons/NAME`, and lays their `/usr` over the slot's, so the
+/// rest of the boot sees them. A chosen add-on that is not here is said,
+/// never fatal: it arrives with the next update.
+pub fn mount_all() -> Result<()> {
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let version = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let dir = version_dir(&version);
+    let mut mounts = Vec::new();
+    for name in wanted_on_machine() {
+        let file = dir.join(format!("{name}.ext4"));
+        if !file.is_file() {
+            if !Path::new(edel::features::DIR)
+                .join(format!("{name}.toml"))
+                .exists()
+            {
+                println!(
+                    "edel-data: {}",
+                    trf(
+                        "add-on {name} is chosen but not here yet; it arrives with the next update",
+                        &[("name", &name)]
+                    )
+                );
+            }
+            continue;
+        }
+        let at = Path::new(places::ADDONS_RUN).join(&name);
+        fs::create_dir_all(&at)?;
+        if !crate::data::is_mounted(&at.to_string_lossy())? {
+            let _ = Command::new("modprobe").arg("loop").status();
+            run(Command::new("mount")
+                .args(["-t", "ext4", "-o", "ro,loop,nodev"])
+                .arg(&file)
+                .arg(&at))
+            .with_context(|| trf("could not mount add-on {name}", &[("name", &name)]))?;
+        }
+        mounts.push(at);
+    }
+    if mounts.is_empty() || crate::data::is_mounted("/usr")? {
+        return Ok(());
+    }
+    run(Command::new("mount")
+        .args(["-t", "overlay", "overlay", "-o"])
+        .arg(format!(
+            "ro,lowerdir={}",
+            lowerdirs(&mounts, Path::new("/usr"))
+        ))
+        .arg("/usr"))
+    .context(tr("could not lay the add-ons over /usr"))?;
+    let names: Vec<String> = mounts
+        .iter()
+        .filter_map(|m| m.file_name().map(|n| n.to_string_lossy().into_owned()))
+        .collect();
+    println!(
+        "edel-data: {}",
+        trf("add-ons mounted: {names}", &[("names", &names.join(", "))])
+    );
+    Ok(())
+}
+
+/// The add-ons mounted now, by name, sorted.
+pub fn mounted() -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(places::ADDONS_RUN)
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|e| crate::data::is_mounted(&e.path().to_string_lossy()).unwrap_or(false))
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+/// The account lines the mounted add-ons add to `/etc/FILE` (`passwd`,
+/// `group` or `shadow`), in name order.
+pub fn account_lines(file: &str) -> String {
+    let dir = Path::new(places::ADDON_ACCOUNTS_DIR);
+    let mut names: Vec<PathBuf> = fs::read_dir(dir)
+        .map(|entries| entries.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    names.sort();
+    names
+        .iter()
+        .filter_map(|d| fs::read_to_string(d.join(file)).ok())
+        .collect()
+}
+
+/// The folders of `/var` the mounted add-ons bring, one per add-on.
+pub fn var_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = fs::read_dir(places::ADDON_VAR_DIR)
+        .map(|entries| entries.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    dirs.sort();
+    dirs
+}
+
+/// The links in `/etc` that make the mounted add-ons' files show there:
+/// what they provide, the links apply made before, and the paths this
+/// machine has a file of its own at, which are never replaced.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Links {
+    /// (path under `/etc`, target) for each file an add-on provides.
+    pub provided: Vec<(String, String)>,
+    /// (path under `/etc`, target) for each link into the add-ons' folders.
+    pub ours: Vec<(String, String)>,
+    /// Paths under `/etc` that hold something other than a link.
+    pub theirs: BTreeSet<String>,
+}
+
+impl Links {
+    /// Reads what the mounted add-ons provide and what `/etc` has now.
+    pub fn read() -> Links {
+        let mut provided = Vec::new();
+        if let Ok(entries) = fs::read_dir(places::ADDON_INIT_DIR) {
+            let mut names: Vec<String> = entries
+                .flatten()
+                .filter_map(|e| e.file_name().into_string().ok())
+                .collect();
+            names.sort();
+            for name in names {
+                provided.push((
+                    format!("init.d/{name}"),
+                    format!("{}/{name}", places::ADDON_INIT_DIR),
+                ));
+            }
+        }
+        let mut addons: Vec<PathBuf> = fs::read_dir(places::ADDON_ETC_DIR)
+            .map(|entries| entries.flatten().map(|e| e.path()).collect())
+            .unwrap_or_default();
+        addons.sort();
+        for dir in addons {
+            let mut files = Vec::new();
+            walk(&dir, "", &mut files, &|_, meta| !meta.is_dir());
+            for rest in files {
+                provided.push((rest.clone(), dir.join(&rest).to_string_lossy().into_owned()));
+            }
+        }
+        let mut ours = Vec::new();
+        let mut links = Vec::new();
+        walk(Path::new("/etc"), "", &mut links, &|_, meta| {
+            meta.file_type().is_symlink()
+        });
+        for rest in links {
+            let Ok(target) = fs::read_link(Path::new("/etc").join(&rest)) else {
+                continue;
+            };
+            let target = target.to_string_lossy().into_owned();
+            if is_ours(&target) {
+                ours.push((rest, target));
+            }
+        }
+        let theirs = provided
+            .iter()
+            .map(|(rest, _)| rest)
+            .filter(|rest| {
+                Path::new("/etc")
+                    .join(rest)
+                    .symlink_metadata()
+                    .is_ok_and(|m| !m.file_type().is_symlink())
+            })
+            .cloned()
+            .collect();
+        Links {
+            provided,
+            ours,
+            theirs,
+        }
+    }
+
+    /// The links to make, (path under `/etc`, target), and the paths of
+    /// links to take out: the first add-on to provide a path has it, and a
+    /// machine's own file is never replaced.
+    pub fn plan(&self) -> (Vec<(String, String)>, Vec<String>) {
+        let mut wanted: BTreeMap<&str, &str> = BTreeMap::new();
+        for (rest, target) in &self.provided {
+            if !self.theirs.contains(rest) {
+                wanted.entry(rest).or_insert(target);
+            }
+        }
+        let make = wanted
+            .iter()
+            .filter(|(rest, target)| !self.ours.iter().any(|(r, t)| r == *rest && t == *target))
+            .map(|(rest, target)| (rest.to_string(), target.to_string()))
+            .collect();
+        let remove = self
+            .ours
+            .iter()
+            .filter(|(rest, target)| wanted.get(rest.as_str()) != Some(&target.as_str()))
+            .map(|(rest, _)| rest.clone())
+            .collect();
+        (make, remove)
+    }
+}
+
+/// One line of `edel addon list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Row {
+    pub name: String,
+    pub summary: String,
+    /// `installed`, `built in`, `chosen` (it arrives with the next
+    /// update) or empty.
+    pub status: String,
+}
+
+/// The rows of `edel addon list`: the release's add-ons for this image
+/// (`offered`, name and summary), then any chosen or mounted one it lacks.
+pub fn rows(
+    offered: &[(String, String)],
+    mounted: &[String],
+    built_in: &BTreeSet<String>,
+    wanted: &[String],
+) -> Vec<Row> {
+    let status = |name: &str| {
+        if mounted.iter().any(|m| m == name) {
+            tr("installed").to_string()
+        } else if built_in.contains(name) {
+            tr("built in").to_string()
+        } else if wanted.iter().any(|w| w == name) {
+            tr("chosen").to_string()
+        } else {
+            String::new()
+        }
+    };
+    let mut rows: Vec<Row> = offered
+        .iter()
+        .map(|(name, summary)| Row {
+            name: name.clone(),
+            summary: summary.clone(),
+            status: status(name),
+        })
+        .collect();
+    for name in mounted.iter().chain(wanted) {
+        if !rows.iter().any(|r| &r.name == name) {
+            rows.push(Row {
+                name: name.clone(),
+                summary: String::new(),
+                status: status(name),
+            });
+        }
+    }
+    rows
+}
+
+/// `edel addon list`: the add-ons of this machine's channel for its image,
+/// each marked installed, built in or chosen. Offline, it says so and
+/// lists what this machine has.
+pub fn list() -> Result<()> {
+    let accept = crate::release::Accept::default();
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
+    let offered: Vec<(String, String)> = match crate::release::default_location(&accept)
+        .and_then(|at| crate::release::verified(&at, &accept))
+    {
+        Ok(manifest) => crate::release::addons_for(&manifest, &image)
+            .into_iter()
+            .map(|a| (a.name.clone(), a.summary.clone()))
+            .collect(),
+        Err(err) => {
+            eprintln!(
+                "warning: {}",
+                trf(
+                    "could not read the release list ({why}), so only this machine's add-ons are shown",
+                    &[("why", &format!("{err:#}"))]
+                )
+            );
+            Vec::new()
+        }
+    };
+    let mounted = mounted();
+    let built_in: BTreeSet<String> = edel::services::installed()
+        .into_iter()
+        .filter(|(name, f)| f.addon && !mounted.contains(name))
+        .map(|(name, _)| name)
+        .collect();
+    let rows = rows(&offered, &mounted, &built_in, &wanted_on_machine());
+    if rows.is_empty() {
+        println!("{}", tr("no add-ons for this image"));
+        return Ok(());
+    }
+    for row in &rows {
+        let line = format!("{:<16} {:<10} {}", row.name, row.status, row.summary);
+        println!("{}", line.trim_end());
+    }
+    println!(
+        "{}",
+        tr("to add one: edel settings set addons.installed+=NAME; it arrives with the next update")
+    );
+    Ok(())
+}
+
+/// Whether a link's target is in the add-ons' folders, so apply made it.
+fn is_ours(target: &str) -> bool {
+    [places::ADDON_INIT_DIR, places::ADDON_ETC_DIR]
+        .iter()
+        .any(|dir| target.strip_prefix(dir).is_some_and(|r| r.starts_with('/')))
+}
+
+/// The paths under `dir`, relative to it, that `keep` picks, never
+/// following a link to a folder.
+fn walk(
+    dir: &Path,
+    under: &str,
+    found: &mut Vec<String>,
+    keep: &dyn Fn(&str, &fs::Metadata) -> bool,
+) {
+    let Ok(entries) = fs::read_dir(dir.join(under)) else {
+        return;
+    };
+    let mut entries: Vec<_> = entries.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let rest = if under.is_empty() {
+            name
+        } else {
+            format!("{under}/{name}")
+        };
+        let Ok(meta) = entry.path().symlink_metadata() else {
+            continue;
+        };
+        if keep(&rest, &meta) {
+            found.push(rest.clone());
+        }
+        if meta.is_dir() {
+            walk(dir, &rest, found, keep);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::symlink;
@@ -712,5 +1214,94 @@ mod tests {
         assert_eq!(map["file"].size, 1);
         assert_eq!(map["link"].link.as_deref(), Some("file"));
         fs::remove_dir_all(root).unwrap();
+    }
+
+    fn entry(name: &str) -> AddonEntry {
+        AddonEntry {
+            name: name.into(),
+            image: "edel-vm-x86_64".into(),
+            base: "edel-vm-x86_64.ext4.gz".into(),
+            summary: String::new(),
+            file: format!("edel-vm-x86_64.{name}.ext4.gz"),
+            sha256: "0".repeat(64),
+            size: 1,
+        }
+    }
+
+    #[test]
+    fn fetches_the_wanted_add_ons_and_notes_the_rest() {
+        let hello = entry("ci-hello");
+        let entries = [&hello];
+        let wanted = ["ci-hello", "ci-gone", "fonts-cjk"].map(String::from);
+        let built_in = |name: &str| name == "fonts-cjk";
+        let (fetch, notes) = fetch_plan(&wanted, &entries, "2026.10.1", &built_in);
+        assert_eq!(fetch.len(), 1);
+        assert_eq!(fetch[0].name, "ci-hello");
+        assert_eq!(notes.len(), 2);
+        assert!(
+            notes[0].starts_with("add-on ci-gone is not in 2026.10.1"),
+            "{}",
+            notes[0]
+        );
+        assert!(
+            notes[1].starts_with("add-on fonts-cjk is built into 2026.10.1"),
+            "{}",
+            notes[1]
+        );
+    }
+
+    fn pair(a: &str, b: &str) -> (String, String) {
+        (a.to_string(), b.to_string())
+    }
+
+    #[test]
+    fn links_what_is_provided_and_takes_out_what_went() {
+        let links = Links {
+            provided: vec![
+                pair("init.d/ci-hello", "/usr/lib/edel/init.d/ci-hello"),
+                pair("ci-hello.conf", "/usr/lib/edel/etc/ci-hello/ci-hello.conf"),
+                pair(
+                    "cups/cupsd.conf",
+                    "/usr/lib/edel/etc/printing/cups/cupsd.conf",
+                ),
+                pair("ci-hello.conf", "/usr/lib/edel/etc/other/ci-hello.conf"),
+            ],
+            ours: vec![
+                pair("ci-hello.conf", "/usr/lib/edel/etc/ci-hello/ci-hello.conf"),
+                pair("init.d/gone", "/usr/lib/edel/init.d/gone"),
+            ],
+            theirs: BTreeSet::from(["cups/cupsd.conf".to_string()]),
+        };
+        let (make, remove) = links.plan();
+        assert_eq!(
+            make,
+            [pair("init.d/ci-hello", "/usr/lib/edel/init.d/ci-hello")]
+        );
+        assert_eq!(remove, ["init.d/gone"]);
+        assert!(is_ours("/usr/lib/edel/init.d/x") && !is_ours("/usr/lib/edel/init.dx"));
+        assert!(!is_ours("/usr/share/zoneinfo/UTC"));
+    }
+
+    #[test]
+    fn lists_the_offered_and_the_chosen_add_ons() {
+        let offered = [pair("fonts-cjk", "Fonts"), pair("printing", "Printers")];
+        let rows = rows(
+            &offered,
+            &["printing".to_string()],
+            &BTreeSet::new(),
+            &["printing".to_string(), "ci-gone".to_string()],
+        );
+        let got: Vec<(&str, &str)> = rows
+            .iter()
+            .map(|r| (r.name.as_str(), r.status.as_str()))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("fonts-cjk", ""),
+                ("printing", "installed"),
+                ("ci-gone", "chosen")
+            ]
+        );
     }
 }
