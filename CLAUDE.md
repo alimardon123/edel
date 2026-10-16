@@ -116,7 +116,7 @@ When docs disagree, the newer ADR wins.
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |
 | `docs/` | Principles, ADR-001 to ADR-012, the reviews of other projects and of this one (`REVIEW-project-2026-10-13.md`), the roadmap, and the guide (`index.md`, `guide/`); index in `docs/README.md`; mdBook builds it all into the docs site (`book.toml`, `SUMMARY.md`, `theme/`, M8.10a) |
-| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, on a runner of its own), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
+| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, four "Desktop part" jobs at once, each on a runner of its own, joined by one check, M6.17), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published |
 | `Cargo.toml`, `Cargo.lock` | Workspace of six crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
@@ -151,7 +151,7 @@ sh ci/container-test.sh
 sh ci/initramfs-check.sh
 sh ci/vm-tests.sh    # boot, system, install, ab and flatpak tests, two lanes at once
 sh ci/sizes.sh
-sh ci/desktop-test.sh floating titlebar ...   # CI's "Desktop tests" job, after build.sh desktop-test
+sh ci/desktop-part.sh floating titlebar ...   # one of CI's four "Desktop part" jobs, after build.sh desktop-test
 ```
 
 CI's "Desktop on another distribution" job (M5.15a) needs only Ubuntu's libraries, Xvfb, ImageMagick and Mesa (`xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0`), on a machine without `/usr/share/edel`, `/data/edel` or `/run/edel`:
