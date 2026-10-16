@@ -120,9 +120,10 @@ build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test
 	--no-compress --out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
+# With it, the test add-on ci-hello (M7.2a), built from its root.
 build "$version.1" images/vm.toml --files ci/ab-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--loader-tag ci --no-compress --out out/ab-test-update
+	--loader-tag ci --addon ci-hello --features ci/features --no-compress --out out/ab-test-update
 
 # The update the A/B test downloads over HTTP (ci/ab-test.sh serves this
 # directory): a signed release.toml, the shrunk and gzipped image,
@@ -132,9 +133,16 @@ build "$version.1" images/vm.toml --files ci/ab-test/files \
 update=out/ab-test/update
 rm -rf "$update"
 mkdir -p "$update"
-ln out/ab-test-update/edel-vm-x86_64.ext4.gz "$update/"
-./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-vm-x86_64.ext4.gz"
+ln out/ab-test-update/edel-vm-x86_64.ext4.gz out/ab-test-update/edel-vm-x86_64.ci-hello.ext4.gz \
+	out/ab-test-update/edel-vm-x86_64.ci-hello.toml "$update/"
+./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" \
+	--addon "$update/edel-vm-x86_64.ci-hello.ext4.gz" "$update/edel-vm-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
+# badaddon.toml: signed, but its add-on's sha256 is not the file's, so the
+# fetch fails after the slot is written and the slot stays off (M7.2a).
+awk '/^\[\[addons\]\]/ { a = 1 } a && /^sha256 = / { $0 = "sha256 = \"" sprintf("%064d", 0) "\"" } { print }' \
+	"$update/release.toml" >"$update/badaddon.toml"
+./target/release/edel release sign --key out/keys/ci-1.key "$update/badaddon.toml"
 sed 's/^version = "\(.*\)"$/version = "\1x"/' "$update/release.toml" >"$update/bad.toml"
 cp "$update/release.toml.sig" "$update/bad.toml.sig"
 sed 's/^expires = .*$/expires = "2020-01-01"/' "$update/release.toml" >"$update/expired.toml"
@@ -185,12 +193,21 @@ ln out/apps-test-update/edel-apps-test-x86_64.ext4.gz "$update/"
 tag=${EDEL_TAG:-v$version}
 rm -rf out/release out/channel
 mkdir -p out/release out/channel
-for f in out/*.ext4.gz out/*.img.gz out/*.tar.gz out/*.packages; do
+for f in out/*.ext4.gz out/*.img.gz out/*.tar.gz out/*.packages out/*.*.toml; do
 	ln "$f" out/release/
 done
-./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" out/release/*.ext4.gz
+# The update images are IMAGE.ext4.gz; the add-ons IMAGE.NAME.ext4.gz, each
+# with its feature file IMAGE.NAME.toml beside it (M7.2a).
+set --
+for f in out/release/*.ext4.gz; do
+	case "${f##*/}" in
+	*.*.ext4.gz) set -- "$@" --addon "$f" ;;
+	*) set -- "$@" "$f" ;;
+	esac
+done
+./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" "$@"
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
-	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel out/release/*.ext4.gz
+	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel "$@"
 
 # A FAT stick holding a settings file (M6.6b), which desktop-test.sh live
 # plugs in for Settings' installer page to find; FAT, as a stick written on
