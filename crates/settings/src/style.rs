@@ -290,6 +290,10 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-action:focus-visible {{ outline: 2px solid alpha({accent}, 0.5); outline-offset: 1px; }}
 .edel-action-main {{ background-color: {accent}; color: {accent_text}; font-weight: 550; }}
 .edel-action-main:hover {{ background-color: alpha({accent}, 0.88); }}
+.edel-action.edel-danger {{ color: {error}; font-weight: 550; }}
+.edel-action.edel-danger:hover {{ background-color: alpha({error}, 0.12); }}
+.edel-prompt-title {{ font-size: {big}px; font-weight: 650; }}
+.edel-prompt-detail {{ color: {secondary}; }}
 .edel-output, .edel-output.edel-error {{ font-size: {tiny}px; margin-top: 0; }}
 .edel-choice {{ background: none; box-shadow: none; padding: 0; }}
 .edel-choice > button {{ min-height: 26px; padding: 0 8px 0 10px; border-radius: {rs}px; background-image: none;
