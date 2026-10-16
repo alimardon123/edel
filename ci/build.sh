@@ -107,7 +107,7 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 [users.root]
 ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
-build "$version" images/vm.toml --files "$seed" --no-compress --out out/system-test
+build "$version" images/vm.toml --files "$seed" --no-addons --no-compress --out out/system-test
 
 # The install test image (roadmap M2.4, M2.5): the VM image plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
@@ -117,13 +117,13 @@ build "$version" images/vm.toml --files "$seed" --no-compress --out out/system-t
 # copies slot A into a 4096 MiB slot, unchanged (M3.3b, M1.12).
 build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test/files --slot-mib 1024 \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--no-compress --out out/install-test
+	--no-addons --no-compress --out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 # With it, the test add-on ci-hello (M7.2a), built from its root.
 build "$version.1" images/vm.toml --files ci/ab-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--loader-tag ci --addon ci-hello --features ci/features --no-compress --out out/ab-test-update
+	--loader-tag ci --no-addons --addon ci-hello --features ci/features --no-compress --out out/ab-test-update
 
 # The update the A/B test downloads over HTTP (ci/ab-test.sh serves this
 # directory): a signed release.toml, the shrunk and gzipped image,

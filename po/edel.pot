@@ -2531,6 +2531,9 @@ msgstr ""
 msgid "Another directory of feature files to find add-ons in; for test images"
 msgstr ""
 
+msgid "Build none of the definition's own add-ons, only those --addon names; for test images, which need no released add-on"
+msgstr ""
+
 msgid "Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images"
 msgstr ""
 

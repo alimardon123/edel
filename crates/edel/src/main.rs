@@ -498,6 +498,10 @@ struct BuildArgs {
     /// images.
     #[arg(long = "features", value_name = "DIR")]
     feature_dirs: Vec<PathBuf>,
+    /// Build none of the definition's own add-ons, only those --addon
+    /// names; for test images, which need no released add-on.
+    #[arg(long)]
+    no_addons: bool,
     /// Seconds the boot guard waits for health before the watchdog
     /// restarts the machine, instead of the definition's; for test images
     #[arg(long, value_name = "SECS")]
@@ -669,6 +673,7 @@ fn run(command: Commands) -> Result<()> {
                     plan,
                     addons,
                     feature_dirs,
+                    no_addons,
                 } = *args;
                 if let Some(id) = apps
                     .iter()
@@ -692,7 +697,10 @@ fn run(command: Commands) -> Result<()> {
                         )
                     );
                 }
-                let def = ImageDef::load(&definition)?;
+                let mut def = ImageDef::load(&definition)?;
+                if no_addons {
+                    def.addons.clear();
+                }
                 let extra_addons = resolve_addons(&definition, &def, &addons, &feature_dirs)?;
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
                 // apk and mount get absolute paths, so nothing depends on

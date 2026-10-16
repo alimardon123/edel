@@ -152,6 +152,9 @@ Build an image from its definition file (run as root on Alpine).
 | `DEFINITION` | Image definition, for example images/vm.toml |
 | `--out OUT` | Directory for the finished images and the work area |
 | `--files DIR` | Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once |
+| `--addon NAME` | An add-on to build from this image's root, beside the definition's own; for test images. Can be given more than once |
+| `--features DIR` | Another directory of feature files to find add-ons in; for test images |
+| `--no-addons` | Build none of the definition's own add-ons, only those --addon names; for test images, which need no released add-on |
 | `--health-timeout SECS` | Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images |
 | `--slot-mib MIB` | Size of each slot in MiB, instead of the definition's; for test images, such as the install test's live disk, which has the desktop stick's small slots |
 | `--public-key FILE` | Another public key that may sign updates, after the definition's own; for test images. Can be given more than once |
