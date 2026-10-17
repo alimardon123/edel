@@ -48,6 +48,8 @@ flate2 = { version = "1", optional = true }
 # wakes them when the compositor writes its state file. The crate is already
 # in the lock file for the compositor.
 inotify = { version = "0.11.5", default-features = false, optional = true }
+# Sunrise and sunset in this computer's own time (M7.14): the time zone files tzdata ships, as shell-ui's clock reads them.
+jiff = "0.2"
 # Wallpapers' JPEG pictures (M5.10c4b): pure Rust, and it decodes at a half, a quarter or an eighth of the size the screen needs, so a 4K picture never sits whole in memory for a smaller screen.
 jpeg-decoder = { version = "0.3.2", default-features = false, optional = true }
 # O_NOFOLLOW and O_NONBLOCK, to read files in a user's home safely as root.

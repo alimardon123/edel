@@ -649,6 +649,15 @@ impl Files {
         )
     }
 
+    /// The colour scheme the files give now and the sun's next change, the
+    /// one rule `edel::sun` owns (M7.14).
+    pub fn scheme(&self) -> (edel::tokens::Scheme, Option<edel::sun::Change>) {
+        let read = |path: &std::path::Path| std::fs::read_to_string(path).ok();
+        let machine = read(&self.machine);
+        let person = self.person.as_deref().and_then(read);
+        edel::sun::scheme_of(machine.as_deref(), person.as_deref())
+    }
+
     /// Where `key`'s value comes from: the person's file, the machine's,
     /// or neither (M5.6b).
     pub fn source(&self, key: &str) -> settings::Source {

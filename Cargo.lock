@@ -971,6 +971,7 @@ dependencies = [
  "ed25519-dalek",
  "flate2",
  "inotify",
+ "jiff",
  "jpeg-decoder",
  "libc",
  "resvg",

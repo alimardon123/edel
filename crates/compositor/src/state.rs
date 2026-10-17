@@ -155,6 +155,8 @@ pub struct Edel {
     pub deadline: edel_compositor::effects::Deadline,
     /// Game mode (M7.7, `games.rs`).
     pub game: crate::games::Game,
+    /// The timer for the sun's next change of scheme (M7.14, `sun.rs`).
+    pub sun: crate::sun::Timer,
     /// What is opening, closing and sliding (`animate.rs`).
     pub animations: crate::animate::Animations,
     /// The X11 display for X11 apps (`xwayland.rs`).
@@ -378,6 +380,7 @@ impl Edel {
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             game: Default::default(),
+            sun: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
                 edel_compositor::effects::Tier::Lite,
                 edel_compositor::animation::Motion::Full,
@@ -647,6 +650,7 @@ impl Edel {
             self.apply_keyboard();
         }
         self.follow_game_mode(new.game_mode);
+        self.arm_sun();
         self.restyle();
         let rescaled = self.apply_scales();
         if old.workspace_names != new.workspace_names {
