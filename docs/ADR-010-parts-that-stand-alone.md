@@ -59,6 +59,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | Colours, sizes, radii, fonts, motion | `design/tokens.toml` | the compositor, shell-ui, Settings, GTK's colour file (generated) |
 | The shell's own icons | `design/icons/` | `edel::icons` |
 | Layouts | `presets/*.toml` | `edel::presets` |
+| Profiles (M7.6) | `profiles/*.toml` | `edel::profiles` |
 | Built-in themes (M5.12b6a) | `themes/*.toml` | `edel::themes` |
 | What an image contains | `features/*.toml` | `edel image build` |
 | An image's facts (name, kernel, slot size) | `images/*.toml` | `edel image build`, CI |

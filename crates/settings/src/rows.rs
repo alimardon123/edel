@@ -364,6 +364,11 @@ pub const ROWS: &[Row] = &[
         key: "location.online",
         title: n_("Look online"),
     },
+    // The System page's profile (M7.6), the machine's.
+    Row {
+        key: "system.profiles",
+        title: n_("Profile"),
+    },
     // The Default apps page (M6.10): the app each role opens, one row each,
     // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
     Row {

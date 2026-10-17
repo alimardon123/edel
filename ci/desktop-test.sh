@@ -5654,18 +5654,17 @@ case_own_bars() {
 
 case_capture() {
 	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
-	# for a screenshot gets the URI of a PNG the compositor copied (its log
-	# says so, once per client), and asking to share the screen gets a stream
-	# of the screen's size, 1280x800 here. xdg-desktop-portal offers the
-	# screenshot only beside an Access backend, shell-ui's dialog, which it
-	# asks only through a screenshot backend of version 2 or later; the wlr
-	# backend's is older, so the dialog is asked here as the portal would ask
-	# it, over D-Bus as ci: the call waits for the person, its place is on
-	# the log, Allow is clicked and the call must answer 0.
-	before=$(count 'DESKTOP-TEST: access_result .*uint32')
-	guest 'access ask'
-	wait_for 'edel-shell-ui: access places ' 20 ||
-		fail "shell-ui showed no dialog for the Access portal's question: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
+	# for a screenshot is asked about first in shell-ui's Access dialog,
+	# which the portal asks as shell-ui's screenshot backend is of version 2
+	# (M8.21 part 21f); Allow is clicked, and the app gets the URI of a PNG
+	# that shell-ui copied from the compositor (its log says so, once per
+	# client) into ci's own runtime folder, mode 600, with no /tmp/out.png,
+	# where grim used to leave every picture for anyone to read. Asking to
+	# share the screen gets a stream of the screen's size, 1280x800 here.
+	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
+	guest 'capture screenshot'
+	wait_for 'edel-shell-ui: access places ' 30 ||
+		fail "the screenshot portal showed no Access dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
 	# Allow's rectangle in the surface's own logical pixels, from shell-ui,
 	# and the surface's place on the screen, from the compositor's state
 	# file (it centres the dialog in the area the panels leave).
@@ -5685,25 +5684,20 @@ case_capture() {
 	# accent, not the background).
 	shot access "$allow_x" "$allow_y" "!$background" >/dev/null || true
 	python3 ci/qmp.py click "$allow_x" "$allow_y"
-	wait_for 'edel-shell-ui: access allowed for ci-test' 10 ||
+	wait_for 'edel-shell-ui: access allowed for ' 10 ||
 		fail "clicking Allow did not answer the dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access ' | tail -n 1)"
-	poll_result 'access result' 'DESKTOP-TEST: access_result .*uint32' "$before" ||
-		fail "the Access call did not return after Allow was clicked"
-	answer=$(value access_result)
-	case "$answer" in
-	"(uint32 0,"*) ;;
-	*) fail "the Access call answered \"$answer\", not 0 for allowed" ;;
-	esac
-	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
-	guest 'capture screenshot'
 	poll_result 'capture screenshot result' 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
-		fail "the screenshot portal did not answer in 30 s"
+		fail "the screenshot portal did not answer in 30 s after Allow"
 	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
 	if [ -z "$shot" ]; then
 		guest 'capture debug'
-		wait_for 'DESKTOP-TEST: capture_debug grim ' 30 || true
-		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug ' | tail -n 32 | tr '\n' '|')"
+		wait_for 'DESKTOP-TEST: capture_debug portals ' 30 || true
+		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug \|edel-shell-ui: .*screenshot' | tail -n 32 | tr '\n' '|')"
 	fi
+	case "$shot" in
+	file:///run/user/[0-9]*/edel/screenshots/screenshot-*.png) ;;
+	*) fail "the screenshot is at $shot, not in ci's runtime folder /run/user/UID/edel/screenshots" ;;
+	esac
 	guest 'capture file'
 	wait_for 'DESKTOP-TEST: capture_file ' 20 || fail "the service did not say what the screenshot file holds"
 	file=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_file //p' | tail -n 1)
@@ -5714,6 +5708,13 @@ case_capture() {
 	magic=$(echo "$file" | awk '{ print $3 }')
 	[ "$magic" = 89504e47 ] || fail "the screenshot is not a PNG (its first bytes are $magic): $file"
 	[ "$bytes" -gt 1024 ] || fail "the screenshot is $bytes bytes, under 1 KB: $file"
+	mode=$(echo "$file" | awk '{ print $4, $5 }')
+	[ "$mode" = "600 ci" ] || fail "the screenshot's mode and owner are \"$mode\", not 600 ci: $file"
+	case "$file" in
+	*" out.png absent") ;;
+	*) fail "/tmp/out.png exists, so a screenshot went where other people can read it: $file" ;;
+	esac
+	grep -aq 'edel-shell-ui: screenshot saved, ' "$log" || fail "shell-ui did not say it saved the screenshot"
 	grep -aq 'edel-compositor: screen copied for ' "$log" || fail "the compositor logged no screen copy"
 	guest 'capture screencast'
 	wait_for 'DESKTOP-TEST: capture_screencast ' 60 || fail "the service did not hear back from the screencast portal"
@@ -5721,7 +5722,7 @@ case_capture() {
 	[ -n "$stream" ] || fail "the screencast gave no stream: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screencast ' | tail -n 1)"
 	size=${stream#* }
 	[ "$size" = 1280x800 ] || fail "the screencast's stream is $size, not the screen's 1280x800"
-	echo "PASS: the Access portal's question showed shell-ui's dialog (access.png) and Allow answered 0; a screenshot portal call gave $shot, a PNG of $bytes bytes the compositor copied; a screencast gave stream ${stream% *} of $size"
+	echo "PASS: a screenshot portal call showed shell-ui's Access dialog (access.png), and after Allow gave $shot, a PNG of $bytes bytes, mode 600 and ci's own, that shell-ui copied from the compositor, with no /tmp/out.png; a screencast gave stream ${stream% *} of $size"
 }
 
 # poll_result COMMAND PATTERN BEFORE: asks the service with COMMAND until

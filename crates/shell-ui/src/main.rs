@@ -72,6 +72,7 @@ mod power_card;
 mod power_rules;
 mod quick;
 mod quick_card;
+mod screenshot;
 mod sessions;
 mod shell_bus;
 mod status;
@@ -105,6 +106,7 @@ use smithay_client_toolkit::reexports::client::protocol::{
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
+use smithay_client_toolkit::reexports::protocols_wlr::screencopy::v1::client::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::{
     ext_idle_notification_v1::ExtIdleNotificationV1, ext_idle_notifier_v1::ExtIdleNotifierV1,
 };
@@ -367,6 +369,11 @@ struct Shell {
     /// needs both (M8.21 21d).
     backdrops: Option<ExtBackgroundEffectManagerV1>,
     live_blur: bool,
+    /// The compositor's screen copy manager, when it has one (M8.21 21f),
+    /// the screenshots being taken and the number the last one got.
+    screencopy: Option<ZwlrScreencopyManagerV1>,
+    shots: Vec<screenshot::Shot>,
+    next_shot: u64,
     /// The power profile last asked of `edel`, until the kernel shows it
     /// (M7.8).
     profile_asked: Option<String>,
@@ -590,6 +597,9 @@ fn run() -> Result<()> {
         idle_notifier: power_card::bind_idle(&globals, &qh),
         backdrops: backdrop::bind(&globals, &qh),
         live_blur: false,
+        screencopy: screenshot::bind(&globals, &qh),
+        shots: Vec::new(),
+        next_shot: 0,
         idle_notification: None,
         profile_asked: None,
         registry: RegistryState::new(&globals),
@@ -743,6 +753,9 @@ fn run() -> Result<()> {
                             shell.open_lock_looks();
                         }
                         shell_bus::Edit::Access(ask) => shell.access_asked(ask),
+                        shell_bus::Edit::Screenshot { path, answer } => {
+                            shell.screenshot(path, answer)
+                        }
                     }
                 }
             })

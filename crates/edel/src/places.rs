@@ -421,6 +421,16 @@ pub fn person_state_dir() -> Option<PathBuf> {
     }
 }
 
+/// Where shell-ui keeps the screenshot an app asked for (M8.21 part 21f):
+/// `$XDG_RUNTIME_DIR/edel/screenshots`, in the person's own runtime folder
+/// (mode 0700, made by pam_rundir), so no other person can read it; none
+/// without the variable.
+pub fn screenshots_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|v| !v.is_empty())
+        .map(|runtime| PathBuf::from(runtime).join("edel").join("screenshots"))
+}
+
 /// The record of which app used the camera, the microphone or the screen
 /// and when (M6.14b, `edel::app_use`), in a person's state directory
 /// ([`person_state_dir`]): shell-ui writes it, Settings' app pages read it.

@@ -7,10 +7,14 @@
 //! again whenever shell-ui starts (M5.5c) and when they change (M6.17). It also serves
 //! `org.freedesktop.impl.portal.Access` (M6.3): the screenshot portal asks
 //! through it before an app may take a picture, and shell-ui draws the
-//! dialog itself (`access_card.rs`). It is no process of its own: zbus
-//! answers on a thread of its own, and nothing runs while no app asks.
+//! dialog itself (`access_card.rs`). It also serves
+//! `org.freedesktop.impl.portal.Screenshot` (M8.21 part 21f), which shell-ui
+//! answers itself (`screenshot.rs`), so no grim and no `/tmp` file. It is no
+//! process of its own: zbus answers on a thread of its own, and nothing runs
+//! while no app asks.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use edel::panel_edit::{SHELL_BUS, SHELL_PATH};
 use edel::tokens::{Colour, Tokens};
@@ -161,28 +165,149 @@ impl Asking {
         options: HashMap<String, OwnedValue>,
     ) -> (u32, HashMap<String, OwnedValue>) {
         let _ = (&handle, &parent_window);
-        let app = if app_id.is_empty() {
-            tr("An app").to_string()
-        } else {
-            app_id
-        };
         let deny = text_option(&options, "deny_label").unwrap_or_else(|| tr("Deny").to_string());
         let grant = text_option(&options, "grant_label").unwrap_or_else(|| tr("Allow").to_string());
+        let answer = ask(&self.edits, app_id, title, subtitle, body, deny, grant).await;
+        (answer, HashMap::new())
+    }
+}
+
+/// Asks the person through the event loop's dialog and waits for the answer
+/// (M6.3, M8.21 part 21f): the dialog names `app_id`, or "An app" when it is
+/// empty, and shows the portal's `title`, `subtitle` and `body` with the two
+/// labels. The answer is `access::ALLOW`, `DENY` or `CANCEL`.
+async fn ask(
+    edits: &channel::Sender<Edit>,
+    app_id: String,
+    title: String,
+    subtitle: String,
+    body: String,
+    deny: String,
+    grant: String,
+) -> u32 {
+    let app = if app_id.is_empty() {
+        tr("An app").to_string()
+    } else {
+        app_id
+    };
+    let (answer, reply) = shell_bus::answer();
+    let ask = Ask {
+        app,
+        title,
+        subtitle,
+        body,
+        deny,
+        grant,
+        answer,
+    };
+    if edits.send(Edit::Access(ask)).is_err() {
+        return access::CANCEL;
+    }
+    reply.wait().await
+}
+
+/// The Screenshot portal's backend (M8.21 part 21f): shell-ui takes the
+/// picture itself (`screenshot.rs`), so no other program reads the screens
+/// and nothing is written to `/tmp`. Only `Screenshot` and `PickColor` are
+/// served; the request object is the portal's own, as the Access dialog's is.
+struct Shooting {
+    edits: channel::Sender<Edit>,
+    /// The pictures taken since shell-ui started, so each file's name is
+    /// its own even when two come in the same millisecond.
+    taken: AtomicU64,
+}
+
+#[zbus::interface(name = "org.freedesktop.impl.portal.Screenshot")]
+impl Shooting {
+    /// Takes a picture of every screen into a PNG in the person's runtime
+    /// folder and answers 0 with its `file://` address, or 1 when the person
+    /// denied it, or 2 when it did not happen. The portal asks the person
+    /// first only for an interactive request or an older portal (`must_ask`);
+    /// otherwise its permission store has answered already.
+    async fn screenshot(
+        &self,
+        handle: OwnedObjectPath,
+        app_id: String,
+        parent_window: String,
+        options: HashMap<String, OwnedValue>,
+    ) -> (u32, HashMap<String, OwnedValue>) {
+        let _ = (&handle, &parent_window);
+        if must_ask(&options) {
+            let deny = tr("Deny").to_string();
+            let grant = tr("Allow").to_string();
+            let answer = ask(
+                &self.edits,
+                app_id,
+                String::new(),
+                String::new(),
+                String::new(),
+                deny,
+                grant,
+            )
+            .await;
+            if answer != access::ALLOW {
+                let code = if answer == access::DENY { 1 } else { 2 };
+                return (code, HashMap::new());
+            }
+        }
+        let Some(dir) = edel::places::screenshots_dir() else {
+            eprintln!(
+                "edel-shell-ui: {}",
+                crate::messages::screenshot_not_saved("XDG_RUNTIME_DIR is not set")
+            );
+            return (2, HashMap::new());
+        };
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        let n = self.taken.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!("screenshot-{millis}-{n}.png"));
         let (answer, reply) = shell_bus::answer();
-        let ask = Ask {
-            app,
-            title,
-            subtitle,
-            body,
-            deny,
-            grant,
+        let edit = Edit::Screenshot {
+            path: path.clone(),
             answer,
         };
-        if self.edits.send(Edit::Access(ask)).is_err() {
-            return (access::CANCEL, HashMap::new());
+        if self.edits.send(edit).is_err() {
+            return (2, HashMap::new());
         }
-        (reply.wait().await, HashMap::new())
+        if reply.wait().await != access::ALLOW {
+            return (2, HashMap::new());
+        }
+        let uri = format!("file://{}", path.display());
+        let Ok(value) = OwnedValue::try_from(Value::from(uri)) else {
+            return (2, HashMap::new());
+        };
+        (0, HashMap::from([("uri".to_string(), value)]))
     }
+
+    /// The colour picker is not built yet, so the request ends without a
+    /// colour (M8.21 part 21f).
+    async fn pick_color(
+        &self,
+        handle: OwnedObjectPath,
+        app_id: String,
+        parent_window: String,
+        options: HashMap<String, OwnedValue>,
+    ) -> (u32, HashMap<String, OwnedValue>) {
+        let _ = (&handle, &app_id, &parent_window, &options);
+        (2, HashMap::new())
+    }
+
+    /// The interface's version: 2 makes the portal ask the person through
+    /// Access first and pass `permission_store_checked` (M8.21 part 21f).
+    #[zbus(property, name = "version")]
+    fn version(&self) -> u32 {
+        2
+    }
+}
+
+/// Whether the screenshot portal's request must be asked of the person
+/// first (M8.21 part 21f): an interactive request always is, even when the
+/// portal's store has the answer, and a request the store has not answered
+/// (no `permission_store_checked`) is too.
+fn must_ask(options: &HashMap<String, OwnedValue>) -> bool {
+    bool_option(options, "interactive") == Some(true)
+        || bool_option(options, "permission_store_checked") != Some(true)
 }
 
 /// Tells the session bus the compositor's Wayland display (M6.3), as other
@@ -210,6 +335,12 @@ fn tell_display(connection: &zbus::blocking::Connection) {
 fn text_option(options: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
     let value = options.get(key)?.try_clone().ok()?;
     String::try_from(value).ok().filter(|text| !text.is_empty())
+}
+
+/// The value of a boolean option (M8.21 part 21f), when the portal gave one.
+fn bool_option(options: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+    let value = options.get(key)?.try_clone().ok()?;
+    bool::try_from(value).ok()
 }
 
 /// The portal's own error for a setting it does not have.
@@ -414,10 +545,15 @@ pub fn serve(
     let asking = Asking {
         edits: edits.clone(),
     };
+    let shooting = Shooting {
+        edits: edits.clone(),
+        taken: AtomicU64::new(0),
+    };
     let built = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(NAME))
         .and_then(|b| b.serve_at(PATH, backend))
         .and_then(|b| b.serve_at(PATH, asking))
+        .and_then(|b| b.serve_at(PATH, shooting))
         .and_then(|b| b.serve_at(PATH, Lockdown { location_off }))
         .and_then(|b| b.serve_at(SHELL_PATH, ShellBus::new(edits)))
         .and_then(|b| b.build());
@@ -543,6 +679,67 @@ mod tests {
             .expect("the answer");
         assert_eq!(code, access::ALLOW);
         assert!(results.is_empty());
+    }
+
+    /// The boolean options the screenshot portal passes are read as bools
+    /// only; anything else, or no value, is none (M8.21 part 21f).
+    #[test]
+    fn a_bool_option_is_read_when_given_as_a_bool() {
+        let mut options = HashMap::new();
+        options.insert(
+            "permission_store_checked".to_string(),
+            OwnedValue::try_from(Value::from(true)).unwrap(),
+        );
+        options.insert(
+            "off".to_string(),
+            OwnedValue::try_from(Value::from(false)).unwrap(),
+        );
+        options.insert(
+            "wrong".to_string(),
+            OwnedValue::try_from(Value::from("yes")).unwrap(),
+        );
+        assert_eq!(
+            bool_option(&options, "permission_store_checked"),
+            Some(true)
+        );
+        assert_eq!(bool_option(&options, "off"), Some(false));
+        assert_eq!(bool_option(&options, "wrong"), None, "a string is none");
+        assert_eq!(bool_option(&options, "missing"), None);
+    }
+
+    /// An interactive request is asked of the person even when the store
+    /// has answered; a store-checked one is not; one the store has not
+    /// answered is asked (M8.21 part 21f).
+    #[test]
+    fn a_screenshot_asks_when_interactive_or_not_checked() {
+        let flag = |key: &str, value: bool| {
+            (
+                key.to_string(),
+                OwnedValue::try_from(Value::from(value)).unwrap(),
+            )
+        };
+        let options =
+            |pairs: Vec<(String, OwnedValue)>| pairs.into_iter().collect::<HashMap<_, _>>();
+        assert!(must_ask(&options(vec![
+            flag("interactive", true),
+            flag("permission_store_checked", true),
+        ])));
+        assert!(!must_ask(&options(vec![flag(
+            "permission_store_checked",
+            true
+        )])));
+        assert!(must_ask(&options(vec![])), "no answer from the store asks");
+        assert!(must_ask(&options(vec![flag("interactive", false)])));
+    }
+
+    #[test]
+    fn the_screenshot_portal_is_named_as_the_portal_names_it() {
+        use zbus::object_server::Interface;
+
+        assert_eq!(
+            Shooting::name().as_str(),
+            "org.freedesktop.impl.portal.Screenshot"
+        );
     }
 
     #[test]

@@ -57,6 +57,7 @@ pub mod places;
 pub mod power;
 pub mod presets;
 pub mod profile;
+pub mod profiles;
 #[cfg(feature = "os")]
 pub mod scripts;
 #[cfg(feature = "os")]

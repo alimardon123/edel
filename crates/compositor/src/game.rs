@@ -76,6 +76,13 @@ mod tests {
     }
 
     #[test]
+    fn the_values_are_the_keys_own() {
+        use edel::settings::{GAME_MODE, GAME_MODE_DEFAULT, choices};
+        assert_eq!(choices(GAME_MODE), ["plugged-in", "always", "off"]);
+        assert_eq!(When::parse(Some(GAME_MODE_DEFAULT)), When::default());
+    }
+
+    #[test]
     fn plugged_in_is_on_off_the_battery() {
         let game = GameMode::default();
         assert!(game.on(|| false));
