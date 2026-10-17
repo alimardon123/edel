@@ -418,8 +418,11 @@ impl Edel {
         }
         self.dirty = true;
         // The raise may put another window on top of a game (M7.7c);
-        // this also syncs the toplevels.
+        // this also syncs the toplevels, which a drag still wants.
         self.state_changed();
+        if self.dragging {
+            self.sync_toplevels();
+        }
         if scrolled {
             self.relayout();
         }
