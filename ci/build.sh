@@ -85,10 +85,12 @@ for def in images/*.toml; do
 done
 
 # Built again from the same commit (M8.6): ci/repro-check.sh wants the
-# container image byte for byte the same, and compares the VM's slot,
-# which is not required yet.
+# container image byte for byte the same, and compares the CI VM image's
+# slot, which is not required yet; the CI VM image is built twice here, as
+# the released disk image, images/edel.toml, would fetch its apps twice.
 rm -rf out/repro
 build "$version" images/container.toml --out out/repro
+build "$version" ci/vm/vm.toml --no-addons --no-compress --out out/repro/first
 build "$version" ci/vm/vm.toml --no-addons --no-compress --out out/repro
 
 # The system test image (roadmap M2.2, M2.3): the CI VM image (ci/vm/vm.toml) with a seed
