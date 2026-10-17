@@ -84,6 +84,13 @@ for def in images/*.toml; do
 	build "$version" "$def" --out out
 done
 
+# Built again from the same commit (M8.6): ci/repro-check.sh wants the
+# container image byte for byte the same, and compares the VM's slot,
+# which is not required yet.
+rm -rf out/repro
+build "$version" images/container.toml --out out/repro
+build "$version" images/vm.toml --no-addons --no-compress --out out/repro
+
 # The system test image (roadmap M2.2, M2.3): the VM image with a seed
 # settings file in its slot that names the machine and adds user ci, who logs
 # in with a fresh ssh key, as root does. The unknown key and the comment
@@ -235,5 +242,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/system-test
+	out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test

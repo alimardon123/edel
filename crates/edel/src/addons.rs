@@ -34,10 +34,13 @@ const SKIPPED: [&str; 5] = ["proc", "sys", "dev", "run", "tmp"];
 /// for the whole system.
 const CACHE_DIRS: [&str; 4] = ["etc/apk", "lib/apk", "usr/lib/apk", "var/cache"];
 
+/// apk's log of an image build, a cache add-ons leave out and images drop (M8.6).
+pub(crate) const APK_LOG: &str = "var/log/apk.log";
+
 /// Single files that are caches (and so left out of an add-on).
 const CACHE_FILES: [&str; 5] = [
     "etc/shells",
-    "var/log/apk.log",
+    APK_LOG,
     "etc/udev/hwdb.bin",
     "usr/lib/udev/hwdb.bin",
     "usr/share/info/dir",
