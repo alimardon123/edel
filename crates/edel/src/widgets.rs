@@ -13,7 +13,8 @@ pub enum Surface {
     Panel,
     /// The lock and login screens.
     LockScreen,
-    /// The desktop itself (M5.33c); no entry claims it yet.
+    /// The desktop itself, over the wallpaper and under the windows (M5.33c,
+    /// M8.21 part 21j1).
     Desktop,
 }
 
@@ -91,11 +92,12 @@ pub const TRAY: Widget = Widget {
     options: &[],
 };
 
-/// The clock: on a panel, and on the lock screen as one of its clocks.
+/// The clock: on a panel, on the lock screen as one of its clocks, and on the
+/// desktop (M8.21 part 21j1).
 pub const CLOCK: Widget = Widget {
     name: "clock",
     title: n_("Clock"),
-    surfaces: &[Surface::Panel, Surface::LockScreen],
+    surfaces: &[Surface::Panel, Surface::LockScreen, Surface::Desktop],
     options: &["face", "hours", "size", "weight", "zone", "label"],
 };
 
@@ -147,11 +149,11 @@ pub const NOTIFICATIONS: Widget = Widget {
     options: &[],
 };
 
-/// The date on the lock screen: its parts and its style.
+/// The date on the lock screen and on the desktop: its parts and its style.
 pub const DATE: Widget = Widget {
     name: "date",
     title: n_("Date"),
-    surfaces: &[Surface::LockScreen],
+    surfaces: &[Surface::LockScreen, Surface::Desktop],
     options: &["show", "style"],
 };
 
@@ -239,7 +241,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     #[test]
-    fn names_are_unique_each_fits_a_surface_and_none_fits_the_desktop_yet() {
+    fn names_are_unique_each_fits_a_surface_and_every_desktop_entry_is_a_part() {
         for (i, widget) in CATALOGUE.iter().enumerate() {
             assert!(crate::features::is_name(widget.name), "{}", widget.name);
             assert!(
@@ -248,16 +250,26 @@ mod tests {
                 widget.name
             );
             assert!(
-                widget.fits(Surface::Panel) || widget.fits(Surface::LockScreen),
+                widget.fits(Surface::Panel)
+                    || widget.fits(Surface::LockScreen)
+                    || widget.fits(Surface::Desktop),
                 "{} fits no surface",
                 widget.name
             );
-            assert!(
-                !widget.fits(Surface::Desktop),
-                "{} fits the desktop, which has no entry until M5.33c",
-                widget.name
-            );
+            if widget.fits(Surface::Desktop) {
+                assert!(
+                    Part::named(widget.name).is_some(),
+                    "{} fits the desktop but is no lock_screen::Part",
+                    widget.name
+                );
+            }
         }
+        let desktop: Vec<&str> = CATALOGUE
+            .iter()
+            .filter(|w| w.fits(Surface::Desktop))
+            .map(|w| w.name)
+            .collect();
+        assert_eq!(desktop, ["clock", "date"]);
     }
 
     #[test]

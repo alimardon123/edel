@@ -293,6 +293,10 @@ pub enum Kind {
     /// The lock screen's widgets, as `[[lock_screen.widgets]]` tables
     /// ([`crate::lock_screen::check`], M5.10c5)
     LockParts,
+    /// The desktop's widgets, as `[[appearance.widgets]]` tables: only the
+    /// clock and the date stand there ([`crate::lock_screen::check_desktop`],
+    /// M8.21 part 21j1)
+    DesktopWidgets,
     /// A screen's resolution, `WIDTHxHEIGHT` such as `"1920x1080"`
     Resolution,
     /// Keyboard layouts as xkb names them, such as `"us,ru"` or
@@ -566,6 +570,8 @@ pub const KEYS: &[Key] = &[
     // is simpler and every kind still follows it.
     now("appearance.animation_speed", Kind::WholeFromTo(25, 400)),
     now("appearance.animation_curve", Kind::OneOf(CURVES)),
+    // The desktop's widgets (M8.21 part 21j1): absent is none.
+    now(crate::lock_screen::DESKTOP_WIDGETS, Kind::DesktopWidgets),
     // The lock and login screens' widgets, each placed by an anchor and an
     // offset (M5.10c5); absent is the classic arrangement.
     now("lock_screen.widgets", Kind::LockParts),
@@ -1093,6 +1099,9 @@ pub struct Appearance {
     /// `arrows` or `counts` (M5.2m); absent is [`SWITCHER_ENDS_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub switcher_ends: Option<String>,
+    /// The desktop's widgets (M8.21 part 21j1): absent is none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub widgets: Option<Vec<crate::lock_screen::Placed>>,
 }
 
 /// A person's own colours (M5.12b1): any colour token by name, for both
@@ -1309,6 +1318,26 @@ pub fn icon_theme_or_default(value: Option<&str>) -> &str {
 /// through the theme's inheritance; the checker refuses it when it is set.
 pub fn icon_theme_in(machine: Option<&str>, person: Option<&str>) -> String {
     icon_theme_or_default(chosen(ICON_THEME, machine, person).as_deref()).to_string()
+}
+
+/// The desktop's widgets the machine's and the person's files choose (M8.21
+/// part 21j1): the person's list over the machine's, read leniently. A list
+/// that fails [`crate::lock_screen::check_desktop`] counts as none, so the
+/// desktop shows nothing rather than a half-read arrangement.
+pub fn desktop_widgets_in(
+    machine: Option<&str>,
+    person: Option<&str>,
+) -> Vec<crate::lock_screen::Placed> {
+    let of = |text: Option<&str>| {
+        text.and_then(|t| read(t).ok())
+            .and_then(|read| read.file.appearance.widgets)
+    };
+    let parts = of(person).or_else(|| of(machine)).unwrap_or_default();
+    if crate::lock_screen::check_desktop(&parts).is_ok() {
+        parts
+    } else {
+        Vec::new()
+    }
 }
 
 /// The least and most a whole-number key takes, from its entry in [`KEYS`]
@@ -2897,6 +2926,20 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
         (Kind::LockParts, _) => fail(tr(
             "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]",
         )),
+        (Kind::DesktopWidgets, Value::Array(_)) => {
+            let parts: Vec<crate::lock_screen::Placed> =
+                value.clone().try_into().map_err(|e: toml::de::Error| {
+                    trf(
+                        "expected widgets as the desktop writes them: {why}",
+                        &[("why", e.message())],
+                    )
+                })?;
+            crate::lock_screen::check_desktop(&parts)?;
+            Ok(value.clone())
+        }
+        (Kind::DesktopWidgets, _) => fail(tr(
+            "a list of widgets, such as [{ widget = \"clock\", at = \"top_right\" }]",
+        )),
         (Kind::LockLook, Value::String(s)) if crate::lock_screen::is_look_name(s) => {
             Ok(value.clone())
         }
@@ -3409,6 +3452,7 @@ mod tests {
             Kind::Keys => Value::String("Super+X".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
             Kind::LockParts => value_from_arg(r#"[{ widget = "person", at = "centre" }]"#),
+            Kind::DesktopWidgets => value_from_arg(r#"[{ widget = "clock", at = "top_right" }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
             Kind::TimeZone => Value::String("Europe/Berlin".into()),
@@ -3676,6 +3720,45 @@ version = "1.2"
             assert_eq!(read.file.lock_screen.parts, None, "{bad}");
             assert_eq!(read.problems[0].key, "lock_screen.widgets");
         }
+    }
+
+    /// The desktop's widgets (M8.21 part 21j1) are set and read back, the
+    /// person's list wins over the machine's, and a list that is not the
+    /// desktop's (a person, say) is refused by set and reads as none.
+    #[test]
+    fn desktop_widgets_are_set_read_back_and_checked() {
+        let default = crate::lock_screen::desktop_default();
+        let value = crate::lock_screen::widgets_value(&default).unwrap();
+        let text = set("format = 1\n", crate::lock_screen::DESKTOP_WIDGETS, &value).unwrap();
+        assert!(check(&text).unwrap().is_empty(), "{text}");
+        assert_eq!(desktop_widgets_in(None, Some(&text)), default);
+        let machine = set(
+            "format = 1\n",
+            "appearance.widgets",
+            r#"[{ widget = "date", at = "bottom" }]"#,
+        )
+        .unwrap();
+        assert_eq!(desktop_widgets_in(Some(&machine), Some(&text)), default);
+        let only_machine = desktop_widgets_in(Some(&machine), None);
+        assert_eq!(only_machine.len(), 1);
+        assert_eq!(only_machine[0].part, crate::lock_screen::Part::Date);
+        let person = set(
+            "format = 1\n",
+            "appearance.widgets",
+            r#"[{ widget = "person", at = "centre" }]"#,
+        )
+        .unwrap_err();
+        assert!(
+            person
+                .to_string()
+                .contains("the person does not stand on the desktop"),
+            "{person}"
+        );
+        let bad =
+            "format = 1\n[appearance]\nwidgets = [{ widget = \"person\", at = \"centre\" }]\n";
+        assert!(desktop_widgets_in(None, Some(bad)).is_empty());
+        let none = set(&text, "appearance.widgets", "[]").unwrap();
+        assert!(desktop_widgets_in(None, Some(&none)).is_empty());
     }
 
     /// The lock screen's looks, background and count (M5.10c5c) are set and

@@ -488,6 +488,9 @@ msgstr ""
 msgid "How see-through windows are and the shadow under them"
 msgstr ""
 
+msgid "your own arrangement"
+msgstr ""
+
 msgid "Each screen's size, scale and place."
 msgstr ""
 
@@ -1365,6 +1368,9 @@ msgid "Numbers shown"
 msgstr ""
 
 msgid "Switcher ends"
+msgstr ""
+
+msgid "Desktop widgets"
 msgstr ""
 
 msgid "Look"

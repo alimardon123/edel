@@ -704,6 +704,9 @@ msgstr ""
 msgid "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little)."
 msgstr ""
 
+msgid "The widgets on the desktop, over the wallpaper and under the windows, and where each one stands, as a list of tables."
+msgstr ""
+
 msgid "The widgets on the lock and login screens and where each one stands, as a list of tables."
 msgstr ""
 
@@ -1005,6 +1008,9 @@ msgid "{path} is not a picture path; give the whole path, starting with / and en
 msgstr ""
 
 msgid "the {part} has a path; only a picture has one, so take path out"
+msgstr ""
+
+msgid "the {part} does not stand on the desktop; the desktop takes {names}"
 msgstr ""
 
 msgid "the {part} has a face; only the clock has one, so take face out"
@@ -1947,6 +1953,12 @@ msgid "expected widgets as the lock screen writes them: {why}"
 msgstr ""
 
 msgid "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]"
+msgstr ""
+
+msgid "expected widgets as the desktop writes them: {why}"
+msgstr ""
+
+msgid "a list of widgets, such as [{ widget = \"clock\", at = \"top_right\" }]"
 msgstr ""
 
 msgid "{value} is not a look's name; use letters, digits and hyphens, such as \"minimal\""
