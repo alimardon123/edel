@@ -332,6 +332,7 @@ jobs:
             out/*.tar.gz
             out/*.log
             out/*.packages
+            out/*.cdx.json
             out/desktop-live/*.png
 
   # The VM tests, a lane per runner (CI speed-ups, 2026-10-16), each fed its
