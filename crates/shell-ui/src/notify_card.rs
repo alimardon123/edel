@@ -417,6 +417,7 @@ impl Shell {
 
     /// Draws the banner if what it shows changed.
     pub fn draw_banner(&mut self) {
+        let glass = self.glass();
         let Some(card) = &mut self.banner else {
             return;
         };
@@ -432,6 +433,8 @@ impl Shell {
             Some(&mut self.icons),
             scale,
         );
+        card.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = card
             .popup
             .show(card.view.clone(), &pixmap, &self.tokens, "banner", &self.qh);
@@ -732,6 +735,7 @@ impl Shell {
     /// Draws the centre if what it shows changed, after asking the
     /// compositor for a new size if it needs one.
     pub fn draw_centre(&mut self) {
+        let glass = self.glass();
         let Some(state) = self.centre.as_ref().map(|c| c.state.clone()) else {
             return;
         };
@@ -759,6 +763,8 @@ impl Shell {
             Some(&mut self.icons),
             scale,
         );
+        card.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = card.popup.show(
             view.clone(),
             &pixmap,

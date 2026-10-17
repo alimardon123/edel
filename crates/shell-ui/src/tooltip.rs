@@ -177,6 +177,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        tip.popup
+            .set_blur(&self.compositor, false, self.tokens.radius_menu as f32);
         let first = tip
             .popup
             .show(tip.view.clone(), &pixmap, &self.tokens, "tooltip", &self.qh);

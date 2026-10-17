@@ -201,6 +201,14 @@ pub fn corners_square(why: impl Display) -> String {
     )
 }
 
+/// The live blur's shaders cannot be made or drawn: popups keep their own
+/// colour, and the rest of the desktop is unchanged (M8.21 part 21d).
+pub fn blur_off(why: &dyn Display) -> String {
+    format!(
+        "live blur is off: its shaders could not be made or drawn ({why}); popups keep their own colour and the rest of the desktop is unchanged"
+    )
+}
+
 /// A screen refuses variable refresh (M7.7).
 pub fn vrr_refused(screen: &str, why: impl Display) -> String {
     format!(
@@ -282,6 +290,14 @@ mod tests {
         assert_eq!(
             startup_app_missing("org.example.Gone"),
             "startup app org.example.Gone is not installed; take it out of startup.apps"
+        );
+    }
+
+    #[test]
+    fn a_live_blur_that_is_off_says_what_stays() {
+        assert_eq!(
+            blur_off(&"no shader"),
+            "live blur is off: its shaders could not be made or drawn (no shader); popups keep their own colour and the rest of the desktop is unchanged"
         );
     }
 

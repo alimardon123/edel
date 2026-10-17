@@ -60,6 +60,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     state.start_effects(&crate::tiers::renderer_name(backend.renderer()));
     state.start_animations(backend.renderer());
     state.start_rounded(backend.renderer());
+    state.start_backdrop(backend.renderer());
     let size = backend.window_size();
     let output = Output::new(
         "winit".into(),
