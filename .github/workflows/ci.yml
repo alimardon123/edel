@@ -221,7 +221,9 @@ jobs:
 
       - name: No image lacks a security fix Alpine ships
         # M8.12: in the build container, as apk compares the versions;
-        # the self-test first, so the check is proven where it runs.
+        # the self-test first, so the check is proven where it runs. The
+        # shell is named, so bash runs with pipefail and tee keeps a failure.
+        shell: bash
         run: docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'sh ci/bom.sh --self-test && sh ci/bom.sh advisories' | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Enable KVM
