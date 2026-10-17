@@ -335,16 +335,19 @@ start() {
 	2b)
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
 		ab_check "the add-on's service's greeting at a second boot" greeted || return 0
-		# An add-on without an update (M7.2b): apply fetches a real one,
-		# QEMU, from the list slot B came from, to start at the next boot.
-		/usr/bin/edel settings set addons.installed+=virtualization || { ab_end "FAIL: step 2b choosing virtualization"; return 0; }
+		# Add-ons without an update (M7.2b): apply fetches two real ones,
+		# QEMU and printing (M7.6d), from the list slot B came from, to
+		# start at the next boot.
+		/usr/bin/edel settings set addons.installed+=virtualization addons.installed+=printing ||
+			{ ab_end "FAIL: step 2b choosing virtualization and printing"; return 0; }
 		out=$(/usr/bin/edel settings apply 2>&1) || { echo "$out"; ab_end "FAIL: step 2b applying"; return 0; }
 		echo "$out"
-		echo "$out" | grep -q 'add-on virtualization starts at the next restart' || {
-			ab_end "FAIL: step 2b expected add-on virtualization starts at the next restart"
+		echo "$out" | grep 'starts at the next restart' | grep 'virtualization' | grep -q 'printing' || {
+			ab_end "FAIL: step 2b expected add-on virtualization, printing starts at the next restart"
 			return 0
 		}
 		ab_check "no qemu-img before the restart" sh -c '! test -e /usr/bin/qemu-img' || return 0
+		ab_check "no scanimage before the restart" sh -c '! test -e /usr/bin/scanimage' || return 0
 		ab_next 2c
 		;;
 	2c)
@@ -357,6 +360,11 @@ start() {
 		ab_check "virtualization kept beside the other add-ons" test -f "$addons_dir/$VERSION_ID/virtualization.ext4" || return 0
 		ab_check "no pending add-on left" sh -c "! test -e '$addons_dir/$VERSION_ID/pending'" || return 0
 		ab_check "edel addon list saying installed" sh -c '/usr/bin/edel addon list | grep -q "^virtualization  *installed"' || return 0
+		# Scanning (M7.6d): SANE answers with no scanner on the VM, and
+		# its driverless backend is the one it loads first.
+		ab_check "the printing add-on's scanimage lists no scanner" sh -c '/usr/bin/scanimage -L 2>&1 | grep -q "No scanners were identified"' || return 0
+		ab_check "SANE loading sane-airscan" grep -qx airscan /etc/sane.d/dll.d/airscan || return 0
+		ab_check "edel addon list saying printing installed" sh -c '/usr/bin/edel addon list | grep -q "^printing  *installed"' || return 0
 		# An add-on whose service hangs the boot that tries it.
 		/usr/bin/edel settings set addons.installed+=ci-hang || { ab_end "FAIL: step 2c choosing ci-hang"; return 0; }
 		/usr/bin/edel settings apply || { ab_end "FAIL: step 2c applying"; return 0; }

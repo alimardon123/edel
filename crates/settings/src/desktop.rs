@@ -5,7 +5,7 @@
 //! person's line out, and writes `[]` only where the machine's file still
 //! gives a list, since the release gives none. The switch follows the files,
 //! its row has Reset and Copy as command, and each change logs one line for
-//! CI. The editor that moves the widgets is 21j2.
+//! CI. Edit opens the editor that moves them (M8.21 part 21j2).
 
 use std::cell::Cell;
 use std::rc::Rc;
@@ -14,10 +14,12 @@ use adw::prelude::*;
 
 use edel::i18n::{tr, trf};
 use edel::lock_screen::{DESKTOP_WIDGETS, desktop_default, widgets_value};
+use edel::panel_edit::EDIT_DESKTOP;
 use edel::settings::{self, Source};
+use gtk::{gio, glib};
 
 use crate::files::Files;
-use crate::{rows, widgets};
+use crate::{panels, rows, widgets};
 
 /// The line under the switch's title: what the desktop shows with it on.
 const LINE: &str = "The clock and the date over the wallpaper, under the windows";
@@ -29,6 +31,9 @@ pub struct Group {
     /// The page's line for a problem.
     problem: gtk::Label,
     switch: gtk::Switch,
+    /// Asks the desktop's editor to open over the usable area (M8.21 part
+    /// 21j2); shown while there are widgets to move.
+    edit: gtk::Button,
     row: widgets::Row,
     /// Set while `show` moves the switch, so that is no choice.
     quiet: Cell<bool>,
@@ -45,6 +50,7 @@ impl Group {
         self.quiet.set(true);
         self.switch.set_active(!list.is_empty());
         self.quiet.set(false);
+        self.edit.set_visible(!list.is_empty());
         let source = files.source(DESKTOP_WIDGETS);
         let mut text = vec![tr(LINE).to_string()];
         if let Some(note) = rows::note(&source, false) {
@@ -109,15 +115,23 @@ pub fn group(content: &gtk::Box, problem: &gtk::Label) -> Rc<Group> {
     let source = widgets::section(content, tr("Desktop"));
     let card = widgets::group(content);
     let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
+    let edit = widgets::action(tr("Edit"), false);
+    let control = gtk::Box::builder()
+        .spacing(8)
+        .valign(gtk::Align::Center)
+        .build();
+    control.append(&edit);
+    control.append(&switch);
     let row = widgets::row(
         &card,
         rows::title(DESKTOP_WIDGETS),
-        &switch.clone().upcast::<gtk::Widget>(),
+        &control.upcast::<gtk::Widget>(),
     );
     let group = Rc::new(Group {
         source,
         problem: problem.clone(),
         switch,
+        edit,
         row,
         quiet: Cell::new(false),
     });
@@ -147,6 +161,31 @@ fn wire(group: &Rc<Group>) {
             );
         }
         group.report(result);
+    });
+    // Edit asks shell-ui for the desktop's editor over the session bus, as
+    // the Lock screen page's Customize asks for its edit mode; the page
+    // writes nothing itself.
+    let weak = Rc::downgrade(group);
+    group.edit.connect_clicked(move |_| {
+        let weak = weak.clone();
+        glib::spawn_future_local(async move {
+            let asked = gio::spawn_blocking(|| panels::ask_editor(EDIT_DESKTOP))
+                .await
+                .unwrap_or_else(|_| Err(tr("the call to the desktop stopped").to_string()));
+            let Some(group) = weak.upgrade() else {
+                return;
+            };
+            match asked {
+                Ok(()) => {
+                    eprintln!("edel-settings: asked the desktop to be edited");
+                    group.report(Ok(()));
+                }
+                Err(why) => group.report(Err(trf(
+                    "The desktop is not running, so its widgets cannot be edited now:\n{why}",
+                    &[("why", &why)],
+                ))),
+            }
+        });
     });
     let weak = Rc::downgrade(group);
     group.row.reset.connect_clicked(move |_| {

@@ -15,6 +15,9 @@
 //! ten steps, and Delete), and adds, undoes or finishes as its keys say
 //! (M5.10c6c), logging `lock editor focus NAME`, `lock editor nudged NAME`
 //! and `lock editor took away NAME`.
+//! The desktop's widgets' editor (M8.21 part 21j2, Settings' Edit or the bus's
+//! `EditDesktop`) is the same mode over the usable area the panels leave; its
+//! logs say `desktop editor` where these say `lock editor`.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -27,6 +30,7 @@ use edel::presets::Edge;
 use edel::settings::{self, LockScreen};
 use edel::tokens::Tokens;
 use edel::wallpapers::Wallpaper;
+use edel::widgets::Surface;
 use smithay_client_toolkit::compositor::FrameCallbackData;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_shm};
@@ -41,6 +45,7 @@ use tiny_skia::Pixmap;
 
 use crate::a11y;
 use crate::corner;
+use crate::desktop;
 use crate::edit_kit::{self, Style};
 use crate::editor::{self, DRAG_START, Kind, Picture};
 use crate::editor_card::{self, LockBefore, Undo};
@@ -55,12 +60,12 @@ use crate::trayview::Key;
 use crate::widgets::keyboard;
 use crate::{LOCK_EDITOR, Shell, fillets, settings_texts};
 
-/// What Done wrote, for its log line and for Undo (M5.10c6b, M5.10c6c3): the
-/// words the log says, and the three lines' values before the write.
+/// What Done wrote, for its log line and for Undo (M5.10c6b, M5.10c6c3,
+/// M8.21 part 21j2): the words the log says, and what Undo puts back.
 #[derive(Debug)]
 struct Saved {
     what: String,
-    before: LockBefore,
+    undo: Undo,
 }
 
 /// The log words of what Done did when nothing changed.
@@ -128,8 +133,12 @@ pub struct LockEditor {
 /// shown, the looks or the backgrounds. The drawer keeps the height of its
 /// tallest tab, so the tabs never make it jump.
 fn refresh_tiles(le: &mut LockEditor) {
-    let parts = lock_editor::drawer_tiles();
-    le.view.drawer.tallest = parts.len().max(lock_editor::background_choices().len());
+    let parts = lock_editor::drawer_tiles(le.view.on);
+    // The desktop has no Wallpaper tab, so its drawer is as tall as its strip.
+    le.view.drawer.tallest = match le.view.on {
+        Surface::Desktop => parts.len(),
+        _ => parts.len().max(lock_editor::background_choices().len()),
+    };
     le.view.drawer.tiles = match le.view.drawer.tab {
         1 => lock_editor::background_tiles(&le.view.background),
         _ => parts,
@@ -158,7 +167,10 @@ fn set_tab(le: &mut LockEditor, tab: usize) {
     );
     refresh_tiles(le);
     let name = le.view.drawer.tabs[tab].to_lowercase();
-    eprintln!("edel-shell-ui: lock editor tab {name}");
+    eprintln!(
+        "edel-shell-ui: {} tab {name}",
+        lock_editor::log_name(le.view.on)
+    );
 }
 
 /// The lock screen's layout of `parts` on a screen `screen` logical pixels
@@ -201,7 +213,10 @@ fn set_dim(le: &mut LockEditor, dim: u32) {
     }
     le.view.dim = dim;
     le.view.changed = true;
-    eprintln!("edel-shell-ui: lock editor dim {dim}");
+    eprintln!(
+        "edel-shell-ui: {} dim {dim}",
+        lock_editor::log_name(le.view.on)
+    );
 }
 
 /// Whether a drag has gone far enough to be a drag (`DRAG_START`).
@@ -227,7 +242,8 @@ fn focus_to(le: &mut LockEditor, focus: Option<Focus>) {
     lock_editor::set_focus(&mut le.view, focus);
     if let Some(focus) = focus {
         eprintln!(
-            "edel-shell-ui: lock editor focus {}",
+            "edel-shell-ui: {} focus {}",
+            lock_editor::log_name(le.view.on),
             lock_editor::focus_name(&le.view, focus)
         );
     }
@@ -246,7 +262,10 @@ fn nudge(le: &mut LockEditor, i: usize, dx: i32, dy: i32) {
     };
     le.view.parts[i] = moved;
     parts_moved(le);
-    eprintln!("edel-shell-ui: lock editor nudged {name}");
+    eprintln!(
+        "edel-shell-ui: {} nudged {name}",
+        lock_editor::log_name(le.view.on)
+    );
 }
 
 /// Takes the part at `i` away (`lock_screen::without`, never the person),
@@ -259,7 +278,10 @@ fn take_away(le: &mut LockEditor, i: usize) {
     le.view.parts = lock_screen::without(&le.view.parts, i);
     parts_moved(le);
     lock_editor::set_focus(&mut le.view, None);
-    eprintln!("edel-shell-ui: lock editor took away {name}");
+    eprintln!(
+        "edel-shell-ui: {} took away {name}",
+        lock_editor::log_name(le.view.on)
+    );
 }
 
 /// Adds the drawer's `part` at the screen's middle (`lock_editor::added_at_middle`,
@@ -272,7 +294,10 @@ fn add(le: &mut LockEditor, part: Part) {
     le.view.parts = parts;
     parts_moved(le);
     lock_editor::set_focus(&mut le.view, None);
-    eprintln!("edel-shell-ui: lock editor {words}");
+    eprintln!(
+        "edel-shell-ui: {} {words}",
+        lock_editor::log_name(le.view.on)
+    );
 }
 
 /// Chooses the look's first part of `part`'s kind, a kind the look already
@@ -284,7 +309,8 @@ fn choose_full(le: &mut LockEditor, part: Part, from_keys: bool) {
         return;
     };
     eprintln!(
-        "edel-shell-ui: lock editor: {} is on the lock, chosen",
+        "edel-shell-ui: {}: {} is on the lock, chosen",
+        lock_editor::log_name(le.view.on),
         part.name()
     );
     focus_to(le, Some(Focus::Part(index)));
@@ -302,7 +328,8 @@ fn open_card(le: &mut LockEditor, index: usize, from_keys: bool) {
         return;
     }
     eprintln!(
-        "edel-shell-ui: lock editor card {} shown",
+        "edel-shell-ui: {} card {} shown",
+        lock_editor::log_name(le.view.on),
         placed.part.name()
     );
     le.card_before = Some(placed.clone());
@@ -337,7 +364,10 @@ fn end_card(le: &mut LockEditor) {
         *part = part_card::settled(part.clone(), &before);
     }
     le.card_logged.clear();
-    eprintln!("edel-shell-ui: lock editor card hidden");
+    eprintln!(
+        "edel-shell-ui: {} card hidden",
+        lock_editor::log_name(le.view.on)
+    );
 }
 
 /// Applies a card's choice to the part it changes (`part_card::apply`),
@@ -358,7 +388,8 @@ fn choose(le: &mut LockEditor, choice: part_card::Choice) {
         return;
     }
     eprintln!(
-        "edel-shell-ui: lock editor {}",
+        "edel-shell-ui: {} {}",
+        lock_editor::log_name(le.view.on),
         part_card::said(&choice, &next)
     );
     *part = next.clone();
@@ -388,6 +419,21 @@ impl Shell {
     /// parts the lock shows now (`lock_screen::applied` of the person's
     /// settings over the machine's), with the wallpaper those settings name.
     pub fn open_lock_editor(&mut self) {
+        self.open_stage_editor(Surface::LockScreen);
+    }
+
+    /// Opens the desktop widgets' editor (M8.21 part 21j2): the lock screen's
+    /// edit mode over the usable area the panels leave, starting from the
+    /// desktop's own widgets.
+    pub fn open_desktop_editor(&mut self) {
+        self.open_stage_editor(Surface::Desktop);
+    }
+
+    /// Opens the edit mode on `on` (M8.21 part 21j2), the same overlay surface
+    /// for both: the lock's exclusive zone is -1, so the whole screen is its;
+    /// the desktop's is 0, so the panels keep their edges and the surface is
+    /// the usable area.
+    fn open_stage_editor(&mut self, on: Surface) {
         if self.lock.is_some() || self.editor.is_some() || self.lock_editor.is_some() {
             return;
         }
@@ -398,31 +444,54 @@ impl Shell {
         let dark = quick::is_dark(machine.as_deref(), person.as_deref());
         let lock_settings = lock::lock_settings(machine.as_deref(), person.as_deref());
         let applied = lock_screen::applied(&lock_settings, compact);
-        let original = applied.parts;
-        let battery = self.live.status.battery.is_some();
-        // The looks the lock may be in: the built-in ones, then the person's own
-        // (M5.10c6c3). The edit starts inside the look the file names, when the
-        // file has a look of that name, else classic (M5.10c7a).
-        let mut looks: Vec<String> = lock_screen::LOOKS
-            .iter()
-            .map(|name| name.to_string())
-            .collect();
-        if let Some(own) = &lock_settings.looks {
-            looks.extend(own.keys().cloned());
-        }
-        let editing = lock_settings
-            .look
-            .clone()
-            .filter(|name| looks.contains(name))
-            .unwrap_or_else(|| lock_screen::CLASSIC.to_string());
+        let (original, battery, background, dim, editing, tabs) = match on {
+            // The desktop's widgets are the clock and the date over the
+            // wallpaper sharp and undimmed, with no looks; none is a valid start.
+            Surface::Desktop => (
+                settings::desktop_widgets_in(machine.as_deref(), person.as_deref())
+                    .into_iter()
+                    .filter(|p| desktop::draws(p.part))
+                    .collect(),
+                false,
+                Background::Sharp,
+                0,
+                String::new(),
+                Vec::new(),
+            ),
+            _ => {
+                // The looks the lock may be in: the built-in ones, then the person's own
+                // (M5.10c6c3). The edit starts inside the look the file names, when the
+                // file has a look of that name, else classic (M5.10c7a).
+                let mut looks: Vec<String> = lock_screen::LOOKS
+                    .iter()
+                    .map(|name| name.to_string())
+                    .collect();
+                if let Some(own) = &lock_settings.looks {
+                    looks.extend(own.keys().cloned());
+                }
+                let editing = lock_settings
+                    .look
+                    .clone()
+                    .filter(|name| looks.contains(name))
+                    .unwrap_or_else(|| lock_screen::CLASSIC.to_string());
+                (
+                    applied.parts,
+                    self.live.status.battery.is_some(),
+                    applied.background.clone(),
+                    applied.dim,
+                    editing,
+                    vec![tr("Widgets"), tr("Wallpaper")],
+                )
+            }
+        };
         let view = lock_editor::View {
             card: None,
             previewing: false,
             parts: original.clone(),
             editing: editing.clone(),
             changed: false,
-            background: applied.background.clone(),
-            dim: applied.dim,
+            background: background.clone(),
+            dim,
             screen,
             drag: None,
             guides: Vec::new(),
@@ -431,7 +500,7 @@ impl Shell {
             drawer: editor::View {
                 kind: Kind::LockScreen,
                 tiles: Vec::new(),
-                tabs: vec![tr("Widgets"), tr("Wallpaper")],
+                tabs,
                 tab: 0,
                 tallest: 0,
                 compact,
@@ -444,6 +513,7 @@ impl Shell {
                 subtitle: None,
                 bare: true,
             },
+            on,
         };
         let surface = self.compositor.create_surface(&self.qh);
         let surface = self.layers.create_layer_surface(
@@ -453,11 +523,16 @@ impl Shell {
             Some(LOCK_EDITOR),
             None,
         );
-        // Over every panel, on the whole screen: the exclusive zone -1 keeps
-        // the panels where they are, and the keyboard is the editor's alone.
+        // Over the panels and the screen's other surfaces; the lock's exclusive
+        // zone -1 keeps the panels where they are, and the desktop's 0 leaves
+        // it the area they do not take (M8.21 part 21j2). The keyboard is the
+        // editor's alone.
         surface.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
         surface.set_size(0, 0);
-        surface.set_exclusive_zone(-1);
+        surface.set_exclusive_zone(match on {
+            Surface::Desktop => 0,
+            _ => -1,
+        });
         surface.set_keyboard_interactivity(KeyboardInteractivity::Exclusive);
         surface.commit();
         let keyboard = self.seat.seats().next().and_then(|seat| {
@@ -469,7 +544,12 @@ impl Shell {
                     self.handle.clone(),
                     Box::new(|shell: &mut Shell, _, event| shell.lock_editor_key(event)),
                 )
-                .inspect_err(|e| eprintln!("edel-shell-ui: no keyboard for the lock editor: {e}"))
+                .inspect_err(|e| {
+                    eprintln!(
+                        "edel-shell-ui: no keyboard for the {}: {e}",
+                        lock_editor::log_name(on)
+                    )
+                })
                 .ok()
         });
         let mut le = LockEditor {
@@ -497,7 +577,10 @@ impl Shell {
             logged: String::new(),
             card_before: None,
             card_logged: String::new(),
-            reader: a11y::Reader::new(tr("Edit lock screen")),
+            reader: a11y::Reader::new(match on {
+                Surface::Desktop => tr("Edit desktop"),
+                _ => tr("Edit lock screen"),
+            }),
         };
         refresh_tiles(&mut le);
         self.lock_editor = Some(le);
@@ -547,6 +630,39 @@ impl Shell {
         };
         self.paint_lock_editor(&mut le);
         self.lock_editor = Some(le);
+    }
+
+    /// Where the parts lie on the edit mode's screen (M8.21 part 21j2): the
+    /// lock's layout with the corner's buttons kept clear, or on the desktop
+    /// the desktop's own layout (`lock::widgets_layout`) over the usable area,
+    /// with no corner.
+    fn stage_layout(&mut self, le: &LockEditor) -> (lock::Layout, Option<corner::Layout>) {
+        match le.view.on {
+            Surface::Desktop => {
+                let at = lock::widgets_layout(
+                    le.view.screen.0,
+                    le.view.screen.1,
+                    &self.tokens,
+                    &le.view.parts,
+                    &mut self.text,
+                );
+                (at, None)
+            }
+            _ => {
+                let corner_view = self.lock_editor_corner();
+                let (at, corner_at) = layout_of(
+                    &mut self.text,
+                    &self.tokens,
+                    le.view.screen,
+                    &le.view.parts,
+                    le.battery,
+                    &le.view.background,
+                    le.view.dim,
+                    &corner_view,
+                );
+                (at, Some(corner_at))
+            }
+        }
     }
 
     /// The corner's buttons as the lock shows them, with the keyboard
@@ -603,17 +719,7 @@ impl Shell {
         if le.drawn.as_ref() == Some(&shown) {
             return;
         }
-        let corner_view = self.lock_editor_corner();
-        let (at, corner_at) = layout_of(
-            &mut self.text,
-            &self.tokens,
-            screen,
-            &le.view.parts,
-            le.battery,
-            &le.view.background,
-            le.view.dim,
-            &corner_view,
-        );
+        let (at, corner_at) = self.stage_layout(le);
         let drawer = editor::layout(&le.view.drawer);
         let place = lock_editor::drawer_rect(screen, &drawer);
         let preview = lock_editor::preview(screen, &drawer);
@@ -624,26 +730,43 @@ impl Shell {
             return;
         };
         let lock_view = self.lock_editor_look(&le.view.parts, &le.zones_warned);
-        lock::paint(
-            &mut pixmap,
-            &lock_view,
-            &at,
-            &self.tokens,
-            &mut self.text,
-            Some(&mut self.icons),
-            &mut le.pictures,
-            &mut le.backdrops,
-            &le.wallpaper,
-            s as f32,
-        );
-        corner::paint(
-            &mut pixmap,
-            &corner_view,
-            &corner_at,
-            &self.tokens,
-            &mut self.text,
-            s as f32,
-        );
+        let corner_view = self.lock_editor_corner();
+        match le.view.on {
+            Surface::Desktop => lock::paint_desktop(
+                &mut pixmap,
+                &lock_view,
+                &at,
+                &self.tokens,
+                &mut self.text,
+                &mut le.backdrops,
+                &le.wallpaper,
+                s as f32,
+            ),
+            _ => {
+                lock::paint(
+                    &mut pixmap,
+                    &lock_view,
+                    &at,
+                    &self.tokens,
+                    &mut self.text,
+                    Some(&mut self.icons),
+                    &mut le.pictures,
+                    &mut le.backdrops,
+                    &le.wallpaper,
+                    s as f32,
+                );
+                if let Some(corner_at) = corner_at.as_ref() {
+                    corner::paint(
+                        &mut pixmap,
+                        &corner_view,
+                        corner_at,
+                        &self.tokens,
+                        &mut self.text,
+                        s as f32,
+                    );
+                }
+            }
+        }
         lock_editor::draw_placeholders(
             &mut pixmap,
             &le.view,
@@ -713,7 +836,10 @@ impl Shell {
             &mut self.text,
             s as f32,
         );
-        if let Some((left, _)) = lock_editor::panels(screen, preview) {
+        // The wallpaper panel is the lock's; the desktop has none (M8.21 part 21j2).
+        if let Some((left, _)) =
+            lock_editor::panels(screen, preview).filter(|_| lock_editor::has_panel(&le.view))
+        {
             let picture = self.wallpaper_picture(le);
             lock_editor::paint_wallpaper_panel(
                 &mut pixmap,
@@ -738,13 +864,19 @@ impl Shell {
         );
         let places = lock_editor::places(&le.view, &at, preview, place, &drawer);
         if places != le.logged {
-            eprintln!("edel-shell-ui: lock editor places {places}");
+            eprintln!(
+                "edel-shell-ui: {} places {places}",
+                lock_editor::log_name(le.view.on)
+            );
             le.logged = places;
         }
         if let Some(l) = card.as_ref() {
             let log = part_card::places(l);
             if log != le.card_logged {
-                eprintln!("edel-shell-ui: lock editor card places {log}");
+                eprintln!(
+                    "edel-shell-ui: {} card places {log}",
+                    lock_editor::log_name(le.view.on)
+                );
                 le.card_logged = log;
             }
         }
@@ -808,7 +940,8 @@ impl Shell {
         if !le.shown {
             le.shown = true;
             eprintln!(
-                "edel-shell-ui: lock editor shown, {} parts, {} in the drawer",
+                "edel-shell-ui: {} shown, {} parts, {} in the drawer",
+                lock_editor::log_name(le.view.on),
                 le.view.parts.len(),
                 le.view.drawer.tiles.len()
             );
@@ -934,11 +1067,14 @@ impl Shell {
     /// file is chosen; a kind the look already holds as many of is logged and
     /// not added; else it is added at the screen's middle (`add`).
     fn add_from_drawer(&mut self, le: &mut LockEditor, part: Part) {
-        if lock_editor::full(&le.view.parts, le.battery, part) {
+        if lock_editor::full(&le.view.parts, le.battery, part, le.view.on) {
             choose_full(le, part, true);
         } else if part == Part::Picture {
             self.open_lock_page();
-            eprintln!("edel-shell-ui: lock editor picture in settings");
+            eprintln!(
+                "edel-shell-ui: {} picture in settings",
+                lock_editor::log_name(le.view.on)
+            );
         } else {
             add(le, part);
         }
@@ -950,14 +1086,20 @@ impl Shell {
         end_card(le);
         lock_editor::set_focus(&mut le.view, None);
         le.view.previewing = true;
-        eprintln!("edel-shell-ui: lock editor preview shown");
+        eprintln!(
+            "edel-shell-ui: {} preview shown",
+            lock_editor::log_name(le.view.on)
+        );
         self.paint_lock_editor(le);
     }
 
     /// Goes back from the preview to the edit, unchanged (M5.10c7f).
     fn end_preview(&mut self, le: &mut LockEditor) {
         le.view.previewing = false;
-        eprintln!("edel-shell-ui: lock editor preview hidden");
+        eprintln!(
+            "edel-shell-ui: {} preview hidden",
+            lock_editor::log_name(le.view.on)
+        );
         self.paint_lock_editor(le);
     }
 
@@ -971,7 +1113,8 @@ impl Shell {
         match background {
             Some(background) => {
                 eprintln!(
-                    "edel-shell-ui: lock editor background {}",
+                    "edel-shell-ui: {} background {}",
+                    lock_editor::log_name(le.view.on),
                     lock_screen::background_value(&background)
                 );
                 lock_editor::background_chosen(&mut le.view, background);
@@ -984,7 +1127,10 @@ impl Shell {
                     LOCK_PAGE.to_string(),
                 ];
                 self.launcher.spawn(&argv, "Settings");
-                eprintln!("edel-shell-ui: lock editor picture in settings");
+                eprintln!(
+                    "edel-shell-ui: {} picture in settings",
+                    lock_editor::log_name(le.view.on)
+                );
             }
         }
     }
@@ -1122,17 +1268,7 @@ impl Shell {
         crate::popup::Rect,
         lock_editor::Preview,
     ) {
-        let corner_view = self.lock_editor_corner();
-        let (at, _) = layout_of(
-            &mut self.text,
-            &self.tokens,
-            le.view.screen,
-            &le.view.parts,
-            le.battery,
-            &le.view.background,
-            le.view.dim,
-            &corner_view,
-        );
+        let (at, _) = self.stage_layout(le);
         let drawer = editor::layout(&le.view.drawer);
         let place = lock_editor::drawer_rect(le.view.screen, &drawer);
         let shown = lock_editor::preview(le.view.screen, &drawer);
@@ -1328,7 +1464,8 @@ impl Shell {
                 }
                 if let Some(from) = started {
                     eprintln!(
-                        "edel-shell-ui: lock editor drag {}",
+                        "edel-shell-ui: {} drag {}",
+                        lock_editor::log_name(le.view.on),
                         name_of(&le.view, from)
                     );
                 }
@@ -1361,7 +1498,12 @@ impl Shell {
                                 // A kind the look holds as many of is not
                                 // dragged: its press chooses the look's part.
                                 Some(part)
-                                    if lock_editor::full(&le.view.parts, le.battery, part) =>
+                                    if lock_editor::full(
+                                        &le.view.parts,
+                                        le.battery,
+                                        part,
+                                        le.view.on,
+                                    ) =>
                                 {
                                     choose_full(le, part, false);
                                 }
@@ -1442,12 +1584,18 @@ impl Shell {
                 Some((parts, words)) => {
                     le.view.parts = parts;
                     parts_moved(le);
-                    eprintln!("edel-shell-ui: lock editor {words}");
+                    eprintln!(
+                        "edel-shell-ui: {} {words}",
+                        lock_editor::log_name(le.view.on)
+                    );
                 }
                 None => {
                     if let From::Part(i) = drag.from {
                         if drag.over_drawer && !lock_screen::removable(&le.view.parts, i) {
-                            eprintln!("edel-shell-ui: lock editor: the person stays");
+                            eprintln!(
+                                "edel-shell-ui: {}: the person stays",
+                                lock_editor::log_name(le.view.on)
+                            );
                         }
                     }
                 }
@@ -1475,7 +1623,7 @@ impl Shell {
         refresh_tiles(le);
         le.view.drag = None;
         le.view.guides.clear();
-        eprintln!("edel-shell-ui: lock editor undo");
+        eprintln!("edel-shell-ui: {} undo", lock_editor::log_name(le.view.on));
         self.paint_lock_editor(le);
     }
 
@@ -1485,6 +1633,9 @@ impl Shell {
     /// default is never written), or nothing when nothing changed. None when
     /// the write fails, which is logged: the edit mode stays open.
     fn write_lock_editor(&self, le: &LockEditor) -> Option<Saved> {
+        if le.view.on == Surface::Desktop {
+            return self.write_desktop_editor(le);
+        }
         let (machine, person) = settings_texts();
         let person_lock: LockScreen = person
             .as_deref()
@@ -1556,7 +1707,7 @@ impl Shell {
         if changed.is_empty() {
             return Some(Saved {
                 what: NOTHING.into(),
-                before,
+                undo: Undo::LockScreen(before),
             });
         }
         let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
@@ -1583,8 +1734,85 @@ impl Shell {
         }
         Some(Saved {
             what: words.join("; "),
-            before,
+            undo: Undo::LockScreen(before),
         })
+    }
+
+    /// Writes the desktop's widgets for Done (M8.21 part 21j2): the person's
+    /// `appearance.widgets` line becomes `lock_screen::desktop_line` of the
+    /// parts, and is taken out when they are the machine's (a default is never
+    /// written). Nothing when the line stays; None when the write fails, which
+    /// is logged and keeps the edit open.
+    fn write_desktop_editor(&self, le: &LockEditor) -> Option<Saved> {
+        let (machine, person) = settings_texts();
+        let before = person
+            .as_deref()
+            .and_then(|text| settings::read(text).ok())
+            .and_then(|read| read.file.appearance.widgets)
+            .and_then(|parts| lock_screen::widgets_value(&parts).ok());
+        let new = match lock_screen::desktop_line(&le.view.parts, machine.as_deref()) {
+            Ok(new) => new,
+            Err(e) => {
+                eprintln!("edel-shell-ui: {}", messages::desktop_not_kept(e));
+                return None;
+            }
+        };
+        if new == before {
+            return Some(Saved {
+                what: NOTHING.into(),
+                undo: Undo::Desktop(before),
+            });
+        }
+        let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
+            eprintln!("edel-shell-ui: {}", messages::DESKTOP_NO_HOME);
+            return None;
+        };
+        if let Err(e) = settings::write(&path, lock_screen::DESKTOP_WIDGETS, new.as_deref()) {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::desktop_not_kept(format!("{e:#}"))
+            );
+            return None;
+        }
+        let what = format!(
+            "{} {}",
+            lock_screen::DESKTOP_WIDGETS,
+            if new.is_some() {
+                "written"
+            } else {
+                "taken out"
+            }
+        );
+        Some(Saved {
+            what,
+            undo: Undo::Desktop(before),
+        })
+    }
+
+    /// Puts the person's `appearance.widgets` line back as Undo found it
+    /// (M8.21 part 21j2): `value` written, or taken out for None. Returns what
+    /// it did, or None after logging why it could not.
+    pub(crate) fn save_desktop_line(&self, value: Option<&str>) -> Option<String> {
+        let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
+            eprintln!("edel-shell-ui: {}", messages::DESKTOP_NO_HOME);
+            return None;
+        };
+        if let Err(e) = settings::write(&path, lock_screen::DESKTOP_WIDGETS, value) {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::desktop_not_kept(format!("{e:#}"))
+            );
+            return None;
+        }
+        Some(format!(
+            "{} {}",
+            lock_screen::DESKTOP_WIDGETS,
+            if value.is_some() {
+                "written"
+            } else {
+                "taken out"
+            }
+        ))
     }
 
     /// Closes the edit mode (M5.10c6b). With `write` (Done) the parts are
@@ -1603,17 +1831,24 @@ impl Shell {
             let Some(saved) = self.write_lock_editor(le) else {
                 return;
             };
-            eprintln!("edel-shell-ui: lock editor done, {}", saved.what);
+            eprintln!(
+                "edel-shell-ui: {} done, {}",
+                lock_editor::log_name(le.view.on),
+                saved.what
+            );
             let scale = le.scale;
             let changed = saved.what != NOTHING;
             self.drop_lock_editor();
             if changed {
                 let above = self.lock_bar_above();
-                self.open_undo_bar(Edge::Bottom, above, scale, Undo::LockScreen(saved.before));
+                self.open_undo_bar(Edge::Bottom, above, scale, saved.undo);
             }
         } else {
             if le.view.parts != le.original {
-                eprintln!("edel-shell-ui: lock editor undone");
+                eprintln!(
+                    "edel-shell-ui: {} undone",
+                    lock_editor::log_name(le.view.on)
+                );
             }
             self.drop_lock_editor();
         }
@@ -1627,8 +1862,9 @@ impl Shell {
         if let Some(keyboard) = &le.keyboard {
             keyboard.release();
         }
+        let name = lock_editor::log_name(le.view.on);
         drop(le);
-        eprintln!("edel-shell-ui: lock editor hidden");
+        eprintln!("edel-shell-ui: {name} hidden");
     }
 
     /// How far above the bottom edge the Undo bar after Done starts: above the

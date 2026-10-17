@@ -148,12 +148,13 @@ build "$version" ci/vm/vm.toml --files ci/ab-test/files --files ci/install-test/
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 # With it, the test add-on ci-hello (M7.2a), built from its root, and
-# for adding add-ons without an update (M7.2b) a real one, virtualization
-# (QEMU, whose user joins the image's kvm group), and ci-hang, whose
-# service hangs the boot that tries it.
+# for adding add-ons without an update (M7.2b) two real ones,
+# virtualization (QEMU, whose user joins the image's kvm group) and
+# printing (CUPS and SANE, whose scanimage the test runs, M7.6d), and
+# ci-hang, whose service hangs the boot that tries it.
 build "$version.1" ci/vm/vm.toml --files ci/ab-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
-	--loader-tag ci --no-addons --addon ci-hello --addon ci-hang --addon virtualization \
+	--loader-tag ci --no-addons --addon ci-hello --addon ci-hang --addon virtualization --addon printing \
 	--features ci/features --no-compress --out out/ab-test-update
 
 # The update the A/B test downloads over HTTP (ci/ab-test.sh serves this
@@ -165,12 +166,13 @@ update=out/ab-test/update
 rm -rf "$update"
 mkdir -p "$update"
 ln out/ab-test-update/edel-vm-x86_64.ext4.gz "$update/"
-for addon in ci-hello ci-hang virtualization; do
+for addon in ci-hello ci-hang virtualization printing; do
 	ln out/ab-test-update/edel-vm-x86_64.$addon.ext4.gz out/ab-test-update/edel-vm-x86_64.$addon.toml "$update/"
 done
 ./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" \
 	--addon "$update/edel-vm-x86_64.ci-hello.ext4.gz" --addon "$update/edel-vm-x86_64.ci-hang.ext4.gz" \
-	--addon "$update/edel-vm-x86_64.virtualization.ext4.gz" "$update/edel-vm-x86_64.ext4.gz"
+	--addon "$update/edel-vm-x86_64.virtualization.ext4.gz" --addon "$update/edel-vm-x86_64.printing.ext4.gz" \
+	"$update/edel-vm-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
 # badaddon.toml: signed, but its add-on's sha256 is not the file's, so the
 # fetch fails after the slot is written and the slot stays off (M7.2a).

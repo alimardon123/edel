@@ -164,6 +164,9 @@ msgstr ""
 msgid "Lock screen changed"
 msgstr ""
 
+msgid "Desktop changed"
+msgstr ""
+
 msgid "{first} and {last}"
 msgstr ""
 
@@ -308,13 +311,19 @@ msgstr ""
 msgid "Music"
 msgstr ""
 
-msgid "Built in · Done saves a new look"
+msgid "Edit desktop"
 msgstr ""
 
 msgid "Yours · Done saves it"
 msgstr ""
 
+msgid "Built in · Done saves a new look"
+msgstr ""
+
 msgid "Back to editing"
+msgstr ""
+
+msgid "Esc to go back"
 msgstr ""
 
 msgid "Not locked · Esc to go back"

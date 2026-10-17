@@ -1,0 +1,6 @@
+# The people at the machine use its scanners (roadmap M7.6d): SANE's rules
+# (49-sane.rules) mark each scanner they know and give it group scanner,
+# which nobody is in; group seat, which the seat feature holds them in,
+# takes its place, as for sound, since nothing here (no logind) gives the
+# person at the machine a device by itself.
+ENV{libsane_matched}=="yes", GROUP="seat", MODE="0660"
