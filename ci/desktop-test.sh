@@ -1047,6 +1047,16 @@ wait_more() {
 	done
 }
 
+# update_log PATTERN: asks the guest for the update's log until its newest
+# `update` line matches PATTERN, up to 10 tries a second apart (M7.7c).
+update_log() {
+	i=0
+	until guest 'update log' && sleep 1 && value update | grep -q "$1"; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || return 1
+	done
+}
+
 case_panel() {
 	# shell-ui's panel (M5.1b), which the compositor started once the
 	# desktop was on screen: a 40 px panel along the bottom, drawn with a
@@ -5280,6 +5290,11 @@ case_fullscreen() {
 	# again; Super+Q closes it. Then Super+F does the same for foot.
 	# Kept as fullscreen.png and fullscreen-left.png.
 	panel=$(token panel)
+	# A window that draws on every frame (M7.7c) opens first, under full,
+	# so the frames it gets show whether a game hides it.
+	mapped=$(count 'edel-compositor: mapped window busy')
+	guest 'busy window'
+	wait_more 'edel-compositor: mapped window busy' "$mapped" || fail "the window busy did not open"
 	opened=$(count 'edel-compositor: window full fullscreen')
 	guest 'full window'
 	wait_more 'edel-compositor: window full fullscreen' "$opened" || fail "the window full did not go fullscreen"
@@ -5302,6 +5317,25 @@ case_fullscreen() {
 	*" wp_tearing_control_manager_v1 "*) ;;
 	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
 	esac
+	# A game plays (M7.7c): full is fullscreen with game mode on, so the
+	# compositor and shell-ui step aside and the state file says so. The
+	# desktop's CPU over 30 s and the busy window's frames show it.
+	wait_for 'edel-compositor: a game is playing; the desktop steps aside' || fail "the compositor did not say a game plays"
+	wait_for 'edel-shell-ui: a game is playing; the timers stop' || fail "shell-ui did not stop its timers for the game"
+	state_now && grep -q '^playing = true' "$dir/state-now.toml" || fail "the state file does not say playing = true"
+	n=$(count 'DESKTOP-TEST: busy_frames ')
+	guest 'desktop cpu'
+	wait_more 'DESKTOP-TEST: busy_frames ' "$n" 50 || fail "desktop cpu did not answer with a game playing"
+	percent=$(value desktop_cpu_percent)
+	set -- $(value busy_frames)
+	on_before=${1:-0} on_after=${2:-0}
+	limit=$(budget desktop_behind_game_cpu_percent)
+	awk -v p="$percent" -v b="$limit" 'BEGIN { exit !(p != "" && p < b) }' ||
+		fail "with a game playing the compositor and shell-ui used ${percent:-?} percent of a CPU over 30 s, over the budget of $limit percent"
+	[ "$((on_after - on_before))" -le 1 ] || fail "the busy window got $((on_after - on_before)) frames in 30 s behind a game"
+	# An update waits for the game, so it does not take the machine from it.
+	guest 'update during game'
+	update_log 'a game is playing, so this waits until it ends' || fail "edel update did not wait for the game: $(value update)"
 	game=$(count 'edel-compositor: game mode off \(Super\+G\)')
 	shown=$(count 'edel-shell-ui: osd shown, game mode off')
 	python3 ci/qmp.py key meta_l-g
@@ -5309,6 +5343,17 @@ case_fullscreen() {
 	wait_more 'edel-shell-ui: osd shown, game mode off' "$shown" || fail "shell-ui did not show game mode off"
 	shot game-mode 4 4 33aa66 >/dev/null || fail "full did not stay under the game mode pop-up"
 	state_now && grep -q '^game_mode = false' "$dir/state-now.toml" || fail "the state file does not say game_mode = false"
+	# The game ended (M7.7c): the compositor says so and the update goes on.
+	wait_for 'edel-compositor: the game ended; the desktop is back' || fail "the compositor did not say the game ended"
+	update_log 'the game ended; going on' || fail "edel update did not go on once the game ended: $(value update)"
+	# With game mode off the desktop is back; this CPU number is the before
+	# of the desktop's cost, and it has no gate.
+	n=$(count 'DESKTOP-TEST: busy_frames ')
+	guest 'desktop cpu'
+	wait_more 'DESKTOP-TEST: busy_frames ' "$n" 50 || fail "desktop cpu did not answer with game mode off"
+	percent_off=$(value desktop_cpu_percent)
+	set -- $(value busy_frames)
+	off_before=${1:-0} off_after=${2:-0}
 	game=$(count 'edel-compositor: game mode on \(Super\+G\)')
 	python3 ci/qmp.py key meta_l-g
 	wait_more 'edel-compositor: game mode on \(Super\+G\)' "$game" || fail "Super+G did not turn game mode on again"
@@ -5339,7 +5384,11 @@ case_fullscreen() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
+	guest 'busy close'
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Behind a fullscreen game (M7.7c): the compositor and shell-ui used $percent percent of a CPU over 30 s in game mode, $percent_off percent with it off; the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game"
 }
 
 case_clipboard() {

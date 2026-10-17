@@ -31,7 +31,10 @@
 //! follows it live (M5.2j-b4). `--clipboard` makes the window a clipboard
 //! user: keys 1 and 2 copy a text, Ctrl+V pastes the selection, and each
 //! prints what it did (`clipboard.rs`, M7.13). Its window is titled `clip`
-//! unless `--title` says otherwise.
+//! unless `--title` says otherwise. `--busy` draws on every frame the
+//! compositor gives the window, alternating two colours, and prints
+//! `frames N` for each, so a test can see whether a window the desktop
+//! hides still gets frames (M7.7c).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -49,7 +52,7 @@
 //!     edel-testclient --clipboard
 
 use anyhow::{Context, Result, bail};
-use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
+use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData};
 use smithay_client_toolkit::output::{OutputHandler, OutputState};
 use smithay_client_toolkit::reexports::client::Dispatch;
 use smithay_client_toolkit::reexports::client::globals::registry_queue_init;
@@ -69,6 +72,7 @@ use smithay_client_toolkit::shell::xdg::window::{
 use smithay_client_toolkit::shm::slot::SlotPool;
 use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -90,6 +94,8 @@ struct Args {
     recolour: Option<([u8; 4], PathBuf)>,
     /// A window that copies and pastes text (M7.13).
     clipboard: bool,
+    /// A window that draws on every frame callback (M7.7c).
+    busy: bool,
 }
 
 /// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
@@ -111,6 +117,7 @@ fn args() -> Result<Args> {
     let (mut lock_pointer, mut inhibit_idle) = (false, false);
     let mut recolour = None;
     let mut clipboard = false;
+    let mut busy = false;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -118,11 +125,12 @@ fn args() -> Result<Args> {
             "--lock-pointer" => lock_pointer = true,
             "--inhibit-idle" => inhibit_idle = true,
             "--clipboard" => clipboard = true,
+            "--busy" => busy = true,
             _ => {}
         }
         if matches!(
             word.as_str(),
-            "--fullscreen" | "--lock-pointer" | "--inhibit-idle" | "--clipboard"
+            "--fullscreen" | "--lock-pointer" | "--inhibit-idle" | "--clipboard" | "--busy"
         ) {
             continue;
         }
@@ -152,7 +160,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
             ),
         }
     }
@@ -173,6 +181,7 @@ fn args() -> Result<Args> {
         inhibit_idle,
         recolour,
         clipboard,
+        busy,
     })
 }
 
@@ -209,6 +218,12 @@ struct Client {
     pixel: [u8; 4],
     closed: bool,
     clipboard: Option<clipboard::State>,
+    /// `--busy` (M7.7c): the colour it starts with, the frames it has drawn,
+    /// and whether it has asked for the next frame callback.
+    busy: bool,
+    colour: [u8; 4],
+    frames: u32,
+    waiting: bool,
 }
 
 /// The wake-up `--recolour`'s watch sends itself once the file exists: a
@@ -316,6 +331,10 @@ fn main() -> Result<()> {
         pixel: args.pixel,
         closed: false,
         clipboard,
+        busy: args.busy,
+        colour: args.pixel,
+        frames: 0,
+        waiting: false,
     };
     let mut recolour = args.recolour;
     if let Some((_, file)) = &recolour {
@@ -334,7 +353,7 @@ fn main() -> Result<()> {
             if file.exists() {
                 client.pixel = *pixel;
                 recolour = None;
-                if let Err(e) = client.draw() {
+                if let Err(e) = client.draw(&qh) {
                     eprintln!("edel-testclient: {e:#}");
                     break;
                 }
@@ -355,7 +374,9 @@ fn main() -> Result<()> {
 }
 
 impl Client {
-    fn draw(&mut self) -> Result<()> {
+    /// Draws one buffer. With `--busy` it also asks for the next frame
+    /// callback before it commits, unless one is already on its way (M7.7c).
+    fn draw(&mut self, qh: &QueueHandle<Self>) -> Result<()> {
         let stride = self.width as i32 * 4;
         let (buffer, canvas) = self
             .pool
@@ -375,6 +396,10 @@ impl Client {
         let surface = self.shown.wl_surface();
         surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
         buffer.attach_to(surface).context("attaching the buffer")?;
+        if self.busy && !self.waiting {
+            surface.frame(qh, FrameCallbackData(surface.clone()));
+            self.waiting = true;
+        }
         self.shown.commit();
         Ok(())
     }
@@ -390,7 +415,7 @@ impl LayerShellHandler for Client {
     fn configure(
         &mut self,
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _: &LayerSurface,
         configure: LayerSurfaceConfigure,
         _: u32,
@@ -402,7 +427,7 @@ impl LayerShellHandler for Client {
         if h > 0 {
             self.height = h;
         }
-        if let Err(e) = self.draw() {
+        if let Err(e) = self.draw(qh) {
             eprintln!("edel-testclient: {e:#}");
             self.closed = true;
         }
@@ -418,7 +443,7 @@ impl WindowHandler for Client {
     fn configure(
         &mut self,
         _: &Connection,
-        _: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
         _: &Window,
         configure: WindowConfigure,
         _: u32,
@@ -427,7 +452,7 @@ impl WindowHandler for Client {
             self.width = w.get();
             self.height = h.get();
         }
-        if let Err(e) = self.draw() {
+        if let Err(e) = self.draw(qh) {
             eprintln!("edel-testclient: {e:#}");
             self.closed = true;
         }
@@ -453,7 +478,26 @@ impl CompositorHandler for Client {
     ) {
     }
 
-    fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
+    /// With `--busy` (M7.7c): each frame callback draws the other colour,
+    /// prints the count and asks for the next callback. Without it, nothing.
+    fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
+        if !self.busy {
+            return;
+        }
+        self.waiting = false;
+        self.frames += 1;
+        self.pixel = if self.frames % 2 == 0 {
+            self.colour
+        } else {
+            self.colour.map(|byte| !byte)
+        };
+        println!("frames {}", self.frames);
+        let _ = std::io::stdout().flush();
+        if let Err(e) = self.draw(qh) {
+            eprintln!("edel-testclient: {e:#}");
+            self.closed = true;
+        }
+    }
 
     fn surface_enter(
         &mut self,

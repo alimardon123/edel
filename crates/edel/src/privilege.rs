@@ -74,6 +74,7 @@ pub fn need(command: &Commands) -> Need {
         } => Need::Admin,
         Commands::Install { .. } => Need::Password,
         Commands::Status => Need::Anyone,
+        Commands::Platform { .. } => Need::Anyone,
         Commands::Restart | Commands::Shutdown | Commands::Suspend => Need::Admin,
         // A profile is how hard the machine works, not what can break or
         // open it, and the login feature's rule lets the people at the
@@ -512,6 +513,7 @@ mod tests {
             ),
             (&["edel", "install", "--find-settings"], Need::Admin),
             (&["edel", "status"], Need::Anyone),
+            (&["edel", "platform", "status"], Need::Anyone),
             (&["edel", "restart"], Need::Admin),
             (&["edel", "shutdown"], Need::Admin),
             (&["edel", "suspend"], Need::Admin),

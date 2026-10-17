@@ -6,9 +6,10 @@
 //! the one in use, for the layout indicator, with the request for the
 //! next one (M5.9f); the tray's key, which opens the tray's grid
 //! with the keyboard (M5.9h); and the settings files' changes, which
-//! shell-ui reads again (M5.9h). Without it (another
-//! compositor) the toggle shows nothing and only the menu button opens
-//! the launcher.
+//! shell-ui reads again (M5.9h); a game playing on every screen, which
+//! pauses the timers (M7.7c), and the battery's state, which the request
+//! tells the compositor (M7.7c). Without it (another compositor) the
+//! toggle shows nothing and only the menu button opens the launcher.
 
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -83,6 +84,14 @@ impl Link {
             link.move_workspace(from as u32, to as u32);
         }
     }
+
+    /// Tells the compositor whether the machine runs on its battery, so it
+    /// need not read the power supply itself (M7.7c).
+    pub fn on_battery(&self, on: bool) {
+        if let Some(link) = &self.0 {
+            link.on_battery(u32::from(on));
+        }
+    }
 }
 
 /// The link's user data: its events change what the panel shows.
@@ -126,6 +135,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::Lock => shell.lock_screen(),
             edel_shell_v1::Event::Lid { closed } => shell.lid(closed != 0),
             edel_shell_v1::Event::GameMode { on } => shell.game_mode(on != 0),
+            edel_shell_v1::Event::Playing { on } => shell.playing_changed(on != 0),
             edel_shell_v1::Event::Clipboard => shell.clipboard_key_pressed(),
         }
     }

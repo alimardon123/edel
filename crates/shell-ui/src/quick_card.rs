@@ -171,6 +171,7 @@ impl Shell {
         self.live.status = status;
         // The charger may have changed the profile the machine should use (M7.8).
         self.follow_profile();
+        self.tell_on_battery();
         if let Some(card) = &mut self.quick {
             // What a person chose has been confirmed or refused by now: the
             // machine's word shows again, unless a drag is still going.

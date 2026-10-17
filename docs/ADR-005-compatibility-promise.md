@@ -77,7 +77,7 @@ Over long periods apps meet new CPU types. On arm64 devices, x86_64-only apps (m
 
 ## Action Items
 
-1. [ ] Write the platform level 1 contract (kernel floor, portals, runtimes).
+1. [x] Write the platform level 1 contract (kernel floor, portals, runtimes) (M8.8, 2026-10-17: `platform/level-1.toml`, explained in [platform-levels.md](platform-levels.md), kept by `edel image build`).
 2. [ ] Make the app platform installable and updatable separately from the base.
 3. [ ] Add CI that installs the newest apps on the oldest supported base image.
 4. [ ] Set up the permanent runtime archive.
