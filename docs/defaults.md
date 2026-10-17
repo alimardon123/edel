@@ -120,3 +120,4 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `install.disk` | `"auto"` | release |
 | `install.erase` | `"empty-only"` | release |
 | `install.then` | `"poweroff"` | release |
+| `system.profiles_without` | `[]` | release |

@@ -41,6 +41,7 @@ mod shellui;
 mod shortcuts;
 mod state;
 mod statefile;
+mod sun;
 mod switcher;
 mod tiers;
 mod toplevels;

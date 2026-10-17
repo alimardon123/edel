@@ -482,16 +482,14 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
     }
 }
 
-/// The key of the settings file Dark style writes.
-pub const MODE: &str = "appearance.mode";
+/// The key of the settings file Dark style writes (`edel::sun` owns it).
+pub const MODE: &str = edel::sun::MODE;
 
-/// Whether the colour scheme is dark: the person's file over the
-/// machine's, `auto` and no key being the release's choice, light.
+/// Whether the colour scheme is dark: the person's file over the machine's,
+/// `auto` and no key being the release's choice, light, or the sun's at the
+/// place `location.place` names (M7.14).
 pub fn is_dark(machine: Option<&str>, person: Option<&str>) -> bool {
-    edel::settings::chosen(MODE, machine, person)
-        .as_deref()
-        .and_then(edel::tokens::Scheme::parse)
-        == Some(edel::tokens::Scheme::Dark)
+    edel::sun::scheme_of(machine, person).0 == edel::tokens::Scheme::Dark
 }
 
 /// What to write in the person's file to make the colour scheme dark, or

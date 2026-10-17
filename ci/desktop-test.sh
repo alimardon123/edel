@@ -296,6 +296,9 @@
 #               popup the compositor shows (`input method popup shown`,
 #               input-method.png); Escape, Super+Q, and reset stop fcitx5
 #               (`input method off, fcitx5 ended`) (M6.8)
+#   profiles    with gaming named, `edel settings set apps.installed-=` Steam
+#               leaves it out (system.profiles_without), apply ends 0 and
+#               the diff no longer installs it; reset takes the key out (M7.6c)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -6364,6 +6367,52 @@ case_scheme() {
 	echo "PASS: appearance.mode=dark turned the panel, keys' title bar and the background to the dark tokens, the portal said prefer dark (1) and xdg-desktop-portal passed SettingChanged on to apps; unset, all of it went back to light (2), the release's default; shell-ui followed both without starting again, and still listed $listed notifications"
 }
 
+# case_sun (M7.14): the colour scheme follows the sun. With location.place
+# at Asia/Tashkent and the clock at 08:00 UTC (day there), the compositor
+# arms for sunset and the panel is light; moving the clock to 18:00 UTC
+# (night) turns the compositor and shell-ui dark with no restart; taking
+# the place out and the clock back brings light again. Kept as sun-day.png
+# and sun-night.png.
+case_sun() {
+	# edel-clock sets the clock once at boot, in the background, and prints
+	# one line either way; waiting for it means a late set cannot undo the
+	# date -s below.
+	wait_for 'edel-clock: (set the clock|warning)' 120 || fail "edel-clock did not say whether it set the clock"
+	guest 'sun day'
+	said=$(count 'edel-compositor: colour scheme follows the sun, dark in')
+	guest 'sun place'
+	wait_more 'edel-compositor: colour scheme follows the sun, dark in' "$said" ||
+		fail "with a place set at its daytime, the compositor did not arm for sunset"
+	shot sun-day 640 790 "$(token panel colour.light)" >/dev/null ||
+		fail "the panel at 640,790 by day is not the light scheme's #$(token panel colour.light)"
+	asked=$(count 'DESKTOP-TEST: sun_get ')
+	guest 'sun get'
+	wait_more 'DESKTOP-TEST: sun_get ' "$asked" || fail "the service did not answer edel settings get appearance.mode"
+	value sun_get | grep -q 'Dark at [0-9][0-9]:[0-9][0-9]' ||
+		fail "edel settings get appearance.mode does not say when it turns dark: $(value sun_get)"
+	dark_words=$(value sun_get | grep -oE 'Dark at [0-9:]+' | head -n 1)
+	said=$(count 'edel-compositor: colour scheme dark')
+	followed=$(count 'edel-shell-ui: follows the settings: the colour scheme is now dark')
+	guest 'sun night'
+	wait_more 'edel-compositor: colour scheme dark' "$said" 30 ||
+		fail "moving the clock past sunset did not turn the compositor dark"
+	wait_more 'edel-shell-ui: follows the settings: the colour scheme is now dark' "$followed" 30 ||
+		fail "shell-ui did not follow the sun's dark"
+	shot sun-night 640 790 "$(token panel colour)" >/dev/null ||
+		fail "the panel at 640,790 at night is not the dark scheme's #$(token panel colour)"
+	asked=$(count 'DESKTOP-TEST: sun_get ')
+	guest 'sun get'
+	wait_more 'DESKTOP-TEST: sun_get ' "$asked" || fail "the service did not answer edel settings get appearance.mode at night"
+	value sun_get | grep -q 'Light at [0-9][0-9]:[0-9][0-9]' ||
+		fail "edel settings get appearance.mode does not say when it turns light: $(value sun_get)"
+	light_words=$(value sun_get | grep -oE 'Light at [0-9:]+' | head -n 1)
+	said=$(count 'edel-compositor: colour scheme light')
+	guest 'sun reset'
+	wait_more 'edel-compositor: colour scheme light' "$said" 30 ||
+		fail "taking the place out and the clock back did not bring light back"
+	echo "PASS: with location.place at Tashkent and the clock at 08:00 UTC the panel was light (sun-day.png) and edel settings get said \"$dark_words\"; moving the clock to 18:00 UTC turned the compositor and shell-ui dark with no restart (sun-night.png), where edel settings get said \"$light_words\""
+}
+
 terminal_colours() {
 	python3 - "$@" <<-'EOF'
 		import sys
@@ -8011,6 +8060,44 @@ case_web_app() {
 	echo "PASS: edel web-app add made example.org an app (its desktop file runs Firefox with --name edel-web-example-org, StartupWMClass and X-Edel-Web-App=https://example.org), the launcher offered $after apps against $before before, typing example.com showed the Install row (web-app-row.png), and edel web-app remove took the file out again, the launcher back at $gone apps"
 }
 
+case_profiles() {
+	# Leave out what a profile brings (M7.6c): with gaming named and ci an
+	# admin, `edel settings diff` would install Steam; `apps.installed-=`
+	# writes it to system.profiles_without instead, `edel settings apply`
+	# ends 0 and the diff no longer names Steam; resetting the profile takes
+	# the key out with it.
+	asked=$(count 'DESKTOP-TEST: profile_gaming ')
+	guest 'profile gaming'
+	wait_more 'DESKTOP-TEST: profile_gaming ' "$asked" || fail "the service did not name the gaming profile"
+	gaming=$(value profile_gaming)
+	[ "${gaming%% *}" = 0 ] || fail "edel settings set system.profiles failed: $gaming"
+	case "$gaming" in
+	*'install com.valvesoftware.Steam'*) ;;
+	*) fail "with gaming named, edel settings diff does not install Steam: $gaming" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: profile_without ')
+	guest 'profile without'
+	wait_more 'DESKTOP-TEST: profile_without ' "$asked" 300 || fail "the service did not take Steam out and apply"
+	without=$(value profile_without)
+	[ "${without%% *}" = 0 ] || fail "taking Steam out or applying failed: $without"
+	case "$without" in
+	*Steam*) fail "edel settings diff still installs Steam after it was taken out: $without" ;;
+	esac
+	case "$(value profile_left)" in
+	*com.valvesoftware.Steam*) ;;
+	*) fail "system.profiles_without does not name Steam: $(value profile_left)" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: profile_default ')
+	guest 'profile default'
+	wait_more 'DESKTOP-TEST: profile_default ' "$asked" || fail "the service did not reset the profile"
+	reset=$(value profile_default)
+	[ "${reset%% *}" = 0 ] || fail "edel settings reset system.profiles failed: $reset"
+	case "$reset" in
+	*Steam*) fail "system.profiles_without stayed after the profile was reset: $reset" ;;
+	esac
+	echo "PASS: with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -8050,7 +8137,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -473,7 +473,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "appearance.mode",
         help: n_(
-            "Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one.",
+            "Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light.",
         ),
         default: r#""auto""#,
         from: DecidedBy::Token,
@@ -1144,6 +1144,16 @@ pub const HELP: &[Help] = &[
         key: "install.then",
         help: n_("What the machine does once a stick has installed itself: power off or restart."),
         default: r#""poweroff""#,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "system.profiles_without",
+        help: n_(
+            "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off.",
+        ),
+        default: "[]",
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,

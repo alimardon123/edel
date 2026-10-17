@@ -233,6 +233,14 @@ pub fn settings_not_followed(why: impl Display) -> String {
     format!("changes to the settings are not followed: {why}; log in again to apply a change")
 }
 
+/// The timer that turns auto dark at sunset and light at sunrise cannot be
+/// made or set (M7.14).
+pub fn sun_not_followed(why: impl Display) -> String {
+    format!(
+        "Automatic style does not follow the sun: {why}; the colour scheme changes when the settings do, or at the next login"
+    )
+}
+
 /// One folder of settings cannot be watched.
 pub fn folder_not_followed(dir: &Path, why: impl Display) -> String {
     format!(
