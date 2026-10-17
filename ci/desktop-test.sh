@@ -6767,7 +6767,7 @@ case_desktop_widgets() {
 	wait_for 'edel-shell-ui: desktop editor shown' ||
 		fail "the desktop's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'desktop editor' | tail -n 3)"
 	places=$(editor_places desktop)
-	height=$(echo "$places" | sed -n 's/^screen 1280x\([0-9]*\),.*/\1/p')
+	height=$(echo "$places" | sed -n 's/.* places screen 1280x\([0-9]*\),.*/\1/p')
 	[ "${height:-800}" -lt 800 ] ||
 		fail "the desktop's edit mode covers the whole screen, not the usable area: $places"
 	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
