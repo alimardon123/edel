@@ -1156,6 +1156,24 @@ commands() {
 		# which adds Flathub for ci and installs the app with flatpak --user.
 		# The download takes minutes, so the command's verdict is its status
 		# and the last lines of its log.
+		# Profiles leave out what a person takes away (M7.6c): gaming named,
+		# Steam taken out of the apps it brings, applied, then reset. No
+		# download: the plan alone shows whether Steam would install.
+		'profile gaming')
+			edel settings set 'system.profiles=["gaming"]' users.ci.admin=true >/tmp/profile.log 2>&1
+			say "profile_gaming $? $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		'profile without')
+			edel settings set apps.installed-=com.valvesoftware.Steam >/tmp/profile.log 2>&1 &&
+				edel settings apply >>/tmp/profile.log 2>&1
+			status=$?
+			say "profile_left $(edel settings get system.profiles_without 2>&1 | tr '\n' ' ')"
+			say "profile_without $status $(edel settings diff 2>&1 | tr '\n' ';') $(tail -n 3 /tmp/profile.log | tr '\n' ';')"
+			;;
+		'profile default')
+			edel settings reset system.profiles users.ci.admin >/tmp/profile.log 2>&1
+			say "profile_default $? $(edel settings get system.profiles_without 2>&1 | tr '\n' ' ')"
+			;;
 		'flatpak apps')
 			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&
 				edel settings apply >>/tmp/flatpak-apply.log 2>&1

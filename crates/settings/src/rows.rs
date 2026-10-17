@@ -888,6 +888,10 @@ mod tests {
             "install.then",
             "an instruction to a stick that installs itself, read only by edel install --unattended (docs/FLEET.md)",
         ),
+        (
+            "system.profiles_without",
+            "written by taking out or adding back what a profile brings, on the Add-ons page or with -= and +=; the Profile row's line names it",
+        ),
     ];
 
     #[test]
