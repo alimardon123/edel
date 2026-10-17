@@ -647,7 +647,7 @@ msgstr ""
 msgid "How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast."
 msgstr ""
 
-msgid "The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little)."
+msgid "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little)."
 msgstr ""
 
 msgid "The parts of the lock and login screens and where each one stands, as a list of tables."

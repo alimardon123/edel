@@ -551,9 +551,10 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["full", "reduced", "off"]),
     ),
     // How fast everything moves, as a share of the release's speed (M5.12b4):
-    // 200 halves every length, 50 doubles it. One curve for every kind of
-    // animation, windows and popups alike; there are no per-kind keys, as
-    // the one setting is simpler and everything still follows it.
+    // 200 halves every length, 50 doubles it. The curve is a feel: each
+    // names the curve every kind of animation (windows, workspaces, popups)
+    // follows (M8.21 part 21e); there are no per-kind keys, as one preset
+    // is simpler and every kind still follows it.
     now("appearance.animation_speed", Kind::WholeFromTo(25, 400)),
     now("appearance.animation_curve", Kind::OneOf(CURVES)),
     // The lock and login screens' parts, each placed by an anchor and an
