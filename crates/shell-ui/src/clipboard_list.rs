@@ -6,8 +6,6 @@
 //! one function that places everything, `places` is the log line CI reads
 //! and `nodes` is what a screen reader reads. `clipboard_card.rs` holds
 //! its surface and the keyboard.
-// Used by clipboard_card.rs, which comes next; the card removes this line.
-#![cfg_attr(not(test), allow(dead_code))]
 
 use accesskit::{Rect as AkRect, Role};
 use tiny_skia::Pixmap;
@@ -50,7 +48,7 @@ pub struct View {
 #[derive(Clone, Debug)]
 pub enum Line {
     Text(String),
-    Picture(std::rc::Rc<Pixmap>),
+    Picture(std::sync::Arc<Pixmap>),
 }
 
 impl PartialEq for Line {
@@ -58,7 +56,7 @@ impl PartialEq for Line {
     fn eq(&self, other: &Line) -> bool {
         match (self, other) {
             (Line::Text(a), Line::Text(b)) => a == b,
-            (Line::Picture(a), Line::Picture(b)) => std::rc::Rc::ptr_eq(a, b),
+            (Line::Picture(a), Line::Picture(b)) => std::sync::Arc::ptr_eq(a, b),
             _ => false,
         }
     }
@@ -420,7 +418,7 @@ pub fn places(layout: &Layout) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     /// A stand-in for the font: each letter a little more than half an em.
     fn measure(text: &str, size: f32) -> f32 {
@@ -438,7 +436,7 @@ mod tests {
     }
 
     fn picture_line() -> Line {
-        Line::Picture(Rc::new(Pixmap::new(48, 24).unwrap()))
+        Line::Picture(Arc::new(Pixmap::new(48, 24).unwrap()))
     }
 
     fn lay(view: &View) -> Layout {

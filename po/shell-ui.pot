@@ -95,6 +95,9 @@ msgstr ""
 msgid "Next month"
 msgstr ""
 
+msgid "Clipboard history"
+msgstr ""
+
 msgid "Clipboard"
 msgstr ""
 
@@ -105,9 +108,6 @@ msgid "Clipboard history is off"
 msgstr ""
 
 msgid "Turn it on in Settings, Shortcuts"
-msgstr ""
-
-msgid "Clipboard history"
 msgstr ""
 
 msgid "Picture"

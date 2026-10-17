@@ -497,6 +497,8 @@ impl Shell {
     pub fn settings_changed(&mut self) {
         // The look first (M6.17), so what follows reads the new tokens.
         self.follow_look();
+        // Clipboard history follows clipboard.history (M7.13).
+        self.clipboard_settings_changed();
         // The glass follows the wallpaper the files name (M5.12b3): the
         // panels draw again when it changes, as their glass is drawn.
         let wallpaper = crate::read_wallpaper();

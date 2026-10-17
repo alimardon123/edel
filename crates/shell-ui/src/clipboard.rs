@@ -5,12 +5,10 @@
 //! (`SECRET`) is never read. This module is the pure model, tested without
 //! a display; `clipboard_list.rs` draws it and `clipboard_card.rs` holds
 //! the surface and the ext-data-control client. The seam for the devices
-//! of M7.10b is `History::newest`, which a paired device would be sent.
-// Used by clipboard_card.rs, which comes next; the card removes this line.
-#![cfg_attr(not(test), allow(dead_code))]
+//! of M7.10b is `History::items`, whose first a paired device would be sent.
 
 use std::collections::VecDeque;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
@@ -38,7 +36,7 @@ const LINE_MOST: usize = 120;
 #[derive(Clone, Debug)]
 pub enum Item {
     Text(String),
-    Picture { png: Rc<[u8]>, thumb: Rc<Pixmap> },
+    Picture { png: Arc<[u8]>, thumb: Arc<Pixmap> },
 }
 
 impl PartialEq for Item {
@@ -72,8 +70,8 @@ impl Item {
         let source = Pixmap::decode_png(&png).ok()?;
         let thumb = thumb_of(&source)?;
         Some(Item::Picture {
-            png: Rc::from(png),
-            thumb: Rc::new(thumb),
+            png: Arc::from(png),
+            thumb: Arc::new(thumb),
         })
     }
 
@@ -211,12 +209,6 @@ impl History {
         self.items.get(index)
     }
 
-    /// The newest item: what a paste gives, and what a paired device would
-    /// be sent (M7.10b).
-    pub fn newest(&self) -> Option<&Item> {
-        self.items.front()
-    }
-
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -258,10 +250,7 @@ mod tests {
         assert_eq!(texts(&history), ["one", "two"]);
         assert!(!history.add(text("one")), "already at the front: no change");
         assert_eq!(history.len(), 2, "no copy of an equal item");
-        assert_eq!(
-            history.newest().and_then(Item::line).as_deref(),
-            Some("one")
-        );
+        assert_eq!(history.get(0).and_then(Item::line).as_deref(), Some("one"));
     }
 
     #[test]
@@ -305,7 +294,7 @@ mod tests {
         assert!(history.remove(5).is_none());
         history.clear();
         assert!(history.is_empty());
-        assert!(history.newest().is_none());
+        assert!(history.get(0).is_none());
     }
 
     #[test]
