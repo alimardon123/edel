@@ -149,8 +149,9 @@ ab_break_b() {
 	case "${3:-}" in
 	nowatchdog)
 		rm -f /run/ab-test/slot/lib/modules/*/kernel/drivers/watchdog/*
-		sed -i 's/,softdog\([, ]\)/\1/' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg
-		! grep -q 'softdog' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg || {
+		# Only modules= loses it: softdog.soft_margin stays, unused.
+		sed -i -E 's/(modules=[^ ]*)(,softdog|softdog,)/\1/' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg
+		! grep -Eq 'modules=[^ ]*softdog' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg || {
 			umount /run/ab-test/slot
 			ab_end "FAIL: taking softdog out of slot B's modules for $1"
 			return 1

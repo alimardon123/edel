@@ -1328,6 +1328,29 @@ pub fn import(file: &Path) -> Result<()> {
     apply_file(Some(file), false)
 }
 
+/// The boot's apply on a machine with no settings file: only the
+/// services, as an empty file asks for them (M8.17).
+fn boot_services() -> Result<()> {
+    let file = SettingsFile::default();
+    let (changes, _) = plan(&file, &Machine::read(&file)?);
+    for change in changes.iter().filter(|c| matches!(c, Change::Service(_))) {
+        match execute(change, true) {
+            Ok(()) => println!("edel settings: {change}"),
+            Err(err) => eprintln!(
+                "edel settings: {}",
+                trf(
+                    "could not apply {change}: {why}",
+                    &[
+                        ("change", &change.to_string()),
+                        ("why", &format!("{err:#}"))
+                    ]
+                )
+            ),
+        }
+    }
+    Ok(())
+}
+
 fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     let _lock = Lock::take("settings", "edel settings")?;
     // A file by a former name is renamed first, so it is read and kept by
@@ -1335,13 +1358,15 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     if let Err(err) = settle_names() {
         eprintln!("warning: {err:#}");
     }
-    let Some(read) = load(file, true)? else {
-        return Ok(());
-    };
     if boot {
         // Once per boot, after udev settled, for every later reader (M8.17).
         services::decide_screen();
     }
+    let Some(read) = load(file, true)? else {
+        // With no settings file the boot still switches the services, so
+        // a machine with no screen starts no desktop service (M8.17).
+        return if boot { boot_services() } else { Ok(()) };
+    };
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
     for note in &notes {
         println!("edel settings: {note}");
