@@ -954,11 +954,11 @@ fn swatch_rows() -> usize {
     segments(Line::Colour).len().div_ceil(SWATCH_COLUMNS)
 }
 
-/// A line's height on a floating card (M8.21 part 21k2): a row, or each row
-/// of the colour grid.
+/// A line's height on a floating card (M8.21 part 21k2): a row, or the
+/// colour grid's label row and each row of its swatches.
 fn floating_h(line: Line, row_h: f32) -> f32 {
     match line {
-        Line::Colour => swatch_rows() as f32 * row_h,
+        Line::Colour => (1 + swatch_rows()) as f32 * row_h,
         _ => row_h,
     }
 }
@@ -1019,12 +1019,16 @@ fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Lay
                     Vec::new(),
                     None,
                 ),
-                // The swatches fill the row, with no label of their own.
-                Line::Colour => (
-                    Some(rect),
-                    swatch_cells(rect, segments(line).len(), row_h),
-                    None,
-                ),
+                // The label's row, then the swatches across the card.
+                Line::Colour => {
+                    let label = Rect::new(left, rect.y, rect.w - 2.0 * INSET, row_h);
+                    let grid = Rect::new(rect.x, rect.y + row_h, rect.w, rect.h - row_h);
+                    (
+                        Some(grid),
+                        swatch_cells(grid, segments(line).len(), row_h),
+                        Some(label),
+                    )
+                }
                 // A clock's zone and label: the row's name at the left, the
                 // field for the words at the right, from `FIELD_AT` across.
                 Line::Zone | Line::Label => {
@@ -1140,18 +1144,26 @@ fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
         y += gap(prev, next);
         prev = Some(next);
         let (row, used) = match line {
-            // The colour grid (M8.21 part 21k2): touch-sized cells, six across.
+            // The colour grid (M8.21 part 21k2): its label, then touch-sized
+            // cells, six across.
             Line::Colour => {
                 let rows = swatch_rows();
-                let grid = Rect::new(inner_x, y, inner_w, rows as f32 * edit_kit::BUTTON_TOUCH);
+                let label = Rect::new(inner_x, y, inner_w, row_h);
+                let grid = Rect::new(
+                    inner_x,
+                    y + row_h,
+                    inner_w,
+                    rows as f32 * edit_kit::BUTTON_TOUCH,
+                );
                 let row = Row {
                     line,
-                    rect: grid,
+                    rect: Rect::new(inner_x, y, inner_w, row_h + grid.h),
                     control: Some(grid),
                     segments: swatch_cells(grid, segments(line).len(), edit_kit::BUTTON_TOUCH),
-                    label: None,
+                    label: Some(label),
                 };
-                (row, grid.h)
+                let used = row.rect.h;
+                (row, used)
             }
             Line::Face => {
                 let tile_w = (inner_w - FACE_TILE_GAP) / 2.0;
@@ -1591,6 +1603,7 @@ pub fn paint(
                 );
             }
             Line::Colour => {
+                draw_label(pixmap, text, row, label(row.line), text_px, s, label_ink);
                 let now = chosen(&view.placed, Line::Colour);
                 for (j, cell) in row.segments.iter().enumerate() {
                     let Some(swatch) = view.swatches.get(j) else {
@@ -1693,11 +1706,17 @@ pub fn paint(
             }
             Line::Button | Line::Every => {
                 let Some(button) = row.control else { continue };
+                // Use on every widget is a second action, so it is quiet.
+                let kind = if row.line == Line::Every {
+                    ButtonKind::Quiet
+                } else {
+                    ButtonKind::Accent
+                };
                 edit_kit::button(
                     pixmap,
                     button,
                     label(row.line),
-                    ButtonKind::Accent,
+                    kind,
                     State::Rest,
                     tokens,
                     Some(&mut *text),
@@ -2597,7 +2616,16 @@ mod tests {
                 Part::Date => Line::Show(DatePart::Year),
                 _ => Line::Face,
             };
+            let behind = lock::behind_of(
+                edel::widgets::Surface::LockScreen,
+                &look.background,
+                look.dim,
+                &edel::wallpapers::Wallpaper::Background,
+                &t,
+            );
+            let part = placed.part;
             let mut card = open(index, placed);
+            card.swatches = swatches_for(part, &t, behind);
             set_focus(&mut card, Some(focus));
             let l = layout(&card, near, screen, &t, None);
             assert!(
@@ -2825,7 +2853,7 @@ mod tests {
     }
 
     #[test]
-    fn the_docked_swatches_are_touch_sized_six_across_and_the_floating_grid_is_two_rows() {
+    fn the_swatches_are_touch_sized_when_docked_and_labelled_over_two_rows_floating() {
         let (_, docked) = clock_with(tokens().background, Some(dock()));
         let row = docked
             .rows
@@ -2842,6 +2870,11 @@ mod tests {
             .iter()
             .find(|r| r.line == Line::Colour)
             .expect("the colour grid");
-        assert_eq!(grid.rect.h, 2.0 * tokens().row as f32);
+        // Its label's row, then two rows of swatches.
+        assert_eq!(grid.rect.h, 3.0 * tokens().row as f32);
+        assert_eq!(
+            grid.control.expect("the swatches").h,
+            2.0 * tokens().row as f32
+        );
     }
 }
