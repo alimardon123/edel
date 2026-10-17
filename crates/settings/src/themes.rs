@@ -470,6 +470,8 @@ pub struct Card {
     // The styles.
     style_buttons: Vec<gtk::ToggleButton>,
     style_pictures: Vec<gtk::DrawingArea>,
+    /// The words under Automatic, when the sun changes the style next, and its button (M7.14).
+    auto_when: Option<(gtk::Label, gtk::ToggleButton)>,
     looks: Rc<RefCell<Looks>>,
     looks_key: RefCell<String>,
     pictures_now: RefCell<Vec<String>>,
@@ -608,6 +610,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         .build();
     let mut style_buttons: Vec<gtk::ToggleButton> = Vec::new();
     let mut style_pictures = Vec::new();
+    let mut auto_when = None;
     for (index, name) in STYLES.iter().enumerate() {
         let picture = gtk::DrawingArea::builder()
             .content_height(STYLE_HEIGHT)
@@ -646,6 +649,15 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
             .build();
         inner.append(&frame);
         inner.append(&word);
+        // Only Automatic says when the sun changes the style next (M7.14).
+        let when = (index == 2).then(|| {
+            let when = gtk::Label::builder()
+                .css_classes(["edel-source"])
+                .visible(false)
+                .build();
+            inner.append(&when);
+            when
+        });
         let button = gtk::ToggleButton::builder()
             .child(&inner)
             .css_classes(["edel-style"])
@@ -655,6 +667,9 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
             button.set_group(Some(first));
         }
         styles.append(&button);
+        if let Some(when) = when {
+            auto_when = Some((when, button.clone()));
+        }
         style_buttons.push(button);
         style_pictures.push(picture);
     }
@@ -737,6 +752,7 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
         delete: delete.clone(),
         style_buttons,
         style_pictures,
+        auto_when,
         looks,
         looks_key: RefCell::new(shown.pictures.join("\n")),
         pictures_now: RefCell::new(shown.pictures.clone()),
@@ -756,14 +772,17 @@ pub fn card(content: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Rc<C
     wire(&card, &from_use, &blank);
     drop_file(&card, &row);
     card.show_now(&shown);
+    card.show_when();
     // The tokens change with the scheme and the person's colours: the
-    // styles' windows and panels are taken again then.
+    // styles' windows and panels are taken again then. The scheme also
+    // flips at sunset, so the words under Automatic move on then (M7.14).
     let weak = Rc::downgrade(&card);
     theme.watch(move || {
         if let Some(card) = weak.upgrade() {
             card.looks_key.borrow_mut().clear();
             let pictures = card.pictures_now.borrow().clone();
             card.set_looks(&pictures);
+            card.show_when();
         }
     });
     log_style(&card, content);
@@ -1367,6 +1386,31 @@ impl Card {
             let on = STYLES.get(index).copied() == Some(mode.as_str())
                 || (mode.is_empty() && index == 2);
             button.set_active(on);
+        }
+        self.show_when();
+    }
+
+    /// Shows under Automatic when the sun changes the style next, and says
+    /// so on its button for a screen reader (M7.14). Nothing shows while the
+    /// style is not Automatic's sun, or without a place.
+    fn show_when(&self) {
+        let Some((label, button)) = &self.auto_when else {
+            return;
+        };
+        match Files::here().scheme().1 {
+            Some(change) => {
+                let words = edel::sun::change_words(change, edel::sun::now());
+                label.set_label(&words);
+                label.set_visible(true);
+                button.update_property(&[gtk::accessible::Property::Label(
+                    trf("Automatic, {when}", &[("when", &words)]).as_str(),
+                )]);
+            }
+            None => {
+                label.set_label("");
+                label.set_visible(false);
+                button.update_property(&[gtk::accessible::Property::Label(tr("Automatic"))]);
+            }
         }
     }
 
