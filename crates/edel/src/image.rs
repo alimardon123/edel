@@ -1088,7 +1088,19 @@ impl Build<'_> {
         };
         let collisions = addons::collisions(&trees, &same);
         if !collisions.is_empty() {
-            bail!("add-ons ship the same files: {}", collisions.join("; "));
+            let cache = collisions.iter().any(|line| {
+                line.split_once(" is shipped by ")
+                    .is_some_and(|(path, _)| addons::is_merged_cache(path))
+            });
+            let second = if cache {
+                "; a cache two add-ons both change goes with its packages into one add-on"
+            } else {
+                ""
+            };
+            bail!(
+                "add-ons ship the same files: {}{second}",
+                collisions.join("; ")
+            );
         }
         Ok(())
     }
@@ -1188,34 +1200,64 @@ impl Build<'_> {
         keep_addon(name, keeps, &mut diff, &after)?;
         let plan = addons::plan_tree(&diff, &after, name)?;
         let is_dir = |path: &str| after.get(path).is_some_and(|s| s.dir);
-        if !plan.caches.is_empty() {
-            let count = plan.copies.iter().filter(|c| !is_dir(&c.from)).count();
-            println!(
-                "add-on {name}: {count} files, left out the system caches: {}",
-                plan.caches.join(", ")
-            );
-        }
 
         fs::create_dir_all(tree)?;
         let mut shipped = Vec::new();
+        let mut merged = Vec::new();
         for copy in &plan.copies {
             if !is_dir(&copy.from) {
-                if root.join(&copy.to).symlink_metadata().is_ok() {
+                // A merged cache is in the image by design, so only any other
+                // path the image already has is refused.
+                let is_merged = plan.merged.contains(&copy.to);
+                if !is_merged && root.join(&copy.to).symlink_metadata().is_ok() {
                     bail!(
                         "{} is already in the image; add-on {name} cannot ship it",
                         copy.to
                     );
                 }
+                // The packages rewrite the MIME database though nothing in it
+                // changed; the image's copy shows through the overlay instead.
+                if is_merged && same_entry(&root.join(&copy.to), &a_root.join(&copy.to)) {
+                    continue;
+                }
+                if is_merged {
+                    merged.push(copy.to.clone());
+                }
                 shipped.push(copy.to.clone());
             }
             copy_into_tree(a_root, tree, copy)?;
         }
+        // One line per add-on in the build's log: what it ships, the caches
+        // it carries a merged copy of, those left out, and the base's small
+        // tools it keeps where a package brought its own.
+        let mut line = format!("add-on {name}: {} files", shipped.len());
+        for (what, list) in [
+            ("keeps the merged caches", addons::folded(&merged)),
+            ("left out the system caches", addons::folded(&plan.caches)),
+            (
+                "keeps the base's small tools at",
+                diff.kept_applets.join(", "),
+            ),
+        ] {
+            if !list.is_empty() {
+                line.push_str(&format!(", {what}: {list}"));
+            }
+        }
+        println!("{line}");
         let mut accounts = String::new();
         for path in &plan.accounts {
             let read = |base: &Path| {
                 fs::read_to_string(base.join(path)).with_context(|| format!("reading {path}"))
             };
-            let new = addons::new_accounts(&read(root)?, &read(a_root)?);
+            let (image, addon) = (read(root)?, read(a_root)?);
+            let changed = addons::changed_accounts(&image, &addon);
+            if !changed.is_empty() {
+                let names = changed.join(", ");
+                eprintln!(
+                    "warning: add-on {name} changes the image's {path} line of {names}; the image's line stays, so put what it needs into the feature's files"
+                );
+            }
+            let new = addons::new_accounts(&image, &addon);
             if new.is_empty() {
                 continue;
             }
