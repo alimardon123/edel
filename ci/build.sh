@@ -20,7 +20,7 @@ export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 # Flatpak's triggers build the default apps' icon, desktop and MIME caches
 # at install when these tools are there (M6.2a); pipewire-tools gives
 # apps/make-repo.sh the pw-record it puts in the test runtime (M6.14b).
-apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi mtools openssh-keygen pigz sfdisk tar flatpak \
+apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi merge-usr mtools openssh-keygen pigz sfdisk tar flatpak \
 	gtk-update-icon-cache desktop-file-utils shared-mime-info pipewire-tools \
 	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev
 
@@ -108,6 +108,12 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
 build "$version" images/vm.toml --files "$seed" --no-addons --no-compress --out out/system-test
+
+# The developer mode test image (roadmap M7.1): the VM image with the
+# test's steps (ci/developer-test.sh); health_timeout 30 keeps the hang
+# to a minute.
+build "$version" images/vm.toml --files ci/developer-test/files --no-addons --health-timeout 30 \
+	--no-compress --out out/developer-test
 
 # The fleet (roadmap M7.3): two VM images, each ci/fleet/base.toml under one
 # device file (`--settings` merges them, the later winning), and a FAT
@@ -228,6 +234,6 @@ rm -f out/install-file.img
 mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
-hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/desktop-test/update \
+hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
 	out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/system-test
 ls -ls out out/install-test

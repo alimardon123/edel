@@ -3,7 +3,7 @@
 # lane (install-test.sh, then ab-test.sh, which boots the disk the first
 # installed, then apps-test.sh, the default apps across an update, then
 # fleet-test.sh, the fleet images and the stick that installs itself) and
-# the other lane (boot-test.sh, system-test.sh,
+# the other lane (boot-test.sh, system-test.sh, developer-test.sh,
 # flatpak-test.sh, then `desktop-test.sh rollback`, which restarts the
 # desktop VM, and `desktop-test.sh live`, which starts the released desktop
 # image as a USB stick, so both run apart from the measured desktop cases). The lanes share no file, port or disk, and each runs
@@ -27,12 +27,12 @@ lane() {
 }
 
 mkdir -p out
-lane boot-test.sh system-test.sh flatpak-test.sh 'desktop-test.sh rollback' 'desktop-test.sh live' >out/lane-other.log 2>&1 &
+lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' 'desktop-test.sh live' >out/lane-other.log 2>&1 &
 other=$!
 lane install-test.sh ab-test.sh apps-test.sh fleet-test.sh
 installed=$?
 wait "$other"
 other=$?
-echo "== the other lane: boot-test.sh, system-test.sh, flatpak-test.sh, desktop-test.sh rollback, desktop-test.sh live"
+echo "== the other lane: boot-test.sh, system-test.sh, developer-test.sh, flatpak-test.sh, desktop-test.sh rollback, desktop-test.sh live"
 cat out/lane-other.log
 [ "$installed" = 0 ] && [ "$other" = 0 ]

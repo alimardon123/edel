@@ -1121,6 +1121,15 @@ msgstr ""
 msgid "set {keys}"
 msgstr ""
 
+msgid "resetting system.developer_mode deletes the {count} files developer mode changed under /usr; add --yes to go on"
+msgstr ""
+
+msgid "This deletes the {count} files developer mode changed under /usr when the computer next starts. Type yes to go on: "
+msgstr ""
+
+msgid "stopped, because yes was not typed; nothing was changed"
+msgstr ""
+
 msgid "{assignment}: write KEY=VALUE, such as network.hostname=lab-1"
 msgstr ""
 
@@ -1131,6 +1140,9 @@ msgid "HOME is not set, so there is no folder for the person's settings file; se
 msgstr ""
 
 msgid "reset {keys}"
+msgstr ""
+
+msgid "Developer mode's changes under /usr are deleted when the computer next starts."
 msgstr ""
 
 msgid "(built in)"
@@ -1215,6 +1227,9 @@ msgid "{why}; exporting only what the machine has"
 msgstr ""
 
 msgid "Files this machine changed in /etc, kept on /data and not described above:"
+msgstr ""
+
+msgid "Developer mode changed {count} files under /usr; they are not carried, as add-ons are the way to bring software to other machines."
 msgstr ""
 
 msgid "{id} is not a Flatpak app id, such as org.gnome.TextEditor"
@@ -2631,6 +2646,9 @@ msgid "Give settings back to the release, as the Settings app's Reset does"
 msgstr ""
 
 msgid "The keys, such as network.hostname"
+msgstr ""
+
+msgid "Delete developer mode's changes with system.developer_mode without asking"
 msgstr ""
 
 msgid "Show what apply would change, changing nothing; exits 1 when there is anything to change"

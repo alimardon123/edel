@@ -500,6 +500,16 @@ pub fn status() -> Result<()> {
     {
         println!("health: {note}");
     }
+    // Developer mode, while it is on or changes at the next start (M7.1).
+    if let Some(state) = crate::data::developer_state(
+        Path::new(edel::places::DEVELOPER_FLAG).exists(),
+        fs::read_to_string(edel::places::DEVELOPER_NOW)
+            .ok()
+            .as_deref(),
+        Path::new(edel::places::DEVELOPER_RESET).exists(),
+    ) {
+        println!("developer mode: {state}");
+    }
     // The desktop's effect tier (M5.11), while a session runs.
     if let Some(tier) = crate::shell::tier_now() {
         println!("effects: {tier}");
