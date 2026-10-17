@@ -5,6 +5,27 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Installed"
+msgstr ""
+
+msgid "Built into this version of Edel OS"
+msgstr ""
+
+msgid "Downloaded; it starts at the next restart"
+msgstr ""
+
+msgid "It did not start, so Edel OS started without it; turn it off and on to try again"
+msgstr ""
+
+msgid "Chosen; it downloads once this computer is online, or with the next update"
+msgstr ""
+
+msgid "Goes at the next restart"
+msgstr ""
+
+msgid "Not installed"
+msgstr ""
+
 msgid "add-on {name} is built into {version}, so it needs no download"
 msgstr ""
 
@@ -20,7 +41,13 @@ msgstr ""
 msgid "add-on {name} fetched and checked"
 msgstr ""
 
+msgid "could not fetch add-on {name}; nothing changes at the next restart; check the network and run edel settings apply again"
+msgstr ""
+
 msgid "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again"
+msgstr ""
+
+msgid "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; nothing of it was kept; run edel settings apply again"
 msgstr ""
 
 msgid "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; the new slot stays off and this system is unchanged; run edel update again"
@@ -29,7 +56,37 @@ msgstr ""
 msgid "could not take out {path}: {why}"
 msgstr ""
 
-msgid "add-on {name} is chosen but not here yet; it arrives with the next update"
+msgid "could not keep where the release came from ({why}); edel settings apply fetches add-ons from the channel's list instead"
+msgstr ""
+
+msgid "add-on {name} did not start at its first boot, so it is not fetched again; take it out of addons.installed and choose it again to try once more"
+msgstr ""
+
+msgid "add-on {name} comes with the update to {version}, as the release list has moved on from {running}"
+msgstr ""
+
+msgid "add-on {names} starts at the next restart"
+msgstr ""
+
+msgid "add-on {name} was not copied ({why}); it comes once the new system runs edel settings apply online"
+msgstr ""
+
+msgid "the release list has moved on to {version}"
+msgstr ""
+
+msgid "add-on {names} copied; it starts at the first boot"
+msgstr ""
+
+msgid "add-on {name} started, so it stays"
+msgstr ""
+
+msgid "add-on {name} started but could not join the others ({why}); the next boot tries it again"
+msgstr ""
+
+msgid "add-on {names} did not start at the last boot, so Edel OS started without it; it is not fetched again until it is taken out of addons.installed and chosen again"
+msgstr ""
+
+msgid "add-on {name} is chosen but not here yet; edel settings apply fetches it, and it starts at the next restart"
 msgstr ""
 
 msgid "could not mount add-on {name}; the other add-ons still mount, and the next update fetches it again"
@@ -41,13 +98,7 @@ msgstr ""
 msgid "add-ons mounted: {names}"
 msgstr ""
 
-msgid "installed"
-msgstr ""
-
-msgid "built in"
-msgstr ""
-
-msgid "chosen"
+msgid "trying the add-ons fetched since the last boot: {names}; they stay once this boot is confirmed"
 msgstr ""
 
 msgid "could not read the release list ({why}), so only this machine's add-ons are shown"
@@ -56,7 +107,7 @@ msgstr ""
 msgid "no add-ons for this image"
 msgstr ""
 
-msgid "to add one: edel settings set addons.installed+=NAME; it arrives with the next update"
+msgid "to add one: edel settings set addons.installed+=NAME, then edel settings apply; it starts at the next restart"
 msgstr ""
 
 msgid "Camera"
@@ -266,6 +317,9 @@ msgstr ""
 msgid "lowercase letters, digits, - and _, starting with a letter, and not root or {live}"
 msgstr ""
 
+msgid "one of {names}"
+msgstr ""
+
 msgid "letters, digits and hyphens, up to 63"
 msgstr ""
 
@@ -327,9 +381,6 @@ msgid "Edel OS asks a few questions, then shows the plan before it changes anyth
 msgstr ""
 
 msgid "More options (computer name, layout)? yes or no"
-msgstr ""
-
-msgid "one of {names}"
 msgstr ""
 
 msgid "Disk to install on, such as sda"
@@ -449,7 +500,7 @@ msgstr ""
 msgid "Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on."
 msgstr ""
 
-msgid "The hardware profiles applied to this machine, in order; this release does not act on them yet."
+msgid "Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's."
 msgstr ""
 
 msgid "Whether this person is an administrator, who may change the whole machine."
@@ -638,6 +689,9 @@ msgstr ""
 msgid "The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow."
 msgstr ""
 
+msgid "The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's."
+msgstr ""
+
 msgid "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150."
 msgstr ""
 
@@ -650,22 +704,22 @@ msgstr ""
 msgid "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little)."
 msgstr ""
 
-msgid "The parts of the lock and login screens and where each one stands, as a list of tables."
+msgid "The widgets on the lock and login screens and where each one stands, as a list of tables."
 msgstr ""
 
 msgid "The look of the lock and login screens: classic, magazine, minimal or one of your own."
 msgstr ""
 
-msgid "What lies behind the lock screen's parts: the backdrop, the wallpaper blurred or sharp, a colour or a picture."
+msgid "What lies behind the lock screen's widgets: the backdrop, the desktop wallpaper blurred or sharp, a colour or a picture."
 msgstr ""
 
-msgid "How much the lock screen's background is darkened, in percent from 0 to 80, so the words read."
+msgid "How much the lock screen's wallpaper is darkened, in percent from 0 to 80, so the words read."
 msgstr ""
 
 msgid "Whether the lock screen shows how many notifications are unread: count, or none to hide it."
 msgstr ""
 
-msgid "Your own lock screen looks, each with its parts and background, chosen by name."
+msgid "Your own lock screen looks, each with its widgets and wallpaper, chosen by name."
 msgstr ""
 
 msgid "One of your own themes: its title, its pictures and the appearance values it sets."
@@ -746,7 +800,7 @@ msgstr ""
 msgid "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id."
 msgstr ""
 
-msgid "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list."
+msgid "The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list."
 msgstr ""
 
 msgid "Whether banners stay away; notifications still arrive and are listed in the notification centre."
@@ -911,7 +965,7 @@ msgstr ""
 msgid "Chinese (Traditional)"
 msgstr ""
 
-msgid "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }"
+msgid "the lock screen needs the person and their password field; add { widget = \"person\", at = \"centre\" }"
 msgstr ""
 
 msgid "the person stands once; take out the second"
@@ -1007,7 +1061,7 @@ msgstr ""
 msgid "{name} is a built-in look; name yours another way, such as \"home\""
 msgstr ""
 
-msgid "the look {name} has the background {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path"
+msgid "the look {name} has the wallpaper {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path"
 msgstr ""
 
 msgid "the look {name} has the dim {dim}; use a whole number from 0 to {most}"
@@ -1031,7 +1085,7 @@ msgstr ""
 msgid "could not replace {path}"
 msgstr ""
 
-msgid "add-on {name} arrives with the next update"
+msgid "add-on {name} starts at the next restart, once edel settings apply has fetched it"
 msgstr ""
 
 msgid "add-on {name} goes at the next restart"
@@ -1502,6 +1556,33 @@ msgstr ""
 msgid "could not set the power profile through {path}; this changes the system, so run it as root with doas"
 msgstr ""
 
+msgid "Office"
+msgstr ""
+
+msgid "Developer"
+msgstr ""
+
+msgid "Creative"
+msgstr ""
+
+msgid "Gaming"
+msgstr ""
+
+msgid "LibreOffice and printing"
+msgstr ""
+
+msgid "Podman containers and the VSCodium editor"
+msgstr ""
+
+msgid "Krita for drawing and GIMP for photos"
+msgstr ""
+
+msgid "Steam, and game mode for every fullscreen game"
+msgstr ""
+
+msgid "there is no profile {name}; the profiles are {all}"
+msgstr ""
+
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
@@ -1625,7 +1706,7 @@ msgstr ""
 msgid "Lock screen"
 msgstr ""
 
-msgid "its look, parts and background"
+msgid "its look, widgets and wallpaper"
 msgstr ""
 
 msgid "Network"
@@ -1722,6 +1803,9 @@ msgid "developer mode and profiles"
 msgstr ""
 
 msgid "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
+msgstr ""
+
+msgid "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
 msgstr ""
 
 msgid "the file is not valid TOML"
@@ -1859,10 +1943,10 @@ msgstr ""
 msgid "expected panels as a preset writes them: {why}"
 msgstr ""
 
-msgid "expected parts as the lock screen writes them: {why}"
+msgid "expected widgets as the lock screen writes them: {why}"
 msgstr ""
 
-msgid "a list of parts, such as [{ part = \"person\", at = \"centre\" }]"
+msgid "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]"
 msgstr ""
 
 msgid "{value} is not a look's name; use letters, digits and hyphens, such as \"minimal\""
@@ -1871,16 +1955,16 @@ msgstr ""
 msgid "a look's name in quotes, such as \"minimal\""
 msgstr ""
 
-msgid "{value} is not a background; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)"
+msgid "{value} is not a wallpaper for the lock screen; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)"
 msgstr ""
 
-msgid "a background in quotes, such as \"blurred\" or \"#1f2b48\""
+msgid "a wallpaper in quotes, such as \"blurred\" or \"#1f2b48\""
 msgstr ""
 
 msgid "expected looks as the lock screen writes them: {why}"
 msgstr ""
 
-msgid "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }"
+msgid "looks as tables, such as { home = { widgets = [{ widget = \"person\", at = \"centre\" }] } }"
 msgstr ""
 
 msgid "{value} is not a theme's name; use letters, digits and hyphens, such as \"aurora\""
@@ -1934,6 +2018,9 @@ msgstr ""
 msgid "a list of add-on names, such as [\"fonts-cjk\"]"
 msgstr ""
 
+msgid "a list of profile names, such as [\"gaming\"]"
+msgstr ""
+
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
 msgstr ""
 
@@ -1941,6 +2028,9 @@ msgid "a channel name in quotes, such as \"stable\""
 msgstr ""
 
 msgid "a cursor theme's name in quotes, such as \"default\""
+msgstr ""
+
+msgid "an icon theme's name in quotes, such as \"Edel\""
 msgstr ""
 
 msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""
@@ -2798,7 +2888,7 @@ msgstr ""
 msgid "The preset's name, as preset list shows it"
 msgstr ""
 
-msgid "addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed"
+msgid "addon: software beside the system, such as more fonts or printing, that comes at the next restart and goes as easily; the same as in the settings file's addons.installed"
 msgstr ""
 
 msgid "List the add-ons of this machine's channel, marked installed, built in or chosen"

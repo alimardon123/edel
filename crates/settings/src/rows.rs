@@ -215,6 +215,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Cursor"),
     },
     Row {
+        key: "appearance.icon_theme",
+        title: n_("Icons"),
+    },
+    Row {
         key: "appearance.icon_size",
         title: n_("Icon size"),
     },
@@ -251,11 +255,11 @@ pub const ROWS: &[Row] = &[
         title: n_("Look"),
     },
     Row {
-        key: "lock_screen.background",
-        title: n_("Background"),
+        key: "lock_screen.wallpaper",
+        title: n_("Wallpaper"),
     },
     Row {
-        key: "lock_screen.parts",
+        key: "lock_screen.widgets",
         title: n_("Clock and date"),
     },
     Row {
@@ -364,6 +368,11 @@ pub const ROWS: &[Row] = &[
         key: "location.online",
         title: n_("Look online"),
     },
+    // The System page's profile (M7.6), the machine's.
+    Row {
+        key: "system.profiles",
+        title: n_("Profile"),
+    },
     // The Default apps page (M6.10): the app each role opens, one row each,
     // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
     Row {
@@ -416,6 +425,12 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "apps.files",
         title: n_("Files"),
+    },
+    // The Add-ons page (M7.2b): one switch for each add-on the image was
+    // built with, under the add-on's own name.
+    Row {
+        key: "addons.installed",
+        title: n_("Add-ons"),
     },
     // The Updates page (M5.8c).
     Row {
@@ -816,10 +831,6 @@ mod tests {
     /// and a retired key needs neither either.
     const NO_ROW: &[(&str, &str)] = &[
         (
-            "addons.installed",
-            "the Add-ons page, a switch for each add-on, comes with M7.2b, when one chosen there arrives at the next boot; until then edel settings set addons.installed+=NAME, and it arrives with the next update",
-        ),
-        (
             "users.*.ssh_keys",
             "a key is pasted on the command line or written in the file, as a server's administrator does",
         ),
@@ -909,7 +920,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 33);
+        assert_eq!(on_page("appearance").count(), 34);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

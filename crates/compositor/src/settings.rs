@@ -126,6 +126,10 @@ pub struct Settings {
     /// `appearance.cursor_theme` (M5.12b5 part A), the person's over the
     /// machine's; absent is the release's `default`.
     pub cursor_theme: Option<String>,
+    /// `appearance.icon_theme` (M8.21 part g), the person's over the
+    /// machine's, as the file writes it; `edel::settings::icon_theme_or_default`
+    /// says which theme applies (the release's `Edel` when absent).
+    pub icon_theme: Option<String>,
     /// The icon scale (M5.12b5 part A); the tokens read it, and shell-ui
     /// follows a change itself (M6.17).
     pub icons: edel::tokens::IconSize,
@@ -256,6 +260,9 @@ impl Settings {
                 .filter(|t| !t.is_empty() && !t.contains('/'))
             {
                 settings.cursor_theme = Some(theme.to_string());
+            }
+            if let Some(theme) = &file.appearance.icon_theme {
+                settings.icon_theme = Some(theme.clone());
             }
             if let Some(speed) = file
                 .appearance

@@ -4717,7 +4717,28 @@ case_app_windows() {
 		python3 ci/qmp.py key meta_l-q
 		wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot window $n"
 	done
-	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen"
+	# The app icon style (M8.21 part g): EdelTest, the image's test theme,
+	# draws foot as a magenta square, so foot's cell turns magenta once
+	# shell-ui follows appearance.icon_theme; the compositor follows too.
+	# A theme the machine lacks is refused with the ones it has, and Reset
+	# gives Edel's icons back. Kept as icon-theme.png.
+	followed=$(count 'edel-shell-ui: app icons from "EdelTest"')
+	guest 'icons test'
+	wait_more 'edel-shell-ui: app icons from "EdelTest"' "$followed" || fail "shell-ui did not follow appearance.icon_theme = \"EdelTest\""
+	wait_for 'edel-compositor: app icons from "EdelTest"' || fail "the compositor did not follow appearance.icon_theme = \"EdelTest\""
+	shot icon-theme "$cell" 774 ff00ff >/dev/null || fail "foot's cell at $cell,774 is not EdelTest's magenta icon (icon-theme.png)"
+	guest 'icons bad'
+	wait_for 'DESKTOP-TEST: icons_bad ' || fail "icons bad did not run in the VM"
+	bad=$(value icons_bad)
+	case $bad in
+	*'is not an icon theme this machine has'*EdelTest*) ;;
+	*) fail "an unknown icon theme was not refused with the list: $bad" ;;
+	esac
+	followed=$(count 'edel-shell-ui: app icons from "Edel"')
+	guest 'icons default'
+	wait_more 'edel-shell-ui: app icons from "Edel"' "$followed" || fail "shell-ui did not go back to Edel's icons"
+	shot icon-default "$cell" 774 '!ff00ff' >/dev/null || fail "foot's cell stayed magenta after the reset"
+	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen; EdelTest's icon drew foot's cell magenta (icon-theme.png), NoSuchTheme was refused with the list, and the reset gave it back"
 }
 
 case_taskbar() {
@@ -5654,18 +5675,17 @@ case_own_bars() {
 
 case_capture() {
 	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
-	# for a screenshot gets the URI of a PNG the compositor copied (its log
-	# says so, once per client), and asking to share the screen gets a stream
-	# of the screen's size, 1280x800 here. xdg-desktop-portal offers the
-	# screenshot only beside an Access backend, shell-ui's dialog, which it
-	# asks only through a screenshot backend of version 2 or later; the wlr
-	# backend's is older, so the dialog is asked here as the portal would ask
-	# it, over D-Bus as ci: the call waits for the person, its place is on
-	# the log, Allow is clicked and the call must answer 0.
-	before=$(count 'DESKTOP-TEST: access_result .*uint32')
-	guest 'access ask'
-	wait_for 'edel-shell-ui: access places ' 20 ||
-		fail "shell-ui showed no dialog for the Access portal's question: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
+	# for a screenshot is asked about first in shell-ui's Access dialog,
+	# which the portal asks as shell-ui's screenshot backend is of version 2
+	# (M8.21 part 21f); Allow is clicked, and the app gets the URI of a PNG
+	# that shell-ui copied from the compositor (its log says so, once per
+	# client) into ci's own runtime folder, mode 600, with no /tmp/out.png,
+	# where grim used to leave every picture for anyone to read. Asking to
+	# share the screen gets a stream of the screen's size, 1280x800 here.
+	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
+	guest 'capture screenshot'
+	wait_for 'edel-shell-ui: access places ' 30 ||
+		fail "the screenshot portal showed no Access dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
 	# Allow's rectangle in the surface's own logical pixels, from shell-ui,
 	# and the surface's place on the screen, from the compositor's state
 	# file (it centres the dialog in the area the panels leave).
@@ -5685,25 +5705,20 @@ case_capture() {
 	# accent, not the background).
 	shot access "$allow_x" "$allow_y" "!$background" >/dev/null || true
 	python3 ci/qmp.py click "$allow_x" "$allow_y"
-	wait_for 'edel-shell-ui: access allowed for ci-test' 10 ||
+	wait_for 'edel-shell-ui: access allowed for ' 10 ||
 		fail "clicking Allow did not answer the dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access ' | tail -n 1)"
-	poll_result 'access result' 'DESKTOP-TEST: access_result .*uint32' "$before" ||
-		fail "the Access call did not return after Allow was clicked"
-	answer=$(value access_result)
-	case "$answer" in
-	"(uint32 0,"*) ;;
-	*) fail "the Access call answered \"$answer\", not 0 for allowed" ;;
-	esac
-	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
-	guest 'capture screenshot'
 	poll_result 'capture screenshot result' 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
-		fail "the screenshot portal did not answer in 30 s"
+		fail "the screenshot portal did not answer in 30 s after Allow"
 	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
 	if [ -z "$shot" ]; then
 		guest 'capture debug'
-		wait_for 'DESKTOP-TEST: capture_debug grim ' 30 || true
-		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug ' | tail -n 32 | tr '\n' '|')"
+		wait_for 'DESKTOP-TEST: capture_debug portals ' 30 || true
+		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug \|edel-shell-ui: .*screenshot' | tail -n 32 | tr '\n' '|')"
 	fi
+	case "$shot" in
+	file:///run/user/[0-9]*/edel/screenshots/screenshot-*.png) ;;
+	*) fail "the screenshot is at $shot, not in ci's runtime folder /run/user/UID/edel/screenshots" ;;
+	esac
 	guest 'capture file'
 	wait_for 'DESKTOP-TEST: capture_file ' 20 || fail "the service did not say what the screenshot file holds"
 	file=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_file //p' | tail -n 1)
@@ -5714,6 +5729,13 @@ case_capture() {
 	magic=$(echo "$file" | awk '{ print $3 }')
 	[ "$magic" = 89504e47 ] || fail "the screenshot is not a PNG (its first bytes are $magic): $file"
 	[ "$bytes" -gt 1024 ] || fail "the screenshot is $bytes bytes, under 1 KB: $file"
+	mode=$(echo "$file" | awk '{ print $4, $5 }')
+	[ "$mode" = "600 ci" ] || fail "the screenshot's mode and owner are \"$mode\", not 600 ci: $file"
+	case "$file" in
+	*" out.png absent") ;;
+	*) fail "/tmp/out.png exists, so a screenshot went where other people can read it: $file" ;;
+	esac
+	grep -aq 'edel-shell-ui: screenshot saved, ' "$log" || fail "shell-ui did not say it saved the screenshot"
 	grep -aq 'edel-compositor: screen copied for ' "$log" || fail "the compositor logged no screen copy"
 	guest 'capture screencast'
 	wait_for 'DESKTOP-TEST: capture_screencast ' 60 || fail "the service did not hear back from the screencast portal"
@@ -5721,7 +5743,7 @@ case_capture() {
 	[ -n "$stream" ] || fail "the screencast gave no stream: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screencast ' | tail -n 1)"
 	size=${stream#* }
 	[ "$size" = 1280x800 ] || fail "the screencast's stream is $size, not the screen's 1280x800"
-	echo "PASS: the Access portal's question showed shell-ui's dialog (access.png) and Allow answered 0; a screenshot portal call gave $shot, a PNG of $bytes bytes the compositor copied; a screencast gave stream ${stream% *} of $size"
+	echo "PASS: a screenshot portal call showed shell-ui's Access dialog (access.png), and after Allow gave $shot, a PNG of $bytes bytes, mode 600 and ci's own, that shell-ui copied from the compositor, with no /tmp/out.png; a screencast gave stream ${stream% *} of $size"
 }
 
 # poll_result COMMAND PATTERN BEFORE: asks the service with COMMAND until
@@ -5986,7 +6008,7 @@ case_lock() {
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
 	guest 'lock magazine reset'
 	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
 # editor_places: the lock screen's edit mode's last whole places line,
@@ -6057,7 +6079,7 @@ case_lock_edit() {
 	# clock is dragged from its middle to the top right (shell-ui logs the
 	# anchor it snapped to), a message is dragged from the drawer to the
 	# bottom middle of the lock's picture (drawn smaller above the drawer,
-	# so 640,480 is its bottom third), and Done writes lock_screen.parts
+	# so 640,480 is its bottom third), and Done writes lock_screen.widgets
 	# into ci's file. The
 	# next lock must place the clock at the top right and show a message.
 	# Kept as lock-editor.png, and the list is reset at the end. The part card
@@ -6092,9 +6114,9 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "classic-2"' ||
 		fail "ci's settings file does not use the look classic-2: $(value settings_file)"
-	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
+	value settings_file | grep -q 'at = "top_right", widget = "clock"' ||
 		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
-	value settings_file | grep -q 'part = "message"' ||
+	value settings_file | grep -q 'widget = "message"' ||
 		fail "ci's settings file does not hold the message: $(value settings_file)"
 	# The next lock reads the file: the clock on the right, the message below.
 	# Its places line is waited for whole (it ends with the corner's power
@@ -6237,8 +6259,8 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "magazine"' ||
 		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
-	value settings_file | grep -q '^parts = ' &&
-		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
+	value settings_file | grep -q '^widgets = ' &&
+		fail "ci's settings file still holds a widgets line with the look: $(value settings_file)"
 	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"

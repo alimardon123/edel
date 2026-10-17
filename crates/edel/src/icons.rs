@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 80] = [
+pub const BUILT_IN: [(&str, &str); 81] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     ("more", include_str!("../../../design/icons/more.svg")),
     // Customize, a look's edit (M5.10c7b).
@@ -114,6 +114,11 @@ pub const BUILT_IN: [(&str, &str); 80] = [
     (
         "page-system",
         include_str!("../../../design/icons/page-system.svg"),
+    ),
+    // The Add-ons page's (M7.2b).
+    (
+        "page-addons",
+        include_str!("../../../design/icons/page-addons.svg"),
     ),
     ("search", include_str!("../../../design/icons/search.svg")),
     ("copy", include_str!("../../../design/icons/copy.svg")),
@@ -349,21 +354,23 @@ mod tests {
     /// apps' own glyphs come from, and hicolor, and holds one scalable
     /// context of the UI's icons from 8 to 512 px.
     fn index_theme() -> String {
-        "# Edel OS's icon theme (M6.16): the shell's own icons under the names\n\
-         # apps ask for. Written from design/icons/ by edel::icons (a cargo test\n\
-         # keeps it so: EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme).\n\
-         [Icon Theme]\n\
-         Name=Edel\n\
-         Comment=Edel OS's own icons\n\
-         Inherits=Adwaita,hicolor\n\
-         Directories=scalable/ui\n\n\
-         [scalable/ui]\n\
-         Size=16\n\
-         MinSize=8\n\
-         MaxSize=512\n\
-         Type=Scalable\n\
-         Context=UI\n"
-            .to_string()
+        format!(
+            "# Edel OS's icon theme (M6.16): the shell's own icons under the names\n\
+             # apps ask for. Written from design/icons/ by edel::icons (a cargo test\n\
+             # keeps it so: EDEL_WRITE_DOCS=1 cargo test -p edel the_edel_icon_theme).\n\
+             [Icon Theme]\n\
+             Name={theme}\n\
+             Comment=Edel OS's own icons\n\
+             Inherits=Adwaita,hicolor\n\
+             Directories=scalable/ui\n\n\
+             [scalable/ui]\n\
+             Size=16\n\
+             MinSize=8\n\
+             MaxSize=512\n\
+             Type=Scalable\n\
+             Context=UI\n",
+            theme = crate::settings::ICON_THEME_DEFAULT
+        )
     }
 
     /// `svg` with every stroke turned into the filled shape it draws, as one
@@ -441,9 +448,10 @@ mod tests {
     /// glyphs and the index.
     #[test]
     fn the_edel_icon_theme_is_the_shells_icons() {
-        let root = concat!(
+        let root = format!(
+            "{}/../../features/shell/usr/share/icons/{}",
             env!("CARGO_MANIFEST_DIR"),
-            "/../../features/shell/usr/share/icons/Edel"
+            crate::settings::ICON_THEME_DEFAULT
         );
         let ui = format!("{root}/scalable/ui");
         let write = std::env::var_os("EDEL_WRITE_DOCS").is_some();

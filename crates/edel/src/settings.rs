@@ -108,7 +108,7 @@ pub const PAGES: &[Page] = &[
     Page {
         section: "lock_screen",
         title: n_("Lock screen"),
-        about: n_("its look, parts and background"),
+        about: n_("its look, widgets and wallpaper"),
         group: "desktop",
     },
     Page {
@@ -290,7 +290,7 @@ pub enum Kind {
     /// Panels, as a preset's `[[panels]]` (M5.4e,
     /// [`crate::presets::check_panels`])
     Panels,
-    /// The lock screen's parts, as `[[lock_screen.parts]]` tables
+    /// The lock screen's widgets, as `[[lock_screen.widgets]]` tables
     /// ([`crate::lock_screen::check`], M5.10c5)
     LockParts,
     /// A screen's resolution, `WIDTHxHEIGHT` such as `"1920x1080"`
@@ -307,6 +307,9 @@ pub enum Kind {
     /// A list of add-on names, such as `["fonts-cjk"]`: feature names
     /// ([`crate::features::is_name`], M7.2a)
     Addons,
+    /// A list of profile names, such as `["gaming"]`, each checked against
+    /// the release's profiles by [`crate::profiles::problems`] (M7.6)
+    Profiles,
     /// A list of host names, such as `["pool.ntp.org"]`: dot-separated
     /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
     /// (M1.13)
@@ -316,6 +319,10 @@ pub enum Kind {
     /// An xcursor theme's folder name, one this machine has under
     /// [`crate::places::ICON_THEME_DIRS`] (M5.12b5, [`cursor_themes`])
     CursorTheme,
+    /// An icon theme's folder name, one this machine has under
+    /// [`crate::places::ICON_THEME_DIRS`] with an `index.theme` that makes
+    /// an icon theme (M8.21 part g, [`icon_themes`])
+    IconTheme,
     /// Apps and the workspace each opens on, such as `{ "org.mozilla.firefox" = 2 }` (M5.2l)
     AppWorkspaces,
     /// Flatpak apps and one of these choices each, such as
@@ -329,7 +336,7 @@ pub enum Kind {
     /// own `[lock_screen.looks]`, checked against the file by [`check`] and
     /// [`set`] (M5.10c5c)
     LockLook,
-    /// A lock screen's background, as [`crate::lock_screen::parse_background`]
+    /// A lock screen's wallpaper, as [`crate::lock_screen::parse_background`]
     /// reads it (M5.10c5c)
     LockBackground,
     /// The person's own looks, as `[lock_screen.looks.NAME]` tables
@@ -415,7 +422,7 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["container", "server", "desktop", "phone"]),
     ),
     now("system.developer_mode", Kind::Flag),
-    later("system.profiles", Kind::Texts),
+    now("system.profiles", Kind::Profiles),
     now("users.*.admin", Kind::Flag),
     now("users.*.ssh_keys", Kind::Texts),
     now("users.*.login_shell", Kind::Shell),
@@ -541,10 +548,12 @@ pub const KEYS: &[Key] = &[
     now(FONT, Kind::Text),
     now(MONOSPACE_FONT, Kind::Text),
     now(TEXT_SIZE, Kind::WholeFromTo(80, 150)),
-    // The pointer and the icons (M5.12b5 part A): the cursor's size in
-    // logical pixels, its theme, and the icons' size in percent.
+    // The pointer and the icons (M5.12b5 part A, M8.21 part g): the
+    // cursor's size in logical pixels, its theme, the apps' icon theme, and
+    // the icons' size in percent.
     now(CURSOR_SIZE, Kind::WholeFromTo(16, 96)),
     now(CURSOR_THEME, Kind::CursorTheme),
+    now(ICON_THEME, Kind::IconTheme),
     now(ICON_SIZE, Kind::WholeFromTo(75, 150)),
     now(
         "appearance.animations",
@@ -557,15 +566,15 @@ pub const KEYS: &[Key] = &[
     // is simpler and every kind still follows it.
     now("appearance.animation_speed", Kind::WholeFromTo(25, 400)),
     now("appearance.animation_curve", Kind::OneOf(CURVES)),
-    // The lock and login screens' parts, each placed by an anchor and an
+    // The lock and login screens' widgets, each placed by an anchor and an
     // offset (M5.10c5); absent is the classic arrangement.
-    now("lock_screen.parts", Kind::LockParts),
-    // The look that picks every part and the background at once (M5.10c5c),
-    // the background behind them, whether the count of unread notifications
+    now("lock_screen.widgets", Kind::LockParts),
+    // The look that picks every widget and the wallpaper at once (M5.10c5c),
+    // the wallpaper behind them, whether the count of unread notifications
     // shows, and the person's own looks made by Save as.
     now("lock_screen.look", Kind::LockLook),
-    now("lock_screen.background", Kind::LockBackground),
-    // How much the background is darkened, in percent (M5.10c7g): absent is
+    now("lock_screen.wallpaper", Kind::LockBackground),
+    // How much the wallpaper is darkened, in percent (M5.10c7g): absent is
     // the look's own, else the background's default.
     now(
         "lock_screen.dim",
@@ -1054,6 +1063,9 @@ pub struct Appearance {
     /// [`CURSOR_THEME_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_theme: Option<String>,
+    /// The apps' icon theme (M8.21 part g); absent is [`ICON_THEME_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_theme: Option<String>,
     /// The icons' size in percent, 75 to 150 (M5.12b5 part A); absent is
     /// [`ICON_SIZE_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1195,6 +1207,13 @@ pub const CURSOR_SIZE_DEFAULT: u32 = 24;
 pub const CURSOR_THEME_DEFAULT: &str = "default";
 /// The icons' size when no file sets it, in percent of the release's.
 pub const ICON_SIZE_DEFAULT: u32 = 100;
+/// The apps' icon theme, a folder name [`icon_themes`] lists; absent is
+/// [`ICON_THEME_DEFAULT`] (M8.21 part g). The shell's own icons stay Edel's.
+pub const ICON_THEME: &str = "appearance.icon_theme";
+/// The release's own icon theme, `features/shell/usr/share/icons/Edel`,
+/// which inherits Adwaita and hicolor, so apps keep their own icons (M8.21
+/// part g).
+pub const ICON_THEME_DEFAULT: &str = "Edel";
 
 /// The three keys of the text (M5.12b5), read by [`crate::tokens::Text`].
 pub const TEXT_KEYS: &[&str] = &[FONT, MONOSPACE_FONT, TEXT_SIZE];
@@ -1234,6 +1253,64 @@ pub fn cursor_theme_problem(name: &str) -> Option<String> {
     ))
 }
 
+/// The icon themes this machine has, [`ICON_THEME_DEFAULT`] first, then the
+/// others under [`crate::places::ICON_THEME_DIRS`] whose `index.theme` makes
+/// an icon theme ([`crate::icon_theme::is_icon_theme`]), sorted and without
+/// repeats (M8.21 part g). Settings lists them and the checker takes a theme
+/// only from this list, as [`cursor_themes`] does.
+pub fn icon_themes() -> Vec<String> {
+    let mut names: Vec<String> = crate::places::ICON_THEME_DIRS
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            crate::icon_theme::read(&entry.path())
+                .is_some_and(|index| crate::icon_theme::is_icon_theme(&index))
+        })
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name != ICON_THEME_DEFAULT)
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    names.dedup();
+    names.insert(0, ICON_THEME_DEFAULT.to_string());
+    names
+}
+
+/// What is wrong with `name` as an icon theme on this machine, if anything:
+/// the same rule as [`cursor_theme_problem`], with [`icon_themes`] as the
+/// list. `Edel` is always taken, as the release's own.
+pub fn icon_theme_problem(name: &str) -> Option<String> {
+    if name == ICON_THEME_DEFAULT || icon_themes().iter().any(|t| t == name) {
+        return None;
+    }
+    let names = icon_themes().join(", ");
+    Some(trf(
+        "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)",
+        &[("name", &format!("{name:?}")), ("names", &names)],
+    ))
+}
+
+/// The icon theme a value names when it is a folder name the machine may
+/// hold: not empty, with no `/` and not starting with a dot. Anything else,
+/// and an absent value, is [`ICON_THEME_DEFAULT`]. The one copy of the rule
+/// every reader calls, lenient so a theme the machine lacks draws hicolor's
+/// icons (M8.21 part g).
+pub fn icon_theme_or_default(value: Option<&str>) -> &str {
+    match value {
+        Some(name) if !name.is_empty() && !name.contains('/') && !name.starts_with('.') => name,
+        _ => ICON_THEME_DEFAULT,
+    }
+}
+
+/// The apps' icon theme the machine's and the person's files choose (M8.21
+/// part g): the one reader shell-ui, the compositor and Settings call. A
+/// theme the machine lacks is not refused here, so it draws hicolor's icons
+/// through the theme's inheritance; the checker refuses it when it is set.
+pub fn icon_theme_in(machine: Option<&str>, person: Option<&str>) -> String {
+    icon_theme_or_default(chosen(ICON_THEME, machine, person).as_deref()).to_string()
+}
+
 /// The least and most a whole-number key takes, from its entry in [`KEYS`]
 /// (M5.12b2): the one place a reader finds a range, so the tokens and the
 /// file's own check agree. None for a key that is not a whole number range.
@@ -1270,24 +1347,24 @@ pub fn shape_changed(old: &Appearance, new: &Appearance) -> bool {
         || old.blur != new.blur
 }
 
-/// The Lock screen page (M5.10c5): the parts the lock and login screens
+/// The Lock screen page (M5.10c5): the widgets the lock and login screens
 /// show and where each stands.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct LockScreen {
-    /// The parts in place of the classic arrangement, each with its anchor
+    /// The widgets in place of the classic arrangement, each with its anchor
     /// and offset ([`crate::lock_screen::check`]); absent is the classic one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "widgets", skip_serializing_if = "Option::is_none")]
     pub parts: Option<Vec<crate::lock_screen::Placed>>,
     /// A look: `classic`, `magazine`, `minimal` or one of `looks` (M5.10c5c);
     /// absent is `classic`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<String>,
-    /// What lies behind the parts: `backdrop`, `blurred`, `sharp`, a colour
+    /// What lies behind the widgets: `backdrop`, `blurred`, `sharp`, a colour
     /// `#rrggbb` or a picture's full path ([`crate::lock_screen::parse_background`]);
     /// absent is the look's.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "wallpaper", skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
-    /// How much the background is darkened, in percent, 0 to 80 (M5.10c7g);
+    /// How much the wallpaper is darkened, in percent, 0 to 80 (M5.10c7g);
     /// absent is the look's own, else the background's default
     /// ([`crate::lock_screen::default_dim`]).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1301,15 +1378,16 @@ pub struct LockScreen {
     pub looks: Option<BTreeMap<String, OwnLook>>,
 }
 
-/// One of the person's own looks: the parts it places and what lies behind
+/// One of the person's own looks: the widgets it places and what lies behind
 /// them ([`LockScreen::looks`]). A look is a preset of the lock: choosing it
 /// brings both (Alimardon, 2026-10-11).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OwnLook {
+    #[serde(rename = "widgets")]
     pub parts: Vec<crate::lock_screen::Placed>,
-    /// As `lock_screen.background` takes it; absent is the blurred
+    /// As `lock_screen.wallpaper` takes it; absent is the blurred
     /// wallpaper, as for every look but classic.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "wallpaper", skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
     /// As `lock_screen.dim` takes it (M5.10c7g); absent is the background's
     /// default.
@@ -1591,6 +1669,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     // Across keys: each own preset names a name of its own and a built-in
     // preset to start from, and the preset in use is one of them (M5.17).
     lines.extend(crate::presets::problems(&read.file));
+    // Each profile named is one this release has (M7.6).
+    lines.extend(crate::profiles::problems(&read.file));
     // Across keys: the install disk is auto or a by-id name, and erase = "yes" names one (M7.3).
     lines.extend(install_problems(&read.file));
     Ok(lines)
@@ -1809,6 +1889,11 @@ pub fn choices(key: &str) -> &'static [&'static str] {
         Some(Key {
             kind: Kind::Preset, ..
         }) => crate::presets::NAMES,
+        // The release's profiles (M7.6).
+        Some(Key {
+            kind: Kind::Profiles,
+            ..
+        }) => crate::profiles::NAMES,
         _ => &[],
     }
 }
@@ -1823,13 +1908,14 @@ pub fn value_at(part: &impl Serialize, path: &str) -> Option<Value> {
     Some(value)
 }
 
-/// The file as the desktop applies it (M5.17, M5.12b6a): its own layout
-/// preset in use laid under its keys ([`crate::presets::applied`]), then its
-/// theme ([`crate::themes::themed`]). Every reader of a file's layout or
-/// appearance values calls this on each file it reads, before it reads
-/// (ADR-010); the writers never do, so they write the file as it is.
+/// The file as the desktop applies it (M5.17, M5.12b6a, M7.6): the
+/// profiles it names laid under its keys ([`crate::profiles::applied`]),
+/// then its own layout preset in use ([`crate::presets::applied`]), then
+/// its theme ([`crate::themes::themed`]). Every reader of a file's layout,
+/// appearance or power values calls this on each file it reads, before it
+/// reads (ADR-010); the writers never do, so they write the file as it is.
 pub fn in_use(file: &SettingsFile) -> SettingsFile {
-    crate::themes::themed(&crate::presets::applied(file))
+    crate::themes::themed(&crate::presets::applied(&crate::profiles::applied(file)))
 }
 
 /// `key`'s value as the files say it now: the person's file over the
@@ -2173,6 +2259,13 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             bail!("{}", lines.join("; "));
         }
     }
+    // Each profile named is one this release has (M7.6).
+    if key == "system.profiles" {
+        let lines = crate::profiles::problems(&read(&text)?.file);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
     // A preset is named, and the preset in use is one of them (M5.17).
     if key == "layout.preset" || key.starts_with("presets.") {
         let lines = crate::presets::problems(&read(&text)?.file);
@@ -2235,7 +2328,7 @@ fn present_keys(table: &Table, prefix: &str, out: &mut Vec<String>) {
 fn is_list(kind: Kind) -> bool {
     matches!(
         kind,
-        Kind::Texts | Kind::AppIds | Kind::Addons | Kind::Hosts | Kind::Pictures
+        Kind::Texts | Kind::AppIds | Kind::Addons | Kind::Profiles | Kind::Hosts | Kind::Pictures
     )
 }
 
@@ -2794,7 +2887,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             let parts: Vec<crate::lock_screen::Placed> =
                 value.clone().try_into().map_err(|e: toml::de::Error| {
                     trf(
-                        "expected parts as the lock screen writes them: {why}",
+                        "expected widgets as the lock screen writes them: {why}",
                         &[("why", e.message())],
                     )
                 })?;
@@ -2802,7 +2895,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::LockParts, _) => fail(tr(
-            "a list of parts, such as [{ part = \"person\", at = \"centre\" }]",
+            "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]",
         )),
         (Kind::LockLook, Value::String(s)) if crate::lock_screen::is_look_name(s) => {
             Ok(value.clone())
@@ -2818,11 +2911,11 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::LockBackground, Value::String(s)) => Err(trf(
-            "{value} is not a background; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)",
+            "{value} is not a wallpaper for the lock screen; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)",
             &[("value", &format!("{s:?}"))],
         )),
         (Kind::LockBackground, _) => fail(tr(
-            "a background in quotes, such as \"blurred\" or \"#1f2b48\"",
+            "a wallpaper in quotes, such as \"blurred\" or \"#1f2b48\"",
         )),
         (Kind::LockLooks, Value::Table(_)) => {
             let looks: BTreeMap<String, OwnLook> =
@@ -2836,7 +2929,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::LockLooks, _) => fail(tr(
-            "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }",
+            "looks as tables, such as { home = { widgets = [{ widget = \"person\", at = \"centre\" }] } }",
         )),
         (Kind::Theme, Value::String(s)) if crate::themes::is_name(s) => Ok(value.clone()),
         (Kind::Theme, Value::String(s)) => Err(trf(
@@ -2957,6 +3050,14 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::Addons, _) => fail(tr("a list of add-on names, such as [\"fonts-cjk\"]")),
+        (Kind::Profiles, Value::Array(items))
+            if items
+                .iter()
+                .all(|i| i.as_str().is_some_and(crate::features::is_name)) =>
+        {
+            Ok(value.clone())
+        }
+        (Kind::Profiles, _) => fail(tr("a list of profile names, such as [\"gaming\"]")),
         (Kind::Channel, Value::String(s)) if is_channel(s) => Ok(value.clone()),
         (Kind::Channel, Value::String(s)) => Err(trf(
             "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)",
@@ -2968,6 +3069,11 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Some(problem) => Err(problem),
         },
         (Kind::CursorTheme, _) => fail(tr("a cursor theme's name in quotes, such as \"default\"")),
+        (Kind::IconTheme, Value::String(s)) => match icon_theme_problem(s) {
+            None => Ok(value.clone()),
+            Some(problem) => Err(problem),
+        },
+        (Kind::IconTheme, _) => fail(tr("an icon theme's name in quotes, such as \"Edel\"")),
         (Kind::Wallpaper, Value::String(s)) if crate::wallpapers::is_form(s) => Ok(value.clone()),
         (Kind::Wallpaper, Value::String(s)) => Err(wallpaper_problem(s)),
         (Kind::Wallpaper, _) => fail(tr(
@@ -3302,15 +3408,17 @@ mod tests {
             Kind::Shell => Value::String("/bin/sh".into()),
             Kind::Keys => Value::String("Super+X".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
-            Kind::LockParts => value_from_arg(r#"[{ part = "person", at = "centre" }]"#),
+            Kind::LockParts => value_from_arg(r#"[{ widget = "person", at = "centre" }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
             Kind::TimeZone => Value::String("Europe/Berlin".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::AppIds => value_from_arg(r#"["io.mpv.Mpv"]"#),
             Kind::Addons => value_from_arg(r#"["fonts-cjk"]"#),
+            Kind::Profiles => value_from_arg(r#"["gaming"]"#),
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
+            Kind::IconTheme => Value::String(ICON_THEME_DEFAULT.into()),
             Kind::Wallpaper => Value::String("hills".into()),
             Kind::WallpaperList => value_from_arg(r##"["", "#336699"]"##),
             Kind::Pictures => value_from_arg(r#"["hills"]"#),
@@ -3328,7 +3436,7 @@ mod tests {
             Kind::Preset => Value::String("hive".into()),
             Kind::OwnPreset => value_from_arg(r#"{ preset = "hive", window_buttons = "left" }"#),
             Kind::LockLooks => {
-                value_from_arg(r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#)
+                value_from_arg(r#"{ home = { widgets = [{ widget = "person", at = "centre" }] } }"#)
             }
         }
     }
@@ -3521,15 +3629,15 @@ version = "1.2"
     fn lock_parts_are_checked_and_read_as_tables_or_inline() {
         let set_one = set(
             "format = 1\n",
-            "lock_screen.parts",
-            r#"[{ part = "person", at = "centre" }]"#,
+            "lock_screen.widgets",
+            r#"[{ widget = "person", at = "centre" }]"#,
         )
         .unwrap();
         assert_eq!(
             set_one,
-            "format = 1\n\n[lock_screen]\nparts = [{ at = \"centre\", part = \"person\" }]\n"
+            "format = 1\n\n[lock_screen]\nwidgets = [{ at = \"centre\", widget = \"person\" }]\n"
         );
-        let tables = "format = 1\n[[lock_screen.parts]]\npart = \"clock\"\nat = \"top\"\ny = 0.14\n\n[[lock_screen.parts]]\npart = \"person\"\nat = \"centre\"\ny = 0.21\n\n[[lock_screen.parts]]\npart = \"message\"\nat = \"bottom_right\"\ntext = \"Hello\"\n";
+        let tables = "format = 1\n[[lock_screen.widgets]]\nwidget = \"clock\"\nat = \"top\"\ny = 0.14\n\n[[lock_screen.widgets]]\nwidget = \"person\"\nat = \"centre\"\ny = 0.21\n\n[[lock_screen.widgets]]\nwidget = \"message\"\nat = \"bottom_right\"\ntext = \"Hello\"\n";
         assert!(check(tables).unwrap().is_empty());
         let parts = read(tables).unwrap().file.lock_screen.parts.unwrap();
         assert_eq!(parts.len(), 3);
@@ -3540,33 +3648,33 @@ version = "1.2"
         // its message, and left out by a lenient read.
         for (bad, why) in [
             (
-                r#"[{ part = "clock", at = "top" }]"#,
+                r#"[{ widget = "clock", at = "top" }]"#,
                 "the lock screen needs the person",
             ),
             (
-                r#"[{ part = "person", at = "centre" }, { part = "person", at = "bottom" }]"#,
+                r#"[{ widget = "person", at = "centre" }, { widget = "person", at = "bottom" }]"#,
                 "the person stands once; take out the second",
             ),
             (
-                r#"[{ part = "person", at = "centre", x = 2 }]"#,
+                r#"[{ widget = "person", at = "centre", x = 2 }]"#,
                 "the person's offset x is 2",
             ),
             (
-                r#"[{ part = "message", at = "bottom" }, { part = "person", at = "centre" }]"#,
+                r#"[{ widget = "message", at = "bottom" }, { widget = "person", at = "centre" }]"#,
                 "the message needs text",
             ),
             (
-                r#"[{ part = "person", at = "centre" }, { part = "picture", at = "top", path = "lock.png" }]"#,
+                r#"[{ widget = "person", at = "centre" }, { widget = "picture", at = "top", path = "lock.png" }]"#,
                 "\"lock.png\" is not a picture path",
             ),
-            (r#""clock""#, "expected a list of parts"),
+            (r#""clock""#, "expected a list of widgets"),
         ] {
-            let error = set("format = 1\n", "lock_screen.parts", bad).unwrap_err();
+            let error = set("format = 1\n", "lock_screen.widgets", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");
-            let file = format!("format = 1\n[lock_screen]\nparts = {bad}\n");
+            let file = format!("format = 1\n[lock_screen]\nwidgets = {bad}\n");
             let read = read(&file).unwrap();
             assert_eq!(read.file.lock_screen.parts, None, "{bad}");
-            assert_eq!(read.problems[0].key, "lock_screen.parts");
+            assert_eq!(read.problems[0].key, "lock_screen.widgets");
         }
     }
 
@@ -3582,11 +3690,11 @@ version = "1.2"
         };
         let look = set_then_read("format = 1\n", "lock_screen.look", "\"minimal\"");
         assert_eq!(look.look.as_deref(), Some("minimal"));
-        let background = set_then_read("format = 1\n", "lock_screen.background", "\"#1f2b48\"");
+        let background = set_then_read("format = 1\n", "lock_screen.wallpaper", "\"#1f2b48\"");
         assert_eq!(background.background.as_deref(), Some("#1f2b48"));
         let picture = set_then_read(
             "format = 1\n",
-            "lock_screen.background",
+            "lock_screen.wallpaper",
             "\"/home/you/lock.jpg\"",
         );
         assert_eq!(picture.background.as_deref(), Some("/home/you/lock.jpg"));
@@ -3597,11 +3705,11 @@ version = "1.2"
         let own = set_then_read(
             "format = 1\n",
             "lock_screen.looks",
-            r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#,
+            r#"{ home = { widgets = [{ widget = "person", at = "centre" }] } }"#,
         );
         assert_eq!(own.looks.unwrap().len(), 1);
         // A look of the file's own is set, once the file has it.
-        let file = "format = 1\n[lock_screen.looks.home]\nparts = [{ part = \"person\", at = \"centre\" }]\n";
+        let file = "format = 1\n[lock_screen.looks.home]\nwidgets = [{ widget = \"person\", at = \"centre\" }]\n";
         let chosen = set(file, "lock_screen.look", "\"home\"").unwrap();
         assert_eq!(
             read(&chosen).unwrap().file.lock_screen.look.as_deref(),
@@ -3617,14 +3725,14 @@ version = "1.2"
             ),
             ("lock_screen.look", "\"home\"", "\"home\" is not a look"),
             (
-                "lock_screen.background",
+                "lock_screen.wallpaper",
                 "lock.png",
-                "lock.png\" is not a background",
+                "lock.png\" is not a wallpaper",
             ),
             (
-                "lock_screen.background",
+                "lock_screen.wallpaper",
                 "\"navy\"",
-                "\"navy\" is not a background",
+                "\"navy\" is not a wallpaper",
             ),
             (
                 "lock_screen.notifications",
@@ -3633,12 +3741,12 @@ version = "1.2"
             ),
             (
                 "lock_screen.looks",
-                r#"{ home = { parts = [{ part = "clock", at = "top" }] } }"#,
+                r#"{ home = { widgets = [{ widget = "clock", at = "top" }] } }"#,
                 "the lock screen needs the person",
             ),
             (
                 "lock_screen.looks",
-                r#"{ minimal = { parts = [{ part = "person", at = "centre" }] } }"#,
+                r#"{ minimal = { widgets = [{ widget = "person", at = "centre" }] } }"#,
                 "\"minimal\" is a built-in look",
             ),
             ("lock_screen.dim", "81", "a whole number from 0 to 80"),
@@ -3649,15 +3757,15 @@ version = "1.2"
             assert!(error.to_string().contains(why), "{key} {bad}: {error}");
         }
         // A look the file does not have is reported by check, and a lenient
-        // read keeps no bad background.
+        // read keeps no bad wallpaper.
         let lines = check("format = 1\n[lock_screen]\nlook = \"gallery\"\n").unwrap();
         assert_eq!(
             lines,
             ["lock_screen.look: \"gallery\" is not a look; choose classic, magazine or minimal"]
         );
-        let read = read("format = 1\n[lock_screen]\nbackground = \"lock.png\"\n").unwrap();
+        let read = read("format = 1\n[lock_screen]\nwallpaper = \"lock.png\"\n").unwrap();
         assert_eq!(read.file.lock_screen.background, None);
-        assert_eq!(read.problems[0].key, "lock_screen.background");
+        assert_eq!(read.problems[0].key, "lock_screen.wallpaper");
     }
 
     #[test]
@@ -4736,6 +4844,31 @@ version = "1.2"
                 .unwrap()
                 .contains("cursor_theme = \"default\"")
         );
+    }
+
+    #[test]
+    fn an_icon_theme_is_one_this_machine_has_and_edel_always_is() {
+        let themes = icon_themes();
+        assert_eq!(themes.first().map(String::as_str), Some(ICON_THEME_DEFAULT));
+        assert!(icon_theme_problem("Edel").is_none());
+        let theme = |value: &str| set("format = 1\n", ICON_THEME, value);
+        let refused = theme("NoSuchTheme").unwrap_err().to_string();
+        assert!(
+            refused.contains("is not an icon theme this machine has"),
+            "{refused}"
+        );
+        assert!(refused.contains("NoSuchTheme"), "{refused}");
+        assert!(refused.contains("Edel"), "{refused}");
+        assert!(theme("Edel").unwrap().contains("icon_theme = \"Edel\""));
+        assert_eq!(icon_theme_in(None, None), "Edel");
+        assert_eq!(icon_theme_or_default(Some("")), "Edel");
+        assert_eq!(icon_theme_or_default(Some("a/b")), "Edel");
+        assert_eq!(icon_theme_or_default(Some(".x")), "Edel");
+        assert_eq!(icon_theme_or_default(Some("Papirus")), "Papirus");
+        let file = "format = 1\n[appearance]\nicon_theme = \"Papirus\"\n";
+        let person = "format = 1\n[appearance]\nicon_theme = \"Breeze\"\n";
+        assert_eq!(icon_theme_in(Some(file), None), "Papirus");
+        assert_eq!(icon_theme_in(Some(file), Some(person)), "Breeze");
     }
 
     #[test]

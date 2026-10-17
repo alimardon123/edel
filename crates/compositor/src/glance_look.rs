@@ -18,6 +18,8 @@ use smithay::utils::{Logical, Rectangle};
 use edel_compositor::frame::Text;
 
 /// The labels' and names' text size, logical pixels.
+/// A square window's shadow radius, in the desktop and the overview alike.
+pub const SQUARE_SHADOW_RADIUS: f32 = 6.0;
 pub const SMALL: f32 = 11.0;
 pub const NAME: f32 = 12.0;
 /// A name pill's height and its room at each side; the icon's side.

@@ -195,7 +195,13 @@ fn overlay_etc() -> Result<()> {
         // The mounted add-ons' users and groups (M7.2a) join the slot's;
         // a machine without its own copy gets one, from the slot's.
         let addons = crate::addons::account_lines(file);
-        if !addons.is_empty() && !machine_path.exists() {
+        // And the members they add to the slot's groups (M7.2b).
+        let members = if file == "group" {
+            crate::addons::member_lines()
+        } else {
+            String::new()
+        };
+        if (!addons.is_empty() || !members.is_empty()) && !machine_path.exists() {
             run(Command::new("cp")
                 .arg("-a")
                 .arg(Path::new("/etc").join(file))
@@ -205,7 +211,12 @@ fn overlay_etc() -> Result<()> {
             continue;
         };
         let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default() + &addons;
-        if let Some(merged) = merge_accounts(&slot, &machine) {
+        let merged = merge_accounts(&slot, &machine);
+        let text = merged.as_deref().unwrap_or(&machine);
+        if let Some(joined) = crate::addons::add_members(text, &members) {
+            replace_keeping_mode(&machine_path, &joined)?;
+            println!("edel-data: added the slot's and the add-ons' new entries to /etc/{file}");
+        } else if let Some(merged) = merged {
             replace_keeping_mode(&machine_path, &merged)?;
             println!("edel-data: added the slot's new entries to /etc/{file}");
         }
@@ -507,8 +518,18 @@ pub fn mount_data() -> Result<()> {
     // Each step runs even when one before it failed: a failed /etc overlay
     // must not also leave /home, /var and /tmp off /data.
     let mut first_error = None;
+    // A safe start (M7.1) leaves the add-ons off as it does developer
+    // mode's layer: they live on /data, which both slots share.
+    let addons = if is_safe_start(&fs::read_to_string("/proc/cmdline").unwrap_or_default()) {
+        println!(
+            "edel-data: add-ons are left off, as this start is a safe one: no slot had a try left"
+        );
+        Ok(())
+    } else {
+        crate::addons::mount_all()
+    };
     for (step, result) in [
-        ("add-ons", crate::addons::mount_all()),
+        ("add-ons", addons),
         // After the add-ons, so the layer goes over their overlay too.
         ("developer mode", developer_layer()),
         ("/etc", overlay_etc()),

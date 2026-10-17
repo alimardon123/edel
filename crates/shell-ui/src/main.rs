@@ -72,6 +72,7 @@ mod power_card;
 mod power_rules;
 mod quick;
 mod quick_card;
+mod screenshot;
 mod sessions;
 mod shell_bus;
 mod status;
@@ -105,6 +106,7 @@ use smithay_client_toolkit::reexports::client::protocol::{
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
+use smithay_client_toolkit::reexports::protocols_wlr::screencopy::v1::client::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::{
     ext_idle_notification_v1::ExtIdleNotificationV1, ext_idle_notifier_v1::ExtIdleNotifierV1,
 };
@@ -367,6 +369,11 @@ struct Shell {
     /// needs both (M8.21 21d).
     backdrops: Option<ExtBackgroundEffectManagerV1>,
     live_blur: bool,
+    /// The compositor's screen copy manager, when it has one (M8.21 21f),
+    /// the screenshots being taken and the number the last one got.
+    screencopy: Option<ZwlrScreencopyManagerV1>,
+    shots: Vec<screenshot::Shot>,
+    next_shot: u64,
     /// The power profile last asked of `edel`, until the kernel shows it
     /// (M7.8).
     profile_asked: Option<String>,
@@ -566,11 +573,12 @@ fn run() -> Result<()> {
         EventLoop::try_new().context("starting the event loop")?;
     let (status_tx, status_rx) = channel::channel::<status::Msg>();
     let (edits, asks) = channel::channel::<shell_bus::Edit>();
-    let (buttons, high) = {
+    let (buttons, high, icon_theme) = {
         let (machine, person) = settings_texts();
         (
             button_layout(machine.as_deref(), person.as_deref()),
             edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref()),
+            edel::settings::icon_theme_in(machine.as_deref(), person.as_deref()),
         )
     };
     let rules = {
@@ -583,6 +591,9 @@ fn run() -> Result<()> {
         let (machine, person) = settings_texts();
         !location::enabled(machine.as_deref(), person.as_deref())
     };
+    // The app icons come from the theme the person chose (M8.21 part g), and
+    // apps hear it through the portal below.
+    eprintln!("edel-shell-ui: app icons from {icon_theme:?}");
     let mut shell = Shell {
         rules,
         suspend_after_lock: false,
@@ -590,6 +601,9 @@ fn run() -> Result<()> {
         idle_notifier: power_card::bind_idle(&globals, &qh),
         backdrops: backdrop::bind(&globals, &qh),
         live_blur: false,
+        screencopy: screenshot::bind(&globals, &qh),
+        shots: Vec::new(),
+        next_shot: 0,
         idle_notification: None,
         profile_asked: None,
         registry: RegistryState::new(&globals),
@@ -661,8 +675,8 @@ fn run() -> Result<()> {
         clipboard: clipboard_card::Clipboard::bind(&globals, &qh, &event_loop.handle()),
         chosen: chosen(),
         text: Text::load(&tokens.font),
-        icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens, &buttons, high, edits, location_off),
+        icons: icons::Icons::new(apps::data_dirs(), &icon_theme),
+        _portal: portal::serve(&tokens, &buttons, high, &icon_theme, edits, location_off),
         app_permissions: None,
         player_tx: None,
         tokens,
@@ -743,6 +757,9 @@ fn run() -> Result<()> {
                             shell.open_lock_looks();
                         }
                         shell_bus::Edit::Access(ask) => shell.access_asked(ask),
+                        shell_bus::Edit::Screenshot { path, answer } => {
+                            shell.screenshot(path, answer)
+                        }
                     }
                 }
             })

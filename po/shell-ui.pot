@@ -131,13 +131,13 @@ msgstr ""
 msgid "Drop here to take it away"
 msgstr ""
 
-msgid "Choose a look, which brings its parts and its background"
+msgid "Choose a look, which brings its widgets and its wallpaper"
 msgstr ""
 
-msgid "Choose what lies behind the lock screen's parts"
+msgid "Choose what lies behind the lock screen's widgets"
 msgstr ""
 
-msgid "Drag a part anywhere, from here to add it, or here to take it away"
+msgid "Drag a widget anywhere, from here to add it, or here to take it away"
 msgstr ""
 
 msgid "Edit panels"
@@ -539,13 +539,13 @@ msgstr ""
 msgid "Other"
 msgstr ""
 
-msgid "An app"
-msgstr ""
-
 msgid "Deny"
 msgstr ""
 
 msgid "Allow"
+msgstr ""
+
+msgid "An app"
 msgstr ""
 
 msgid "Suspend"
@@ -626,6 +626,18 @@ msgstr ""
 msgid "Scroll"
 msgstr ""
 
+msgid "Add-on {names} did not start"
+msgstr ""
+
+msgid "Edel OS started without it, so everything works as it did. It is not tried again until you turn it off and on in Add-ons."
+msgstr ""
+
+msgid "Open Add-ons"
+msgstr ""
+
+msgid "Later"
+msgstr ""
+
 msgid "The last update did not start"
 msgstr ""
 
@@ -639,9 +651,6 @@ msgid "Open Updates to install it; your apps and files stay as they are."
 msgstr ""
 
 msgid "Open Updates"
-msgstr ""
-
-msgid "Later"
 msgstr ""
 
 msgid "Hidden tray icons"

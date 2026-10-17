@@ -7,10 +7,14 @@
 //! again whenever shell-ui starts (M5.5c) and when they change (M6.17). It also serves
 //! `org.freedesktop.impl.portal.Access` (M6.3): the screenshot portal asks
 //! through it before an app may take a picture, and shell-ui draws the
-//! dialog itself (`access_card.rs`). It is no process of its own: zbus
-//! answers on a thread of its own, and nothing runs while no app asks.
+//! dialog itself (`access_card.rs`). It also serves
+//! `org.freedesktop.impl.portal.Screenshot` (M8.21 part 21f), which shell-ui
+//! answers itself (`screenshot.rs`), so no grim and no `/tmp` file. It is no
+//! process of its own: zbus answers on a thread of its own, and nothing runs
+//! while no app asks.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use edel::panel_edit::{SHELL_BUS, SHELL_PATH};
 use edel::tokens::{Colour, Tokens};
@@ -36,10 +40,6 @@ const INTERFACE: &str = "org.gnome.desktop.interface";
 /// `edel::presets::gnome_button_layout` writes.
 const WM: &str = "org.gnome.desktop.wm.preferences";
 const BUTTON_LAYOUT: &str = "button-layout";
-/// The icon theme apps draw their glyphs from (M6.16): the `Edel` theme of
-/// `features/shell/usr/share/icons/Edel`, our window glyphs under the names
-/// GTK asks for, which step 3 of M6.16 ships.
-const ICON_THEME: &str = "Edel";
 /// A pixel is three quarters of a point, as GTK sizes its text (M5.12b5).
 const POINTS_PER_PIXEL: f64 = 0.75;
 
@@ -50,8 +50,13 @@ type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 /// background is dark, else light (2); `accent-color` is the accent as
 /// three numbers from 0 to 1; `contrast` is high (1) when `appearance.contrast`
 /// is high, else normal (0) (M6.18). `layout` is the header bars' button
-/// layout in GNOME's form (M6.16), which apps' own bars follow.
-pub fn settings(tokens: &Tokens, layout: &str, high: bool) -> Settings {
+/// layout in GNOME's form (M6.16), which apps' own bars follow. `icon_theme`
+/// is the person's `appearance.icon_theme`, else Edel (M8.21 part g): the
+/// icon theme apps draw their glyphs from, the release's `Edel` theme of
+/// `features/shell/usr/share/icons/Edel` by default, our window glyphs under
+/// the names GTK asks for. Apps hear a chosen theme too, so their own header
+/// bars draw that theme's window glyphs (accepted: the roadmap asks for it).
+pub fn settings(tokens: &Tokens, layout: &str, high: bool, icon_theme: &str) -> Settings {
     let scheme: u32 = if lightness(tokens.background) < 0.5 {
         1
     } else {
@@ -87,7 +92,7 @@ pub fn settings(tokens: &Tokens, layout: &str, high: bool) -> Settings {
         "text-scaling-factor",
         Value::from(f64::from(tokens.text_percent) / 100.0),
     );
-    put(&mut interface, "icon-theme", Value::from(ICON_THEME));
+    put(&mut interface, "icon-theme", Value::from(icon_theme));
     let mut wm = HashMap::new();
     put(&mut wm, BUTTON_LAYOUT, Value::from(layout));
     HashMap::from([
@@ -161,28 +166,149 @@ impl Asking {
         options: HashMap<String, OwnedValue>,
     ) -> (u32, HashMap<String, OwnedValue>) {
         let _ = (&handle, &parent_window);
-        let app = if app_id.is_empty() {
-            tr("An app").to_string()
-        } else {
-            app_id
-        };
         let deny = text_option(&options, "deny_label").unwrap_or_else(|| tr("Deny").to_string());
         let grant = text_option(&options, "grant_label").unwrap_or_else(|| tr("Allow").to_string());
+        let answer = ask(&self.edits, app_id, title, subtitle, body, deny, grant).await;
+        (answer, HashMap::new())
+    }
+}
+
+/// Asks the person through the event loop's dialog and waits for the answer
+/// (M6.3, M8.21 part 21f): the dialog names `app_id`, or "An app" when it is
+/// empty, and shows the portal's `title`, `subtitle` and `body` with the two
+/// labels. The answer is `access::ALLOW`, `DENY` or `CANCEL`.
+async fn ask(
+    edits: &channel::Sender<Edit>,
+    app_id: String,
+    title: String,
+    subtitle: String,
+    body: String,
+    deny: String,
+    grant: String,
+) -> u32 {
+    let app = if app_id.is_empty() {
+        tr("An app").to_string()
+    } else {
+        app_id
+    };
+    let (answer, reply) = shell_bus::answer();
+    let ask = Ask {
+        app,
+        title,
+        subtitle,
+        body,
+        deny,
+        grant,
+        answer,
+    };
+    if edits.send(Edit::Access(ask)).is_err() {
+        return access::CANCEL;
+    }
+    reply.wait().await
+}
+
+/// The Screenshot portal's backend (M8.21 part 21f): shell-ui takes the
+/// picture itself (`screenshot.rs`), so no other program reads the screens
+/// and nothing is written to `/tmp`. Only `Screenshot` and `PickColor` are
+/// served; the request object is the portal's own, as the Access dialog's is.
+struct Shooting {
+    edits: channel::Sender<Edit>,
+    /// The pictures taken since shell-ui started, so each file's name is
+    /// its own even when two come in the same millisecond.
+    taken: AtomicU64,
+}
+
+#[zbus::interface(name = "org.freedesktop.impl.portal.Screenshot")]
+impl Shooting {
+    /// Takes a picture of every screen into a PNG in the person's runtime
+    /// folder and answers 0 with its `file://` address, or 1 when the person
+    /// denied it, or 2 when it did not happen. The portal asks the person
+    /// first only for an interactive request or an older portal (`must_ask`);
+    /// otherwise its permission store has answered already.
+    async fn screenshot(
+        &self,
+        handle: OwnedObjectPath,
+        app_id: String,
+        parent_window: String,
+        options: HashMap<String, OwnedValue>,
+    ) -> (u32, HashMap<String, OwnedValue>) {
+        let _ = (&handle, &parent_window);
+        if must_ask(&options) {
+            let deny = tr("Deny").to_string();
+            let grant = tr("Allow").to_string();
+            let answer = ask(
+                &self.edits,
+                app_id,
+                String::new(),
+                String::new(),
+                String::new(),
+                deny,
+                grant,
+            )
+            .await;
+            if answer != access::ALLOW {
+                let code = if answer == access::DENY { 1 } else { 2 };
+                return (code, HashMap::new());
+            }
+        }
+        let Some(dir) = edel::places::screenshots_dir() else {
+            eprintln!(
+                "edel-shell-ui: {}",
+                crate::messages::screenshot_not_saved("XDG_RUNTIME_DIR is not set")
+            );
+            return (2, HashMap::new());
+        };
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        let n = self.taken.fetch_add(1, Ordering::Relaxed);
+        let path = dir.join(format!("screenshot-{millis}-{n}.png"));
         let (answer, reply) = shell_bus::answer();
-        let ask = Ask {
-            app,
-            title,
-            subtitle,
-            body,
-            deny,
-            grant,
+        let edit = Edit::Screenshot {
+            path: path.clone(),
             answer,
         };
-        if self.edits.send(Edit::Access(ask)).is_err() {
-            return (access::CANCEL, HashMap::new());
+        if self.edits.send(edit).is_err() {
+            return (2, HashMap::new());
         }
-        (reply.wait().await, HashMap::new())
+        if reply.wait().await != access::ALLOW {
+            return (2, HashMap::new());
+        }
+        let uri = format!("file://{}", path.display());
+        let Ok(value) = OwnedValue::try_from(Value::from(uri)) else {
+            return (2, HashMap::new());
+        };
+        (0, HashMap::from([("uri".to_string(), value)]))
     }
+
+    /// The colour picker is not built yet, so the request ends without a
+    /// colour (M8.21 part 21f).
+    async fn pick_color(
+        &self,
+        handle: OwnedObjectPath,
+        app_id: String,
+        parent_window: String,
+        options: HashMap<String, OwnedValue>,
+    ) -> (u32, HashMap<String, OwnedValue>) {
+        let _ = (&handle, &app_id, &parent_window, &options);
+        (2, HashMap::new())
+    }
+
+    /// The interface's version: 2 makes the portal ask the person through
+    /// Access first and pass `permission_store_checked` (M8.21 part 21f).
+    #[zbus(property, name = "version")]
+    fn version(&self) -> u32 {
+        2
+    }
+}
+
+/// Whether the screenshot portal's request must be asked of the person
+/// first (M8.21 part 21f): an interactive request always is, even when the
+/// portal's store has the answer, and a request the store has not answered
+/// (no `permission_store_checked`) is too.
+fn must_ask(options: &HashMap<String, OwnedValue>) -> bool {
+    bool_option(options, "interactive") == Some(true)
+        || bool_option(options, "permission_store_checked") != Some(true)
 }
 
 /// Tells the session bus the compositor's Wayland display (M6.3), as other
@@ -210,6 +336,12 @@ fn tell_display(connection: &zbus::blocking::Connection) {
 fn text_option(options: &HashMap<String, OwnedValue>, key: &str) -> Option<String> {
     let value = options.get(key)?.try_clone().ok()?;
     String::try_from(value).ok().filter(|text| !text.is_empty())
+}
+
+/// The value of a boolean option (M8.21 part 21f), when the portal gave one.
+fn bool_option(options: &HashMap<String, OwnedValue>, key: &str) -> Option<bool> {
+    let value = options.get(key)?.try_clone().ok()?;
+    bool::try_from(value).ok()
 }
 
 /// The portal's own error for a setting it does not have.
@@ -342,7 +474,13 @@ pub fn follow_location(connection: &zbus::blocking::Connection, off: bool) {
 /// and the header bars' button layout; each changed value is stored and
 /// `setting_changed` goes out for it, so apps already open follow. Values
 /// that did not change say nothing.
-pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: &str, high: bool) {
+pub fn follow(
+    connection: &zbus::blocking::Connection,
+    tokens: &Tokens,
+    layout: &str,
+    high: bool,
+    icon_theme: &str,
+) {
     let backend = match connection.object_server().interface::<_, Backend>(PATH) {
         Ok(backend) => backend,
         Err(e) => {
@@ -353,7 +491,7 @@ pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: 
     let mut changed = Vec::new();
     {
         let mut backend = backend.get_mut();
-        for (namespace, keys) in settings(tokens, layout, high) {
+        for (namespace, keys) in settings(tokens, layout, high, icon_theme) {
             let stored = backend.settings.entry(namespace.clone()).or_default();
             for (key, value) in keys {
                 if stored.get(&key) == Some(&value) {
@@ -405,19 +543,25 @@ pub fn serve(
     tokens: &Tokens,
     layout: &str,
     high: bool,
+    icon_theme: &str,
     edits: channel::Sender<Edit>,
     location_off: bool,
 ) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
-        settings: settings(tokens, layout, high),
+        settings: settings(tokens, layout, high, icon_theme),
     };
     let asking = Asking {
         edits: edits.clone(),
+    };
+    let shooting = Shooting {
+        edits: edits.clone(),
+        taken: AtomicU64::new(0),
     };
     let built = zbus::blocking::connection::Builder::session()
         .and_then(|b| b.name(NAME))
         .and_then(|b| b.serve_at(PATH, backend))
         .and_then(|b| b.serve_at(PATH, asking))
+        .and_then(|b| b.serve_at(PATH, shooting))
         .and_then(|b| b.serve_at(PATH, Lockdown { location_off }))
         .and_then(|b| b.serve_at(SHELL_PATH, ShellBus::new(edits)))
         .and_then(|b| b.build());
@@ -439,7 +583,7 @@ pub fn serve(
         .and_then(|backend| {
             let emitter = backend.signal_emitter();
             zbus::block_on(async {
-                for (namespace, keys) in settings(tokens, layout, high) {
+                for (namespace, keys) in settings(tokens, layout, high, icon_theme) {
                     for (key, value) in keys {
                         Backend::setting_changed(emitter, &namespace, &key, value.into()).await?;
                     }
@@ -457,6 +601,9 @@ pub fn serve(
 mod tests {
     use super::*;
     use crate::access;
+
+    /// The release's icon theme, as the portal is given it by default.
+    const ICON: &str = edel::settings::ICON_THEME_DEFAULT;
 
     #[test]
     fn a_string_option_is_read_when_given_and_not_empty() {
@@ -488,7 +635,14 @@ mod tests {
         use smithay_client_toolkit::reexports::calloop::EventLoop;
         use std::time::Duration;
         let (edits, asks) = channel::channel::<Edit>();
-        let Some(_served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, false) else {
+        let Some(_served) = serve(
+            &Tokens::built_in(),
+            BUTTONS_RIGHT,
+            false,
+            ICON,
+            edits,
+            false,
+        ) else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -545,6 +699,67 @@ mod tests {
         assert!(results.is_empty());
     }
 
+    /// The boolean options the screenshot portal passes are read as bools
+    /// only; anything else, or no value, is none (M8.21 part 21f).
+    #[test]
+    fn a_bool_option_is_read_when_given_as_a_bool() {
+        let mut options = HashMap::new();
+        options.insert(
+            "permission_store_checked".to_string(),
+            OwnedValue::try_from(Value::from(true)).unwrap(),
+        );
+        options.insert(
+            "off".to_string(),
+            OwnedValue::try_from(Value::from(false)).unwrap(),
+        );
+        options.insert(
+            "wrong".to_string(),
+            OwnedValue::try_from(Value::from("yes")).unwrap(),
+        );
+        assert_eq!(
+            bool_option(&options, "permission_store_checked"),
+            Some(true)
+        );
+        assert_eq!(bool_option(&options, "off"), Some(false));
+        assert_eq!(bool_option(&options, "wrong"), None, "a string is none");
+        assert_eq!(bool_option(&options, "missing"), None);
+    }
+
+    /// An interactive request is asked of the person even when the store
+    /// has answered; a store-checked one is not; one the store has not
+    /// answered is asked (M8.21 part 21f).
+    #[test]
+    fn a_screenshot_asks_when_interactive_or_not_checked() {
+        let flag = |key: &str, value: bool| {
+            (
+                key.to_string(),
+                OwnedValue::try_from(Value::from(value)).unwrap(),
+            )
+        };
+        let options =
+            |pairs: Vec<(String, OwnedValue)>| pairs.into_iter().collect::<HashMap<_, _>>();
+        assert!(must_ask(&options(vec![
+            flag("interactive", true),
+            flag("permission_store_checked", true),
+        ])));
+        assert!(!must_ask(&options(vec![flag(
+            "permission_store_checked",
+            true
+        )])));
+        assert!(must_ask(&options(vec![])), "no answer from the store asks");
+        assert!(must_ask(&options(vec![flag("interactive", false)])));
+    }
+
+    #[test]
+    fn the_screenshot_portal_is_named_as_the_portal_names_it() {
+        use zbus::object_server::Interface;
+
+        assert_eq!(
+            Shooting::name().as_str(),
+            "org.freedesktop.impl.portal.Screenshot"
+        );
+    }
+
     #[test]
     fn the_access_portal_is_served_on_the_settings_portal_path() {
         use zbus::object_server::Interface;
@@ -583,7 +798,8 @@ mod tests {
     fn the_lockdown_is_served_and_follows_the_location_switch() {
         let _alone = ON_THE_BUS.lock();
         let (edits, _asks) = channel::channel::<Edit>();
-        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, true) else {
+        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, ICON, edits, true)
+        else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -607,7 +823,7 @@ mod tests {
     #[test]
     fn the_tokens_say_dark_and_give_the_accent() {
         let tokens = Tokens::built_in();
-        let all = settings(&tokens, BUTTONS_RIGHT, false);
+        let all = settings(&tokens, BUTTONS_RIGHT, false, ICON);
         let appearance = &all[APPEARANCE];
         assert_eq!(u32::try_from(&appearance["color-scheme"]).unwrap(), 1);
         let (r, g, b) =
@@ -618,22 +834,22 @@ mod tests {
         assert!((b - f64::from(accent.b)).abs() < 1e-6);
         // The light scheme's tokens say light (M5.5c).
         let light = Tokens::built_in_scheme(edel::tokens::Scheme::Light);
-        let all = settings(&light, BUTTONS_RIGHT, false);
+        let all = settings(&light, BUTTONS_RIGHT, false, ICON);
         assert_eq!(u32::try_from(&all[APPEARANCE]["color-scheme"]).unwrap(), 2);
     }
 
     #[test]
     fn high_contrast_says_one() {
         let tokens = Tokens::built_in();
-        let high = settings(&tokens, BUTTONS_RIGHT, true);
+        let high = settings(&tokens, BUTTONS_RIGHT, true, ICON);
         assert_eq!(u32::try_from(&high[APPEARANCE]["contrast"]).unwrap(), 1);
-        let normal = settings(&tokens, BUTTONS_RIGHT, false);
+        let normal = settings(&tokens, BUTTONS_RIGHT, false, ICON);
         assert_eq!(u32::try_from(&normal[APPEARANCE]["contrast"]).unwrap(), 0);
     }
 
     #[test]
     fn read_all_gives_the_namespaces_asked_for() {
-        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false);
+        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false, ICON);
         let names = |wanted: &[&str]| {
             let wanted: Vec<String> = wanted.iter().map(|w| w.to_string()).collect();
             let mut got: Vec<String> = chosen(&all, &wanted).into_keys().collect();
@@ -655,12 +871,16 @@ mod tests {
     /// and `Edel` as the interface's icon theme.
     #[test]
     fn the_portal_says_the_button_layout_and_the_icon_theme() {
-        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false);
+        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false, ICON);
         let layout = String::try_from(all[WM][BUTTON_LAYOUT].try_clone().unwrap()).unwrap();
         assert_eq!(layout, ":minimize,maximize,close");
         let theme = String::try_from(all[INTERFACE]["icon-theme"].try_clone().unwrap()).unwrap();
         assert_eq!(theme, "Edel");
-        let left = settings(&Tokens::built_in(), "close,minimize,maximize:", false);
+        // The person's own theme, `appearance.icon_theme` (M8.21 part g).
+        let chosen = settings(&Tokens::built_in(), BUTTONS_RIGHT, false, "Papirus");
+        let theme = String::try_from(chosen[INTERFACE]["icon-theme"].try_clone().unwrap()).unwrap();
+        assert_eq!(theme, "Papirus");
+        let left = settings(&Tokens::built_in(), "close,minimize,maximize:", false, ICON);
         let layout = String::try_from(left[WM][BUTTON_LAYOUT].try_clone().unwrap()).unwrap();
         assert_eq!(layout, "close,minimize,maximize:");
     }
@@ -668,7 +888,7 @@ mod tests {
     #[test]
     fn the_text_gives_the_fonts_in_points_and_the_scale() {
         let tokens = Tokens::built_in();
-        let all = settings(&tokens, BUTTONS_RIGHT, false);
+        let all = settings(&tokens, BUTTONS_RIGHT, false, ICON);
         let interface = &all[INTERFACE];
         let text = |key: &str| String::try_from(interface[key].try_clone().unwrap()).unwrap();
         // The release's 13 px is 9.75 points, which GTK shows as 10.
@@ -679,7 +899,7 @@ mod tests {
         let mut big = tokens.clone();
         big.text_size = 20;
         big.text_percent = 150;
-        let all = settings(&big, BUTTONS_RIGHT, false);
+        let all = settings(&big, BUTTONS_RIGHT, false, ICON);
         let scale = f64::try_from(all[INTERFACE]["text-scaling-factor"].try_clone().unwrap());
         assert!((scale.unwrap() - 1.5).abs() < 1e-9);
         assert_eq!(

@@ -189,8 +189,12 @@ jobs:
       - name: Pull the Alpine image
         run: sh ci/pull-alpine.sh
 
+      - name: Date the build by its commit
+        # M8.6: every file of the container image is dated by the commit, so a rebuild of it gives the same bytes.
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
       - name: Build images inside Alpine
-        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh
+        run: docker run --rm --privileged -e EDEL_VERSION -e EDEL_CHANNEL -e EDEL_TAG -e SOURCE_DATE_EPOCH -v "$PWD:/src" -w /src "$ALPINE" sh ci/build.sh
 
       - name: Every image carries the release's public keys
         # The sign job, which holds the key, never sees the images (M3.7).
@@ -207,6 +211,9 @@ jobs:
 
       - name: Test the container image
         run: sh ci/container-test.sh
+
+      - name: The container image builds the same twice
+        run: sh ci/repro-check.sh
 
       - name: Enable KVM
         run: |

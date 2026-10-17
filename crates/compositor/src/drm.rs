@@ -107,7 +107,9 @@ struct Screen {
     feedbacks: Option<crate::dmabuf::Feedbacks>,
     /// What was last said of the fullscreen window on top (M7.7):
     /// `scanout=direct` or `scanout=unavailable`, and why.
-    direct: Option<String>,
+    /// Kept as the window and the reason, so a frame compares them and
+    /// formats the line only when it changes.
+    direct: Option<(smithay::desktop::Window, Option<&'static str>)>,
 }
 
 /// Opens the seat, trying for up to 10 s: at boot greetd may start a
@@ -986,7 +988,7 @@ fn follow_vrr(screen: &mut Screen, state: &Edel) {
 fn send_feedbacks(
     output: &Output,
     feedbacks: Option<&crate::dmabuf::Feedbacks>,
-    was: &mut Option<String>,
+    was: &mut Option<(smithay::desktop::Window, Option<&'static str>)>,
     state: &Edel,
     states: &smithay::backend::renderer::element::RenderElementStates,
 ) {
@@ -997,8 +999,7 @@ fn send_feedbacks(
             });
         }
     }
-    let line = state.fullscreen_top(output).map(|window| {
-        let title = crate::decoration::title(window);
+    let now = state.fullscreen_top(output).map(|window| {
         let shown = window
             .toplevel()
             .and_then(|toplevel| states.element_render_state(toplevel.wl_surface()));
@@ -1013,19 +1014,23 @@ fn send_feedbacks(
             }) => Some("the screen refused its buffer"),
             _ => Some("its buffer is not a GPU buffer the screen can show"),
         };
-        match why {
-            None => format!("scanout=direct for window {title} on {}", output.name()),
-            Some(why) => format!(
-                "scanout=unavailable for window {title} on {} ({why})",
-                output.name()
-            ),
-        }
+        (window.clone(), why)
     });
-    if line != *was {
-        if let Some(line) = &line {
-            eprintln!("edel-compositor: {line}");
+    if now != *was {
+        if let Some((window, why)) = &now {
+            let title = crate::decoration::title(window);
+            match why {
+                None => eprintln!(
+                    "edel-compositor: scanout=direct for window {title} on {}",
+                    output.name()
+                ),
+                Some(why) => eprintln!(
+                    "edel-compositor: scanout=unavailable for window {title} on {} ({why})",
+                    output.name()
+                ),
+            }
         }
-        *was = line;
+        *was = now;
     }
 }
 

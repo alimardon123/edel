@@ -1,7 +1,7 @@
 //! The lock and login screens as parts in places (M5.10c5, ADR-008's same
 //! names decision): the data model, its check, the default arrangements and
 //! the one pure layout function. No drawing here: shell-ui draws the parts,
-//! and the settings file holds the person's list as `lock_screen.parts`
+//! and the settings file holds the person's list as `lock_screen.widgets`
 //! ([`crate::settings`]). Each part stands at an anchor, the edge or the
 //! middle of the screen, with an offset from it, so one arrangement fits a
 //! phone, a laptop and a 4K screen.
@@ -202,7 +202,8 @@ impl DateStyle {
 /// picture's path and the options of a clock or a date.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Placed {
-    /// Which part this is
+    /// Which widget this is
+    #[serde(rename = "widget")]
     pub part: Part,
     /// Where it stands
     pub at: Anchor,
@@ -322,7 +323,7 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
     match count(Part::Person) {
         0 => {
             return Err(tr(
-                "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }",
+                "the lock screen needs the person and their password field; add { widget = \"person\", at = \"centre\" }",
             )
             .into());
         }
@@ -810,7 +811,7 @@ pub fn check_looks(looks: &BTreeMap<String, crate::settings::OwnLook>) -> Result
         if let Some(background) = &look.background {
             if parse_background(background).is_none() {
                 return Err(trf(
-                    "the look {name} has the background {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path",
+                    "the look {name} has the wallpaper {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path",
                     &[("name", &shown), ("background", &format!("{background:?}"))],
                 ));
             }
@@ -1383,25 +1384,25 @@ pub fn nudged(placed: &Placed, dx: i32, dy: i32) -> Placed {
     }
 }
 
-/// The settings key the list of parts is written to (M5.10c5, M5.10c6): the
+/// The settings key the list of widgets is written to (M5.10c5, M5.10c6): the
 /// lock and login screens' edit mode and Settings' Lock screen page write it.
-pub const PARTS: &str = "lock_screen.parts";
+pub const WIDGETS: &str = "lock_screen.widgets";
 
 /// The settings key the look's name is written to (M5.10c5c, M5.10c6c3).
 pub const LOOK: &str = "lock_screen.look";
 
-/// The settings key the background is written to (M5.10c5c, M5.10c6c3).
-pub const BACKGROUND: &str = "lock_screen.background";
+/// The settings key the wallpaper is written to (M5.10c5c, M5.10c6c3).
+pub const WALLPAPER: &str = "lock_screen.wallpaper";
 
 /// The settings key the dim is written to (M5.10c7g): a whole number of
 /// percent, `MOST_DIM` at most.
 pub const DIM_KEY: &str = "lock_screen.dim";
 
-/// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
+/// The text `lock_screen.widgets` takes, as `edel settings set` reads it: the
 /// list of tables in one line, absent options left out (M5.10c6). Settings'
 /// Lock screen page and the edit mode both write the list this way, so the
 /// one function is here (ADR-010).
-pub fn parts_value(parts: &[Placed]) -> Result<String, String> {
+pub fn widgets_value(parts: &[Placed]) -> Result<String, String> {
     toml::Value::try_from(parts)
         .map(|value| value.to_string())
         .map_err(|e| e.to_string())
@@ -1483,7 +1484,7 @@ pub fn chose_text(person: &str, machine: Option<&str>, name: &str) -> Result<Str
     } else {
         text = edit(text, LOOK, Some(&format!("{name:?}")))?;
     }
-    for key in [PARTS, BACKGROUND] {
+    for key in [WIDGETS, WALLPAPER] {
         if person_sets(person, machine, key) {
             text = edit(text, key, None)?;
         }
@@ -1494,7 +1495,7 @@ pub fn chose_text(person: &str, machine: Option<&str>, name: &str) -> Result<Str
 /// The text of the person's settings file after saving a copy of what
 /// applies as a look of the person's, named after `base` (M5.10c7h): New
 /// look, Duplicate and Keep as a look, and the looks switcher's plus. The
-/// copy is chosen, and the person's `parts` and `background` lines go, as
+/// copy is chosen, and the person's `widgets` and `wallpaper` lines go, as
 /// the look keeps them. Returns the new text and the name the copy got.
 pub fn saved_as_text(
     person: &str,
@@ -1510,7 +1511,7 @@ pub fn saved_as_text(
         text = edit(text, OWN_LOOKS, Some(&value))?;
     }
     text = edit(text, LOOK, Some(&format!("{name:?}")))?;
-    for key in [PARTS, BACKGROUND] {
+    for key in [WIDGETS, WALLPAPER] {
         if person_sets(person, machine, key) {
             text = edit(text, key, None)?;
         }
@@ -1529,13 +1530,13 @@ mod tests {
     #[test]
     fn choosing_a_look_sets_it_and_takes_the_persons_own_lines_out() {
         let text = chose_text(
-            "format = 1\n[lock_screen]\nbackground = \"sharp\"\n",
+            "format = 1\n[lock_screen]\nwallpaper = \"sharp\"\n",
             None,
             "magazine",
         )
         .unwrap();
         assert_eq!(look_of(&text).as_deref(), Some("magazine"));
-        assert!(!text.contains("background"), "{text}");
+        assert!(!text.contains("wallpaper"), "{text}");
     }
 
     #[test]
@@ -1723,7 +1724,7 @@ mod tests {
             ..part_at(Part::Picture, Anchor::Top, 0.0)
         };
         let cases: Vec<(Vec<Placed>, &str)> = vec![
-            (vec![], "add { part = \"person\", at = \"centre\" }"),
+            (vec![], "add { widget = \"person\", at = \"centre\" }"),
             (
                 vec![person.clone(), person.clone()],
                 "the person stands once; take out the second",
@@ -1933,9 +1934,10 @@ mod tests {
         assert_eq!(out[1], None);
     }
 
-    /// A settings file's lock screen, as the tables `[[lock_screen.parts]]`.
+    /// A settings file's lock screen, as the tables `[[lock_screen.widgets]]`.
     #[derive(Deserialize, Serialize)]
     struct Doc {
+        #[serde(rename = "widgets")]
         parts: Vec<Placed>,
     }
 
@@ -1966,10 +1968,10 @@ mod tests {
 
     #[test]
     fn clock_and_date_options_read_back_from_toml() {
-        let text = "[[parts]]\npart = \"person\"\nat = \"centre\"\n\n\
-            [[parts]]\npart = \"clock\"\nat = \"top\"\ny = 0.14\nface = \"analog\"\n\
+        let text = "[[widgets]]\nwidget = \"person\"\nat = \"centre\"\n\n\
+            [[widgets]]\nwidget = \"clock\"\nat = \"top\"\ny = 0.14\nface = \"analog\"\n\
             hours = 12\nsize = \"medium\"\nweight = 300\n\n\
-            [[parts]]\npart = \"date\"\nat = \"top\"\nshow = [\"day\", \"month\"]\n\
+            [[widgets]]\nwidget = \"date\"\nat = \"top\"\nshow = [\"day\", \"month\"]\n\
             style = \"numeric\"\n";
         let doc: Doc = toml::from_str(text).unwrap();
         check(&doc.parts).unwrap();

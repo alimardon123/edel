@@ -128,7 +128,7 @@ fn choose_on_disk(name: &str) -> Result<Option<String>, String> {
         .unwrap_or_default();
     let taken = had.parts.is_some() || had.background.is_some();
     Ok(Some(if taken {
-        "lock_screen.look written; parts and background taken out".to_string()
+        "lock_screen.look written; widgets and wallpaper taken out".to_string()
     } else {
         "lock_screen.look written".to_string()
     }))

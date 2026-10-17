@@ -278,7 +278,7 @@ pub fn panel_not_changed(why: impl Display) -> String {
     format!("could not change the panels: {why}; they stay as they were")
 }
 
-/// The lock screen's edit mode cannot write its parts down: the edit stays
+/// The lock screen's edit mode cannot write its widgets down: the edit stays
 /// open, so Done can be tried again (M5.10c6).
 pub fn lock_screen_not_kept(why: impl Display) -> String {
     format!(
@@ -286,8 +286,8 @@ pub fn lock_screen_not_kept(why: impl Display) -> String {
     )
 }
 
-/// There is no home folder to keep the lock screen's parts in (M5.10c6).
-pub const LOCK_SCREEN_NO_HOME: &str = "no home folder to keep the lock screen in; run edel settings set 'lock_screen.parts=[...]' with the parts as TOML instead";
+/// There is no home folder to keep the lock screen's widgets in (M5.10c6).
+pub const LOCK_SCREEN_NO_HOME: &str = "no home folder to keep the lock screen in; run edel settings set 'lock_screen.widgets=[...]' with the widgets as TOML instead";
 
 /// There is no home folder to keep the panels in.
 pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set panels.list='[...]' with the panels as TOML instead";
@@ -395,6 +395,14 @@ pub fn power_failed_logind(what: &str, why: impl Display) -> String {
 /// profile it has, and the next status read asks again.
 pub fn profile_not_set(why: impl Display) -> String {
     format!("could not set the power profile: {why}; the computer keeps the profile it has")
+}
+
+/// A screenshot an app asked for could not be made (M8.21 part 21f): the app
+/// gets no picture and may ask again.
+pub fn screenshot_not_saved(why: impl Display) -> String {
+    format!(
+        "could not take the screenshot an app asked for: {why}; the app gets no picture and can ask again"
+    )
 }
 
 /// The Access dialog cannot be drawn (M6.3): the question is answered no,
@@ -680,6 +688,7 @@ mod tests {
             LOCATION_NO_HOME.to_string(),
             location_not_watched("x"),
             location_not_in_use("x"),
+            screenshot_not_saved("x"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

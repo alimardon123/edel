@@ -409,6 +409,14 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
                     },
                 )?)
             }
+            "system.profiles" => {
+                let names = edel::profiles::NAMES.join(", ");
+                answers.profile = Some(ask_until(
+                    &format!("{title} ({}, {names})", edel::install::NO_PROFILE),
+                    Some(edel::install::NO_PROFILE),
+                    edel::install::profile_answer,
+                )?)
+            }
             _ => {}
         }
     }
@@ -828,6 +836,11 @@ fn write(
             file.sync_all()?;
         }
         copy_default_apps(&data.0)?;
+        // The add-ons the file chooses, tried at the first boot (M7.2b).
+        crate::addons::stage_for_install(
+            &fs::read_to_string(system_file).unwrap_or_default(),
+            &data.0,
+        );
     }
     run(&mut Command::new("sync"))?;
     println!(

@@ -23,4 +23,4 @@ The look to match: build every page from `widgets.rs`'s blocks (page, section, r
 
 ## Coming (roadmap)
 
-6c: `docs/layout-guide.md`; the tiling style row (M5.16), own presets as cards with Save as and Delete (M5.17), Never and a switch per title bar button (M5.18); `Set by profile NAME` with profiles (M7.6); the pages of M5.8b, M5.9, M5.10 and M5.12, each a module with its rows in `rows.rs`; Displays will undo by itself after 15 s unless kept, which `ChangeBar` does not do yet. Make each change only in its step.
+6c: `docs/layout-guide.md`; the tiling style row (M5.16), own presets as cards with Save as and Delete (M5.17), Never and a switch per title bar button (M5.18); the pages of M5.8b, M5.9, M5.10 and M5.12, each a module with its rows in `rows.rs`; Displays will undo by itself after 15 s unless kept, which `ChangeBar` does not do yet. Make each change only in its step.

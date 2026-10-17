@@ -15,7 +15,8 @@ use crate::access::{self, Ask};
 
 /// Which editor a call over the bus asks for (M5.31d, M5.10c6): the panels'
 /// or the lock screen's, or a question the Access portal asks the person
-/// (M6.3, the screenshot's dialog).
+/// (M6.3, the screenshot's dialog), or a screenshot the screenshot portal
+/// asked for (M8.21 part 21f).
 pub enum Edit {
     Panels,
     LockScreen,
@@ -23,6 +24,13 @@ pub enum Edit {
     LockLooks,
     /// The Access portal's dialog, with the answer's way back to the call.
     Access(Ask),
+    /// A screenshot the screenshot portal asked for (M8.21 part 21f): every
+    /// screen copied into one PNG at `path`; the answer is `access::ALLOW` once
+    /// it is written, else `access::CANCEL`.
+    Screenshot {
+        path: std::path::PathBuf,
+        answer: Answer,
+    },
 }
 
 /// The sending half of one answer, kept by the event loop: `send` gives the

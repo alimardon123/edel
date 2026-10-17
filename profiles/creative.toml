@@ -1,0 +1,9 @@
+# Creative (M7.6): Krita for drawing with a pen and GIMP for photos. Pens
+# reach apps through the compositor's tablet protocol and screen capture
+# through the portal on every desktop, so neither needs a line here; a
+# low-latency sound quantum waits for a sound key of its own. Laid under
+# the machine's own file as gaming.toml says.
+format = 1
+
+[apps]
+installed = ["org.kde.krita", "org.gimp.GIMP"]

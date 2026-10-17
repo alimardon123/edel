@@ -15,6 +15,7 @@ use smithay::desktop::Window;
 use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
 use edel_compositor::corners::{self, CLIP_SHADER, CLIP_UNIFORMS, RING_SHADER, RING_UNIFORMS};
+use edel_compositor::effects::Tier;
 use edel_compositor::messages;
 
 use crate::decoration::server_side;
@@ -308,9 +309,13 @@ pub fn ring_once(
 }
 
 impl Edel {
-    /// Compiles the rounded corners' programs, once the renderer exists. On
-    /// failure the corners stay square and the log says why.
+    /// Compiles the rounded corners' programs, once the renderer exists,
+    /// except on the Lite tier, whose corners are square and which never
+    /// rises again. On failure the corners stay square and the log says why.
     pub fn start_rounded(&mut self, renderer: &mut GlesRenderer) {
+        if self.deadline.tier() == Tier::Lite {
+            return;
+        }
         match Rounded::compile(renderer) {
             Ok(rounded) => {
                 self.rounded = Some(rounded);

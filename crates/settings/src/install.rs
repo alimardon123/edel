@@ -75,6 +75,9 @@ pub struct Form {
     pub timezone: String,
     pub hostname: String,
     pub preset: String,
+    /// The profile (M7.6), a name of `edel::profiles::NAMES` or
+    /// `install::NO_PROFILE`
+    pub profile: String,
     /// The question keys a settings file answers already, which are not
     /// asked (M6.6b)
     pub skip: Vec<&'static str>,
@@ -165,6 +168,7 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
         timezone,
         hostname,
         preset: (!form.skip.contains(&"layout.preset")).then(|| form.preset.clone()),
+        profile: (!form.skip.contains(&"system.profiles")).then(|| form.profile.clone()),
     };
     Ok((answers, disk.unwrap_or_default()))
 }
@@ -261,10 +265,31 @@ fn answered_words(answered: &[&str]) -> String {
             "user" => Some(tr("Who logs in")),
             "network.hostname" => Some(tr("Computer name")),
             "layout.preset" => Some(tr("Layout")),
+            "system.profiles" => Some(tr("Profile")),
             _ => None,
         })
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// A profile's name in the Profile row: None, or the profile's title.
+fn profile_title(name: &str) -> String {
+    if name == install::NO_PROFILE {
+        tr("None").to_string()
+    } else {
+        edel::profiles::title(name)
+    }
+}
+
+/// The Profile row's line: what the chosen profile brings, or what a
+/// profile is while none is chosen.
+fn profile_line(name: &str) -> String {
+    if name == install::NO_PROFILE {
+        tr("Apps and add-ons for one kind of work, if you like. Change it any time in Settings.")
+            .to_string()
+    } else {
+        edel::profiles::about(name)
+    }
 }
 
 /// What the hero above the form says: the welcome, an install under way,
@@ -292,6 +317,8 @@ struct Ui {
     using: Cell<bool>,
     /// The Layout row's choice, hidden when the file sets the preset
     preset_widget: gtk::Widget,
+    /// The Profile row's choice, hidden when the file names profiles
+    profile_widget: gtk::Widget,
     language: Rc<widgets::Choice>,
     /// The language codes, by the language choice's index
     languages: Vec<String>,
@@ -308,6 +335,11 @@ struct Ui {
     hostname: gtk::Entry,
     presets: Vec<&'static str>,
     preset: Rc<widgets::Choice>,
+    /// None first, then the release's profiles
+    profiles: Vec<&'static str>,
+    profile: Rc<widgets::Choice>,
+    /// The Profile row's line: what the chosen profile brings
+    profile_line: gtk::Label,
     disks: Vec<DiskChoice>,
     disk: Option<Rc<widgets::Choice>>,
     /// The line under each row: its problem, else its own words
@@ -647,6 +679,18 @@ pub fn page() -> gtk::Widget {
     row.subtitle.set_label(tr(
         "How windows and panels are laid out. Change it any time in Settings.",
     ));
+    // One optional profile (M7.6): None, then the release's, each the apps
+    // and add-ons a kind of work needs; the file gets only its name.
+    let profiles: Vec<&'static str> = std::iter::once(install::NO_PROFILE)
+        .chain(edel::profiles::NAMES.iter().copied())
+        .collect();
+    let profile = widgets::Choice::new(profiles.iter().map(|p| profile_title(p)).collect());
+    profile.set_width(CONTROL_WIDTH);
+    let row = widgets::row(&more_group, tr("Profile"), &profile.widget());
+    row.reset.set_visible(false);
+    row.copy.set_visible(false);
+    row.subtitle.set_label(&profile_line(install::NO_PROFILE));
+    let profile_line_label = row.subtitle;
     widgets::disclosure(&content, tr("More options"), &more);
 
     widgets::step_heading(&content, 4, tr("Review and install"));
@@ -700,6 +744,7 @@ pub fn page() -> gtk::Widget {
     );
 
     let preset_widget = preset.widget();
+    let profile_widget = profile.widget();
     let ui = Rc::new(Ui {
         hero,
         stage: Cell::new(Stage::Welcome),
@@ -711,6 +756,7 @@ pub fn page() -> gtk::Widget {
         found: RefCell::new(None),
         using: Cell::new(false),
         preset_widget,
+        profile_widget,
         language,
         languages: codes,
         keyboard,
@@ -723,6 +769,9 @@ pub fn page() -> gtk::Widget {
         hostname,
         presets,
         preset,
+        profiles,
+        profile,
+        profile_line: profile_line_label,
         disks,
         disk,
         lines,
@@ -835,6 +884,15 @@ impl Ui {
         self.zone.connect_changed(stale);
         let stale = changed(self);
         self.preset.connect_changed(stale);
+        let weak = Rc::downgrade(self);
+        let stale = changed(self);
+        self.profile.connect_changed(move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.profile_line
+                    .set_label(&profile_line(&ui.profile_value()));
+            }
+            stale();
+        });
         if let Some(disk) = &self.disk {
             disk.connect_changed(changed(self));
         }
@@ -1081,9 +1139,15 @@ impl Ui {
             timezone: self.zone_value(),
             hostname: self.hostname.text().to_string(),
             preset: self.presets[self.preset.selected().min(self.presets.len() - 1)].to_string(),
+            profile: self.profile_value(),
             skip: self.skipped(),
             password_needed: self.password_needed(),
         }
+    }
+
+    /// The profile chosen, `install::NO_PROFILE` for None.
+    fn profile_value(&self) -> String {
+        self.profiles[self.profile.selected().min(self.profiles.len() - 1)].to_string()
     }
 
     /// The question keys the file in use answers; none without one.
@@ -1162,7 +1226,7 @@ impl Ui {
         self.using.set(using);
         let skip = self.skipped();
         let password = self.password_needed();
-        let rows: [(&str, gtk::Widget); 8] = [
+        let rows: [(&str, gtk::Widget); 9] = [
             ("region.language", self.language.widget()),
             ("region.keyboard", self.keyboard.widget()),
             ("region.timezone", self.zone.widget()),
@@ -1171,6 +1235,7 @@ impl Ui {
             ("password", self.again.clone().upcast()),
             ("network.hostname", self.hostname.clone().upcast()),
             ("layout.preset", self.preset_widget.clone()),
+            ("system.profiles", self.profile_widget.clone()),
         ];
         for (key, control) in &rows {
             let shown = !skip.contains(key) && (*key != "password" || password);
@@ -1483,6 +1548,7 @@ mod tests {
             timezone: "Europe/Berlin".into(),
             hostname: "ali-laptop".into(),
             preset: "classic".into(),
+            profile: "none".into(),
             skip: Vec::new(),
             password_needed: true,
         }

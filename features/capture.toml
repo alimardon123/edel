@@ -1,12 +1,12 @@
-# Screenshots and screen sharing (roadmap M6.3): xdg-desktop-portal-wlr,
-# the portals' backend for wlroots-style compositors, which takes the
-# picture through wlr-screencopy (our compositor's protocol) and streams
-# the screen to PipeWire. Its config (features/capture/) shares the first
+# Screen sharing (roadmap M6.3): xdg-desktop-portal-wlr, the portals'
+# backend for wlroots-style compositors, which streams the screen to
+# PipeWire through wlr-screencopy (our compositor's protocol). Screenshots
+# are shell-ui's own (M8.21 part 21f, the shell feature). Its config (features/capture/) shares the first
 # screen without a chooser until Edel's own chooser comes later.
 format = 1
-summary = "Screenshots and screen sharing: the portals' wlr backend, which copies the screen with wlr-screencopy and streams it over PipeWire"
-why = "Apps ask xdg-desktop-portal for a screenshot or to share the screen, and the portal hands the request to its backend, xdg-desktop-portal-wlr, which the compositor's wlr-screencopy serves (M6.3). D-Bus starts the backend only when an app first asks, so a desktop nobody shares spends nothing on it; screen sharing streams over PipeWire, which the session already starts, and a sandboxed app (Flatpak) can only capture through this portal, since the compositor hides screencopy from it. The backend takes each screenshot by running grim (a few hundred KiB), which writes it to /tmp/out.png, a file the person's apps can read and another person's too until it is replaced, so a backend of our own that keeps the picture private is a later step's; slurp, its interactive region picker, is not packaged."
-packages = ["xdg-desktop-portal-wlr", "grim"]
+summary = "Screen sharing: the portals' wlr backend, which copies the screen with wlr-screencopy and streams it over PipeWire"
+why = "Apps ask xdg-desktop-portal to share the screen, and the portal hands the request to its backend, xdg-desktop-portal-wlr, which the compositor's wlr-screencopy serves (M6.3). D-Bus starts the backend only when an app first asks, so a desktop nobody shares spends nothing on it; screen sharing streams over PipeWire, which the session already starts, and a sandboxed app (Flatpak) can only capture through this portal, since the compositor hides screencopy from it. Screenshots no longer come from here: the wlr backend ran grim, which wrote each one to /tmp/out.png where another person could read it, so shell-ui answers the screenshot portal itself and keeps the picture in the person's own runtime folder (M8.21 part 21f), and grim is gone from the image."
+packages = ["xdg-desktop-portal-wlr"]
 
 # The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
 

@@ -1431,7 +1431,7 @@ mod tests {
             .collect();
         let dock = spec.style == Style::Dock;
         let mut text = Text::load(&tokens.font);
-        let mut icons = edel::app_icons::Icons::new(vec![theme()]);
+        let mut icons = edel::app_icons::Icons::new(vec![theme()], "hicolor");
         let natural = if dock {
             natural_width(
                 &tokens,
@@ -1518,7 +1518,7 @@ mod tests {
             })
             .collect();
         let mut text = Text::load(&tokens.font);
-        let mut icons = edel::app_icons::Icons::new(vec![theme()]);
+        let mut icons = edel::app_icons::Icons::new(vec![theme()], "hicolor");
         let look = Look {
             width: 1280,
             height: height(spec.style, spec.size, &tokens)
