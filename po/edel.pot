@@ -704,6 +704,9 @@ msgstr ""
 msgid "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little)."
 msgstr ""
 
+msgid "The widgets on the desktop, over the wallpaper and under the windows, and where each one stands, as a list of tables."
+msgstr ""
+
 msgid "The widgets on the lock and login screens and where each one stands, as a list of tables."
 msgstr ""
 
@@ -1008,6 +1011,9 @@ msgid "{path} is not a picture path; give the whole path, starting with / and en
 msgstr ""
 
 msgid "the {part} has a path; only a picture has one, so take path out"
+msgstr ""
+
+msgid "the {part} does not stand on the desktop; the desktop takes {names}"
 msgstr ""
 
 msgid "the {part} has a face; only the clock has one, so take face out"
@@ -1955,6 +1961,12 @@ msgstr ""
 msgid "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]"
 msgstr ""
 
+msgid "expected widgets as the desktop writes them: {why}"
+msgstr ""
+
+msgid "a list of widgets, such as [{ widget = \"clock\", at = \"top_right\" }]"
+msgstr ""
+
 msgid "{value} is not a look's name; use letters, digits and hyphens, such as \"minimal\""
 msgstr ""
 
@@ -2112,6 +2124,12 @@ msgid "{person} may not read {path}, and through doas edel reads as root; give a
 msgstr ""
 
 msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
+msgstr ""
+
+msgid "a game is playing, so this waits until it ends"
+msgstr ""
+
+msgid "the game ended; going on"
 msgstr ""
 
 msgid "Windows"

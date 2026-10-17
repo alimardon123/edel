@@ -204,11 +204,21 @@ fn draw(window: &mut Window, state: &mut Edel) {
     state.dirty = state.animations.running();
     let now = window.started.elapsed();
     for w in state.space.elements() {
+        // Behind a game, a window draws again once it is visible (M7.7c).
+        if state.behind_game(w) {
+            continue;
+        }
         w.send_frame(&window.output, now, Some(Duration::ZERO), |_, _| {
             Some(window.output.clone())
         });
     }
-    crate::layers::send_frames(&window.output, now);
+    // A game plays alone on its screen: only the layers over it get
+    // frames (M7.7c).
+    let only = state
+        .playing_on(&window.output)
+        .is_some()
+        .then(|| state.layers_over(&window.output));
+    crate::layers::send_frames(&window.output, now, only);
     state.lock_frames(&window.output, now);
     state.cursor_frame(&window.output, now);
 }

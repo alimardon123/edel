@@ -23,6 +23,7 @@ mod app_windows;
 mod app_windows_card;
 mod apps_colours;
 mod apps_drag;
+mod aside;
 mod backdrop;
 mod banner;
 mod calendar;
@@ -32,6 +33,7 @@ mod clipboard_card;
 mod clipboard_list;
 mod clock_face;
 mod corner;
+mod desktop;
 mod edit_kit;
 mod editor;
 mod editor_card;
@@ -224,6 +226,10 @@ struct Shell {
     /// The panels the settings files ask for as last applied (M5.31b):
     /// `panels_changed` compares with them.
     panel_specs: Vec<presets::Panel>,
+    /// The desktop's widgets (M8.21 part 21j1): the parts `appearance.widgets`
+    /// names that the desktop draws, and one screen per output while any.
+    desktop_parts: Vec<edel::lock_screen::Placed>,
+    desktops: Vec<desktop::Screen>,
     /// The apps the apps widget pins, as the list names them (M5.4c, M5.31d:
     /// `panels.pinned` over the preset's), and each shown pin's index in it,
     /// kept so panels made later can read the apps they show (`read_apps`).
@@ -302,6 +308,13 @@ struct Shell {
     status_busy: u32,
     status_again: Option<bool>,
     status_tx: channel::Sender<status::Msg>,
+    /// Whether a game plays on every screen, as the compositor says (M7.7c).
+    playing: bool,
+    /// Whether the minute came due while a game played, so its work waits
+    /// for the end (M7.7c).
+    missed_minute: bool,
+    /// The battery's state as last sent to the compositor (M7.7c).
+    battery_told: Option<bool>,
     /// The apps using the camera, the microphone or the screen now, as
     /// `in_use.rs` reads them, and when each (app, kind) use began, seconds
     /// since 1970, for the record of use (M6.14b). `in_use_sign` is the sign's
@@ -621,6 +634,8 @@ fn run() -> Result<()> {
         spent: Vec::new(),
         panels,
         panel_specs: preset.panels.clone(),
+        desktop_parts: Vec::new(),
+        desktops: Vec::new(),
         pins,
         pin_slots,
         app_press: None,
@@ -661,6 +676,9 @@ fn run() -> Result<()> {
         status_busy: 0,
         status_again: None,
         status_tx,
+        playing: false,
+        missed_minute: false,
+        battery_told: None,
         in_use: Vec::new(),
         pipewire_uses: Vec::new(),
         location_uses: Vec::new(),
@@ -790,6 +808,9 @@ fn run() -> Result<()> {
         shell.clipboard.listen(&seat, &qh);
     }
     shell.watch_status()?;
+    // The desktop's widgets (M8.21 part 21j1), after the panels they lie under.
+    let (machine, person) = settings_texts();
+    shell.desktop_follow(machine.as_deref(), person.as_deref());
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
@@ -1057,11 +1078,15 @@ fn check_updates(handle: &LoopHandle<'static, Shell>) {
         return;
     }
     let timer = Timer::from_duration(Duration::from_secs(first));
-    let checked = handle.insert_source(timer, move |_, _, _shell: &mut Shell| {
-        let answers = answers.clone();
-        std::thread::spawn(move || {
-            let _ = answers.send(run_update_check());
-        });
+    let checked = handle.insert_source(timer, move |_, _, shell: &mut Shell| {
+        // The check needs the network, so while a game plays it waits for
+        // the next round (M7.7c).
+        if !shell.playing {
+            let answers = answers.clone();
+            std::thread::spawn(move || {
+                let _ = answers.send(run_update_check());
+            });
+        }
         TimeoutAction::ToDuration(Duration::from_secs(telling::CHECK_EVERY_SECS))
     });
     if let Err(e) = checked {
@@ -1098,14 +1123,12 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
     let result = handle.insert_source(
         Timer::from_duration(next()),
         move |_, _, shell: &mut Shell| {
-            for i in 0..shell.panels.len() {
-                shell.draw(i);
+            // While a game plays the minute's work waits for its end (M7.7c).
+            if shell.playing {
+                shell.missed_minute = true;
+            } else {
+                shell.minute();
             }
-            shell.launcher.reap();
-            shell.draw_lock();
-            // The status area follows the machine on the minute too, for
-            // a change no daemon signalled.
-            shell.request_status(false);
             TimeoutAction::ToDuration(next())
         },
     );
@@ -1115,6 +1138,24 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
 }
 
 impl Shell {
+    /// The minute's work: the panels and the desktop's widgets draw again
+    /// for the clock, the launcher collects the apps that ended, the lock
+    /// screen draws and the status area is read again. Anything that ticks
+    /// with the minute goes here, so it pauses behind a game (M7.7c).
+    pub fn minute(&mut self) {
+        for i in 0..self.panels.len() {
+            self.draw(i);
+        }
+        for i in 0..self.desktops.len() {
+            self.draw_desktop(i);
+        }
+        self.launcher.reap();
+        self.draw_lock();
+        // The status area follows the machine on the minute too, for
+        // a change no daemon signalled.
+        self.request_status(false);
+    }
+
     /// Whether panel `i` lies on the main screen (M5.12b3): one with no
     /// output of its own, or one on the first screen the compositor lists.
     /// The glass is made for that screen alone until each screen has its own.
@@ -1472,6 +1513,8 @@ impl Shell {
                 )
             })
             .collect();
+        // The desktop's widgets lie under the panels, so they are made after them.
+        self.remake_desktops(&outputs);
     }
 
     /// The look changed from `old` (M6.17): each panel whose height, fillet
@@ -1589,22 +1632,27 @@ impl Shell {
     /// panel of ours on it changes nothing, and a panel the compositor
     /// closes ends shell-ui as it always did.
     fn outputs_changed(&mut self, gone: Option<&WlOutput>) {
-        if !self.panel_specs.iter().any(|s| s.screens == Screens::Every) {
+        // A panel on every screen is made afresh (M5.31c), and the desktop's
+        // widgets on each screen (M8.21 part 21j1), when the screen is one of
+        // theirs; a screen that went with none of ours changes nothing.
+        let panels = self.panel_specs.iter().any(|s| s.screens == Screens::Every)
+            && gone.is_none_or(|gone| self.panels.iter().any(|p| p.output.as_ref() == Some(gone)));
+        let desktops = gone.is_none_or(|gone| self.desktops.iter().any(|d| d.output == *gone));
+        if !panels && !desktops {
             return;
-        }
-        if let Some(gone) = gone {
-            if !self.panels.iter().any(|p| p.output.as_ref() == Some(gone)) {
-                return;
-            }
         }
         let outputs: Vec<WlOutput> = self
             .outputs
             .outputs()
             .filter(|output| gone != Some(output))
             .collect();
-        let specs = self.panel_specs.clone();
-        self.remake_panels(&specs, outputs);
-        self.log_panels();
+        if panels {
+            let specs = self.panel_specs.clone();
+            self.remake_panels(&specs, outputs);
+            self.log_panels();
+        } else {
+            self.remake_desktops(&outputs);
+        }
     }
 
     /// The apps the apps widget and the window list show, read once, when
@@ -2286,6 +2334,8 @@ impl LayerShellHandler for Shell {
             self.hide_switcher();
         } else if self.is_access(surface.wl_surface()) {
             self.close_access();
+        } else if let Some((i, _)) = self.desktop_surface(surface.wl_surface()) {
+            self.desktop_closed(i);
         } else {
             self.exit = true;
         }
@@ -2397,6 +2447,13 @@ impl LayerShellHandler for Shell {
                 flip.configured();
             }
             return self.draw_switcher();
+        }
+        if let Some((i, area)) = self.desktop_surface(surface.wl_surface()) {
+            return if area {
+                self.desktop_area(i, configure.new_size)
+            } else {
+                self.desktop_settled(i)
+            };
         }
         let Some(i) = self.panel_of(surface.wl_surface()) else {
             return;
@@ -2519,6 +2576,9 @@ impl CompositorHandler for Shell {
                 flip.set_scale(factor);
             }
             return self.draw_switcher();
+        }
+        if let Some((i, false)) = self.desktop_surface(surface) {
+            return self.desktop_scaled(i, factor);
         }
         let Some(i) = self.panel_of(surface) else {
             return;
@@ -2646,6 +2706,9 @@ impl CompositorHandler for Shell {
                 flip.framed();
             }
             return self.draw_switcher();
+        }
+        if let Some((i, _)) = self.desktop_surface(surface) {
+            return self.desktop_settled(i);
         }
         let Some(i) = self.panel_of(surface) else {
             return;

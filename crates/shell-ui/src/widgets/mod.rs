@@ -403,8 +403,11 @@ mod tests {
                         "the catalogue's {} fits the lock screen, and no Part is named so",
                         entry.name
                     ),
-                    Surface::Desktop => panic!(
-                        "the catalogue's {} fits the desktop, which has no drawing module until M5.33c",
+                    // desktop.rs draws the desktop's parts (M8.21 part 21j1).
+                    Surface::Desktop => assert!(
+                        edel::lock_screen::Part::named(entry.name)
+                            .is_some_and(crate::desktop::draws),
+                        "the catalogue's {} fits the desktop, and desktop.rs does not draw it",
                         entry.name
                     ),
                 }

@@ -23,6 +23,7 @@ mod colours;
 mod cursor;
 mod default_apps;
 mod depth;
+mod desktop;
 mod display;
 mod files;
 mod icon;

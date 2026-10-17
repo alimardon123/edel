@@ -11,10 +11,19 @@
 //! and in game mode variable refresh shows it the moment it is done.
 //! Seam: real tearing waits for smithay's async flips, and needs only
 //! `drm.rs` to pass the hint on.
+//!
+//! A game that plays steps the desktop aside (M7.7c, `playing_on`): on a
+//! screen whose top window is fullscreen in game mode, that window is
+//! drawn alone and the windows behind it get no frame callbacks
+//! (`behind_game`), and shell-ui is told to stop its timers. `playing`
+//! says whether a game plays on any screen (the state file and the log),
+//! `playing_everywhere` whether it plays on every screen (what shell-ui is
+//! told, so a clock on another monitor never stops). The battery is
+//! shell-ui's to read: it says so over `on_battery` (`battery_changed`);
+//! the compositor reads it once, at start, for the starting effects tier.
 
 use std::cell::Cell;
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
 
 use smithay::desktop::Window;
 use smithay::output::Output;
@@ -36,35 +45,21 @@ use crate::state::Edel;
 
 const VERSION: u32 = 1;
 
-/// How long a reading of the battery holds: a machine unplugged during a
-/// game leaves variable refresh within this.
-const BATTERY_FOR: Duration = Duration::from_secs(5);
-
 /// Game mode on `Edel`.
 #[derive(Default)]
 pub struct Game {
     pub mode: GameMode,
-    /// The last reading of the battery and when it was taken.
-    battery: Cell<Option<(Instant, bool)>>,
-}
-
-/// Whether the machine runs on its battery, read at most every
-/// [`BATTERY_FOR`] and kept in `reading`.
-fn on_battery(reading: &Cell<Option<(Instant, bool)>>) -> bool {
-    match reading.get() {
-        Some((at, on)) if at.elapsed() < BATTERY_FOR => on,
-        _ => {
-            let on = crate::tiers::on_battery();
-            reading.set(Some((Instant::now(), on)));
-            on
-        }
-    }
+    /// Whether the machine runs on its battery, as shell-ui says (M7.7c).
+    pub on_battery: bool,
+    /// Whether a game played at the last state change, so the log says
+    /// when one starts and when it ends (M7.7c).
+    pub stepped_aside: Cell<bool>,
 }
 
 impl Game {
     /// Whether game mode is on now.
     pub fn on(&self) -> bool {
-        self.mode.on(|| on_battery(&self.battery))
+        self.mode.on(|| self.on_battery)
     }
 }
 
@@ -87,9 +82,20 @@ impl Edel {
 
     /// Super+G: game mode on or off until the next login.
     pub fn toggle_game_mode(&mut self) {
-        let Game { mode, battery } = &mut self.game;
-        mode.toggle(|| on_battery(battery));
+        let on = self.game.on_battery;
+        self.game.mode.toggle(|| on);
         self.game_mode_changed("Super+G");
+    }
+
+    /// shell-ui says whether the machine runs on its battery (M7.7c, the
+    /// `on_battery` request). Game mode's plugged-in rule follows it; when
+    /// that changes game mode, it is logged as the charger's doing.
+    pub fn battery_changed(&mut self, on: bool) {
+        let was = self.game.on();
+        self.game.on_battery = on;
+        if self.game.on() != was {
+            self.game_mode_changed("the charger");
+        }
     }
 
     /// Says game mode's new state, tells shell-ui and draws again, so each
@@ -119,10 +125,47 @@ impl Edel {
             .filter(|window| self.is_fullscreen(window))
     }
 
-    /// Whether `output` should run at a variable refresh: game mode is on
-    /// and a fullscreen window is its top window, while nothing locks it.
+    /// The window that plays on `output` (M7.7c): game mode is on, nothing
+    /// locks the session, no overview is open and the screen's top window
+    /// is fullscreen.
+    pub fn playing_on(&self, output: &Output) -> Option<&Window> {
+        if !self.game.on() || self.locked.is_some() || self.overview.is_some() {
+            return None;
+        }
+        self.fullscreen_top(output)
+    }
+
+    /// Whether a game plays on any screen (M7.7c).
+    pub fn playing(&self) -> bool {
+        self.space
+            .outputs()
+            .any(|output| self.playing_on(output).is_some())
+    }
+
+    /// Whether a game plays on every screen, and there is one (M7.7c).
+    pub fn playing_everywhere(&self) -> bool {
+        self.space.outputs().next().is_some()
+            && self
+                .space
+                .outputs()
+                .all(|output| self.playing_on(output).is_some())
+    }
+
+    /// Whether `output` should run at a variable refresh: a window plays
+    /// on it (`playing_on`), which needs game mode and nothing locking.
     pub fn wants_vrr(&self, output: &Output) -> bool {
-        self.locked.is_none() && self.fullscreen_top(output).is_some() && self.game.on()
+        self.playing_on(output).is_some()
+    }
+
+    /// Whether `window` lies behind a game on every screen it is on (M7.7c):
+    /// each of them plays another window, so it gets no frame callback
+    /// until it is visible again. A window on no screen is not behind.
+    pub fn behind_game(&self, window: &Window) -> bool {
+        let outputs = self.space.outputs_for_element(window);
+        !outputs.is_empty()
+            && outputs
+                .iter()
+                .all(|output| self.playing_on(output).is_some_and(|top| top != window))
     }
 }
 

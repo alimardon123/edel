@@ -71,6 +71,8 @@ impl Edel {
         };
         eprintln!("edel-compositor: tier={tier} ({why})");
         self.deadline = Deadline::new(tier);
+        // The battery's first reading (M7.7c); shell-ui's readings follow.
+        self.battery_changed(battery);
         self.state_changed();
     }
 

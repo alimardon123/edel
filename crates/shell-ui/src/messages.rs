@@ -334,6 +334,11 @@ pub fn panel_not_drawn(why: impl Display) -> String {
     format!("could not draw the panel: {why}; it is drawn again at the next change")
 }
 
+/// The desktop's widgets cannot be drawn (M8.21 part 21j1).
+pub fn desktop_not_drawn(why: impl Display) -> String {
+    format!("could not draw the desktop's widgets: {why}; they are drawn again at the next change")
+}
+
 /// The pages of a panel buffer no longer shown cannot be given back.
 pub fn pages_not_given_back(why: impl Display) -> String {
     format!(
@@ -658,6 +663,7 @@ mod tests {
             clock_not_started("x"),
             look_not_known("x", &["classic".to_string()]),
             panel_not_drawn("x"),
+            desktop_not_drawn("x"),
             portal_not_said("x"),
             display_not_told("x"),
             edit_bus_not_served("x"),

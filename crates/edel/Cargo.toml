@@ -19,7 +19,7 @@ required-features = ["cli"]
 default = ["cli"]
 # What only the command needs: arguments, hashing, signing and downloads.
 # The compositor, shell-ui and Settings link the library without them.
-cli = ["os", "dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:libc", "dep:sha2", "dep:ureq"]
+cli = ["os", "dep:clap", "dep:ed25519-dalek", "dep:flate2", "dep:inotify", "dep:libc", "dep:sha2", "dep:ureq"]
 # The system's own work (M6.17): the install plan, the feature file reader,
 # the base's tools (edel::base), firmware, what an image keeps, scripts,
 # services and speaker profiles.
@@ -44,6 +44,10 @@ anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"], optional = true }
 ed25519-dalek = { version = "3", optional = true }
 flate2 = { version = "1", optional = true }
+# `edel update` and the add-on fetch wait for a game to end (M7.7c): inotify
+# wakes them when the compositor writes its state file. The crate is already
+# in the lock file for the compositor.
+inotify = { version = "0.11.5", default-features = false, optional = true }
 # Sunrise and sunset in this computer's own time (M7.14): the time zone files tzdata ships, as shell-ui's clock reads them.
 jiff = "0.2"
 # Wallpapers' JPEG pictures (M5.10c4b): pure Rust, and it decodes at a half, a quarter or an eighth of the size the screen needs, so a 4K picture never sits whole in memory for a smaller screen.

@@ -1052,6 +1052,8 @@ pub fn fetch_chosen() -> Result<()> {
     if missing.is_empty() {
         return Ok(());
     }
+    // Fetching is network and disk work, which waits while a game plays (M7.7c).
+    crate::shell::wait_for_game("edel settings");
     let (location, accept) = source(&running)?;
     let manifest = crate::release::verified(&location, &accept)?;
     if manifest.version != running {
