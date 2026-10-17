@@ -2244,6 +2244,15 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
         }
     }
     let width = rows.iter().map(|row| row.key.len()).max().unwrap_or(0);
+    // When the sun changes the scheme next, under auto at a place (M7.14),
+    // read from the same two files the rows came from.
+    let sun = {
+        let machine_text = fs::read_to_string(machine_file()).ok();
+        let person_text = places::person_settings()
+            .map(|p| places::found(&p))
+            .and_then(|p| fs::read_to_string(p).ok());
+        edel::sun::scheme_of(machine_text.as_deref(), person_text.as_deref()).1
+    };
     for page in settings::PAGES {
         let mut mine: Vec<&Row> = rows
             .iter()
@@ -2286,7 +2295,13 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             } else {
                 String::new()
             };
-            println!("  {:width$}  {shown}{later}", row.key);
+            let when = match &sun {
+                Some(change) if row.key == edel::sun::MODE => {
+                    format!("  ({})", edel::sun::change_words(*change, edel::sun::now()))
+                }
+                _ => String::new(),
+            };
+            println!("  {:width$}  {shown}{later}{when}", row.key);
             // The one key asked for says what it is, on the line below (M6.11).
             if key == Some(row.key.as_str()) {
                 if let Some(line) = key_help::find(&row.key) {

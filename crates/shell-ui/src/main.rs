@@ -1004,9 +1004,10 @@ fn chosen() -> follow::Chosen {
 }
 
 /// `layout.preset`, `panels.list` and the colour scheme, the person's over
-/// the machine's.
+/// the machine's. The scheme is auto's sun at `location.place` too (M7.14),
+/// worked out by `edel::sun`.
 fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
-    let (mut name, mut panels, mut scheme) = (None, None, None);
+    let (mut name, mut panels) = (None, None);
     let files = [Some(places::machine_settings()), places::person_settings()];
     for path in files.into_iter().flatten().map(|p| places::found(&p)) {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -1019,7 +1020,6 @@ fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
                 let layout = file.layout;
                 name = layout.preset.or(name);
                 panels = file.panels.list.or(panels);
-                scheme = file.appearance.mode.or(scheme);
             }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",
@@ -1027,10 +1027,8 @@ fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
             ),
         }
     }
-    let scheme = scheme
-        .as_deref()
-        .and_then(Scheme::parse)
-        .unwrap_or_default();
+    let (machine, person) = settings_texts();
+    let scheme = edel::sun::scheme_of(machine.as_deref(), person.as_deref()).0;
     (name, panels, scheme)
 }
 
