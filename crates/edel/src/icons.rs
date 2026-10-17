@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 77] = [
+pub const BUILT_IN: [(&str, &str); 78] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     ("more", include_str!("../../../design/icons/more.svg")),
     // Customize, a look's edit (M5.10c7b).
@@ -240,6 +240,11 @@ pub const BUILT_IN: [(&str, &str); 77] = [
     (
         "do-not-disturb",
         include_str!("../../../design/icons/do-not-disturb.svg"),
+    ),
+    // Developer mode in effect, in the panel's status pill (M7.1).
+    (
+        "developer",
+        include_str!("../../../design/icons/developer.svg"),
     ),
     (
         "chevron-left",

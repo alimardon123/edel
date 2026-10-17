@@ -11,7 +11,7 @@ edel settings set system.developer_mode=true
 edel settings apply
 ```
 
-or the line `developer_mode = true` under `[system]` in the settings file. It takes effect when the computer next starts. `edel status` then says `developer mode: on`, and the panel shows Developer mode.
+or the line `developer_mode = true` under `[system]` in the settings file. It takes effect when the computer next starts. `edel status` then says `developer mode: on`, and the panel's status area shows its icon, two brackets and a slash.
 
 ## What it allows
 
