@@ -1205,6 +1205,11 @@ commands() {
 		# which adds Flathub for ci and installs the app with flatpak --user.
 		# The download takes minutes, so the command's verdict is its status
 		# and the last lines of its log.
+		# Office documents' fonts (M7.6d): what fontconfig draws for the
+		# fonts Microsoft Office names, one family a line.
+		'fonts office')
+			say "fonts_office $(for f in Calibri Arial 'Times New Roman' 'Courier New'; do fc-match -f '%{family[0]}' "$f"; printf ';'; done 2>&1)"
+			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No
 		# download: the plan alone shows whether Steam would install.

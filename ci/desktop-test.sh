@@ -296,6 +296,9 @@
 #               popup the compositor shows (`input method popup shown`,
 #               input-method.png); Escape, Super+Q, and reset stop fcitx5
 #               (`input method off, fcitx5 ended`) (M6.8)
+#   office-fonts  fontconfig draws Carlito for Calibri and Liberation Sans,
+#               Serif and Mono for Arial, Times New Roman and Courier New,
+#               as a Word or PowerPoint file asks (M7.6d)
 #   profiles    with gaming named, `edel settings set apps.installed-=` Steam
 #               leaves it out (system.profiles_without), apply ends 0 and
 #               the diff no longer installs it; reset takes the key out (M7.6c)
@@ -8102,6 +8105,19 @@ case_profiles() {
 	echo "PASS: with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
 }
 
+case_office_fonts() {
+	# Office documents keep their layout (M7.6d): the fonts Microsoft
+	# Office names are drawn with fonts of the same widths, as fontconfig's
+	# metric aliases map them.
+	asked=$(count 'DESKTOP-TEST: fonts_office ')
+	guest 'fonts office'
+	wait_more 'DESKTOP-TEST: fonts_office ' "$asked" || fail "the service did not ask fontconfig for the office fonts"
+	got=$(value fonts_office)
+	want='Carlito;Liberation Sans;Liberation Serif;Liberation Mono;'
+	[ "$got" = "$want" ] || fail "fc-match for Calibri, Arial, Times New Roman and Courier New gave $got, not $want"
+	echo "PASS: fc-match drew Calibri with Carlito, and Arial, Times New Roman and Courier New with Liberation Sans, Serif and Mono"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -8141,7 +8157,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -53,7 +53,7 @@ pub fn title(name: &str) -> String {
 /// say it.
 pub fn about(name: &str) -> String {
     match name {
-        "office" => tr(n_("LibreOffice and printing")).to_string(),
+        "office" => tr(n_("LibreOffice, printing and scanning")).to_string(),
         "developer" => tr(n_("Podman containers and the VSCodium editor")).to_string(),
         "creative" => tr(n_("Krita for drawing and GIMP for photos")).to_string(),
         "gaming" => tr(n_("Steam, and game mode for every fullscreen game")).to_string(),
@@ -331,6 +331,7 @@ mod tests {
         );
         let apps = once.apps.installed.unwrap();
         assert!(apps.contains(&"org.libreoffice.LibreOffice".to_string()));
+        assert!(apps.contains(&"org.gnome.SimpleScan".to_string()));
         assert!(apps.contains(&"com.vscodium.codium".to_string()));
         // The file still names only the profiles.
         assert_eq!(once.system.profiles.unwrap(), ["office", "developer"]);
