@@ -1,0 +1,150 @@
+#!/sbin/openrc-run
+# Test only: CI builds this into the developer mode test image with
+# `edel image build --files ci/developer-test/files`; release images never
+# have it. Each boot runs the next step of the test (roadmap M7.1), then
+# restarts the VM. The step number lives on the EFI system partition.
+#
+#   1. Developer mode is off: /usr is read-only and apk add fails. Turn it
+#      on, which takes effect at the next start.
+#   2. On: /usr is an overlay; write /usr/bin/hello and apk add a small
+#      package.
+#   3. Both survived the restart, and export counts the changes. Add a
+#      service whose program, in the layer, hangs, and leave slot A one
+#      try, so the hang uses it up (slot B is empty).
+#   4. No slot had a try left, so GRUB started safely: edel.safe is on the
+#      command line, the layer is held back (hello is gone, the hanging
+#      service too, so the start went on), and status says so. Reset
+#      developer mode.
+#   5. The reset deleted the layer and developer mode is off: hello and
+#      the package are gone, /usr is read-only again and apk add fails.
+
+description="Edel OS developer mode test"
+
+depend() {
+	need edel-boot-ok
+}
+
+say() {
+	echo "DEVELOPER-TEST: $*"
+}
+
+finish() {
+	say "$1"
+	umount "$esp" 2>/dev/null || true
+	(sleep 1 && poweroff) &
+}
+
+# check MESSAGE COMMAND...: COMMAND must succeed.
+check() {
+	msg=$1
+	shift
+	"$@" || {
+		finish "FAIL: step $step expected $msg"
+		return 1
+	}
+}
+
+next() {
+	echo "$1" >"$esp/developer-test-step"
+	say "step $step done, restarting for step $1"
+	umount "$esp"
+	(sleep 1 && reboot) &
+}
+
+status_says() {
+	/usr/bin/edel status | grep -qx "developer mode: $1"
+}
+
+read_only_usr() {
+	touch /usr/bin/hello 2>&1 | grep -q 'Read-only file system'
+}
+
+apk_fails() {
+	! apk add --no-cache tree >/dev/null 2>&1
+}
+
+usr_is_overlay() {
+	awk '$2 == "/usr" && $3 == "overlay" { found = 1 } END { exit !found }' /proc/mounts
+}
+
+safe_start() {
+	grep -qw edel.safe /proc/cmdline
+}
+
+start() {
+	esp=/run/developer-test/esp
+	mkdir -p "$esp"
+	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" "$esp"
+	step=$(cat "$esp/developer-test-step" 2>/dev/null || echo 1)
+	say "step $step"
+	/usr/bin/edel status
+
+	case "$step" in
+	1)
+		check "/usr read-only" read_only_usr || return 0
+		check "apk add to fail" apk_fails || return 0
+		check "no developer mode line" sh -c '! /usr/bin/edel status | grep -q "^developer mode:"' || return 0
+		/usr/bin/edel settings set system.developer_mode=true && /usr/bin/edel settings apply ||
+			{ finish "FAIL: step 1 could not turn developer mode on"; return 0; }
+		check "developer mode on after a restart" status_says "on after a restart" || return 0
+		next 2
+		;;
+	2)
+		check "an overlay on /usr" usr_is_overlay || return 0
+		check "developer mode on" status_says on || return 0
+		printf '#!/bin/sh\necho hello from developer mode\n' >/usr/bin/hello &&
+			chmod 755 /usr/bin/hello || { finish "FAIL: step 2 could not write /usr/bin/hello"; return 0; }
+		# Alpine's mirror, from the VM: once more before it counts.
+		apk add --no-cache tree || apk add --no-cache tree ||
+			{ finish "FAIL: step 2 apk add tree (see apk's message above: a mirror that cannot be reached is no developer mode bug)"; return 0; }
+		next 3
+		;;
+	3)
+		check "/usr/bin/hello kept" sh -c '[ "$(/usr/bin/hello)" = "hello from developer mode" ]' || return 0
+		# By the package, not the PATH: busybox has a tree applet of its own.
+		check "tree kept" sh -c 'apk info -e tree >/dev/null' || return 0
+		check "export to count the changes" sh -c '/usr/bin/edel settings export | grep -q "^# Developer mode changed [0-9]* files under /usr"' || return 0
+		# A developer's own service lives in the layer, in OpenRC's
+		# /usr/local/etc/init.d, so a safe start leaves it out too.
+		mkdir -p /usr/local/etc/init.d
+		printf '#!/sbin/openrc-run\nstart() {\n\tsleep 100000\n}\n' >/usr/local/etc/init.d/dev-hang &&
+			chmod 755 /usr/local/etc/init.d/dev-hang && rc-update add dev-hang default ||
+			{ finish "FAIL: step 3 could not add the hanging service"; return 0; }
+		# The same length, so the 1024-byte block stays whole.
+		sed -i 's/^A_TRY=0$/A_TRY=2/' "$esp/EFI/edel/grubenv"
+		check "slot A at its last try" grep -q '^A_TRY=2$' "$esp/EFI/edel/grubenv" || return 0
+		next 4
+		;;
+	4)
+		# The hanging start may run this before it hangs; only the safe
+		# start after it decides.
+		if ! safe_start; then
+			say "step 4 waits for the safe start"
+			umount "$esp"
+			return 0
+		fi
+		check "no overlay on /usr" sh -c '! awk "\$2 == \"/usr\" && \$3 == \"overlay\" { f = 1 } END { exit !f }" /proc/mounts' || return 0
+		check "hello held back" sh -c '[ ! -e /usr/bin/hello ]' || return 0
+		check "developer mode held back" sh -c '/usr/bin/edel status | grep -q "^developer mode: on, but its layer over /usr is held back"' || return 0
+		check "the layer kept on /data" sh -c '[ -e /data/developer/usr/bin/hello ]' || return 0
+		check "reset to refuse without --yes" sh -c '! /usr/bin/edel settings reset system.developer_mode </dev/null' || return 0
+		/usr/bin/edel settings reset --yes system.developer_mode && /usr/bin/edel settings apply ||
+			{ finish "FAIL: step 4 reset"; return 0; }
+		rm -f /etc/runlevels/default/dev-hang
+		next 5
+		;;
+	5)
+		check "the layer deleted" sh -c '[ ! -e /data/developer/usr ]' || return 0
+		check "no overlay on /usr" sh -c '! awk "\$2 == \"/usr\" && \$3 == \"overlay\" { f = 1 } END { exit !f }" /proc/mounts' || return 0
+		check "hello gone" sh -c '[ ! -e /usr/bin/hello ]' || return 0
+		check "tree gone" sh -c '! apk info -e tree >/dev/null' || return 0
+		check "/usr read-only" read_only_usr || return 0
+		check "apk add to fail" apk_fails || return 0
+		check "no developer mode line" sh -c '! /usr/bin/edel status | grep -q "^developer mode:"' || return 0
+		finish PASS
+		;;
+	*)
+		finish "FAIL: unknown step $step"
+		;;
+	esac
+}

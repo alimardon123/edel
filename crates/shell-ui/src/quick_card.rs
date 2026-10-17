@@ -559,6 +559,7 @@ impl Shell {
     /// Draws the card if what it shows changed, after asking the
     /// compositor for a new size if it needs one.
     pub fn draw_quick(&mut self) {
+        let glass = self.glass();
         let Some((view, layout)) = self.quick_view() else {
             return;
         };
@@ -583,6 +584,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        card.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = card.popup.show(
             view.clone(),
             &pixmap,

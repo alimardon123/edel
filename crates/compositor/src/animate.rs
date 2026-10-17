@@ -235,7 +235,7 @@ impl Animations {
             to,
             now,
             self.style.slide,
-            self.style.curve,
+            self.style.feel.windows,
         ) {
             Some(slide) => self.slides.insert(window.clone(), slide),
             None => self.slides.remove(window),
@@ -257,7 +257,7 @@ impl Animations {
     /// (M5.14) as well as its own slide.
     pub fn look(&self, window: &Window, now: Duration, screen: &Option<String>) -> Look {
         let (alpha, zoom) = self.opening.get(window).map_or((1.0, 1.0), |anim| {
-            opening(&self.style, anim.eased(now, self.style.curve))
+            opening(&self.style, anim.eased(now, self.style.feel.windows))
         });
         let slide = self
             .slides
@@ -293,7 +293,13 @@ impl Animations {
                 leave.base += by;
             }
         }
-        let next = Switch::start(self.switches.get(screen), by, now, length, self.style.curve);
+        let next = Switch::start(
+            self.switches.get(screen),
+            by,
+            now,
+            length,
+            self.style.feel.workspaces,
+        );
         self.switches.insert(screen.clone(), next);
         true
     }
@@ -310,7 +316,7 @@ impl Animations {
     pub fn popup_look(&self, surface: &WlSurface, now: Duration) -> Option<(f32, f64)> {
         self.popups
             .get(surface)
-            .map(|anim| opening(&self.style, anim.eased(now, self.style.curve)))
+            .map(|anim| opening(&self.style, anim.eased(now, self.style.feel.popups)))
     }
 
     /// How a closed or leaving window is drawn at `now`.
@@ -327,7 +333,7 @@ impl Animations {
                 offset: at,
             };
         }
-        let progress = closed.anim.eased(now, self.style.curve);
+        let progress = closed.anim.eased(now, self.style.feel.windows);
         let (alpha, zoom) = closing(&self.style, progress);
         Look {
             alpha,
@@ -369,15 +375,19 @@ impl Edel {
         if known && self.animations.logged != Some((tier, motion, speed, curve)) {
             self.animations.logged = Some((tier, motion, speed, curve));
             eprintln!(
-                "edel-compositor: animations at tier {tier}, motion {}: open {} ms, close {} ms, slide {} ms, speed {speed} %, curve {}",
+                "edel-compositor: animations at tier {tier}, motion {}: open {} ms, close {} ms, slide {} ms, speed {speed} %, curve {} (windows {}, workspaces {}, popups {})",
                 motion.name(),
                 new.open.as_millis(),
                 new.close.as_millis(),
                 new.slide.as_millis(),
-                curve.name()
+                curve.name(),
+                new.feel.windows.name(),
+                new.feel.workspaces.name(),
+                new.feel.popups.name()
             );
         }
         self.animations.style = new;
+        self.tell_blur();
     }
 
     /// An overlay surface, such as a popup, shows a picture for the first

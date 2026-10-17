@@ -5,7 +5,8 @@
 #   installed  install-test.sh, ab-test.sh (it boots the disk the first
 #              installed), then apps-test.sh, the default apps across an
 #              update
-#   system     boot-test.sh, system-test.sh, flatpak-test.sh, then
+#   system     boot-test.sh, system-test.sh, developer-test.sh (M7.1),
+#              flatpak-test.sh, then
 #              `desktop-test.sh rollback`, which restarts the desktop VM
 #   live       `desktop-test.sh live`, which starts the released desktop
 #              image as a USB stick
@@ -47,7 +48,7 @@ lane() {
 run_lane() {
 	case "$1" in
 	installed) lane install-test.sh ab-test.sh apps-test.sh ;;
-	system) lane boot-test.sh system-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
+	system) lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
 	fleet) lane fleet-test.sh ;;
@@ -71,7 +72,7 @@ archive() {
 files() {
 	case "$1" in
 	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test ;;
-	system) echo out/edel-vm-x86_64.img out/keys out/system-test out/flatpak out/desktop-test ;;
+	system) echo out/edel-vm-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-desktop-x86_64.img out/install-file.img ;;
 	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img ;;
 	*) no_lane "$1" ;;

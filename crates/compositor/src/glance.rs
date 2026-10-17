@@ -752,6 +752,7 @@ impl Edel {
             scale,
             &hidden,
             &self.animations,
+            None,
         );
         front.extend(self.overview_tip(renderer, &mut overview, &screen, area, scale));
         // The window held, at the pointer, over everything else.
@@ -927,6 +928,7 @@ impl Edel {
             scale,
             &hidden,
             &self.animations,
+            None,
         ));
         let pixels = (
             (f64::from(area.size.w) * scale / BACKDROP_SHRINK).ceil() as u32,

@@ -1132,7 +1132,10 @@ case_animations() {
 	awk -v a="$fast_open" -v b="$reduced_open" 'BEGIN { exit !(a != "" && a * 2 == b) }' ||
 		fail "speed 200 made the fade ${fast_open:-?} ms long, not half of the $reduced_open ms it was"
 	guest 'motion curve springy'
-	wait_for 'curve springy' || fail "appearance.animation_curve = \"springy\" was not logged"
+	# M8.21 part 21e: the feel gives each kind its curve, a workspace
+	# settling snappily under springy.
+	wait_for 'curve springy \(windows springy, workspaces snappy, popups springy\)' ||
+		fail "appearance.animation_curve = \"springy\" did not give each kind its curve: $(tr -d '\r' <"$log" | grep -a 'animations at' | tail -n 1)"
 	popups=$(count 'popup edel-[a-z]+ opens over')
 	python3 ci/qmp.py key meta_l
 	wait_more 'popup edel-[a-z]+ opens over' "$popups" || fail "the launcher did not pop up at speed 200 and springy"
