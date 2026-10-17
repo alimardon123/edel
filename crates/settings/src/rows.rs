@@ -215,6 +215,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Cursor"),
     },
     Row {
+        key: "appearance.icon_theme",
+        title: n_("Icons"),
+    },
+    Row {
         key: "appearance.icon_size",
         title: n_("Icon size"),
     },
@@ -916,7 +920,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 33);
+        assert_eq!(on_page("appearance").count(), 34);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

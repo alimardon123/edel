@@ -40,10 +40,6 @@ const INTERFACE: &str = "org.gnome.desktop.interface";
 /// `edel::presets::gnome_button_layout` writes.
 const WM: &str = "org.gnome.desktop.wm.preferences";
 const BUTTON_LAYOUT: &str = "button-layout";
-/// The icon theme apps draw their glyphs from (M6.16): the `Edel` theme of
-/// `features/shell/usr/share/icons/Edel`, our window glyphs under the names
-/// GTK asks for, which step 3 of M6.16 ships.
-const ICON_THEME: &str = "Edel";
 /// A pixel is three quarters of a point, as GTK sizes its text (M5.12b5).
 const POINTS_PER_PIXEL: f64 = 0.75;
 
@@ -54,8 +50,13 @@ type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 /// background is dark, else light (2); `accent-color` is the accent as
 /// three numbers from 0 to 1; `contrast` is high (1) when `appearance.contrast`
 /// is high, else normal (0) (M6.18). `layout` is the header bars' button
-/// layout in GNOME's form (M6.16), which apps' own bars follow.
-pub fn settings(tokens: &Tokens, layout: &str, high: bool) -> Settings {
+/// layout in GNOME's form (M6.16), which apps' own bars follow. `icon_theme`
+/// is the person's `appearance.icon_theme`, else Edel (M8.21 part g): the
+/// icon theme apps draw their glyphs from, the release's `Edel` theme of
+/// `features/shell/usr/share/icons/Edel` by default, our window glyphs under
+/// the names GTK asks for. Apps hear a chosen theme too, so their own header
+/// bars draw that theme's window glyphs (accepted: the roadmap asks for it).
+pub fn settings(tokens: &Tokens, layout: &str, high: bool, icon_theme: &str) -> Settings {
     let scheme: u32 = if lightness(tokens.background) < 0.5 {
         1
     } else {
@@ -91,7 +92,7 @@ pub fn settings(tokens: &Tokens, layout: &str, high: bool) -> Settings {
         "text-scaling-factor",
         Value::from(f64::from(tokens.text_percent) / 100.0),
     );
-    put(&mut interface, "icon-theme", Value::from(ICON_THEME));
+    put(&mut interface, "icon-theme", Value::from(icon_theme));
     let mut wm = HashMap::new();
     put(&mut wm, BUTTON_LAYOUT, Value::from(layout));
     HashMap::from([
@@ -473,7 +474,13 @@ pub fn follow_location(connection: &zbus::blocking::Connection, off: bool) {
 /// and the header bars' button layout; each changed value is stored and
 /// `setting_changed` goes out for it, so apps already open follow. Values
 /// that did not change say nothing.
-pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: &str, high: bool) {
+pub fn follow(
+    connection: &zbus::blocking::Connection,
+    tokens: &Tokens,
+    layout: &str,
+    high: bool,
+    icon_theme: &str,
+) {
     let backend = match connection.object_server().interface::<_, Backend>(PATH) {
         Ok(backend) => backend,
         Err(e) => {
@@ -484,7 +491,7 @@ pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: 
     let mut changed = Vec::new();
     {
         let mut backend = backend.get_mut();
-        for (namespace, keys) in settings(tokens, layout, high) {
+        for (namespace, keys) in settings(tokens, layout, high, icon_theme) {
             let stored = backend.settings.entry(namespace.clone()).or_default();
             for (key, value) in keys {
                 if stored.get(&key) == Some(&value) {
@@ -536,11 +543,12 @@ pub fn serve(
     tokens: &Tokens,
     layout: &str,
     high: bool,
+    icon_theme: &str,
     edits: channel::Sender<Edit>,
     location_off: bool,
 ) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
-        settings: settings(tokens, layout, high),
+        settings: settings(tokens, layout, high, icon_theme),
     };
     let asking = Asking {
         edits: edits.clone(),
@@ -575,7 +583,7 @@ pub fn serve(
         .and_then(|backend| {
             let emitter = backend.signal_emitter();
             zbus::block_on(async {
-                for (namespace, keys) in settings(tokens, layout, high) {
+                for (namespace, keys) in settings(tokens, layout, high, icon_theme) {
                     for (key, value) in keys {
                         Backend::setting_changed(emitter, &namespace, &key, value.into()).await?;
                     }
@@ -593,6 +601,9 @@ pub fn serve(
 mod tests {
     use super::*;
     use crate::access;
+
+    /// The release's icon theme, as the portal is given it by default.
+    const ICON: &str = edel::settings::ICON_THEME_DEFAULT;
 
     #[test]
     fn a_string_option_is_read_when_given_and_not_empty() {
@@ -624,7 +635,14 @@ mod tests {
         use smithay_client_toolkit::reexports::calloop::EventLoop;
         use std::time::Duration;
         let (edits, asks) = channel::channel::<Edit>();
-        let Some(_served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, false) else {
+        let Some(_served) = serve(
+            &Tokens::built_in(),
+            BUTTONS_RIGHT,
+            false,
+            ICON,
+            edits,
+            false,
+        ) else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -780,7 +798,8 @@ mod tests {
     fn the_lockdown_is_served_and_follows_the_location_switch() {
         let _alone = ON_THE_BUS.lock();
         let (edits, _asks) = channel::channel::<Edit>();
-        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, true) else {
+        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, ICON, edits, true)
+        else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -804,7 +823,7 @@ mod tests {
     #[test]
     fn the_tokens_say_dark_and_give_the_accent() {
         let tokens = Tokens::built_in();
-        let all = settings(&tokens, BUTTONS_RIGHT, false);
+        let all = settings(&tokens, BUTTONS_RIGHT, false, ICON);
         let appearance = &all[APPEARANCE];
         assert_eq!(u32::try_from(&appearance["color-scheme"]).unwrap(), 1);
         let (r, g, b) =
@@ -815,22 +834,22 @@ mod tests {
         assert!((b - f64::from(accent.b)).abs() < 1e-6);
         // The light scheme's tokens say light (M5.5c).
         let light = Tokens::built_in_scheme(edel::tokens::Scheme::Light);
-        let all = settings(&light, BUTTONS_RIGHT, false);
+        let all = settings(&light, BUTTONS_RIGHT, false, ICON);
         assert_eq!(u32::try_from(&all[APPEARANCE]["color-scheme"]).unwrap(), 2);
     }
 
     #[test]
     fn high_contrast_says_one() {
         let tokens = Tokens::built_in();
-        let high = settings(&tokens, BUTTONS_RIGHT, true);
+        let high = settings(&tokens, BUTTONS_RIGHT, true, ICON);
         assert_eq!(u32::try_from(&high[APPEARANCE]["contrast"]).unwrap(), 1);
-        let normal = settings(&tokens, BUTTONS_RIGHT, false);
+        let normal = settings(&tokens, BUTTONS_RIGHT, false, ICON);
         assert_eq!(u32::try_from(&normal[APPEARANCE]["contrast"]).unwrap(), 0);
     }
 
     #[test]
     fn read_all_gives_the_namespaces_asked_for() {
-        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false);
+        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false, ICON);
         let names = |wanted: &[&str]| {
             let wanted: Vec<String> = wanted.iter().map(|w| w.to_string()).collect();
             let mut got: Vec<String> = chosen(&all, &wanted).into_keys().collect();
@@ -852,12 +871,16 @@ mod tests {
     /// and `Edel` as the interface's icon theme.
     #[test]
     fn the_portal_says_the_button_layout_and_the_icon_theme() {
-        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false);
+        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false, ICON);
         let layout = String::try_from(all[WM][BUTTON_LAYOUT].try_clone().unwrap()).unwrap();
         assert_eq!(layout, ":minimize,maximize,close");
         let theme = String::try_from(all[INTERFACE]["icon-theme"].try_clone().unwrap()).unwrap();
         assert_eq!(theme, "Edel");
-        let left = settings(&Tokens::built_in(), "close,minimize,maximize:", false);
+        // The person's own theme, `appearance.icon_theme` (M8.21 part g).
+        let chosen = settings(&Tokens::built_in(), BUTTONS_RIGHT, false, "Papirus");
+        let theme = String::try_from(chosen[INTERFACE]["icon-theme"].try_clone().unwrap()).unwrap();
+        assert_eq!(theme, "Papirus");
+        let left = settings(&Tokens::built_in(), "close,minimize,maximize:", false, ICON);
         let layout = String::try_from(left[WM][BUTTON_LAYOUT].try_clone().unwrap()).unwrap();
         assert_eq!(layout, "close,minimize,maximize:");
     }
@@ -865,7 +888,7 @@ mod tests {
     #[test]
     fn the_text_gives_the_fonts_in_points_and_the_scale() {
         let tokens = Tokens::built_in();
-        let all = settings(&tokens, BUTTONS_RIGHT, false);
+        let all = settings(&tokens, BUTTONS_RIGHT, false, ICON);
         let interface = &all[INTERFACE];
         let text = |key: &str| String::try_from(interface[key].try_clone().unwrap()).unwrap();
         // The release's 13 px is 9.75 points, which GTK shows as 10.
@@ -876,7 +899,7 @@ mod tests {
         let mut big = tokens.clone();
         big.text_size = 20;
         big.text_percent = 150;
-        let all = settings(&big, BUTTONS_RIGHT, false);
+        let all = settings(&big, BUTTONS_RIGHT, false, ICON);
         let scale = f64::try_from(all[INTERFACE]["text-scaling-factor"].try_clone().unwrap());
         assert!((scale.unwrap() - 1.5).abs() < 1e-9);
         assert_eq!(

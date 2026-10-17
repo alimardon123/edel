@@ -1,9 +1,11 @@
 //! The Appearance page's Cursor and icons group (M5.12b5 part A): the
 //! cursor's size (`appearance.cursor_size`, 16 to 96 logical pixels), its
 //! theme (`appearance.cursor_theme`, one of the xcursor themes this system
-//! has, `default` first, as a `widgets::Choice`) and the icons' size
-//! (`appearance.icon_size`, 75 to 150 percent). The two sliders are built
-//! and laid out as the Depth group's are (`shape::slider`, `shape::lay_out`),
+//! has, `default` first, as a `widgets::Choice`), the apps' icon theme
+//! (`appearance.icon_theme`, one of the icon themes this system has, `Edel`
+//! first, M8.21 part g) and the icons' size (`appearance.icon_size`, 75 to
+//! 150 percent). Both theme rows are one `Theme` each, built alike. The two
+//! sliders are built and laid out as the Depth group's are (`shape::slider`, `shape::lay_out`),
 //! their values at the end. Each is one key of the person's settings file,
 //! read from the value that applies now, and a drag writes its key once it
 //! settles (250 ms). The release's value is taken out, never written
@@ -19,7 +21,7 @@ use std::time::Duration;
 use adw::prelude::*;
 use gtk::glib;
 
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use edel::settings::{self, Source};
 
 use crate::files::Files;
@@ -33,12 +35,17 @@ const SETTLE: Duration = Duration::from_millis(250);
 const CURSOR: usize = 0;
 const ICONS: usize = 1;
 
+/// The two theme rows, in [`Group::themes`]' order.
+const CURSOR_THEME_ROW: usize = 0;
+const ICON_THEME_ROW: usize = 1;
+
 /// The keys of the group in the order the places log names them: the two
-/// sliders, then the theme.
+/// sliders, then the two themes.
 const KEYS: &[&str] = &[
     settings::CURSOR_SIZE,
     settings::ICON_SIZE,
     settings::CURSOR_THEME,
+    settings::ICON_THEME,
 ];
 
 /// The release's values of the two sliders, as the files take them out.
@@ -63,13 +70,53 @@ fn line(index: usize) -> &'static str {
     }
 }
 
-/// The theme's row: its choice of the themes this system has, and the row's
-/// parts.
+/// A theme's row: its choice of the themes this system has for one key, and
+/// the row's parts. The cursor's and the icons' rows are two of these.
 struct Theme {
+    /// The key the row writes, `appearance.cursor_theme` or
+    /// `appearance.icon_theme`.
+    key: &'static str,
+    /// The release's theme, which is taken out of the file when chosen.
+    release: &'static str,
+    /// The line under the row's title, which says what the theme changes.
+    line: &'static str,
     choice: Rc<widgets::Choice>,
-    /// The themes the choice lists, in its order; `default` first.
+    /// The themes the choice lists, in its order; the release's first.
     names: Vec<String>,
     row: widgets::Row,
+}
+
+impl Theme {
+    /// Shows what the files say now: the choice, the row's Reset and its line
+    /// with where the value comes from.
+    fn show(&self, files: &Files) {
+        let chosen = files
+            .chosen(self.key)
+            .unwrap_or_else(|| self.release.to_string());
+        let at = self
+            .names
+            .iter()
+            .position(|name| *name == chosen)
+            .unwrap_or(0);
+        if self.choice.selected() != at {
+            self.choice.set_selected(at);
+        }
+        let source = files.source(self.key);
+        self.row.reset.set_visible(rows::resettable(&source));
+        let mut text = vec![tr(self.line).to_string()];
+        if let Some(note) = rows::note(&source, false) {
+            text.push(note.to_string());
+        }
+        self.row.subtitle.set_label(&text.join(" · "));
+    }
+
+    /// The theme the choice shows now.
+    fn name(&self) -> String {
+        self.names
+            .get(self.choice.selected())
+            .cloned()
+            .unwrap_or_else(|| self.release.to_string())
+    }
 }
 
 /// The Cursor and icons group on the Appearance page.
@@ -81,7 +128,8 @@ pub struct Group {
     /// The group's source line, Reset and Copy as command.
     source: widgets::Source,
     sliders: Rc<Vec<Slider>>,
-    theme: Theme,
+    /// The cursor's and the icons' theme rows, in that order.
+    themes: Vec<Theme>,
     /// Set while `show` moves a control, so that is not a choice.
     quiet: Cell<bool>,
 }
@@ -89,7 +137,7 @@ pub struct Group {
 impl Group {
     /// Shows what the files say now: each slider at its value (unless the
     /// person is dragging it), its value at the end, the line under it and
-    /// its Reset, the theme, then the group's source line.
+    /// its Reset, the two themes, then the group's source line.
     pub fn show(&self) {
         let files = Files::here();
         self.quiet.set(true);
@@ -113,26 +161,9 @@ impl Group {
             slider.row.subtitle.set_label(&text.join(" · "));
             slider.row.subtitle.set_visible(true);
         }
-        let chosen = files
-            .chosen(settings::CURSOR_THEME)
-            .unwrap_or_else(|| settings::CURSOR_THEME_DEFAULT.to_string());
-        let at = self
-            .theme
-            .names
-            .iter()
-            .position(|name| *name == chosen)
-            .unwrap_or(0);
-        if self.theme.choice.selected() != at {
-            self.theme.choice.set_selected(at);
+        for theme in &self.themes {
+            theme.show(&files);
         }
-        let source = files.source(settings::CURSOR_THEME);
-        self.theme.row.reset.set_visible(rows::resettable(&source));
-        let mut text =
-            vec![tr("The pointer's look in every app that starts after this").to_string()];
-        if let Some(note) = rows::note(&source, false) {
-            text.push(note.to_string());
-        }
-        self.theme.row.subtitle.set_label(&text.join(" · "));
         self.quiet.set(false);
         self.source.label.set_label(&self.source_text(&files));
         self.source.reset.set_visible(
@@ -152,15 +183,6 @@ impl Group {
         } else {
             trf("Automatic ({current})", &[("current", tr("the release"))])
         }
-    }
-
-    /// The theme the choice shows now.
-    fn theme_name(&self) -> String {
-        self.theme
-            .names
-            .get(self.theme.choice.selected())
-            .cloned()
-            .unwrap_or_else(|| settings::CURSOR_THEME_DEFAULT.to_string())
     }
 
     /// A slider moved: its end follows at once, and its value is written once
@@ -190,18 +212,14 @@ impl Group {
         self.write(KEYS[index], &value.to_string(), &RELEASE[index].to_string());
     }
 
-    /// The theme was picked: it is written, or taken out when it is the
-    /// release's `default`.
-    fn picked(&self) {
+    /// Theme row `index` was picked: it is written, or taken out when it is
+    /// the release's.
+    fn picked(&self, index: usize) {
         if self.quiet.get() {
             return;
         }
-        let name = self.theme_name();
-        self.write(
-            settings::CURSOR_THEME,
-            &name,
-            settings::CURSOR_THEME_DEFAULT,
-        );
+        let theme = &self.themes[index];
+        self.write(theme.key, &theme.name(), theme.release);
     }
 
     /// Chooses `value` for `key` against the release's `release`, logs what
@@ -236,9 +254,29 @@ impl Group {
     }
 }
 
+/// Builds one theme row in `card`: its choice of `names`, under `key`'s title.
+fn theme_row(
+    card: &gtk::Box,
+    key: &'static str,
+    release: &'static str,
+    line: &'static str,
+    names: Vec<String>,
+) -> Theme {
+    let choice = widgets::Choice::new(names.clone());
+    let row = widgets::row(card, rows::title(key), &choice.widget());
+    Theme {
+        key,
+        release,
+        line,
+        choice,
+        names,
+        row,
+    }
+}
+
 /// Builds the Cursor and icons group in `content`, after the Text group: the
 /// section with its line and source line, Reset and Copy as command, then one
-/// card with the theme's row and the two sliders.
+/// card with the two themes' rows and the two sliders.
 pub fn group(content: &gtk::Box, problem: &gtk::Label) -> Rc<Group> {
     let source = widgets::section(content, tr("Cursor and icons"));
     let card = widgets::group(content);
@@ -247,14 +285,20 @@ pub fn group(content: &gtk::Box, problem: &gtk::Label) -> Rc<Group> {
         tr("The pointer and the icons. Apps already open keep their cursor until they start again"),
     );
 
-    let names = settings::cursor_themes();
-    let choice = widgets::Choice::new(names.clone());
-    let theme_row = widgets::row(&card, rows::title(settings::CURSOR_THEME), &choice.widget());
-    let theme = Theme {
-        choice,
-        names,
-        row: theme_row,
-    };
+    let cursor = theme_row(
+        &card,
+        settings::CURSOR_THEME,
+        settings::CURSOR_THEME_DEFAULT,
+        n_("The pointer's look in every app that starts after this"),
+        settings::cursor_themes(),
+    );
+    let icons = theme_row(
+        &card,
+        settings::ICON_THEME,
+        settings::ICON_THEME_DEFAULT,
+        n_("The apps' icons in the panel, the dock, the launcher and the title bars"),
+        settings::icon_themes(),
+    );
 
     let sliders: Vec<Slider> = [settings::CURSOR_SIZE, settings::ICON_SIZE]
         .iter()
@@ -276,14 +320,14 @@ pub fn group(content: &gtk::Box, problem: &gtk::Label) -> Rc<Group> {
     }
 
     let mut controls: Vec<gtk::Widget> = sliders.iter().map(|s| s.scale.clone().upcast()).collect();
-    controls.push(theme.choice.widget());
+    controls.extend([cursor.choice.widget(), icons.choice.widget()]);
     let reset: gtk::Widget = source.reset.clone().upcast();
     let group = Rc::new_cyclic(|me| Group {
         me: me.clone(),
         problem: problem.clone(),
         source,
         sliders,
-        theme,
+        themes: vec![cursor, icons],
         quiet: Cell::new(false),
     });
     wire(&group);
@@ -321,29 +365,30 @@ fn wire(group: &Rc<Group>) {
             widgets::copied(button);
         });
     }
-    let weak = Rc::downgrade(group);
-    group.theme.choice.connect_changed(move || {
-        if let Some(group) = weak.upgrade() {
-            group.picked();
-        }
-    });
-    let weak = Rc::downgrade(group);
-    group.theme.row.reset.connect_clicked(move |_| {
-        if let Some(group) = weak.upgrade() {
-            group.set(settings::CURSOR_THEME, None);
-        }
-    });
-    let weak = Rc::downgrade(group);
-    group.theme.row.copy.connect_clicked(move |button| {
-        let Some(group) = weak.upgrade() else {
-            return;
-        };
-        let name = group.theme_name();
-        button
-            .clipboard()
-            .set_text(&rows::command(&[(settings::CURSOR_THEME, name)]));
-        widgets::copied(button);
-    });
+    for (index, theme) in group.themes.iter().enumerate() {
+        let weak = Rc::downgrade(group);
+        theme.choice.connect_changed(move || {
+            if let Some(group) = weak.upgrade() {
+                group.picked(index);
+            }
+        });
+        let weak = Rc::downgrade(group);
+        let key = theme.key;
+        theme.row.reset.connect_clicked(move |_| {
+            if let Some(group) = weak.upgrade() {
+                group.set(key, None);
+            }
+        });
+        let weak = Rc::downgrade(group);
+        theme.row.copy.connect_clicked(move |button| {
+            let Some(group) = weak.upgrade() else {
+                return;
+            };
+            let name = group.themes[index].name();
+            button.clipboard().set_text(&rows::command(&[(key, name)]));
+            widgets::copied(button);
+        });
+    }
     let weak = Rc::downgrade(group);
     group.source.reset.connect_clicked(move |_| {
         let Some(group) = weak.upgrade() else {
@@ -379,7 +424,11 @@ fn wire(group: &Rc<Group>) {
                 settings::ICON_SIZE,
                 (group.sliders[ICONS].scale.value().round() as u32).to_string(),
             ),
-            (settings::CURSOR_THEME, group.theme_name()),
+            (
+                settings::CURSOR_THEME,
+                group.themes[CURSOR_THEME_ROW].name(),
+            ),
+            (settings::ICON_THEME, group.themes[ICON_THEME_ROW].name()),
         ];
         button.clipboard().set_text(&rows::command(&pairs));
         widgets::copied(button);
@@ -415,5 +464,6 @@ mod tests {
     fn the_release_values_are_the_defaults_the_key_table_gives() {
         assert_eq!(RELEASE, [24, 100]);
         assert_eq!(settings::CURSOR_THEME_DEFAULT, "default");
+        assert_eq!(settings::ICON_THEME_DEFAULT, "Edel");
     }
 }

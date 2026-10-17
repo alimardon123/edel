@@ -37,6 +37,7 @@ pub mod first_start;
 #[cfg(feature = "os")]
 pub mod fleet;
 pub mod i18n;
+pub mod icon_theme;
 #[cfg(feature = "icons")]
 pub mod icons;
 #[cfg(feature = "os")]

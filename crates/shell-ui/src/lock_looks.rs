@@ -820,7 +820,10 @@ mod tests {
         };
         let tokens = Tokens::built_in();
         let mut text = Text::load(&tokens.font);
-        let mut icons = edel::app_icons::Icons::new(edel::apps::data_dirs());
+        let mut icons = edel::app_icons::Icons::new(
+            edel::apps::data_dirs(),
+            edel::settings::ICON_THEME_DEFAULT,
+        );
         let mut pictures = lock::Pictures::default();
         let mut backdrops = lock::Backdrops::default();
         let wallpaper = lock::wallpaper_of(None, None, true);
