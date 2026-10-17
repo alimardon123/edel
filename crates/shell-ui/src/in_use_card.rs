@@ -210,9 +210,14 @@ impl Shell {
     /// Closes the card and asks PipeWire to destroy the client, on a thread
     /// of its own. It logs `in use stop APP client N` before and `in use
     /// stopped APP, exit N` after; the sign follows PipeWire's next batch.
+    /// A row with no PipeWire client (the place, M6.14c) has no Stop, so
+    /// nothing runs for it.
     fn stop_in_use(&mut self, used: InUse) {
+        let Some(client) = used.client else {
+            return;
+        };
         self.close_in_use();
-        let (app, client) = (used.app, used.client);
+        let app = used.app;
         eprintln!("edel-shell-ui: in use stop {app} client {client}");
         let named = app.clone();
         let spawned = std::thread::Builder::new()

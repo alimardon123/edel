@@ -1,0 +1,7 @@
+# Containers (M7.2a, M7.6): Podman, as an add-on for the people and
+# machines that run OCI containers.
+format = 1
+summary = "Containers: Podman, rootless and without a daemon"
+why = "Servers run their apps as OCI containers and developers work in them (ADR-003, ADR-005). Podman runs a container as the person who starts it, with no daemon running between containers, so nothing runs in the background while no container does; crun is its small runtime and fuse-overlayfs gives rootless containers their layers. The rest comes with Podman's own dependencies."
+packages = ["podman", "crun", "fuse-overlayfs"]
+addon = true

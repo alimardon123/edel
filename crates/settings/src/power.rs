@@ -17,13 +17,13 @@
 //! battery's own state, not a line of the settings file, so the status has
 //! no Reset.
 //!
-//! The four `[power]` keys of the table that nothing follows yet
-//! (`power.lid_close`, `power.lock_after_minutes`, `power.power_button` and
-//! `power.on_battery`) have no row until M7.8, which needs the logind-free
-//! sleep and the screen lock to exist, so the page shows no setting that
-//! does not work. Seam (ADR-008): with M7.8 they become rows of `rows.rs`
-//! like Channel, written with `Files::choose`, and a test here fails the
-//! day the table supports one, so the row cannot be forgotten.
+//! The `[power]` keys (M7.8) are a group under Other batteries: when the
+//! lid closes, the power button, how long before the screen locks, and how
+//! hard the computer works on battery. Each is a row of `rows.rs` written
+//! to the person's file as the other pages' rows are (`choice_row.rs`), and
+//! a test here holds the page to the table, so a key cannot go without a
+//! row. The lid and the power button act in shell-ui and the compositor, the
+//! screen locks in shell-ui, and the profile is set by `edel power profile`.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -35,7 +35,14 @@ use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
 use edel::power::{self, Bar, Device, Sample, Snapshot, State};
+use edel::settings::{
+    GAME_MODE, GAME_MODE_DEFAULT, LID_CLOSE, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES,
+    LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY, ON_BATTERY_DEFAULT, POWER_BUTTON,
+    POWER_BUTTON_DEFAULT,
+};
 
+use crate::choice_row::{self, ChoiceRow};
+use crate::files::Files;
 use crate::{card, widgets};
 
 const INTRO: &str = n_("The battery, the lid and the power button.");
@@ -183,6 +190,156 @@ struct Card {
     bars: gtk::Box,
 }
 
+/// The minutes the Lock screen after row offers; the file's own minutes
+/// join them when they are none of these (M7.8).
+const MINUTES: &[&str] = &["0", "1", "2", "5", "10", "15", "30"];
+
+/// The values the Lock screen after row offers: [`MINUTES`], and the file's
+/// minutes in order when they are none of those.
+fn minute_values(chosen: Option<&str>) -> Vec<String> {
+    let mut values: Vec<String> = MINUTES.iter().map(|m| m.to_string()).collect();
+    if let Some(minutes) = chosen.and_then(|v| v.parse::<u32>().ok()) {
+        let text = minutes.to_string();
+        if !values.contains(&text) {
+            values.push(text);
+            values.sort_by_key(|v| v.parse::<u32>().unwrap_or(0));
+        }
+    }
+    values
+}
+
+/// What the Lock screen after row shows for a value of minutes: Never for
+/// 0, else the number of minutes.
+fn minute_label(value: &str) -> String {
+    match value.parse::<u32>() {
+        Ok(0) => tr("Never").to_string(),
+        Ok(1) => trf("{n} minute", &[("n", value)]),
+        Ok(_) => trf("{n} minutes", &[("n", value)]),
+        Err(_) => value.to_string(),
+    }
+}
+
+/// The group under Other batteries with the lid, the power button, the
+/// screen lock and the battery's profile (M7.8). The Lock screen after row
+/// lists the file's own minutes too, so the rows are built again when those
+/// change; the page follows both settings files while it is open.
+struct Lid {
+    group: gtk::Box,
+    problem: gtk::Label,
+    rows: RefCell<Vec<Rc<ChoiceRow>>>,
+    minutes: RefCell<Vec<String>>,
+    /// Kept so the page follows the files while it is open.
+    monitors: RefCell<Vec<gio::FileMonitor>>,
+}
+
+impl Lid {
+    /// The group, built for the files as they are now and following them.
+    fn new(group: gtk::Box, problem: gtk::Label) -> Rc<Lid> {
+        let lid = Rc::new(Lid {
+            group,
+            problem,
+            rows: RefCell::new(Vec::new()),
+            minutes: RefCell::new(Vec::new()),
+            monitors: RefCell::new(Vec::new()),
+        });
+        let monitors = choice_row::watch_files(&Files::here());
+        for monitor in &monitors {
+            let weak = Rc::downgrade(&lid);
+            monitor.connect_changed(move |_, _, _, _| {
+                if let Some(lid) = weak.upgrade() {
+                    lid.update();
+                }
+            });
+        }
+        *lid.monitors.borrow_mut() = monitors;
+        lid.update();
+        lid
+    }
+
+    /// Shows what the files say, and builds the rows again when the minutes
+    /// the Lock screen after row offers have changed.
+    fn update(self: &Rc<Self>) {
+        let files = Files::here();
+        let minutes = minute_values(files.chosen(LOCK_AFTER_MINUTES).as_deref());
+        if minutes != *self.minutes.borrow() {
+            self.build(minutes);
+        }
+        for row in self.rows.borrow().iter() {
+            row.update(&files);
+        }
+    }
+
+    /// Builds the four rows in the group, each wired to the files.
+    fn build(self: &Rc<Self>, minutes: Vec<String>) {
+        card::clear(&self.group);
+        let labels = minutes.iter().map(|m| minute_label(m)).collect();
+        let specs = vec![
+            ChoiceRow::new(
+                &self.group,
+                LID_CLOSE,
+                n_("Suspend locks first; with another screen connected, nothing happens"),
+                LID_CLOSE_DEFAULT,
+            ),
+            ChoiceRow::new(
+                &self.group,
+                POWER_BUTTON,
+                n_("Ask opens the lock screen's power menu"),
+                POWER_BUTTON_DEFAULT,
+            ),
+            ChoiceRow::with_values(
+                &self.group,
+                LOCK_AFTER_MINUTES,
+                n_("Without any input; a playing video keeps the screen on"),
+                LOCK_AFTER_MINUTES_DEFAULT_TEXT,
+                minutes.clone(),
+                labels,
+            ),
+            ChoiceRow::new(
+                &self.group,
+                ON_BATTERY,
+                n_("Plugged in, it runs at Balanced, or Performance when chosen here"),
+                ON_BATTERY_DEFAULT,
+            ),
+            ChoiceRow::new(
+                &self.group,
+                GAME_MODE,
+                n_("A fullscreen game gets variable refresh; Super+G turns it on or off"),
+                GAME_MODE_DEFAULT,
+            ),
+        ];
+        let rows: Vec<Rc<ChoiceRow>> = specs
+            .into_iter()
+            .map(|row| {
+                let row = Rc::new(row);
+                row.connect(self.report(), self.after());
+                row
+            })
+            .collect();
+        *self.rows.borrow_mut() = rows;
+        *self.minutes.borrow_mut() = minutes;
+    }
+
+    /// Shows a change's refusal in the page's line.
+    fn report(&self) -> impl Fn(Result<(), String>) + 'static {
+        let problem = self.problem.clone();
+        move |result| choice_row::report(&problem, result)
+    }
+
+    /// Shows the files again after a change. Later, not now: the change is
+    /// picked in a row that a rebuild would take away.
+    fn after(self: &Rc<Self>) -> impl Fn() + 'static {
+        let weak = Rc::downgrade(self);
+        move || {
+            let weak = weak.clone();
+            glib::idle_add_local_once(move || {
+                if let Some(lid) = weak.upgrade() {
+                    lid.update();
+                }
+            });
+        }
+    }
+}
+
 /// The page's widgets and what it needs to change them.
 struct Ui {
     card: Card,
@@ -212,8 +369,8 @@ pub fn page() -> gtk::Widget {
     others_head.set_visible(false);
     others.set_visible(false);
 
-    // The lid, the screen lock, the power button and the power profile
-    // come with M7.8, as rows of `[power]`; none is shown until then.
+    widgets::heading(&content, tr("Behaviour"));
+    let lid = Lid::new(widgets::group(&content), problem.clone());
 
     // Details, closed: UPower's own words.
     let inner = gtk::Box::builder()
@@ -235,6 +392,10 @@ pub fn page() -> gtk::Widget {
         history_at: Cell::new(None),
     });
     card::while_shown(&page, FOLLOW, move || refresh(&ui));
+    // The group's rows and the files' monitors live as long as the page.
+    page.connect_destroy(move |_| {
+        let _ = &lid;
+    });
     page
 }
 
@@ -579,15 +740,7 @@ impl Ui {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The `[power]` keys that no release follows yet, so no row shows them
-    /// (M7.8 brings their rows, as the module says); the test holds the table to it.
-    const WAITING: &[&str] = &[
-        "power.lid_close",
-        "power.lock_after_minutes",
-        "power.power_button",
-        "power.on_battery",
-    ];
+    use crate::rows;
 
     fn dump(battery: &str, daemon: &str) -> Snapshot {
         power::parse(&format!(
@@ -721,22 +874,75 @@ mod tests {
     }
 
     #[test]
-    fn the_rows_that_wait_are_exactly_the_power_keys_nothing_follows_yet() {
-        let table: Vec<&edel::settings::Key> = edel::settings::KEYS
+    fn every_power_key_is_supported_and_has_a_row_on_this_page() {
+        let on_page: Vec<&str> = rows::on_page("power").map(|row| row.key).collect();
+        for key in edel::settings::KEYS
             .iter()
             .filter(|k| k.path.starts_with("power."))
-            .collect();
-        assert_eq!(
-            table.iter().map(|k| k.path).collect::<Vec<_>>(),
-            WAITING,
-            "every power key that waits is listed here, in the table's order"
-        );
-        for key in table {
+        {
+            assert!(key.supported, "{} is not supported yet", key.path);
             assert!(
-                !key.supported,
-                "{} is followed now: make it a row of rows.rs, written with Files::choose, and take it out of WAITING",
+                on_page.contains(&key.path),
+                "{} has no row on the Power page",
                 key.path
             );
         }
+        assert!(
+            on_page.iter().all(|key| key.starts_with("power.")),
+            "{on_page:?} are not power keys"
+        );
+    }
+
+    #[test]
+    fn the_power_rows_have_their_titles_and_words() {
+        assert_eq!(rows::title(LID_CLOSE), "When the lid closes");
+        assert_eq!(rows::title(POWER_BUTTON), "Power button");
+        assert_eq!(rows::title(LOCK_AFTER_MINUTES), "Lock the screen after");
+        assert_eq!(rows::title(ON_BATTERY), "On battery");
+        assert_eq!(rows::title(GAME_MODE), "Game mode");
+        assert_eq!(rows::label("plugged-in"), "When plugged in");
+        assert_eq!(rows::label("poweroff"), "Shut down");
+        assert_eq!(rows::label("nothing"), "Do nothing");
+        assert_eq!(rows::label("ask"), "Ask");
+        assert_eq!(rows::label("lock"), "Lock the screen");
+        assert_eq!(rows::label("power-saver"), "Power saver");
+        assert_eq!(rows::label("suspend"), "Suspend");
+        for (key, release) in [
+            (LID_CLOSE, LID_CLOSE_DEFAULT),
+            (POWER_BUTTON, POWER_BUTTON_DEFAULT),
+            (ON_BATTERY, ON_BATTERY_DEFAULT),
+            (GAME_MODE, GAME_MODE_DEFAULT),
+        ] {
+            assert!(rows::values(key).contains(&release), "{key}: {release}");
+        }
+    }
+
+    #[test]
+    fn the_lock_after_row_offers_the_minutes_and_the_files_own() {
+        assert_eq!(minute_values(None), ["0", "1", "2", "5", "10", "15", "30"]);
+        assert_eq!(minute_values(Some("5")), minute_values(None));
+        assert_eq!(
+            minute_values(Some("7")),
+            ["0", "1", "2", "5", "7", "10", "15", "30"],
+            "a value of the file that is none of them joins them, in order"
+        );
+        assert_eq!(minute_values(Some("90")).last().unwrap(), "90");
+        assert_eq!(minute_values(Some("soon")), minute_values(None));
+        assert!(
+            MINUTES.contains(&LOCK_AFTER_MINUTES_DEFAULT_TEXT),
+            "the release's minutes are one the row offers"
+        );
+        assert_eq!(
+            LOCK_AFTER_MINUTES_DEFAULT_TEXT.parse::<u32>().ok(),
+            Some(edel::settings::LOCK_AFTER_MINUTES_DEFAULT)
+        );
+    }
+
+    #[test]
+    fn the_lock_after_row_says_never_or_the_minutes() {
+        assert_eq!(minute_label("0"), "Never");
+        assert_eq!(minute_label("1"), "1 minute");
+        assert_eq!(minute_label("2"), "2 minutes");
+        assert_eq!(minute_label("30"), "30 minutes");
     }
 }

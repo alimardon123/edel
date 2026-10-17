@@ -35,6 +35,9 @@ struct DefFile {
     /// Switchable features shipped with their services off.
     #[serde(default)]
     off: Vec<String>,
+    /// Add-ons built from this image's root (M7.2a).
+    #[serde(default)]
+    addons: Vec<String>,
     /// Refused with a pointer to the owner: the Alpine branch is the
     /// `base` feature's (M5.27).
     alpine: Option<toml::Value>,
@@ -71,6 +74,9 @@ pub struct ImageDef {
     pub release: ReleaseKeys,
     /// The listed features, in order.
     pub features: Vec<Listed>,
+    /// The add-ons built from the image's root, in order (M7.2a). Their
+    /// packages and services are not the image's.
+    pub addons: Vec<Listed>,
     /// Switchable features shipped with their services off, written as
     /// `EDEL_SERVICES_OFF` in os-release.
     pub off: Vec<String>,
@@ -290,6 +296,11 @@ impl ImageDef {
         let file: DefFile = toml::Value::Table(table).try_into()?;
 
         let known: Vec<String> = found.keys().cloned().collect();
+        for name in &file.addons {
+            if file.features.contains(name) {
+                bail!("{}", both_refusal(name));
+            }
+        }
         let mut listed: Vec<Listed> = Vec::new();
         for name in &file.features {
             if listed.iter().any(|l| &l.name == name) {
@@ -394,7 +405,7 @@ impl ImageDef {
             .iter()
             .flat_map(|l| l.feature.flatpak_dropped.iter().cloned())
             .collect();
-        let def = ImageDef {
+        let mut def = ImageDef {
             name: file.name,
             variant: file.variant,
             arch: file.arch,
@@ -404,6 +415,7 @@ impl ImageDef {
             image: file.image,
             release: file.release,
             features: listed,
+            addons: Vec::new(),
             off: file.off,
             packages,
             services,
@@ -415,6 +427,19 @@ impl ImageDef {
             apps,
             apps_dropped,
         };
+        for name in &file.addons {
+            if def.addons.iter().any(|l| &l.name == name) {
+                bail!("add-on {name} is listed twice");
+            }
+            let Some(addon) = found.remove(name) else {
+                bail!(
+                    "unknown feature {name}; the features are {}",
+                    known.join(", ")
+                );
+            };
+            check_addon(&def, &addon)?;
+            def.addons.push(addon);
+        }
         def.validate()?;
         Ok(def)
     }
@@ -549,6 +574,49 @@ impl ImageDef {
         }
         Ok(false)
     }
+}
+
+/// The refusal of a name that is both a feature and an add-on of one
+/// image: an image builds a feature in or offers it as an add-on, not both.
+fn both_refusal(name: &str) -> String {
+    format!(
+        "{name} is both a feature and an add-on of this image; an image builds a feature in or offers it as an add-on, not both"
+    )
+}
+
+/// Refuses an add-on the image cannot build (M7.2a). `merge` checks the
+/// definition's own add-ons and `edel image build --addon` the test ones,
+/// with these same rules.
+pub fn check_addon(image: &ImageDef, listed: &Listed) -> Result<()> {
+    let name = &listed.name;
+    let feature = &listed.feature;
+    if image.variant == Variant::Container {
+        bail!("an add-on needs a bootable image; container images have none");
+    }
+    if !feature.addon {
+        bail!("add-on {name}: its feature file has no addon = true");
+    }
+    if image.features.iter().any(|l| &l.name == name) {
+        bail!("{}", both_refusal(name));
+    }
+    if !feature.programs.is_empty()
+        || !feature.health.is_empty()
+        || !feature.modules.is_empty()
+        || !feature.initramfs.is_empty()
+        || !feature.flatpak.is_empty()
+        || !feature.flatpak_dropped.is_empty()
+        || feature.alpine.is_some()
+    {
+        bail!("add-on {name}: an add-on brings packages, services and files only");
+    }
+    if feature
+        .keep
+        .iter()
+        .any(|k| !k.newest.is_empty() || k.newest_by.is_some())
+    {
+        bail!("add-on {name}: keep only lists files; newest needs the image's modules");
+    }
+    Ok(())
 }
 
 fn is_simple_name(s: &str) -> bool {
@@ -899,6 +967,140 @@ mod tests {
     fn rejects_unsafe_names() {
         assert!(parse(&VM.replace(r#"name = "edel-vm""#, r#"name = "../x""#)).is_err());
         assert!(parse(&VM.replace(r#"hostname = "edel""#, r#"hostname = "a b""#)).is_err());
+    }
+
+    /// An add-on that ships a service and files, as a test feature.
+    const ADDON: &str = r#"format = 1
+            summary = "a test add-on"
+            why = "w"
+            packages = ["hello"]
+            addon = true
+            [services]
+            default = ["hello"]
+            "#;
+
+    /// The VM with `text`'s feature `hello` found and listed as the
+    /// image's add-on, `addons` being the definition's list.
+    fn with_addon(text: &str, addons: &str) -> Result<ImageDef> {
+        let mut found = found();
+        found.insert("hello".into(), listed("hello", text));
+        ImageDef::merge(
+            &VM.replace("[vm]", &format!("addons = {addons}\n[vm]")),
+            found,
+        )
+    }
+
+    #[test]
+    fn builds_a_good_add_on_and_keeps_the_packages() {
+        let def = with_addon(ADDON, r#"["hello"]"#).unwrap();
+        assert_eq!(def.addons.len(), 1);
+        assert_eq!(def.addons[0].name, "hello");
+        let plain = parse(VM).unwrap();
+        assert_eq!(def.packages, plain.packages);
+        assert_eq!(def.services.entries(), plain.services.entries());
+        assert!(!def.packages.contains(&"hello".to_string()));
+        // A file-only add-on with a keep of its own files is fine too.
+        let keep = format!("{ADDON}\n[[keep]]\nunder = \"usr/share/fonts\"\nfiles = [\"Noto*\"]\n");
+        assert_eq!(
+            with_addon(&keep, r#"["hello"]"#).unwrap().addons[0]
+                .feature
+                .keep
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn refuses_what_an_add_on_cannot_be() {
+        let both = {
+            let mut found = found();
+            found.insert("hello".into(), listed("hello", ADDON));
+            ImageDef::merge(
+                &VM.replace(r#""ssh"]"#, r#""ssh", "hello"]"#)
+                    .replace("[vm]", "addons = [\"hello\"]\n[vm]"),
+                found,
+            )
+        };
+        let cases: Vec<(Result<ImageDef>, &str)> = vec![
+            (with_addon(ADDON, r#"["nope"]"#), "unknown feature nope"),
+            (
+                with_addon(ADDON, r#"["hello", "hello"]"#),
+                "add-on hello is listed twice",
+            ),
+            (
+                with_addon(&ADDON.replace("addon = true", ""), r#"["hello"]"#),
+                "add-on hello: its feature file has no addon = true",
+            ),
+            (both, "hello is both a feature and an add-on of this image"),
+            (
+                with_addon(
+                    &ADDON.replace("[services]", "programs = [\"hello\"]\n[services]"),
+                    r#"["hello"]"#,
+                ),
+                "an add-on brings packages, services and files only",
+            ),
+            (
+                with_addon(
+                    &ADDON.replace("[services]", "health = [\"network\"]\n[services]"),
+                    r#"["hello"]"#,
+                ),
+                "an add-on brings packages, services and files only",
+            ),
+            (
+                with_addon(
+                    &ADDON.replace(
+                        "packages = [\"hello\"]",
+                        "packages = [\"hello\"]\nmodules = [\"ext4\"]",
+                    ),
+                    r#"["hello"]"#,
+                ),
+                "an add-on brings packages, services and files only",
+            ),
+            (
+                with_addon(
+                    &ADDON.replace(
+                        "packages = [\"hello\"]",
+                        "packages = [\"hello\"]\ninitramfs = [\"base\"]",
+                    ),
+                    r#"["hello"]"#,
+                ),
+                "an add-on brings packages, services and files only",
+            ),
+            (
+                with_addon(
+                    &format!(
+                        "{ADDON}\n[alpine]\nbranch = \"v3.24\"\nmirror = \"https://dl-cdn.alpinelinux.org/alpine/\"\nrepositories = [\"main\"]\n"
+                    ),
+                    r#"["hello"]"#,
+                ),
+                "an add-on brings packages, services and files only",
+            ),
+            (
+                with_addon(
+                    &format!(
+                        "{ADDON}\n[[keep]]\nunder = \"lib/firmware\"\nfiles = [\"i915/*\"]\nnewest = [\"i915/*\"]\nnewest_by = \"i915\"\n"
+                    ),
+                    r#"["hello"]"#,
+                ),
+                "keep only lists files; newest needs the image's modules",
+            ),
+            (
+                {
+                    let mut found = found();
+                    found.insert("hello".into(), listed("hello", ADDON));
+                    ImageDef::merge(
+                        &VM.replace("variant = \"vm\"", "variant = \"container\"")
+                            .replace("[vm]", "addons = [\"hello\"]\n[vm]"),
+                        found,
+                    )
+                },
+                "an add-on needs a bootable image; container images have none",
+            ),
+        ];
+        for (result, message) in cases {
+            let err = result.unwrap_err();
+            assert!(format!("{err:#}").contains(message), "{err:#}");
+        }
     }
 
     /// The repository's definitions, merged from the repository's

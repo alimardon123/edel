@@ -406,6 +406,15 @@ pub const ACTIONS: &[Action] = &[
         n_("Switch to the next keyboard layout of region.keyboard"),
     ),
     action(
+        "toggle_game_mode",
+        "Super+G",
+        false,
+        Group::System,
+        n_(
+            "Turn game mode on or off until the next login: a fullscreen game gets variable refresh",
+        ),
+    ),
+    action(
         "show_tray",
         "Super+Shift+B",
         false,

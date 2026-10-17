@@ -82,6 +82,12 @@ impl QuickCard {
         self.state.dnd = on;
     }
 
+    /// The place is given to apps (`on`) or not now: its tile shows it
+    /// (M6.14c).
+    pub fn set_location(&mut self, on: bool) {
+        self.state.location = on;
+    }
+
     /// The sliders show the machine's levels again, not what a person or a
     /// key set last (M5.9c: a volume or brightness key changed them).
     pub fn show_machine_levels(&mut self) {
@@ -163,6 +169,8 @@ impl Shell {
         let status = (*status).merged(&self.live.status, bluetooth);
         let changed = status != self.live.status;
         self.live.status = status;
+        // The charger may have changed the profile the machine should use (M7.8).
+        self.follow_profile();
         if let Some(card) = &mut self.quick {
             // What a person chose has been confirmed or refused by now: the
             // machine's word shows again, unless a drag is still going.
@@ -293,11 +301,14 @@ impl Shell {
         let compact = screen > 0 && screen < quick::COMPACT_BELOW;
         let width = if compact { screen } else { quick::WIDTH };
         let (machine, person) = settings_texts();
+        let features = edel::places::found_shared(edel::features::DIR);
         let state = quick::State {
             width,
             compact,
             dark: quick::is_dark(machine.as_deref(), person.as_deref()),
             dnd: crate::notify::do_not_disturb(machine.as_deref(), person.as_deref()),
+            location: crate::location::enabled(machine.as_deref(), person.as_deref()),
+            location_there: crate::location::feature_there(&features),
             ..quick::State::default()
         };
         let view = self.card_view(&state);
@@ -853,6 +864,7 @@ impl Shell {
             // Lines of the person's settings file, written as Settings does.
             Tile::DarkStyle => return self.toggle_dark(on),
             Tile::DoNotDisturb => return self.set_dnd(on),
+            Tile::Location => return self.set_location(on),
             _ => {}
         }
         let status = &self.live.status;
@@ -885,7 +897,7 @@ impl Shell {
                     bluetooth,
                 }
             }
-            Tile::DarkStyle | Tile::DoNotDisturb => return,
+            Tile::DarkStyle | Tile::DoNotDisturb | Tile::Location => return,
         };
         self.run_and_read(Some(cmd), true);
         self.draw_quick();

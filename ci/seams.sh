@@ -143,6 +143,9 @@ allowed() {
 	# Writes release lists, their signatures and keys; it reads the settings
 	# file only for the update channel.
 	crates/edel/src/release.rs) return 0 ;;
+	# Writes add-on images under /data/addons and their links; it reads the
+	# settings file only for the add-ons a machine wants (M7.2a).
+	crates/edel/src/addons.rs) return 0 ;;
 	# Save as writes the export the person chose, a copy of the settings
 	# file's text in a file they pick, not the settings file itself.
 	crates/settings/src/system.rs) return 0 ;;

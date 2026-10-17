@@ -5,10 +5,12 @@
 //! The binary (`main.rs`) adds the Wayland state and the backends.
 
 pub mod animation;
+pub mod corners;
 pub mod cursor;
 pub mod desks;
 pub mod effects;
 pub mod frame;
+pub mod game;
 pub mod layout;
 pub mod messages;
 pub mod overview;

@@ -10,7 +10,8 @@ use std::io::ErrorKind;
 use std::path::Path;
 
 use edel::app_permissions::{
-    Entry, STORE_BUS, STORE_INTERFACE, STORE_PATH, dropped, entries, files_asked, override_text,
+    Entry, STORE_BUS, STORE_INTERFACE, STORE_PATH, asked_every_time, dropped, entries, files_asked,
+    override_text,
 };
 use edel::places;
 
@@ -74,25 +75,27 @@ fn plan(last: Option<&Applied>, now: &Applied) -> Plan {
 /// overrides, at start and whenever the settings files change (M6.14a).
 /// `last` is what was laid on before, and nothing is done when the choices
 /// are the same. With no `connection` the store is skipped and the files
-/// are still written.
+/// are still written. Returns the apps set to ask for the place
+/// (`apps.location`, M6.14c), which `location.rs` asks every time.
 pub fn follow(
     connection: Option<&zbus::blocking::Connection>,
     last: &mut Option<Applied>,
     machine: Option<&str>,
     person: Option<&str>,
-) {
+) -> Vec<String> {
     let choices = edel::app_permissions::choices_between(machine, person);
+    let asked = asked_every_time(&choices, "apps.location");
     let now = Applied {
         entries: entries(&choices),
         files: files_asked(&choices),
     };
     if last.as_ref() == Some(&now) {
-        return;
+        return asked;
     }
     let plan = plan(last.as_ref(), &now);
     *last = Some(now);
     if plan.set.is_empty() && plan.delete.is_empty() && plan.files.is_empty() {
-        return;
+        return asked;
     }
     let connection = connection.cloned();
     // The bus answers when the portal does, so the work runs off the panel's
@@ -103,6 +106,7 @@ pub fn follow(
         }
         write_files(&plan.files);
     });
+    asked
 }
 
 /// Sets and deletes the store's entries over the bus. One failure never
@@ -119,13 +123,15 @@ fn store(connection: &zbus::blocking::Connection, set: &[Entry], delete: &[Entry
                 true,
                 entry.id,
                 entry.app.as_str(),
-                vec![entry.value],
+                entry.values.to_vec(),
             ),
         );
         match told {
             Ok(_) => eprintln!(
                 "edel-shell-ui: app permission {} {} for {}",
-                entry.id, entry.value, entry.app
+                entry.id,
+                entry.values.join(" "),
+                entry.app
             ),
             Err(e) => eprintln!(
                 "edel-shell-ui: {}",
@@ -216,12 +222,12 @@ fn write_override(dir: &Path, app: &str, ask: bool) -> std::io::Result<bool> {
 mod tests {
     use super::*;
 
-    fn entry(app: &str, value: &'static str) -> Entry {
+    fn entry(app: &str, values: &'static [&'static str]) -> Entry {
         Entry {
             table: "devices",
             id: "camera",
             app: app.into(),
-            value,
+            values,
         }
     }
 
@@ -235,7 +241,7 @@ mod tests {
     #[test]
     fn at_start_every_entry_is_set_and_every_asked_file_written() {
         let now = applied(
-            vec![entry("org.a.A", "no"), entry("org.a.B", "ask")],
+            vec![entry("org.a.A", &["no"]), entry("org.a.B", &["ask"])],
             &["org.a.C"],
         );
         let p = plan(None, &now);
@@ -246,21 +252,27 @@ mod tests {
 
     #[test]
     fn a_changed_choice_sets_that_one_entry_and_deletes_none() {
-        let before = applied(vec![entry("org.a.A", "yes"), entry("org.a.B", "yes")], &[]);
-        let now = applied(vec![entry("org.a.A", "yes"), entry("org.a.B", "no")], &[]);
+        let before = applied(
+            vec![entry("org.a.A", &["yes"]), entry("org.a.B", &["yes"])],
+            &[],
+        );
+        let now = applied(
+            vec![entry("org.a.A", &["yes"]), entry("org.a.B", &["no"])],
+            &[],
+        );
         let p = plan(Some(&before), &now);
-        assert_eq!(p.set, [entry("org.a.B", "no")]);
+        assert_eq!(p.set, [entry("org.a.B", &["no"])]);
         assert!(p.delete.is_empty());
         assert!(p.files.is_empty());
     }
 
     #[test]
     fn a_removed_app_deletes_its_entry_and_allows_its_files_again() {
-        let before = applied(vec![entry("org.a.A", "no")], &["org.a.C"]);
+        let before = applied(vec![entry("org.a.A", &["no"])], &["org.a.C"]);
         let now = applied(vec![], &[]);
         let p = plan(Some(&before), &now);
         assert!(p.set.is_empty());
-        assert_eq!(p.delete, [entry("org.a.A", "no")]);
+        assert_eq!(p.delete, [entry("org.a.A", &["no"])]);
         assert_eq!(p.files, [("org.a.C".to_string(), false)]);
     }
 

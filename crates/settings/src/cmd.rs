@@ -95,6 +95,18 @@ pub fn edel_as_root(args: &[&str], input: Option<String>) -> Outcome {
     }
 }
 
+/// Changes a machine key as root, then applies the settings file when that
+/// worked, so the desktop follows (`edel settings apply`): `words` run
+/// through `edel_as_root`, and the second outcome is none when the change
+/// was refused. The Region and Location pages call it on a thread of their
+/// own, and show a refusal in the row's line.
+pub fn set_and_apply_as_root(words: Vec<String>) -> (Outcome, Option<Outcome>) {
+    let args: Vec<&str> = words.iter().map(String::as_str).collect();
+    let set = edel_as_root(&args, None);
+    let apply = set.ok.then(|| edel_as_root(actions::APPLY.args, None));
+    (set, apply)
+}
+
 /// Runs `program` with `args`, writing `password` and a newline to its
 /// standard input and then closing it, and waits for it.
 fn with_password(program: &str, args: &[&str], mut password: String) -> Outcome {

@@ -68,6 +68,9 @@ const TICK: Duration = Duration::from_secs(1);
 /// The lock while it holds.
 pub struct LockCard {
     session: SessionLock,
+    /// Whether the compositor has drawn the lock (M7.8): a suspend asked
+    /// before then waits for it, one asked after runs at once.
+    pub(crate) locked: bool,
     /// A right press on the backdrop asked for the edit mode after unlock:
     /// a right password opens it (M5.10c6c3), Escape on an empty field or a
     /// second right press leaves this state.
@@ -93,7 +96,7 @@ pub struct LockCard {
     logged: String,
     /// Power's menu is open, and whether an update waits for a restart
     /// (read when the menu opens).
-    menu: bool,
+    pub(crate) menu: bool,
     restart_waiting: bool,
     /// The corner's button or row under the pointer.
     corner_hover: Option<corner::Hit>,
@@ -216,12 +219,20 @@ impl Shell {
                     shaking: None,
                     go_hover: false,
                     logged: String::new(),
+                    locked: false,
                     menu: false,
                     restart_waiting: false,
                     corner_hover: None,
                 });
             }
-            Err(e) => eprintln!("edel-shell-ui: {}", messages::lock_not_offered(e)),
+            Err(e) => {
+                eprintln!("edel-shell-ui: {}", messages::lock_not_offered(e));
+                // A suspend that waited for the lock suspends without it (M7.8).
+                if std::mem::take(&mut self.suspend_after_lock) {
+                    eprintln!("edel-shell-ui: suspending without the lock");
+                    self.run_power(power::Choice::Suspend);
+                }
+            }
         }
     }
 
@@ -641,7 +652,7 @@ impl Shell {
 
     /// Opens or closes Power's menu, logging it, and draws again. Opening
     /// reads whether an update waits for a restart.
-    fn set_power_menu(&mut self, open: bool) {
+    pub(crate) fn set_power_menu(&mut self, open: bool) {
         let Some(card) = &mut self.lock else {
             return;
         };
@@ -657,26 +668,6 @@ impl Shell {
             eprintln!("edel-shell-ui: power menu hidden");
         }
         self.draw_lock();
-    }
-
-    /// Closes Power's menu, then runs `choice` on a thread of its own, so
-    /// the drawing never waits for it.
-    fn run_power(&mut self, choice: power::Choice) {
-        self.set_power_menu(false);
-        eprintln!("edel-shell-ui: power: {}", choice.name());
-        let spawned = std::thread::Builder::new()
-            .name("power".into())
-            .spawn(move || {
-                if let Err(e) = power::run(choice) {
-                    eprintln!("edel-shell-ui: {e}");
-                }
-            });
-        if let Err(e) = spawned {
-            eprintln!(
-                "edel-shell-ui: {}",
-                messages::power_failed(choice.name(), e)
-            );
-        }
     }
 
     /// The pointer on a lock surface. Over the corner, a button lights up
@@ -1112,6 +1103,7 @@ impl Shell {
 impl SessionLockHandler for Shell {
     /// Locked: a surface on every screen, and the keyboard.
     fn locked(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: SessionLock) {
+        let suspend = std::mem::take(&mut self.suspend_after_lock);
         let outputs: Vec<wl_output::WlOutput> = self.outputs.outputs().collect();
         for output in outputs {
             self.add_lock_screen(output);
@@ -1130,10 +1122,15 @@ impl SessionLockHandler for Shell {
         });
         if let Some(card) = &mut self.lock {
             card.keyboard = keyboard;
+            card.locked = true;
             crate::log_line(&format!(
                 "edel-shell-ui: screen locked, {} screens",
                 card.screens.len()
             ));
+        }
+        // The lock is drawn: a suspend that asked for it runs now (M7.8).
+        if suspend {
+            self.run_power(power::Choice::Suspend);
         }
     }
 
@@ -1147,6 +1144,12 @@ impl SessionLockHandler for Shell {
                 eprintln!("edel-shell-ui: {}", messages::LOCK_REFUSED);
             }
             self.live.players.clear();
+        }
+        // A suspend that waited for a lock the compositor refused suspends
+        // without it (M7.8).
+        if std::mem::take(&mut self.suspend_after_lock) {
+            eprintln!("edel-shell-ui: suspending without the lock");
+            self.run_power(power::Choice::Suspend);
         }
     }
 

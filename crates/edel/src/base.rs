@@ -13,11 +13,23 @@ pub const REBOOT: &str = "/sbin/reboot";
 pub const POWEROFF: &str = "/sbin/poweroff";
 /// The program that suspends the machine to memory, run as root (M5.10c).
 pub const SUSPEND: &str = "/usr/sbin/zzz";
+/// The one program the base's small tools are links to (busybox's
+/// applets). A package an add-on brings may replace such a link with a
+/// program of its own; the add-on then keeps the base's (M7.2a).
+pub const APPLETS: &str = "busybox";
 
 /// Puts `service` into `runlevel`, so it starts at every boot.
 pub fn add_to_runlevel(service: &str, runlevel: &str) -> Command {
     let mut command = Command::new("rc-update");
     command.args(["add", service, runlevel]);
+    command
+}
+
+/// Reads the services again, as OpenRC caches them before `/etc` and `/usr`
+/// get their layers from the data partition (developer mode, M7.1).
+pub fn reread_services() -> Command {
+    let mut command = Command::new("rc-update");
+    command.arg("--update");
     command
 }
 
@@ -132,6 +144,7 @@ mod tests {
             line(&remove_from_runlevel("sshd", "default")),
             ["rc-update", "del", "sshd", "default"]
         );
+        assert_eq!(line(&reread_services()), ["rc-update", "--update"]);
         assert_eq!(
             line(&start_service("sshd")),
             ["rc-service", "sshd", "start"]

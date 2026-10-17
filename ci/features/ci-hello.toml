@@ -1,0 +1,9 @@
+# The A/B test's add-on (M7.2a): a program, a configuration file in /etc
+# and a service, so the test sees each kind of file land where it should.
+format = 1
+summary = "Says hello, for CI's A/B test"
+why = "A test add-on with one of each thing an add-on carries: /usr/bin/ci-hello, /etc/ci-hello.conf and a service that writes what the file says to /run, which the A/B test reads."
+addon = true
+
+[services]
+default = ["ci-hello"]

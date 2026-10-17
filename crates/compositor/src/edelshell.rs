@@ -133,6 +133,25 @@ impl Edel {
         }
     }
 
+    /// The lid moved (M7.8): shell-ui does what `power.lid_close` says
+    /// when it closes.
+    pub fn tell_lid(&self, closed: bool) {
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.lid(u32::from(closed));
+            }
+        }
+    }
+
+    /// Game mode went on or off (M7.7): shell-ui shows it.
+    pub fn tell_game_mode(&self, on: bool) {
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.game_mode(u32::from(on));
+            }
+        }
+    }
+
     /// The launcher's key: shell-ui shows its launcher, or hides it.
     pub fn show_launcher(&self) {
         eprintln!("edel-compositor: launcher");
