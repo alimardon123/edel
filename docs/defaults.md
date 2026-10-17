@@ -82,6 +82,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `themes.*` | none | release |
 | `presets.*` | none | release |
 | `shortcuts.*` | each action's own keys, docs/SHORTCUTS.md | release |
+| `clipboard.history` | `true` | release |
 | `default_apps.browser` | the first installed browser | image |
 | `default_apps.files` | the first installed file manager | image |
 | `default_apps.editor` | the first installed editor | image |

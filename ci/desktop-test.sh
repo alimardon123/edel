@@ -259,6 +259,10 @@
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
 #               printed; run after flatpak (M6.7)
+#   clipboard   a test client copies two texts with the keys 1 and 2,
+#               Super+V lists them, Down and Return paste the first into it
+#               (Ctrl+V from the compositor); with clipboard.history off the
+#               list stays empty, and after a lock and unlock it is empty (M7.13)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -5312,6 +5316,84 @@ case_fullscreen() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
 	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
+}
+
+case_clipboard() {
+	# Clipboard history (M7.13): the test client clip copies a text on the
+	# key 1 and another on 2, which shell-ui keeps in memory; Super+V opens
+	# the list on the pointer's screen, kept as clipboard.png, and Down and
+	# Return choose the first text copied, which shell-ui sets as the
+	# selection and the compositor pastes into clip with Ctrl+V, so clip
+	# prints it. With clipboard.history off nothing is kept and the list is
+	# empty; a lock and unlock empties it too.
+	mapped=$(count 'edel-compositor: mapped window clip')
+	guest 'clip window'
+	wait_more 'edel-compositor: mapped window clip' "$mapped" || fail "the window clip did not open"
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 17 bytes')
+	python3 ci/qmp.py key 1
+	wait_more 'edel-shell-ui: clipboard kept a text of 17 bytes' "$kept" || fail "shell-ui kept nothing of clip's first copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept')
+	python3 ci/qmp.py key 2
+	wait_more 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept' "$kept" || fail "shell-ui did not keep clip's second copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
+	shown=$(count 'edel-shell-ui: clipboard history shown, 2 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_for 'edel-compositor: clipboard history' || fail "Super+V did not reach the compositor's clipboard_history"
+	wait_more 'edel-shell-ui: clipboard history shown, 2 items' "$shown" || fail "Super+V did not show the list of two"
+	i=0
+	until value layers | grep -q 'edel-clipboard@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no clipboard surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-clipboard@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-clipboard@//; s/[,x]/ /g')
+	# The heading's middle, right of its word, is the card's own colour.
+	shot clipboard $(($1 + $3 / 2)) $(($2 + 22)) "$(token panel)" >/dev/null ||
+		fail "the list's card at $(($1 + $3 / 2)),$(($2 + 22)) is not the panel's colour"
+	pasted=$(count 'edel-compositor: pasted into window clip')
+	python3 ci/qmp.py key down
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: pasted into window clip' "$pasted" || fail "Return in the list pasted nothing into clip"
+	i=0
+	until guest 'clip log' && sleep 0.5 && value clip | grep -q 'pasted first copied text'; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "clip did not print the first text pasted: $(value clip)"
+	done
+	# Off: nothing is kept and the list is empty.
+	off=$(count 'edel-shell-ui: clipboard history off')
+	guest 'clipboard off'
+	wait_more 'edel-shell-ui: clipboard history off' "$off" || fail "shell-ui did not follow clipboard.history = false"
+	python3 ci/qmp.py key 1
+	empty=$(count 'edel-shell-ui: clipboard history shown, 0 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_more 'edel-shell-ui: clipboard history shown, 0 items' "$empty" || fail "with clipboard.history off the list was not empty"
+	python3 ci/qmp.py screendump "$dir/clipboard-off.png"
+	python3 ci/qmp.py key esc
+	wait_for 'edel-shell-ui: clipboard history hidden' || fail "Escape did not close the list"
+	on=$(count 'edel-shell-ui: clipboard history on')
+	guest 'clipboard on'
+	wait_more 'edel-shell-ui: clipboard history on' "$on" || fail "shell-ui did not follow clipboard.history coming back"
+	# A lock and unlock empty it.
+	kept=$(count 'edel-shell-ui: clipboard kept a text')
+	python3 ci/qmp.py key 2
+	wait_more 'edel-shell-ui: clipboard kept a text' "$kept" || fail "shell-ui kept nothing once clipboard.history was on again"
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	emptied=$(count 'edel-shell-ui: clipboard history emptied, the screen locked')
+	locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$locked" || fail "Super+L did not lock the screen"
+	wait_more 'edel-shell-ui: clipboard history emptied, the screen locked' "$emptied" || fail "the lock did not empty the list"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen"
+	empty=$(count 'edel-shell-ui: clipboard history shown, 0 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_more 'edel-shell-ui: clipboard history shown, 0 items' "$empty" || fail "the list was not empty after the lock"
+	python3 ci/qmp.py key esc
+	closed=$(count 'edel-compositor: unmapped window clip')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window clip' "$closed" || fail "Super+Q did not close clip"
+	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
 }
 
 case_portal() {

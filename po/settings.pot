@@ -1583,6 +1583,12 @@ msgstr ""
 msgid "Show tray"
 msgstr ""
 
+msgid "Clipboard history"
+msgstr ""
+
+msgid "Keep clipboard history"
+msgstr ""
+
 msgid "Which panels and docks show, where, and what they hold"
 msgstr ""
 
@@ -1677,6 +1683,9 @@ msgid "How the windows will look with these shapes"
 msgstr ""
 
 msgid "The keys for each action. Change one and press the keys you want."
+msgstr ""
+
+msgid "Keeps the last texts and pictures you copied, in memory only, for Super+V"
 msgstr ""
 
 msgid "All 18 workspace keys"

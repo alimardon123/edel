@@ -27,6 +27,9 @@ mod backdrop;
 mod banner;
 mod calendar;
 mod centre;
+mod clipboard;
+mod clipboard_card;
+mod clipboard_list;
 mod clock_face;
 mod corner;
 mod edit_kit;
@@ -154,6 +157,8 @@ const DOCK: &str = "edel-dock";
 const DOCK_MARGIN: i32 = 8;
 const LAUNCHER: &str = "edel-launcher";
 const SWITCHER: &str = "edel-switcher";
+/// The clipboard history's list (M7.13), on the pointer's screen.
+const CLIPBOARD: &str = "edel-clipboard";
 /// The layout button's menu of tiling styles (M5.16b).
 const STYLES: &str = "edel-styles";
 /// An app's windows, listed when the app has two or more (M6.19).
@@ -316,6 +321,8 @@ struct Shell {
     flipped: switcher::View,
     qh: QueueHandle<Shell>,
     handle: LoopHandle<'static, Shell>,
+    /// The clipboard history (M7.13), in memory only.
+    clipboard: clipboard_card::Clipboard,
     /// The preset and the colour scheme the settings files choose, as the
     /// look last followed them (M6.17, `follow.rs`).
     chosen: follow::Chosen,
@@ -651,6 +658,7 @@ fn run() -> Result<()> {
         scrolled: widgets::Scrolled::default(),
         qh: qh.clone(),
         handle: event_loop.handle(),
+        clipboard: clipboard_card::Clipboard::bind(&globals, &qh, &event_loop.handle()),
         chosen: chosen(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
@@ -759,6 +767,11 @@ fn run() -> Result<()> {
         shell.player_tx = Some(events);
     }
     shell.follow_idle();
+    // A seat known at start is no new seat to sctk, so the clipboard
+    // listens to it here.
+    if let Some(seat) = shell.seat.seats().next() {
+        shell.clipboard.listen(&seat, &qh);
+    }
     shell.watch_status()?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
@@ -1624,6 +1637,7 @@ impl Shell {
         self.close_tray_grid();
         self.hide_tooltip();
         self.hide_switcher();
+        self.close_clipboard();
     }
 
     /// `input` at `x` logical pixels along panel `i`: the widget there,
@@ -2223,6 +2237,8 @@ impl LayerShellHandler for Shell {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &LayerSurface) {
         if self.is_launcher(surface.wl_surface()) {
             self.close_launcher();
+        } else if self.is_clipboard(surface.wl_surface()) {
+            self.close_clipboard();
         } else if self.is_styles(surface.wl_surface()) {
             self.close_styles();
         } else if self.is_in_use(surface.wl_surface()) {
@@ -2303,6 +2319,12 @@ impl LayerShellHandler for Shell {
                 menu.popup.configured();
             }
             return self.draw_launcher();
+        }
+        if self.is_clipboard(surface.wl_surface()) {
+            if let Some(popup) = self.clipboard_popup() {
+                popup.configured();
+            }
+            return self.draw_clipboard();
         }
         if self.is_styles(surface.wl_surface()) {
             if let Some(menu) = &mut self.styles {
@@ -2392,6 +2414,12 @@ impl CompositorHandler for Shell {
                 menu.popup.set_scale(factor);
             }
             return self.draw_launcher();
+        }
+        if self.is_clipboard(surface) {
+            if let Some(popup) = self.clipboard_popup() {
+                popup.set_scale(factor);
+            }
+            return self.draw_clipboard();
         }
         if self.is_panel_menu(surface) {
             if let Some(menu) = &mut self.panel_menu {
@@ -2513,6 +2541,12 @@ impl CompositorHandler for Shell {
                 menu.popup.framed();
             }
             return self.draw_launcher();
+        }
+        if self.is_clipboard(surface) {
+            if let Some(popup) = self.clipboard_popup() {
+                popup.framed();
+            }
+            return self.draw_clipboard();
         }
         if self.is_panel_menu(surface) {
             if let Some(menu) = &mut self.panel_menu {
@@ -2676,8 +2710,9 @@ impl SeatHandler for Shell {
         &mut self.seat
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {
+    fn new_seat(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
         self.follow_idle();
+        self.clipboard.listen(&seat, qh);
     }
 
     /// A pointer, for clicks and scrolls on the widgets; the keyboard is
@@ -2725,6 +2760,10 @@ impl PointerHandler for Shell {
         for event in events {
             if self.is_access(&event.surface) {
                 self.access_pointer(event);
+                continue;
+            }
+            if self.is_clipboard(&event.surface) {
+                self.clipboard_pointer(event);
                 continue;
             }
             if self.is_launcher(&event.surface) {
@@ -2976,6 +3015,8 @@ impl KeyboardHandler for Shell {
     ) {
         if self.is_launcher(surface) {
             self.close_launcher();
+        } else if self.is_clipboard(surface) {
+            self.close_clipboard();
         } else if self.is_styles(surface) {
             self.close_styles();
         } else if self.is_in_use(surface) {
@@ -3031,6 +3072,8 @@ impl KeyboardHandler for Shell {
             self.styles_key(event);
         } else if self.tray_grid.is_some() {
             self.tray_key(event);
+        } else if self.clipboard.list.is_some() {
+            self.clipboard_key(event);
         } else {
             self.launcher_key(event);
         }
@@ -3068,6 +3111,8 @@ impl KeyboardHandler for Shell {
             self.styles_key(event);
         } else if self.tray_grid.is_some() {
             self.tray_key(event);
+        } else if self.clipboard.list.is_some() {
+            self.clipboard_key(event);
         } else {
             self.launcher_key(event);
         }
