@@ -196,6 +196,11 @@ enum Commands {
         /// --password-stdin), as Settings' installer page gives it
         #[arg(long, requires = "settings")]
         new_password_stdin: bool,
+        /// Install as the settings file's [install] table says, with
+        /// nobody at the keyboard, once this slot is confirmed; without
+        /// the table, do nothing (docs/FLEET.md)
+        #[arg(long, conflicts_with_all = ["disk", "settings", "list", "find_settings", "plan", "yes"])]
+        unattended: bool,
     },
     /// Print what an issue about this machine needs, as TOML: the release,
     /// kernel, boot time, memory in use, PCI devices, the kernel log, and
@@ -511,6 +516,11 @@ struct BuildArgs {
     /// own files; for test images. Can be given more than once.
     #[arg(long = "files", value_name = "DIR")]
     extra_files: Vec<PathBuf>,
+    /// A settings file baked in as the image's own, which seeds each
+    /// machine's first boot; given more than once, the files are merged
+    /// and a later one wins where two set the same key (docs/FLEET.md)
+    #[arg(long = "settings", value_name = "FILE")]
+    settings: Vec<PathBuf>,
     /// An add-on to build from this image's root, beside the definition's
     /// own; for test images. Can be given more than once.
     #[arg(long = "addon", value_name = "NAME")]
@@ -680,6 +690,7 @@ fn run(command: Commands) -> Result<()> {
                     definition,
                     out,
                     extra_files,
+                    settings,
                     health_timeout,
                     slot_mib,
                     public_keys,
@@ -725,6 +736,47 @@ fn run(command: Commands) -> Result<()> {
                 }
                 let extra_addons = resolve_addons(&definition, &def, &addons, &feature_dirs)?;
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
+                // The fleet's settings files are merged and checked before
+                // anything is built, so a plan refuses a bad file too (M7.3).
+                let settings = if settings.is_empty() {
+                    None
+                } else {
+                    let mut named = Vec::new();
+                    for path in &settings {
+                        let text = std::fs::read_to_string(path).with_context(|| {
+                            trf(
+                                "could not read {path}",
+                                &[("path", &path.display().to_string())],
+                            )
+                        })?;
+                        named.push((path.display().to_string(), text));
+                    }
+                    let merged = edel::fleet::merge(&named)?;
+                    let mut problems = settings::check(&merged)?;
+                    // A stick that installs itself must leave someone able
+                    // to log in, as nobody is at its keyboard (M7.3).
+                    if edel::fleet::unattended(&merged).is_ok_and(|asked| asked.is_some())
+                        && !edel::fleet::someone_can_log_in(&settings::read(&merged)?.file)
+                    {
+                        problems.push(format!("users: {}", edel::fleet::nobody_can_log_in()));
+                    }
+                    if !problems.is_empty() {
+                        let paths = settings
+                            .iter()
+                            .map(|p| p.display().to_string())
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        anyhow::bail!(
+                            "{}\n{}",
+                            trf(
+                                "the settings files {paths} have problems, so nothing was built; fix these (edel settings check shows them again):",
+                                &[("paths", &paths)]
+                            ),
+                            problems.join("\n")
+                        );
+                    }
+                    Some(merged)
+                };
                 // apk and mount get absolute paths, so nothing depends on
                 // which directory a tool happens to run in.
                 let out = if plan {
@@ -745,6 +797,7 @@ fn run(command: Commands) -> Result<()> {
                     def: &def,
                     def_dir,
                     extra_files,
+                    settings,
                     extra_addons,
                     health_timeout,
                     slot_mib,
@@ -861,6 +914,9 @@ fn run(command: Commands) -> Result<()> {
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
+        Commands::Install {
+            unattended: true, ..
+        } => installer::unattended(),
         Commands::Power { command } => match command {
             PowerCommands::Profile { name } => system_power::profile(name.as_deref()),
         },

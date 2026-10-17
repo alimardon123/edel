@@ -167,6 +167,27 @@ msgstr ""
 msgid "could not write {path}"
 msgstr ""
 
+msgid "no settings file to merge"
+msgstr ""
+
+msgid "{path} is not valid TOML"
+msgstr ""
+
+msgid "the settings file is not valid TOML"
+msgstr ""
+
+msgid "install refused: the [install] table has problems; fix these:"
+msgstr ""
+
+msgid "the file names people and none of them has an ssh key, so nobody could log in to a machine installed with nobody at its keyboard; give one of them ssh_keys"
+msgstr ""
+
+msgid "install refused: no disk to install on; auto takes a disk that is not removable, not the one this system runs from, and at least {size}"
+msgstr ""
+
+msgid "install refused: auto found {count} disks it could take ({names}); name one in install.disk by its /dev/disk/by-id/ name"
+msgstr ""
+
 msgid "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed"
 msgstr ""
 
@@ -387,6 +408,39 @@ msgid "copying the default apps"
 msgstr ""
 
 msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
+msgstr ""
+
+msgid "already installed to {id}; nothing to do"
+msgstr ""
+
+msgid "install refused: {path}: {why}"
+msgstr ""
+
+msgid "install refused: {device} is not empty; erase = \"yes\" with its /dev/disk/by-id/ name erases a disk that is not"
+msgstr ""
+
+msgid "installing onto {device} ({id}) with nobody at the keyboard"
+msgstr ""
+
+msgid "installed to {id}; {next}"
+msgstr ""
+
+msgid "restarting"
+msgstr ""
+
+msgid "powering off"
+msgstr ""
+
+msgid "waiting until this slot is confirmed before installing"
+msgstr ""
+
+msgid "install refused: {path} is not in this machine"
+msgstr ""
+
+msgid "install refused: /dev/{name} has no /dev/disk/by-id/ name to remember it by, so starting from this stick again could install it twice"
+msgstr ""
+
+msgid "erasing {device} ({id}) in {seconds} s; power the machine off to stop"
 msgstr ""
 
 msgid "What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet."
@@ -717,6 +771,15 @@ msgid "The city apps are told, named by its time zone, such as Asia/Tashkent."
 msgstr ""
 
 msgid "Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses."
+msgstr ""
+
+msgid "The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name."
+msgstr ""
+
+msgid "Whether an unattended install erases only an empty disk, or any disk after a ten second countdown."
+msgstr ""
+
+msgid "What the machine does once a stick has installed itself: power off or restart."
 msgstr ""
 
 msgid "English (United States)"
@@ -1173,6 +1236,9 @@ msgid "{id} is not a Flatpak app id, such as org.gnome.TextEditor"
 msgstr ""
 
 msgid "version {version} is not numbers joined by dots, such as 2026.10.3"
+msgstr ""
+
+msgid "the settings files {paths} have problems, so nothing was built; fix these (edel settings check shows them again):"
 msgstr ""
 
 msgid "no release named; taking {location}"
@@ -1661,6 +1727,12 @@ msgstr ""
 msgid "the file is format {format}, and this release reads format {current}"
 msgstr ""
 
+msgid "{value} is neither auto nor a /dev/disk/by-id/ name"
+msgstr ""
+
+msgid "erase = \"yes\" needs install.disk to be a /dev/disk/by-id/ name, so only that disk is ever erased"
+msgstr ""
+
 msgid "{name} is not a colour; did you mean {near}?"
 msgstr ""
 
@@ -1920,6 +1992,12 @@ msgid "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a 
 msgstr ""
 
 msgid "{others} or {last}"
+msgstr ""
+
+msgid "could not create {path}"
+msgstr ""
+
+msgid "could not set the mode of {path}"
 msgstr ""
 
 msgid "refused: {location} is plain http; a settings file can make administrators and add ssh keys, so give it over https:// or as a file"
@@ -2537,6 +2615,9 @@ msgstr ""
 msgid "Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it"
 msgstr ""
 
+msgid "Install as the settings file's [install] table says, with nobody at the keyboard, once this slot is confirmed; without the table, do nothing (docs/FLEET.md)"
+msgstr ""
+
 msgid "Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs"
 msgstr ""
 
@@ -2604,6 +2685,9 @@ msgid "Directory for the finished images and the work area"
 msgstr ""
 
 msgid "Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once"
+msgstr ""
+
+msgid "A settings file baked in as the image's own, which seeds each machine's first boot; given more than once, the files are merged and a later one wins where two set the same key (docs/FLEET.md)"
 msgstr ""
 
 msgid "An add-on to build from this image's root, beside the definition's own; for test images. Can be given more than once"

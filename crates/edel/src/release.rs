@@ -225,6 +225,11 @@ fn parse_date(text: &str) -> Option<i64> {
     ((1..=12).contains(&m) && (1..=31).contains(&d)).then(|| days_from_civil(y, m, d))
 }
 
+/// Today as `YYYY-MM-DD`, by this machine's clock.
+pub(crate) fn today_text() -> String {
+    civil_from_days(today())
+}
+
 /// Today, in days since 1970-01-01, by this machine's clock.
 fn today() -> i64 {
     let secs = std::time::SystemTime::now()

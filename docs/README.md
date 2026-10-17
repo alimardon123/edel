@@ -33,6 +33,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [settings.md](settings.md) | Every key of `settings.toml`, its values and the step that acts on it | Reference |
 | [defaults.md](defaults.md) | The value every settings key has when the file does not set it, generated | Generated |
 | [INSTALL.md](INSTALL.md) | Every way into Edel OS, each ending in one settings file: checking the download, writing the stick, the boot menu, `edel install` with questions, a file or an https address | Guide |
+| [FLEET.md](FLEET.md) | Fleet images from merged settings files, and a stick that installs itself (`[install]`) | Guide |
 | [TRY-IT.md](TRY-IT.md) | Trying a preview in a VM or on a laptop, and sending a hardware report | Guide |
 | [index.md](index.md) | The docs site's front page: what Edel OS is and where to start (M8.10a) | Guide |
 | [guide/how-it-works.md](guide/how-it-works.md) | How the whole system works, from the disk and updates to the settings file and the desktop | Guide |
@@ -40,3 +41,4 @@ Start with the design principles, then the decisions in order. The principles go
 | [guide/commands.md](guide/commands.md) | Every `edel` command and option; generated from `crates/edel/src/main.rs` | Reference |
 | [guide/writing-docs.md](guide/writing-docs.md) | Writing these docs: pages, the table of contents, previewing, generated pages, the look | Guide |
 | [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |
+| [ROADMAP-DONE.md](ROADMAP-DONE.md) | The roadmap's finished steps, each with its check and "Done with:" note | Reference |

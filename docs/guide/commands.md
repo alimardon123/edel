@@ -82,6 +82,7 @@ Install Edel OS on another disk, erasing it: the running system becomes slot A, 
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 | `--new-password-stdin` | Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it |
+| `--unattended` | Install as the settings file's [install] table says, with nobody at the keyboard, once this slot is confirmed; without the table, do nothing (docs/FLEET.md) |
 
 ## `edel report [OPTIONS]`
 
@@ -166,6 +167,7 @@ Build an image from its definition file (run as root on Alpine).
 | `DEFINITION` | Image definition, for example images/vm.toml |
 | `--out OUT` | Directory for the finished images and the work area |
 | `--files DIR` | Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once |
+| `--settings FILE` | A settings file baked in as the image's own, which seeds each machine's first boot; given more than once, the files are merged and a later one wins where two set the same key (docs/FLEET.md) |
 | `--addon NAME` | An add-on to build from this image's root, beside the definition's own; for test images. Can be given more than once |
 | `--features DIR` | Another directory of feature files to find add-ons in; for test images |
 | `--no-addons` | Build none of the definition's own add-ons, only those --addon names; for test images, which need no released add-on |
