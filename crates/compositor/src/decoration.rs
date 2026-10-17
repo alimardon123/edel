@@ -245,12 +245,25 @@ pub struct AppIcons {
 }
 
 impl AppIcons {
-    pub fn new() -> AppIcons {
+    /// The icons of the theme `theme`, `appearance.icon_theme` (M8.21 part g).
+    pub fn new(theme: &str) -> AppIcons {
         AppIcons {
             apps: None,
             by_app_id: std::collections::HashMap::new(),
-            drawn: edel::app_icons::Icons::new(edel::apps::data_dirs()),
+            drawn: edel::app_icons::Icons::new(edel::apps::data_dirs(), theme),
         }
+    }
+
+    /// The icon theme these icons come from.
+    pub fn theme(&self) -> &str {
+        self.drawn.theme()
+    }
+
+    /// Draws the icons from `theme` from now on (M8.21 part g). Only the
+    /// icons and the theme's chain are made again: the apps read stay, so a
+    /// change never reads the apps again on the compositor's thread.
+    pub fn set_theme(&mut self, theme: &str) {
+        self.drawn = edel::app_icons::Icons::new(edel::apps::data_dirs(), theme);
     }
 
     /// The icon's name for windows with `app_id`; the apps are read the

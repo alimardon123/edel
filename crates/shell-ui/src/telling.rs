@@ -61,6 +61,22 @@ fn date(record: &str) -> Option<String> {
 /// parse or has no `date`.
 pub fn fallback(record: &str) -> Option<Notification> {
     date(record)?;
+    if let Some(names) = addons(record) {
+        return Some(Notification {
+            id: FALLBACK_ID,
+            app: APP.to_string(),
+            icon: "status-problem".to_string(),
+            summary: trf("Add-on {names} did not start", &[("names", &names)]),
+            body: tr("Edel OS started without it, so everything works as it did. It is not tried again until you turn it off and on in Add-ons.").to_string(),
+            actions: vec![
+                ("default".to_string(), String::new()),
+                ("addons".to_string(), tr("Open Add-ons").to_string()),
+                ("later".to_string(), tr("Later").to_string()),
+            ],
+            timeout: -1,
+            urgency: Urgency::Normal,
+        });
+    }
     Some(Notification {
         id: FALLBACK_ID,
         app: APP.to_string(),
@@ -71,6 +87,19 @@ pub fn fallback(record: &str) -> Option<Notification> {
         timeout: -1,
         urgency: Urgency::Normal,
     })
+}
+
+/// The add-ons a record names as not started (M7.2b), joined by commas;
+/// none for a record of a slot's fallback.
+fn addons(record: &str) -> Option<String> {
+    let table: toml::Table = record.parse().ok()?;
+    let names: Vec<&str> = table
+        .get("addons")?
+        .as_array()?
+        .iter()
+        .filter_map(|v| v.as_str())
+        .collect();
+    (!names.is_empty()).then(|| names.join(", "))
 }
 
 /// The notice that a newer release is out, from `edel update --check`'s
@@ -163,6 +192,15 @@ mod tests {
         assert!(n.has_default());
         let buttons: Vec<&str> = n.buttons().map(|(key, _)| key.as_str()).collect();
         assert_eq!(buttons, ["updates", "later"]);
+    }
+
+    #[test]
+    fn an_add_on_that_did_not_start_gives_its_own_notice() {
+        let record = "format = 1\naddons = [\"ci-hang\"]\ndate = 2026-10-17T10:00:00Z\n";
+        let n = fallback(record).expect("a record with a date gives a notice");
+        assert_eq!(n.summary, "Add-on ci-hang did not start");
+        let buttons: Vec<&str> = n.buttons().map(|(key, _)| key.as_str()).collect();
+        assert_eq!(buttons, ["addons", "later"]);
     }
 
     #[test]

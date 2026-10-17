@@ -171,8 +171,18 @@ impl Shell {
     /// Open Updates, and the body (`default`), open Settings' Updates page.
     pub fn invoke(&mut self, id: u32, key: &str) {
         if telling::is_ours(id) {
-            if matches!(key, "updates" | notify::DEFAULT_ACTION) {
-                self.open_updates();
+            // An add-on's notice opens Add-ons; the others open Updates.
+            let addons = self
+                .notifications
+                .items()
+                .iter()
+                .find(|n| n.id == id)
+                .is_some_and(|n| n.buttons().any(|(k, _)| k == "addons"));
+            match key {
+                "addons" => self.open_page("addons"),
+                notify::DEFAULT_ACTION if addons => self.open_page("addons"),
+                "updates" | notify::DEFAULT_ACTION => self.open_page("updates"),
+                _ => {}
             }
         } else if let Some(connection) = &self._portal {
             notify::invoked(connection, id, key);
@@ -180,13 +190,9 @@ impl Shell {
         self.dismiss(id, Reason::Dismissed);
     }
 
-    /// Settings opens on its Updates page, as quick settings starts it.
-    fn open_updates(&mut self) {
-        let argv = [
-            SETTINGS.to_string(),
-            "--page".to_string(),
-            "updates".to_string(),
-        ];
+    /// Settings opens on `page`, as quick settings starts it.
+    fn open_page(&mut self, page: &str) {
+        let argv = [SETTINGS.to_string(), "--page".to_string(), page.to_string()];
         self.launcher.spawn(&argv, "Settings");
     }
 

@@ -80,7 +80,7 @@ pub enum Over {
 }
 
 /// What the Undo bar puts back (M5.31b, M5.10c6): the panels as they were
-/// before the panel editor opened, or the person's `lock_screen.parts` line
+/// before the panel editor opened, or the person's `lock_screen.widgets` line
 /// before the lock screen's edit mode wrote it (`None`: they had none, so
 /// Undo takes it out).
 #[derive(Debug, Clone, PartialEq)]
@@ -90,8 +90,8 @@ pub enum Undo {
 }
 
 /// The lines of the person's lock screen settings before Done wrote them
-/// (M5.10c6c3, M5.10c7a): the person's own looks, the look, the parts and the
-/// background, each as its value, None for no line. Undo puts all four back.
+/// (M5.10c6c3, M5.10c7a): the person's own looks, the look, the widgets and the
+/// wallpaper, each as its value, None for no line. Undo puts all four back.
 #[derive(Clone, Debug, PartialEq)]
 pub struct LockBefore {
     pub looks: Option<String>,

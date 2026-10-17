@@ -37,6 +37,8 @@ use crate::state::Edel;
 pub const ABOVE: [Layer; 2] = [Layer::Overlay, Layer::Top];
 /// shell-ui's dock's namespace (M5.4d), which may hide (M5.4f).
 pub const DOCK: &str = "edel-dock";
+/// The clipboard history's namespace (M7.13), opened on the pointer's screen.
+const CLIPBOARD: &str = "edel-clipboard";
 /// How near the screen's edge the pointer brings a hidden dock back.
 const EDGE: f64 = 2.0;
 /// The layers drawn under them, the topmost first.
@@ -529,9 +531,15 @@ impl WlrLayerShellHandler for Edel {
         _layer: Layer,
         namespace: String,
     ) {
+        // The clipboard history opens where the pointer is (M7.13).
+        let here = (namespace == CLIPBOARD)
+            .then(|| self.pointer_screen())
+            .flatten()
+            .and_then(|(name, _)| self.space.outputs().find(|o| o.name() == name).cloned());
         let output = output
             .as_ref()
             .and_then(Output::from_resource)
+            .or(here)
             .or_else(|| self.space.outputs().next().cloned());
         let Some(output) = output else {
             eprintln!("edel-compositor: no screen for layer {namespace}");

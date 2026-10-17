@@ -526,6 +526,16 @@ impl Build<'_> {
         for feature in &self.def.features {
             fs::write(dir.join(format!("{}.toml", feature.name)), &feature.text)?;
         }
+        // The add-ons built beside it, so the machine knows what it can
+        // add without the network (M7.2b).
+        let offered: Vec<&Listed> = self.def.addons.iter().chain(&self.extra_addons).collect();
+        if !offered.is_empty() {
+            let dir = root.join(edel::places::OFFERED_ADDONS_DIR.trim_start_matches('/'));
+            fs::create_dir_all(&dir)?;
+            for addon in offered {
+                fs::write(dir.join(format!("{}.toml", addon.name)), &addon.text)?;
+            }
+        }
         Ok(())
     }
 
@@ -583,7 +593,11 @@ impl Build<'_> {
         let mut chroot = Command::new("chroot");
         chroot
             .arg(root)
-            .args(["fc-cache", "--system-only", "--really-force"]);
+            .args(["fc-cache", "--system-only", "--really-force"])
+            // fc-cache given SOURCE_DATE_EPOCH (M8.6) writes no cache for a
+            // folder newer than that date (1 cache file against 5 in a test
+            // on 2026-10-17), so it runs without it.
+            .env_remove("SOURCE_DATE_EPOCH");
         self.runner.run(&mut chroot)?;
         // fc-cache may still write to the old folder: move its files over,
         // so that folder never exists in the slot.
@@ -809,14 +823,21 @@ impl Build<'_> {
                 fs::remove_file(&path)?;
             }
         }
+        // apk's log of this build holds the build's path and clock and is read
+        // by nothing on a machine; left in, no two builds would match (M8.6).
+        let apk_log = root.join(addons::APK_LOG);
+        if apk_log.symlink_metadata().is_ok() {
+            fs::remove_file(&apk_log)?;
+        }
         Ok(())
     }
 
     fn pack_container(&self, root: &Path) -> Result<()> {
         let tarball = self.out.join(format!("{}.tar.gz", self.def.stem()));
+        let epoch = source_date_epoch(std::env::var("SOURCE_DATE_EPOCH").ok().as_deref())?;
         self.runner.run(
             Command::new("tar")
-                .args(["--numeric-owner", "-czf"])
+                .args(container_tar_args(epoch))
                 .arg(&tarball)
                 .arg("-C")
                 .arg(root)
@@ -1295,7 +1316,37 @@ impl Build<'_> {
                 fs::read_to_string(base.join(path)).with_context(|| format!("reading {path}"))
             };
             let (image, addon) = (read(root)?, read(a_root)?);
-            let changed = addons::changed_accounts(&image, &addon);
+            let file = path.rsplit('/').next().unwrap_or(path);
+            let dir = tree.join(addons::accounts_dir(name));
+            // Members added to a group the image has, as QEMU puts its
+            // user into kvm, join that group at boot (M7.2b).
+            let members = if file == "group" {
+                addons::added_members(&image, &addon)
+            } else {
+                String::new()
+            };
+            if !members.is_empty() {
+                fs::create_dir_all(&dir)?;
+                fs::write(dir.join(addons::MEMBERS_FILE), &members)?;
+                fs::set_permissions(
+                    dir.join(addons::MEMBERS_FILE),
+                    fs::Permissions::from_mode(0o644),
+                )?;
+            }
+            let was: BTreeMap<&str, &str> = image
+                .lines()
+                .map(|line| (line.split(':').next().unwrap_or_default(), line))
+                .collect();
+            let changed: Vec<String> = addons::changed_accounts(&image, &addon)
+                .into_iter()
+                .filter(|changed| {
+                    let now = addon.lines().find(|l| l.split(':').next() == Some(changed));
+                    !(file == "group"
+                        && now
+                            .zip(was.get(changed.as_str()))
+                            .is_some_and(|(now, was)| addons::members_only(was, now)))
+                })
+                .collect();
             if !changed.is_empty() {
                 let names = changed.join(", ");
                 eprintln!(
@@ -1306,8 +1357,6 @@ impl Build<'_> {
             if new.is_empty() {
                 continue;
             }
-            let file = path.rsplit('/').next().unwrap_or(path);
-            let dir = tree.join(addons::accounts_dir(name));
             fs::create_dir_all(&dir)?;
             fs::write(dir.join(file), &new)?;
             let mode = if file == "shadow" { 0o640 } else { 0o644 };
@@ -1348,6 +1397,34 @@ impl Build<'_> {
         }
         Ok(())
     }
+}
+
+/// Reads the standard `SOURCE_DATE_EPOCH` variable (reproducible-builds.org),
+/// which dates every file of a container image, so two builds of one commit
+/// give the same bytes (M8.6). Unset or empty means no date.
+fn source_date_epoch(value: Option<&str>) -> Result<Option<u64>> {
+    match value {
+        None | Some("") => Ok(None),
+        Some(text) => match text.parse::<u64>() {
+            Ok(seconds) if text.bytes().all(|b| b.is_ascii_digit()) => Ok(Some(seconds)),
+            _ => bail!(
+                "SOURCE_DATE_EPOCH is {text:?}, not a number of seconds since 1970; unset it or give the commit's time, as `git log -1 --format=%ct` prints it"
+            ),
+        },
+    }
+}
+
+/// The arguments `tar` gets to pack a container image (M8.6). Names are
+/// sorted so the order never depends on the file system; every file is dated
+/// by the epoch when one is given, so files the build writes do not carry its
+/// clock; gzip reads standard input, so its header holds no time.
+fn container_tar_args(epoch: Option<u64>) -> Vec<String> {
+    let mut args: Vec<String> = ["--numeric-owner", "--sort=name"].map(String::from).into();
+    if let Some(seconds) = epoch {
+        args.push(format!("--mtime=@{seconds}"));
+    }
+    args.push("-czf".into());
+    args
 }
 
 /// Takes out of an add-on's new files what its `[[keep]]` lists do not keep
@@ -1852,6 +1929,34 @@ fn is_flatpakrepo(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_date_epoch_takes_digits_and_nothing_else() {
+        assert_eq!(source_date_epoch(None).unwrap(), None);
+        assert_eq!(source_date_epoch(Some("")).unwrap(), None);
+        assert_eq!(
+            source_date_epoch(Some("1760000000")).unwrap(),
+            Some(1760000000)
+        );
+        for bad in ["abc", "-1", "1.5", " 1"] {
+            assert!(
+                source_date_epoch(Some(bad)).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn container_tar_sorts_and_dates_every_file() {
+        assert_eq!(
+            container_tar_args(None),
+            ["--numeric-owner", "--sort=name", "-czf"]
+        );
+        assert_eq!(
+            container_tar_args(Some(42)),
+            ["--numeric-owner", "--sort=name", "--mtime=@42", "-czf"]
+        );
+    }
 
     #[test]
     fn alpines_init_resolves_a_root_named_by_its_partition() {

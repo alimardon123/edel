@@ -16,6 +16,7 @@ screen_file=/run/edel/screen
 started_file=/run/edel/started
 greetd_live=/run/edel/greetd.toml
 last_fallback=/data/edel/last-fallback.toml
+addons_dir=/data/addons
 first_passwords=/data/edel/first-passwords
 installed_mark=/data/edel/installed
 greeter_dir=/data/edel/greeter

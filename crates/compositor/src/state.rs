@@ -206,6 +206,8 @@ pub struct Edel {
     pub handle: Option<LoopHandle<'static, Edel>>,
     /// The protocols everyday apps expect (`everyday.rs`, M5.23).
     pub primary_selection: smithay::wayland::selection::primary_selection::PrimarySelectionState,
+    /// ext-data-control-v1, for shell-ui's clipboard history (M7.13).
+    pub data_control: smithay::wayland::selection::ext_data_control::DataControlState,
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     /// The surfaces that asked to keep the screen on.
     pub idle_inhibitors: Vec<WlSurface>,
@@ -246,6 +248,16 @@ impl Edel {
         crate::screencopy::create_global(&display);
         crate::games::create_global(&display);
         crate::backdrop::create_global(&display);
+        let primary_selection =
+            smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Edel>(
+                &display,
+            );
+        let data_control =
+            smithay::wayland::selection::ext_data_control::DataControlState::new::<Edel, _>(
+                &display,
+                Some(&primary_selection),
+                crate::sandbox::shell_may,
+            );
         Ok(Edel {
             dmabuf: crate::dmabuf::Dmabufs::default(),
             compositor: CompositorState::new::<Edel>(&display),
@@ -273,10 +285,9 @@ impl Edel {
                 _,
             >(&display, crate::sandbox::shell_may),
             handle: None,
-            primary_selection:
-                smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Edel>(
-                    &display,
-                ),
+            primary_selection,
+            // Clipboard history (M7.13), hidden from sandboxed apps.
+            data_control,
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Edel>(&display),
             idle_inhibitors: Vec::new(),
             idle_notifier: smithay::wayland::idle_notify::IdleNotifierState::new(
@@ -360,7 +371,10 @@ impl Edel {
             window_shadows: std::collections::HashMap::new(),
             settings: Settings::default(),
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),
-            app_icons: crate::decoration::AppIcons::new(),
+            // The settings are the defaults here; `watch.rs` calls
+            // `reload_settings` at start, which follows a theme the files name
+            // (M8.21 part g).
+            app_icons: crate::decoration::AppIcons::new(edel::settings::ICON_THEME_DEFAULT),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             game: Default::default(),
@@ -603,6 +617,16 @@ impl Edel {
         }
         let old = std::mem::replace(&mut self.settings, new.clone());
         self.cursor_settings(new.cursor_theme.as_deref(), new.cursor_size);
+        // The app icons' theme (M8.21 part g): the title bars draw their icons
+        // from it, so they are drawn again the way a changed title font is
+        // (`text_key`).
+        let icon_theme = edel::settings::icon_theme_or_default(new.icon_theme.as_deref());
+        if icon_theme != self.app_icons.theme() {
+            self.app_icons.set_theme(icon_theme);
+            eprintln!("edel-compositor: app icons from {icon_theme:?}");
+            self.text_key += 1;
+            self.dirty = true;
+        }
         let (bindings, notes) = crate::shortcuts::bind(&new.shortcuts);
         for line in notes
             .iter()
@@ -1404,6 +1428,22 @@ impl SeatHandler for Edel {
     fn cursor_image(&mut self, _seat: &Seat<Edel>, image: CursorImageStatus) {
         self.cursors.status = image;
         self.dirty = true;
+    }
+
+    /// The keyboard moved: the client that has it is the one offered the
+    /// clipboard and the primary selection, as a paste reads from there.
+    fn focus_changed(&mut self, seat: &Seat<Edel>, focused: Option<&WlSurface>) {
+        let client = focused.and_then(|surface| self.display.get_client(surface.id()).ok());
+        smithay::wayland::selection::data_device::set_data_device_focus(
+            &self.display,
+            seat,
+            client.clone(),
+        );
+        smithay::wayland::selection::primary_selection::set_primary_focus(
+            &self.display,
+            seat,
+            client,
+        );
     }
 }
 

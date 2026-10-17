@@ -144,16 +144,16 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 
 ## Lock screen: `[lock_screen]`
 
-The lock and login screens are made of parts (M5.10c5), each placed by an anchor and an offset, so one arrangement fits a phone, a laptop and a 4K screen. Missing is the classic arrangement, the mockup's.
+The lock and login screens are made of widgets (M5.10c5), each placed by an anchor and an offset, so one arrangement fits a phone, a laptop and a 4K screen. Missing is the classic arrangement, the mockup's.
 
 | Key | Value | From |
 |---|---|---|
-| `lock_screen.parts` | a list of parts, each a table: `part` (`clock`, `date`, `count`, `player`, `person`, `message`, `picture` or `battery`), `at` (where it stands: `top_left`, `top`, `top_right`, `left`, `centre`, `right`, `bottom_left`, `bottom` or `bottom_right`), and optionally `x` and `y` (an offset, a share of the screen's width and height, from -1 to 1), `text` (a message's words, 1 to 120 characters on one line) and `path` (a picture's file, an absolute path ending `.png`, `.jpg` or `.jpeg`). The person stands exactly once, so nobody is locked out; each other part at most once, except the clock, of which up to 3 stand, and at most 3 messages and 3 pictures. Parts at one anchor stack, one below the other. A clock also takes `face` (`digital`, `stacked`, `analog` or `minimal`; absent is `digital`), `hours` (12 or 24; absent is 24, and 12 writes `2:06`, with no AM or PM), `size` (`small`, `medium` or `large`; absent is `large`, the token's size, `medium` two thirds of it and `small` a half) and `weight` (100 to 900 in steps of 100; absent is the token `font.lock_clock_weight`), `zone` (an IANA time zone's name, such as `Asia/Tokyo`, `Europe/London` or `UTC`; absent is this machine's time, and a zone the machine has no zone files for shows this machine's time too) and `label` (1 to 24 characters on one line, drawn under the clock; absent with a zone is the zone's city, so `Asia/Tokyo` reads `Tokyo`). Each clock has its own options, so two clocks can show two zones: `{ part = "clock", at = "top_right", face = "analog", size = "small", zone = "Asia/Tokyo" }` beside the classic clock. A date takes `show` (a list of `weekday`, `day`, `month` and `year`, each at most once, shown in that order whatever order is written; absent is weekday, day and month) and `style` (`long`, `short` or `numeric`; absent is `long`, as `Saturday 3 October 2026`, `Sat 3 Oct 2026` or `Sat 03.10.2026`). Each option is refused on another part. An example: `[[lock_screen.parts]]` tables with `part = "clock"`, `at = "centre"`, `face = "analog"`, `hours = 12` and `part = "date"`, `at = "top"`, `style = "short"`; on the command line `edel settings set 'lock_screen.parts=[{ part = "clock", at = "top", face = "stacked", hours = 12, size = "medium" }, { part = "date", at = "top", show = ["weekday", "day"], style = "short" }, { part = "person", at = "centre" }]'`. On the command line `edel settings set 'lock_screen.parts=[{ part = "person", at = "centre" }]'`; `edel settings set lock_screen.parts=[{ part = "person", at = "top" }]` is refused with "the lock screen needs the person and their password field" | M5.10c5, M5.10c5b |
+| `lock_screen.widgets` | a list of widgets, each a table: `widget` (`clock`, `date`, `count`, `player`, `person`, `message`, `picture` or `battery`), `at` (where it stands: `top_left`, `top`, `top_right`, `left`, `centre`, `right`, `bottom_left`, `bottom` or `bottom_right`), and optionally `x` and `y` (an offset, a share of the screen's width and height, from -1 to 1), `text` (a message's words, 1 to 120 characters on one line) and `path` (a picture's file, an absolute path ending `.png`, `.jpg` or `.jpeg`). The person stands exactly once, so nobody is locked out; each other widget at most once, except the clock, of which up to 3 stand, and at most 3 messages and 3 pictures. Widgets at one anchor stack, one below the other. A clock also takes `face` (`digital`, `stacked`, `analog` or `minimal`; absent is `digital`), `hours` (12 or 24; absent is 24, and 12 writes `2:06`, with no AM or PM), `size` (`small`, `medium` or `large`; absent is `large`, the token's size, `medium` two thirds of it and `small` a half) and `weight` (100 to 900 in steps of 100; absent is the token `font.lock_clock_weight`), `zone` (an IANA time zone's name, such as `Asia/Tokyo`, `Europe/London` or `UTC`; absent is this machine's time, and a zone the machine has no zone files for shows this machine's time too) and `label` (1 to 24 characters on one line, drawn under the clock; absent with a zone is the zone's city, so `Asia/Tokyo` reads `Tokyo`). Each clock has its own options, so two clocks can show two zones: `{ widget = "clock", at = "top_right", face = "analog", size = "small", zone = "Asia/Tokyo" }` beside the classic clock. A date takes `show` (a list of `weekday`, `day`, `month` and `year`, each at most once, shown in that order whatever order is written; absent is weekday, day and month) and `style` (`long`, `short` or `numeric`; absent is `long`, as `Saturday 3 October 2026`, `Sat 3 Oct 2026` or `Sat 03.10.2026`). Each option is refused on another widget. An example: `[[lock_screen.widgets]]` tables with `widget = "clock"`, `at = "centre"`, `face = "analog"`, `hours = 12` and `widget = "date"`, `at = "top"`, `style = "short"`; on the command line `edel settings set 'lock_screen.widgets=[{ widget = "clock", at = "top", face = "stacked", hours = 12, size = "medium" }, { widget = "date", at = "top", show = ["weekday", "day"], style = "short" }, { widget = "person", at = "centre" }]'`. On the command line `edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre" }]'`; `edel settings set lock_screen.widgets=[{ widget = "person", at = "top" }]` is refused with "the lock screen needs the person and their password field" | M5.10c5, M5.10c5b |
 | `lock_screen.look` | a look's name: `classic` (the mockup's, the default), `magazine` (a large clock at the left with the date under it and the person at the right), `minimal` (the time alone), or one of your own in `looks`. A name that is neither is refused, and the lock screen falls back to classic if the file is read leniently. Set with `edel settings set lock_screen.look=minimal` | M5.10c5c |
-| `lock_screen.background` | what lies behind the parts: `backdrop` (the navy scene, classic's default), `blurred` (the wallpaper that applies, blurred for glass, every other look's default), `sharp` (the wallpaper, sharp), a colour such as `"#1f2b48"`, or a picture's full path such as `"/home/you/lock.png"` (ending `.png`, `.jpg` or `.jpeg`). Missing is the look's. Set with `edel settings set 'lock_screen.background="#1f2b48"'`; `edel settings set lock_screen.background=lock.png` is refused, as a picture needs its full path | M5.10c5c |
-| `lock_screen.dim` | how much the background is darkened, in percent, from 0 to 80, so the white words read. Missing is the look's own: 30 for a blurred or colour background and 40 for a sharp one or a picture (the built-in amounts, `DIM` and `DIM_SHARP` in `edel::lock_screen`). Set with `edel settings set lock_screen.dim=40`; a value of 81 is refused. The Dim slider on the Lock screen page, and in the lock editor's wallpaper panel, set it | M5.10c7g |
+| `lock_screen.wallpaper` | what lies behind the widgets: `backdrop` (the navy scene, classic's default), `blurred` (the wallpaper that applies, blurred for glass, every other look's default), `sharp` (the wallpaper, sharp), a colour such as `"#1f2b48"`, or a picture's full path such as `"/home/you/lock.png"` (ending `.png`, `.jpg` or `.jpeg`). Missing is the look's. Set with `edel settings set 'lock_screen.wallpaper="#1f2b48"'`; `edel settings set lock_screen.wallpaper=lock.png` is refused, as a picture needs its full path | M5.10c5c |
+| `lock_screen.dim` | how much the wallpaper is darkened, in percent, from 0 to 80, so the white words read. Missing is the look's own: 30 for a blurred or colour wallpaper and 40 for a sharp one or a picture (the built-in amounts, `DIM` and `DIM_SHARP` in `edel::lock_screen`). Set with `edel settings set lock_screen.dim=40`; a value of 81 is refused. The Dim slider on the Lock screen page, and in the lock editor's wallpaper panel, set it | M5.10c7g |
 | `lock_screen.notifications` | `count`, which shows how many notifications are unread, or `none`, which hides the count. Missing is `count`. `edel settings set lock_screen.notifications=some` is refused with the values it takes | M5.10c5c |
-| `lock_screen.looks` | the person's own looks, each a table named by the look (`[lock_screen.looks.home]`) with `parts`, a list of parts checked as `lock_screen.parts` is (so each has the person), and `background`, as `lock_screen.background` takes it (absent is the wallpaper, blurred); choosing the look brings both, and `lock_screen.parts` and `lock_screen.background` set beside it are changes over it. A name is letters, digits and hyphens and not a built-in look's, and it is chosen with `lock_screen.look`. Made by Save as on the Lock screen page. An example: `[lock_screen.looks.home]` with `parts = [{ part = "clock", at = "top", y = 0.1 }, { part = "person", at = "centre" }]`, then `look = "home"` under `[lock_screen]`; on the command line `edel settings set 'lock_screen.looks={ home = { parts = [{ part = "person", at = "centre" }] } }'`; a look without the person is refused | M5.10c5c |
+| `lock_screen.looks` | the person's own looks, each a table named by the look (`[lock_screen.looks.home]`) with `widgets`, a list of widgets checked as `lock_screen.widgets` is (so each has the person), and `wallpaper`, as `lock_screen.wallpaper` takes it (absent is the wallpaper, blurred); choosing the look brings both, and `lock_screen.widgets` and `lock_screen.wallpaper` set beside it are changes over it. A name is letters, digits and hyphens and not a built-in look's, and it is chosen with `lock_screen.look`. Made by Save as on the Lock screen page. An example: `[lock_screen.looks.home]` with `widgets = [{ widget = "clock", at = "top", y = 0.1 }, { widget = "person", at = "centre" }]`, then `look = "home"` under `[lock_screen]`; on the command line `edel settings set 'lock_screen.looks={ home = { widgets = [{ widget = "person", at = "centre" }] } }'`; a look without the person is refused | M5.10c5c |
 | `themes.*` | your own themes, each a table named by the theme (`[themes.my-aurora]`) with `title` (absent is the name made readable), `pictures`, a list of wallpapers as `appearance.wallpaper` takes them, and the appearance values the theme sets, the keys of the table itself (`accent = "wallpaper"`, `[themes.NAME.colours]`); never `theme`, `mode`, `wallpaper`, `wallpaper_dark` or the switcher's keys, which stay outside a theme. Written by `edel theme save`; a built-in theme's name is refused. A theme goes to another machine as one `NAME.edeltheme` file (`edel theme export NAME`, read back by `edel theme import FILE`): an archive of its table and its JPEG or PNG pictures, nothing that runs, checked before anything is written; an imported theme's pictures are kept in the person's themes folder (`$XDG_DATA_HOME/edel/themes`) | M5.12b6a, M5.12b6 |
 | `presets.*` | your own layout presets, each a table named by the preset (`[presets.mine]`) with `preset`, the built-in preset it starts from (absent is `classic`), and the `[layout]` keys it sets as the table's own keys, such as `window_buttons = "left"`; `layout.preset = "mine"` picks it, and each `[layout]` key the file leaves unset is the preset's. A name of a built-in preset is refused, and so is a preset that starts from one of yours. Written by Settings' Save as preset or `edel preset save NAME`, removed by `edel preset delete NAME`; a preset holds the layout only, so its panels and pinned apps are its built-in preset's. A base this release lacks is Classic, which `edel settings diff` says | M5.17 |
 
@@ -281,10 +281,12 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.text_size` | How big every text is, in percent of the release's size, from 80 to 150. | `100` | release |
 | `appearance.cursor_size` | The pointer's height in logical pixels, from 16 to 96. | `24` | release |
 | `appearance.cursor_theme` | The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow. | `"default"` | release |
+| `appearance.icon_theme` | The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's. | `"Edel"` | release |
 | `appearance.icon_size` | How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150. | `100` | release |
 | `appearance.animations` | How much things move: full, reduced (fades only) or off. | `"full"` | release |
 | `appearance.animation_speed` | How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast. | `100` | release |
 | `appearance.animation_curve` | How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little). | `"smooth"` | release |
+| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
 
 ### `layout`
 
@@ -299,6 +301,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `layout.minimize_button` | Whether each title bar shows its minimize button. | `true` | release |
 | `layout.maximize_button` | Whether each title bar shows its maximize button; a hidden button's room goes to the title. | `true` | release |
 | `layout.tiling_style` | How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles). | the preset's | preset |
+| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
 
 ### `panels`
 
@@ -324,12 +327,12 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `lock_screen.parts` | The parts of the lock and login screens and where each one stands, as a list of tables. | the look's | release |
+| `lock_screen.widgets` | The widgets on the lock and login screens and where each one stands, as a list of tables. | the look's | release |
 | `lock_screen.look` | The look of the lock and login screens: classic, magazine, minimal or one of your own. | `"classic"` | release |
-| `lock_screen.background` | What lies behind the lock screen's parts: the backdrop, the wallpaper blurred or sharp, a colour or a picture. | the look's | release |
-| `lock_screen.dim` | How much the lock screen's background is darkened, in percent from 0 to 80, so the words read. | 30, or 40 for a sharp background or picture | release |
+| `lock_screen.wallpaper` | What lies behind the lock screen's widgets: the backdrop, the desktop wallpaper blurred or sharp, a colour or a picture. | the look's | release |
+| `lock_screen.dim` | How much the lock screen's wallpaper is darkened, in percent from 0 to 80, so the words read. | 30, or 40 for a sharp wallpaper or picture | release |
 | `lock_screen.notifications` | Whether the lock screen shows how many notifications are unread: count, or none to hide it. | `"count"` | release |
-| `lock_screen.looks` | Your own lock screen looks, each with its parts and background, chosen by name. | none | release |
+| `lock_screen.looks` | Your own lock screen looks, each with its widgets and wallpaper, chosen by name. | none | release |
 
 ### `network`
 
@@ -380,6 +383,7 @@ This page has no key in the file.
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
 | `shortcuts.*` | The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions. | each action's own keys, docs/SHORTCUTS.md | release |
+| `clipboard.history` | Keeps the last texts and pictures you copied, in memory only, for Super+V; false keeps nothing. | `true` | release |
 
 ### `region`
 
@@ -431,7 +435,7 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `addons.installed` | The add-ons this machine has, by name; each arrives with the next update and is in edel addon list. | `[]` | release |
+| `addons.installed` | The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list. | `[]` | release |
 
 ### `services`
 
@@ -462,14 +466,12 @@ This page has no key in the file.
 |---|---|---|---|
 | `system.variant` | What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet. | the image's | image |
 | `system.developer_mode` | Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on. | `false` | release |
-| `system.profiles` | The hardware profiles applied to this machine, in order; this release does not act on them yet. | `[]` | release |
+| `system.profiles` | Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's. | `[]` | release |
 
 ### Other keys
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
-| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
 | `install.disk` | The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name. | `"auto"` | release |
 | `install.erase` | Whether an unattended install erases only an empty disk, or any disk after a ten second countdown. | `"empty-only"` | release |
 | `install.then` | What the machine does once a stick has installed itself: power off or restart. | `"poweroff"` | release |

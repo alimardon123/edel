@@ -208,6 +208,12 @@ commands() {
 		# at 150 percent, through the machine's file, and back.
 		'cursor big') edel settings set appearance.cursor_size=48 appearance.icon_size=150 ;;
 		'cursor default') edel settings reset appearance.cursor_size appearance.icon_size ;;
+		# The app icon style (M8.21 part g): EdelTest, whose foot icon is a
+		# magenta square, then a theme this machine lacks (refused with the
+		# list), then the release's icons back.
+		'icons test') edel settings set appearance.icon_theme=EdelTest ;;
+		'icons bad') say "icons_bad $(edel settings set appearance.icon_theme=NoSuchTheme 2>&1 | tr '\n' ' ')" ;;
+		'icons default') edel settings reset appearance.icon_theme ;;
 		# The family fontconfig names first for Arabic and for Hindi (M5.12b5
 		# part A), said back as values.
 		'fonts scripts')
@@ -238,6 +244,14 @@ commands() {
 		'full window')
 			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
 			;;
+		# Clipboard history (M7.13): a window that copies two texts on the
+		# keys 1 and 2 and prints what Ctrl+V pastes into it.
+		'clip window')
+			as_ci edel-testclient --clipboard --size 300x200 --colour 336699 --title clip </dev/null >/tmp/clip.log 2>&1 &
+			;;
+		'clip log') say "clip $(tr '\n' ';' </tmp/clip.log)" ;;
+		'clipboard off') edel settings set clipboard.history=false ;;
+		'clipboard on') edel settings reset clipboard.history ;;
 		'big window')
 			as_ci edel-testclient --size 1200x740 --colour 884488 --title big </dev/null >/dev/null 2>&1 &
 			;;
@@ -334,25 +348,17 @@ commands() {
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
 		# Screenshots and screen sharing (M6.3), asked as ci through the
 		# portals: the screenshot's URI is kept for `capture file`, which
-		# says the file's size and its first four bytes (a PNG's magic).
-		# The call runs in the background, its output kept in a file, and
-		# 'capture screenshot result' says it once it is there. `access ask`
-		# asks shell-ui's Access dialog what xdg-desktop-portal would ask,
-		# over D-Bus as ci; the call waits for the person (CI clicks Allow),
-		# and `access result` says its answer, (uint32 0, ...) for allowed.
-		'access ask')
-			bus=$(session_bus)
-			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --timeout 120 --dest org.freedesktop.impl.portal.desktop.edel --object-path /org/freedesktop/portal/desktop --method org.freedesktop.impl.portal.Access.AccessDialog /org/freedesktop/portal/desktop/request/1_1/ci ci-test '' 'Allow ci-test to take screenshots?' 'ci-test wants a picture of the screen' '' '{}'" </dev/null >/tmp/access-ask.txt 2>&1 &
-			;;
-		'access result') say "access_result $(tr '\n' ' ' </tmp/access-ask.txt 2>/dev/null)" ;;
-		# What the portal's backend said, for a failed screenshot: D-Bus
-		# starts it with the session bus's output, which is CI's
-		# /tmp/compositor.log, and grim run directly as ci.
+		# says the file's size, its first four bytes (a PNG's magic), its
+		# mode and owner, and whether grim's old /tmp/out.png is there
+		# (M8.21 part 21f: shell-ui keeps the picture in ci's runtime
+		# folder). The call runs in the background, its output kept in a
+		# file, and 'capture screenshot result' says it once it is there;
+		# the portal asks shell-ui's Access dialog first (CI clicks Allow).
+		# What the portals said, for a failed screenshot: D-Bus starts them
+		# with the session bus's output, which is CI's /tmp/compositor.log.
 		'capture debug')
 			say "capture_debug portals $(pgrep -a xdg-desktop-portal | tr '\n' ';')"
-			grep -a -i 'xdpw\|wlroots\|grim\|screenshot\|portal' /tmp/compositor.log 2>/dev/null | tail -n 30 | sed 's/^/DESKTOP-TEST: capture_debug log /' >/dev/console
-			bus=$(session_bus)
-			say "capture_debug grim $(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' grim /tmp/ci-grim.png" </dev/null 2>&1 | tr '\n' ' ') exit $? $(ls -l /tmp/ci-grim.png 2>&1)"
+			grep -a -i 'xdpw\|wlroots\|screenshot\|portal' /tmp/compositor.log 2>/dev/null | tail -n 30 | sed 's/^/DESKTOP-TEST: capture_debug log /' >/dev/console
 			;;
 		'capture screenshot')
 			bus=$(session_bus)
@@ -366,7 +372,8 @@ commands() {
 		'capture file')
 			path=$(sed -n 's|^file://||p' /tmp/capture-uri.txt 2>/dev/null)
 			if [ -n "$path" ] && [ -f "$path" ]; then
-				say "capture_file $path $(stat -c %s "$path") $(head -c 4 "$path" | od -An -tx1 | tr -d ' \n')"
+				if [ -e /tmp/out.png ]; then out=present; else out=absent; fi
+				say "capture_file $path $(stat -c %s "$path") $(head -c 4 "$path" | od -An -tx1 | tr -d ' \n') $(stat -c '%a %U' "$path") out.png $out"
 			else
 				say "capture_file ${path:-none} missing"
 			fi
@@ -1074,14 +1081,14 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
-		# The lock screen's parts (M5.10c5): the time top left and a message
+		# The lock screen's widgets (M5.10c5): the time top left and a message
 		# at the bottom, read when the screen locks; reset after the check.
-		'lock parts') edel settings set 'lock_screen.parts=[{ part = "person", at = "centre", y = 0.21 }, { part = "clock", at = "top_left" }, { part = "message", at = "bottom", text = "If found, call 555 0100" }, { part = "player", at = "bottom_left" }]' ;;
-		'lock parts reset') edel settings reset lock_screen.parts ;;
+		'lock parts') edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre", y = 0.21 }, { widget = "clock", at = "top_left" }, { widget = "message", at = "bottom", text = "If found, call 555 0100" }, { widget = "player", at = "bottom_left" }]' ;;
+		'lock parts reset') edel settings reset lock_screen.widgets ;;
 		# The lines the lock screen's edit mode wrote to ci's own file
-		# (M5.10c6b, M5.10c6c3): the look, the parts and the background under
+		# (M5.10c6b, M5.10c6c3): the look, the widgets and the wallpaper under
 		# [lock_screen], taken out again.
-		'lock parts mine default') as_ci "sed -i -E '/^\[lock_screen\]/,/^\[/{/^(look|looks|parts|background) = /d}' /home/ci/.config/edel/$settings_name" ;;
+		'lock parts mine default') as_ci "sed -i -E '/^\[lock_screen\]/,/^\[/{/^(look|looks|widgets|wallpaper) = /d}' /home/ci/.config/edel/$settings_name" ;;
 		# The lock screen's edit mode (M5.10c6b): the call Settings' Edit lock
 		# screen makes, as ci on ci's session bus, which opens the edit mode.
 		'lock editor')
@@ -1091,8 +1098,8 @@ commands() {
 		# The lock screen's look (M5.10c5c): the minimal look over the
 		# blurred wallpaper, the test picture, as the test image carries no
 		# wallpaper of its own; read when the screen locks, reset after.
-		'lock look') edel settings set lock_screen.look=minimal lock_screen.background=blurred "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
-		'lock look reset') edel settings reset lock_screen.look lock_screen.background appearance.wallpaper ;;
+		'lock look') edel settings set lock_screen.look=minimal lock_screen.wallpaper=blurred "appearance.wallpaper=${share_dir}-test/wallpaper.png" ;;
+		'lock look reset') edel settings reset lock_screen.look lock_screen.wallpaper appearance.wallpaper ;;
 		# The look Settings' Lock screen page wrote to ci's own file
 		# (M5.10c5c) and the test picture behind it, in the machine's file,
 		# are taken out after the check, so the cases after it see the

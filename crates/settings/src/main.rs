@@ -12,6 +12,7 @@
 
 mod about;
 mod actions;
+mod addons;
 mod apps;
 mod ask;
 mod bluetooth;
@@ -36,6 +37,7 @@ mod notifications;
 mod panels;
 mod power;
 mod preview;
+mod profiles;
 mod region;
 mod rows;
 mod screens;
@@ -480,6 +482,16 @@ fn all_pages() -> Vec<Page> {
                 needs: Some("location"),
                 group: Some(page.group),
             }),
+            // The add-ons the image was built with (M7.2b): a switch each.
+            // Each add-on is its own feature, so the page needs none.
+            "addons" => Some(Page {
+                title: tr(page.title),
+                icon: "page-addons",
+                section: Some(page.section),
+                build: |_| addons::page(),
+                needs: None,
+                group: Some(page.group),
+            }),
             // Updates and System run `edel`, which every image has.
             "updates" => Some(Page {
                 title: tr(page.title),
@@ -882,6 +894,7 @@ mod tests {
                 "Startup",
                 "Apps",
                 "Location",
+                "Add-ons",
                 "Users",
                 "Updates",
                 "System",
@@ -998,6 +1011,7 @@ mod tests {
                 "Startup",
                 "Apps",
                 "Location",
+                "Add-ons",
                 "Users",
                 "Updates",
                 "System",
@@ -1057,18 +1071,18 @@ mod tests {
         assert_eq!(at("apps"), Some(15));
         assert_eq!(at("location"), Some(16));
         assert_eq!(at("Location"), Some(16));
-        assert_eq!(at("users"), Some(17));
+        assert_eq!(at("users"), Some(18));
         assert_eq!(at("network"), Some(5));
         assert_eq!(at("bluetooth"), Some(6));
         assert_eq!(at("blue"), Some(6));
         assert_eq!(at("power"), Some(9));
         assert_eq!(at("notifications"), Some(10));
         assert_eq!(at("notif"), Some(10));
-        assert_eq!(at("updates"), Some(18));
-        assert_eq!(at("system"), Some(19));
-        assert_eq!(at("sy"), Some(19));
-        assert_eq!(at("about"), Some(20));
-        assert_eq!(at("abo"), Some(20));
+        assert_eq!(at("updates"), Some(19));
+        assert_eq!(at("system"), Some(20));
+        assert_eq!(at("sy"), Some(20));
+        assert_eq!(at("about"), Some(21));
+        assert_eq!(at("abo"), Some(21));
         assert_eq!(at(""), None);
         assert_eq!(at("la"), Some(1), "one start only");
         assert_eq!(at("l"), None, "Layout and Lock screen both start with l");
@@ -1102,11 +1116,11 @@ mod tests {
         let pages = all_pages();
         let start = |list: &[&str]| start_page(args(list), &pages);
         assert_eq!(start(&[]), Ok(Start::Page(0)));
-        assert_eq!(start(&["--page", "about"]), Ok(Start::Page(20)));
-        assert_eq!(start(&["--page=about"]), Ok(Start::Page(20)));
-        assert_eq!(start(&["--page", "updates"]), Ok(Start::Page(18)));
+        assert_eq!(start(&["--page", "about"]), Ok(Start::Page(21)));
+        assert_eq!(start(&["--page=about"]), Ok(Start::Page(21)));
+        assert_eq!(start(&["--page", "updates"]), Ok(Start::Page(19)));
         assert_eq!(start(&["--page", "sound"]), Ok(Start::Page(8)));
-        assert_eq!(start(&["--page", "users"]), Ok(Start::Page(17)));
+        assert_eq!(start(&["--page", "users"]), Ok(Start::Page(18)));
         assert_eq!(start(&["--page", "region"]), Ok(Start::Page(12)));
         assert_eq!(start(&["--page", "notifications"]), Ok(Start::Page(10)));
         assert_eq!(start(&["--page", "network"]), Ok(Start::Page(5)));
@@ -1201,6 +1215,7 @@ mod tests {
                 "Default apps",
                 "Startup",
                 "Apps",
+                "Add-ons",
                 "Users",
                 "Updates",
                 "System",
@@ -1223,6 +1238,7 @@ mod tests {
                 "Default apps",
                 "Startup",
                 "Apps",
+                "Add-ons",
                 "Users",
                 "Updates",
                 "System",
@@ -1246,6 +1262,7 @@ mod tests {
                 "Default apps",
                 "Startup",
                 "Apps",
+                "Add-ons",
                 "Users",
                 "Updates",
                 "System",

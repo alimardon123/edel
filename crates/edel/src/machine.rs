@@ -469,7 +469,7 @@ impl Machine {
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
             screen: services::screen_now(),
-            addons: crate::addons::mounted(),
+            addons: edel::addon_state::mounted(),
             addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
@@ -766,7 +766,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     for name in file.addons.installed.iter().flatten() {
         if !built.contains(name.as_str()) {
             notes.push(trf(
-                "add-on {name} arrives with the next update",
+                "add-on {name} starts at the next restart, once edel settings apply has fetched it",
                 &[("name", name)],
             ));
         }
@@ -1217,8 +1217,9 @@ fn deferred(change: &Change, boot: bool) -> Option<String> {
     }
 }
 
-/// The file to apply or diff, read leniently, with its problems and the
-/// keys this release skips printed first; `None` when there is none.
+/// The file to apply or diff, read leniently, with the profiles it names
+/// laid under it and its problems and the keys this release skips printed
+/// first; `None` when there is none.
 fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::Read>> {
     let machine = machine_file();
     let path = file.unwrap_or(&machine);
@@ -1240,7 +1241,10 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
             }
         }
     }
-    let read = settings::read_on_machine(path)?;
+    let mut read = settings::read_on_machine(path)?;
+    // The profiles the file names give what it leaves out (M7.6), so apply
+    // and diff act on them; the file itself still names only the profiles.
+    read.file = edel::profiles::applied(&read.file);
     for problem in &read.problems {
         println!(
             "edel settings: {}",
@@ -1421,6 +1425,16 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
         );
     } else if changes.is_empty() {
         println!("edel settings: {}", tr("nothing to change"));
+    }
+    // The network part (M7.2b): the chosen add-ons this version lacks are
+    // fetched to start at the next restart; never at boot, which stays
+    // offline. A failed download is a warning, as the settings themselves
+    // are applied and the Welcome's first person must never fail on it;
+    // the Add-ons page shows the add-on still waiting.
+    if !boot {
+        if let Err(err) = crate::addons::fetch_chosen() {
+            eprintln!("warning: {err:#}");
+        }
     }
     if failed > 0 {
         bail!(
@@ -1799,10 +1813,11 @@ fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String
 
 /// Whether the desktop follows `key` at once, reading the person's own
 /// file over the machine's, as it does the layout, screen, look and
-/// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the apps the apps widget pins
-/// (M5.31d), notifications (M5.9b), default and startup apps (M6.10), the
-/// language, keyboard and input method (M5.24a, M5.21a), and own themes and
-/// presets; `edel settings apply` applies the rest, from the machine's file.
+/// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the clipboard history (M7.13),
+/// the apps the apps widget pins (M5.31d), notifications (M5.9b), default and
+/// startup apps (M6.10), the language, keyboard and input method (M5.24a,
+/// M5.21a), and own themes and presets; `edel settings apply` applies the
+/// rest, from the machine's file.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
         || edel::app_permissions::find(key).is_some()
@@ -1821,6 +1836,7 @@ fn desktop_follows(key: &str) -> bool {
             "appearance.",
             "lock_screen.",
             "shortcuts.",
+            "clipboard.",
             "notifications.",
             "default_apps.",
             "startup.",
@@ -2265,7 +2281,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     for page in settings::PAGES {
         let mut mine: Vec<&Row> = rows
             .iter()
-            .filter(|row| row.key.split('.').next() == Some(page.section))
+            .filter(|row| settings::page_of(&row.key).map(|p| p.section) == Some(page.section))
             .collect();
         if mine.is_empty() {
             // A page asked for by name that holds nothing in the file, such

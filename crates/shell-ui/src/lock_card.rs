@@ -177,6 +177,8 @@ impl Shell {
             return;
         }
         self.close_popups();
+        // Nothing copied stays past the lock (M7.13).
+        self.clipboard_forget("the screen locked");
         match self.session_lock.lock(&self.qh) {
             Ok(session) => {
                 eprintln!("edel-shell-ui: lock asked for");

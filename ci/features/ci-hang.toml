@@ -1,0 +1,9 @@
+# The A/B test's broken add-on (M7.2b): its service never finishes
+# starting, so the boot that tries it hangs and must come back without it.
+format = 1
+summary = "Hangs the boot, for CI's A/B test"
+why = "A test add-on whose service blocks for ever, so the A/B test sees a boot that tries a new add-on and hangs come back without it, with the failure recorded."
+addon = true
+
+[services]
+default = ["ci-hang"]

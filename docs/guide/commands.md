@@ -21,7 +21,7 @@
 | `edel image` | Build and inspect Edel OS images |
 | `edel theme` | theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones |
 | `edel preset` | preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones |
-| `edel addon` | addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed |
+| `edel addon` | addon: software beside the system, such as more fonts or printing, that comes at the next restart and goes as easily; the same as in the settings file's addons.installed |
 | `edel web-app` | web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own |
 
 ## `edel update [RELEASE] [OPTIONS]`
@@ -264,7 +264,7 @@ Delete one of your presets; the preset in use cannot be deleted.
 
 ## `edel addon`
 
-addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed.
+addon: software beside the system, such as more fonts or printing, that comes at the next restart and goes as easily; the same as in the settings file's addons.installed.
 
 ### `edel addon list`
 

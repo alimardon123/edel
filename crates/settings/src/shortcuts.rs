@@ -17,12 +17,19 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
+use edel::settings::CLIPBOARD_HISTORY;
 use edel::shortcuts::{ACTIONS, Action, GROUPS};
 
 use crate::files::Files;
-use crate::{rows, widgets};
+use crate::{choice_row, rows, widgets};
 
 const INTRO: &str = n_("The keys for each action. Change one and press the keys you want.");
+
+/// The action whose row the clipboard's switch follows (M7.13).
+const CLIPBOARD_ACTION: &str = "clipboard_history";
+/// What the clipboard switch says under its title (M7.13).
+const HISTORY_WHAT: &str =
+    n_("Keeps the last texts and pictures you copied, in memory only, for Super+V");
 
 /// The title of the one closed row that holds the 18 numbered workspace
 /// keys, the first action of which is `go_to_workspace_1`.
@@ -46,8 +53,21 @@ struct Line {
     fold: Option<gtk::Expander>,
 }
 
+/// The Keep clipboard history switch (M7.13), the row after the Clipboard
+/// history shortcut in its card. Off is the one choice written; on is what
+/// applies without the key, so it is taken out.
+struct History {
+    switch: gtk::Switch,
+    row: widgets::Row,
+    /// Set while the page itself moves the switch, so that is no choice.
+    quiet: Cell<bool>,
+}
+
 struct Ui {
     lines: Vec<Line>,
+    history: Option<History>,
+    /// Where a refused write of the switch says why, as the Notifications page does.
+    problem: gtk::Label,
     monitors: Vec<gtk::gio::FileMonitor>,
 }
 
@@ -72,6 +92,18 @@ impl Ui {
             line.row.subtitle.set_label(&line_text);
             line.row.reset.set_visible(rows::resettable(&source));
         }
+        if let Some(history) = &self.history {
+            history.quiet.set(true);
+            history.switch.set_active(history_on(&files));
+            history.quiet.set(false);
+            let source = files.source(CLIPBOARD_HISTORY);
+            let line_text = match rows::note(&source, false) {
+                Some(note) => format!("{} · {note}", tr(HISTORY_WHAT)),
+                None => tr(HISTORY_WHAT).to_string(),
+            };
+            history.row.subtitle.set_label(&line_text);
+            history.row.reset.set_visible(rows::resettable(&source));
+        }
     }
 
     /// Shows a refused value under its row, or hides the message when
@@ -86,6 +118,29 @@ impl Ui {
             }
         }
         self.update();
+    }
+}
+
+/// Whether the clipboard history is on: the person's file over the machine's,
+/// on when neither says (M7.13, absent is on).
+fn history_on(files: &Files) -> bool {
+    files
+        .chosen(CLIPBOARD_HISTORY)
+        .is_none_or(|value| value == "true")
+}
+
+/// The Keep clipboard history row, in `holder` (M7.13).
+fn clipboard_row(holder: &gtk::Box) -> History {
+    let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
+    let row = widgets::row(
+        holder,
+        rows::title(CLIPBOARD_HISTORY),
+        &switch.clone().upcast::<gtk::Widget>(),
+    );
+    History {
+        switch,
+        row,
+        quiet: Cell::new(false),
     }
 }
 
@@ -104,8 +159,9 @@ fn show_keys(place: &gtk::Box, keys: Option<&str>) {
 }
 
 pub fn page() -> gtk::Widget {
-    let (page, content, _problem) = widgets::page(tr("Shortcuts"), tr(INTRO));
+    let (page, content, problem) = widgets::page(tr("Shortcuts"), tr(INTRO));
     let mut lines = Vec::new();
+    let mut history = None;
     for section in GROUPS {
         widgets::heading(&content, tr(section.title()));
         let group = widgets::group(&content);
@@ -150,6 +206,9 @@ pub fn page() -> gtk::Widget {
                 error,
                 fold: fold.clone(),
             });
+            if action.name == CLIPBOARD_ACTION {
+                history = Some(clipboard_row(&holder));
+            }
         }
     }
     let monitors = std::iter::once(&Files::here().machine)
@@ -163,7 +222,12 @@ pub fn page() -> gtk::Widget {
                 .ok()
         })
         .collect();
-    let ui = Rc::new(Ui { lines, monitors });
+    let ui = Rc::new(Ui {
+        lines,
+        history,
+        problem,
+        monitors,
+    });
     ui.update();
     for monitor in &ui.monitors {
         let weak = Rc::downgrade(&ui);
@@ -171,6 +235,36 @@ pub fn page() -> gtk::Widget {
             if let Some(ui) = weak.upgrade() {
                 ui.update();
             }
+        });
+    }
+    if let Some(history) = &ui.history {
+        let weak = Rc::downgrade(&ui);
+        history.switch.connect_active_notify(move |switch| {
+            let Some(ui) = weak.upgrade() else { return };
+            if let Some(history) = &ui.history {
+                if !history.quiet.get() {
+                    // On is what applies without the key, so it is taken out.
+                    let wanted = switch.is_active().to_string();
+                    let result =
+                        Files::here().choose_over(CLIPBOARD_HISTORY, &wanted, Some("true"));
+                    choice_row::report(&ui.problem, result);
+                    ui.update();
+                }
+            }
+        });
+        let weak = Rc::downgrade(&ui);
+        history.row.reset.connect_clicked(move |_| {
+            if let Some(ui) = weak.upgrade() {
+                choice_row::report(&ui.problem, Files::here().set(CLIPBOARD_HISTORY, None));
+                ui.update();
+            }
+        });
+        history.row.copy.connect_clicked(move |button| {
+            let value = history_on(&Files::here()).to_string();
+            button
+                .clipboard()
+                .set_text(&rows::command(&[(CLIPBOARD_HISTORY, value)]));
+            widgets::copied(button);
         });
     }
     for (index, line) in ui.lines.iter().enumerate() {
@@ -654,7 +748,9 @@ mod tests {
             );
         }
         assert_eq!(
-            rows::on_page("shortcuts").count(),
+            rows::on_page("shortcuts")
+                .filter(|r| r.key.starts_with("shortcuts."))
+                .count(),
             ACTIONS.len(),
             "one row per action"
         );

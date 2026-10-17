@@ -69,19 +69,21 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `appearance.text_size` | `100` | release |
 | `appearance.cursor_size` | `24` | release |
 | `appearance.cursor_theme` | `"default"` | release |
+| `appearance.icon_theme` | `"Edel"` | release |
 | `appearance.icon_size` | `100` | release |
 | `appearance.animations` | `"full"` | release |
 | `appearance.animation_speed` | `100` | release |
 | `appearance.animation_curve` | `"smooth"` | release |
-| `lock_screen.parts` | the look's | release |
+| `lock_screen.widgets` | the look's | release |
 | `lock_screen.look` | `"classic"` | release |
-| `lock_screen.background` | the look's | release |
-| `lock_screen.dim` | 30, or 40 for a sharp background or picture | release |
+| `lock_screen.wallpaper` | the look's | release |
+| `lock_screen.dim` | 30, or 40 for a sharp wallpaper or picture | release |
 | `lock_screen.notifications` | `"count"` | release |
 | `lock_screen.looks` | none | release |
 | `themes.*` | none | release |
 | `presets.*` | none | release |
 | `shortcuts.*` | each action's own keys, docs/SHORTCUTS.md | release |
+| `clipboard.history` | `true` | release |
 | `default_apps.browser` | the first installed browser | image |
 | `default_apps.files` | the first installed file manager | image |
 | `default_apps.editor` | the first installed editor | image |

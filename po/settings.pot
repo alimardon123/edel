@@ -89,6 +89,12 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart."
+msgstr ""
+
+msgid "This version of Edel OS has no add-ons to choose."
+msgstr ""
+
 msgid "What it may use"
 msgstr ""
 
@@ -425,9 +431,6 @@ msgstr ""
 msgid "The panel's icons and the app icons in the bar and the dock"
 msgstr ""
 
-msgid "The pointer's look in every app that starts after this"
-msgstr ""
-
 msgid "Your choice"
 msgstr ""
 
@@ -444,6 +447,12 @@ msgid "Cursor and icons"
 msgstr ""
 
 msgid "The pointer and the icons. Apps already open keep their cursor until they start again"
+msgstr ""
+
+msgid "The pointer's look in every app that starts after this"
+msgstr ""
+
+msgid "The apps' icons in the panel, the dock, the launcher and the title bars"
 msgstr ""
 
 msgid "Automatic"
@@ -522,6 +531,9 @@ msgid "no disk to install on"
 msgstr ""
 
 msgid "Who logs in"
+msgstr ""
+
+msgid "Apps and add-ons for one kind of work, if you like. Change it any time in Settings."
 msgstr ""
 
 msgid "Welcome to Edel OS"
@@ -758,7 +770,7 @@ msgstr ""
 msgid "Also a tile in quick settings."
 msgstr ""
 
-msgid "Pick a look. Each look keeps its own arrangement and background."
+msgid "Pick a look. Each look keeps its own arrangement and wallpaper."
 msgstr ""
 
 msgid "Your own arrangement"
@@ -866,7 +878,7 @@ msgstr ""
 msgid "Rename look"
 msgstr ""
 
-msgid "Give this look another name. It keeps its parts and its background, and shows in the cards above."
+msgid "Give this look another name. It keeps its widgets and its wallpaper, and shows in the cards above."
 msgstr ""
 
 msgid "Name, such as home"
@@ -1184,6 +1196,9 @@ msgstr ""
 msgid "Power information is not available"
 msgstr ""
 
+msgid "What this computer is for"
+msgstr ""
+
 msgid "Remove {layout}"
 msgstr ""
 
@@ -1337,6 +1352,9 @@ msgstr ""
 msgid "Cursor"
 msgstr ""
 
+msgid "Icons"
+msgstr ""
+
 msgid "Icon size"
 msgstr ""
 
@@ -1356,9 +1374,6 @@ msgid "Switcher ends"
 msgstr ""
 
 msgid "Look"
-msgstr ""
-
-msgid "Background"
 msgstr ""
 
 msgid "Clock and date"
@@ -1583,6 +1598,12 @@ msgstr ""
 msgid "Show tray"
 msgstr ""
 
+msgid "Clipboard history"
+msgstr ""
+
+msgid "Keep clipboard history"
+msgstr ""
+
 msgid "Which panels and docks show, where, and what they hold"
 msgstr ""
 
@@ -1677,6 +1698,9 @@ msgid "How the windows will look with these shapes"
 msgstr ""
 
 msgid "The keys for each action. Change one and press the keys you want."
+msgstr ""
+
+msgid "Keeps the last texts and pictures you copied, in memory only, for Super+V"
 msgstr ""
 
 msgid "All 18 workspace keys"
@@ -2259,6 +2283,12 @@ msgid "{name} can log in now, but the computer did not restart: {why}. Restart i
 msgstr ""
 
 msgid "the account could not be made; try again"
+msgstr ""
+
+msgid "Add the fonts this language needs"
+msgstr ""
+
+msgid "They download once this computer is online and show after the next restart."
 msgstr ""
 
 msgid "Try it here:"

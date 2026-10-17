@@ -11,6 +11,7 @@
 
 mod animate;
 mod backdrop;
+mod clipboard;
 mod decoration;
 mod dmabuf;
 mod drm;

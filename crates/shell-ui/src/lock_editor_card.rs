@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use edel::i18n::tr;
-use edel::lock_screen::{self, BACKGROUND, Background, LOOK, Part, Placed};
+use edel::lock_screen::{self, Background, LOOK, Part, Placed, WALLPAPER};
 use edel::places;
 use edel::presets::Edge;
 use edel::settings::{self, LockScreen};
@@ -1479,8 +1479,8 @@ impl Shell {
         self.paint_lock_editor(le);
     }
 
-    /// Writes the parts Done asks for, as the person's `lock_screen.parts`:
-    /// the list as `lock_screen::parts_value` writes it, or the person's line
+    /// Writes the widgets Done asks for, as the person's `lock_screen.widgets`:
+    /// the list as `lock_screen::widgets_value` writes it, or the person's line
     /// taken out when what applies without it is what the edit shows (a
     /// default is never written), or nothing when nothing changed. None when
     /// the write fails, which is logged: the edit mode stays open.
@@ -1502,7 +1502,7 @@ impl Shell {
             parts: person_lock
                 .parts
                 .as_deref()
-                .and_then(|parts| lock_screen::parts_value(parts).ok()),
+                .and_then(|parts| lock_screen::widgets_value(parts).ok()),
             background: person_lock.background.clone(),
         };
         let lock = lock::lock_settings(machine.as_deref(), person.as_deref());
@@ -1529,18 +1529,18 @@ impl Shell {
                 LOOK,
             ),
             (
-                lock_screen::PARTS,
+                lock_screen::WIDGETS,
                 lines.parts.unwrap_or_else(|| before.parts.clone()),
                 before.parts.clone(),
-                "lock_screen.parts",
+                "lock_screen.widgets",
             ),
             (
-                BACKGROUND,
+                WALLPAPER,
                 lines
                     .background
                     .unwrap_or_else(|| before.background.clone()),
                 before.background.clone(),
-                BACKGROUND,
+                WALLPAPER,
             ),
             (
                 lock_screen::DIM_KEY,
@@ -1641,8 +1641,8 @@ impl Shell {
             .map_or(0, |p| self.above_panel(p.style, p.size, p.floating, room))
     }
 
-    /// Writes the person's `lock_screen.parts` as `value` (the list as
-    /// `lock_screen::parts_value` writes it), or takes the line out for None,
+    /// Writes the person's `lock_screen.widgets` as `value` (the list as
+    /// `lock_screen::widgets_value` writes it), or takes the line out for None,
     /// for Undo on the Undo bar (M5.10c6b). Returns what it did, or None after
     /// logging why it could not.
     /// Puts the three lines of the person's file back as Done found them
@@ -1657,11 +1657,11 @@ impl Shell {
             (LOOKS, before.looks.as_deref(), LOOKS),
             (LOOK, before.look.as_deref(), LOOK),
             (
-                lock_screen::PARTS,
+                lock_screen::WIDGETS,
                 before.parts.as_deref(),
-                "lock_screen.parts",
+                "lock_screen.widgets",
             ),
-            (BACKGROUND, before.background.as_deref(), BACKGROUND),
+            (WALLPAPER, before.background.as_deref(), WALLPAPER),
             (
                 lock_screen::DIM_KEY,
                 before.dim.as_deref(),

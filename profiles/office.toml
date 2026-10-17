@@ -1,0 +1,9 @@
+# Office (M7.6): LibreOffice, and printing (the printing add-on, M7.2a).
+# Laid under the machine's own file as gaming.toml says.
+format = 1
+
+[addons]
+installed = ["printing"]
+
+[apps]
+installed = ["org.libreoffice.LibreOffice"]

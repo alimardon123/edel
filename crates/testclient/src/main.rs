@@ -28,7 +28,10 @@
 //! (`portal.rs`, M6.14c), holding the session SECONDS more when given, so
 //! the in-use sign stays. `--recolour RRGGBB@FILE` draws the window in that
 //! colour once FILE exists, so a test can see whether a picture of it
-//! follows it live (M5.2j-b4).
+//! follows it live (M5.2j-b4). `--clipboard` makes the window a clipboard
+//! user: keys 1 and 2 copy a text, Ctrl+V pastes the selection, and each
+//! prints what it did (`clipboard.rs`, M7.13). Its window is titled `clip`
+//! unless `--title` says otherwise.
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -43,6 +46,7 @@
 //!     edel-testclient --lid 8
 //!     edel-testclient --location
 //!     edel-testclient --location SECONDS
+//!     edel-testclient --clipboard
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -84,6 +88,8 @@ struct Args {
     inhibit_idle: bool,
     /// The colour drawn once the file exists, and the file.
     recolour: Option<([u8; 4], PathBuf)>,
+    /// A window that copies and pastes text (M7.13).
+    clipboard: bool,
 }
 
 /// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
@@ -98,23 +104,25 @@ fn pixel_of(value: &str, flag: &str) -> Result<[u8; 4]> {
 fn args() -> Result<Args> {
     let mut size = (300, 200);
     let mut pixel = [0x33, 0x33, 0xcc, 0xff];
-    let mut title = "edel-testclient".to_string();
+    let mut title = None;
     let mut app_id = "edel-testclient".to_string();
     let mut layer = None;
     let mut fullscreen = false;
     let (mut lock_pointer, mut inhibit_idle) = (false, false);
     let mut recolour = None;
+    let mut clipboard = false;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
             "--fullscreen" => fullscreen = true,
             "--lock-pointer" => lock_pointer = true,
             "--inhibit-idle" => inhibit_idle = true,
+            "--clipboard" => clipboard = true,
             _ => {}
         }
         if matches!(
             word.as_str(),
-            "--fullscreen" | "--lock-pointer" | "--inhibit-idle"
+            "--fullscreen" | "--lock-pointer" | "--inhibit-idle" | "--clipboard"
         ) {
             continue;
         }
@@ -134,7 +142,7 @@ fn args() -> Result<Args> {
                 let (colour, file) = value.split_once('@').context("--recolour is RRGGBB@FILE")?;
                 recolour = Some((pixel_of(colour, "--recolour")?, PathBuf::from(file)));
             }
-            "--title" => title = value,
+            "--title" => title = Some(value),
             "--app-id" => app_id = value,
             "--layer" => {
                 layer = Some(match value.as_str() {
@@ -144,13 +152,15 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
             ),
         }
     }
     if size.0 == 0 && layer.is_none() {
         bail!("only a panel (--layer) may have width 0, the screen's");
     }
+    let title =
+        title.unwrap_or_else(|| if clipboard { "clip" } else { "edel-testclient" }.to_string());
     Ok(Args {
         width: size.0,
         height: size.1,
@@ -162,6 +172,7 @@ fn args() -> Result<Args> {
         lock_pointer,
         inhibit_idle,
         recolour,
+        clipboard,
     })
 }
 
@@ -197,6 +208,7 @@ struct Client {
     height: u32,
     pixel: [u8; 4],
     closed: bool,
+    clipboard: Option<clipboard::State>,
 }
 
 /// The wake-up `--recolour`'s watch sends itself once the file exists: a
@@ -215,6 +227,7 @@ impl Dispatch<wl_callback::WlCallback, Wake> for Client {
     }
 }
 
+mod clipboard;
 mod hold;
 mod lid;
 mod mpris;
@@ -282,6 +295,11 @@ fn main() -> Result<()> {
     if args.inhibit_idle {
         hold::inhibit(&globals, &qh, shown.wl_surface())?;
     }
+    let clipboard = if args.clipboard {
+        Some(clipboard::bind(&globals, &qh)?)
+    } else {
+        None
+    };
     // The first commit carries no buffer; the compositor answers with a
     // configure, and the first draw follows it.
     shown.commit();
@@ -297,6 +315,7 @@ fn main() -> Result<()> {
         height: args.height,
         pixel: args.pixel,
         closed: false,
+        clipboard,
     };
     let mut recolour = args.recolour;
     if let Some((_, file)) = &recolour {
@@ -325,6 +344,10 @@ fn main() -> Result<()> {
         // When the compositor goes away, so does the window: the end.
         if let Err(e) = queue.blocking_dispatch(&mut client) {
             eprintln!("edel-testclient: the compositor went away: {e}");
+            break;
+        }
+        if let Err(e) = clipboard::paste(&connection, &mut queue, &mut client) {
+            eprintln!("edel-testclient: {e:#}");
             break;
         }
     }

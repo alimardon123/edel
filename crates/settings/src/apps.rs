@@ -27,7 +27,7 @@ use gtk::gio;
 use gtk::prelude::*;
 use gtk::{gdk, glib};
 
-use edel::app_icons;
+use edel::app_icons::Icons;
 use edel::app_permissions::{self, ALLOW, ASK, NEVER, PERMISSIONS, Permission, Place};
 use edel::app_use::{self, Use};
 use edel::apps::{self, App};
@@ -404,13 +404,23 @@ fn unsandboxed(app: &App) -> bool {
     !sandboxed(app)
 }
 
-/// The icon of `app` at `size` pixels: its own, found in the icon themes
-/// its package installs into, else our generic one.
-fn app_icon(app: &App, size: i32) -> gtk::Image {
+/// The app icons the chosen icon theme draws (M8.21 part g): the machine's
+/// `appearance.icon_theme` with the person's over it, read from the files as
+/// they stand. Built once per list or page, not per icon.
+fn icons_now() -> Icons {
+    let (machine, person) = Files::here().texts();
+    let theme = settings::icon_theme_in(machine.as_deref(), Some(&person));
+    Icons::new(apps::data_dirs(), &theme)
+}
+
+/// The icon of `app` at `size` pixels: its own, found in the icon theme
+/// `icons` draws (the chosen one, then what it inherits, then hicolor), else
+/// our generic one.
+fn app_icon(icons: &Icons, app: &App, size: i32) -> gtk::Image {
     let found = app
         .icon
         .as_deref()
-        .and_then(|name| app_icons::find(&apps::data_dirs(), name, size as u32));
+        .and_then(|name| icons.find(name, size as u32));
     match found {
         Some(path) => {
             let image = gtk::Image::from_file(path);
@@ -446,12 +456,12 @@ fn listed() -> Vec<App> {
 
 /// One app's row in the list: its icon, its name and what it may use, and a
 /// chevron that says it opens (M6.14a).
-fn list_row(group: &gtk::Box, app: &App) -> ListRow {
+fn list_row(group: &gtk::Box, app: &App, icons: &Icons) -> ListRow {
     let button = gtk::Button::builder()
         .css_classes(["edel-row", "edel-app-row", "flat"])
         .build();
     let row = gtk::Box::builder().spacing(12).build();
-    let picture = app_icon(app, LIST_ICON);
+    let picture = app_icon(icons, app, LIST_ICON);
     picture.set_valign(gtk::Align::Center);
     let words = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -485,7 +495,7 @@ fn list_row(group: &gtk::Box, app: &App) -> ListRow {
 /// whether it is sandboxed.
 fn header(app: &App) -> gtk::Box {
     let head = gtk::Box::builder().spacing(16).margin_top(12).build();
-    let picture = app_icon(app, PAGE_ICON);
+    let picture = app_icon(&icons_now(), app, PAGE_ICON);
     picture.set_valign(gtk::Align::Center);
     let words = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -782,7 +792,11 @@ pub fn page() -> gtk::Widget {
     };
     widgets::heading(&list, &count);
     let group = widgets::group(&list);
-    let rows: Vec<ListRow> = apps.iter().map(|app| list_row(&group, app)).collect();
+    let icons = icons_now();
+    let rows: Vec<ListRow> = apps
+        .iter()
+        .map(|app| list_row(&group, app, &icons))
+        .collect();
     let nothing = gtk::Label::builder()
         .label(tr("No app matches"))
         .xalign(0.0)

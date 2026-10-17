@@ -259,6 +259,10 @@
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
 #               printed; run after flatpak (M6.7)
+#   clipboard   a test client copies two texts with the keys 1 and 2,
+#               Super+V lists them, Down and Return paste the first into it
+#               (Ctrl+V from the compositor); with clipboard.history off the
+#               list stays empty, and after a lock and unlock it is empty (M7.13)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -4713,7 +4717,28 @@ case_app_windows() {
 		python3 ci/qmp.py key meta_l-q
 		wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot window $n"
 	done
-	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen"
+	# The app icon style (M8.21 part g): EdelTest, the image's test theme,
+	# draws foot as a magenta square, so foot's cell turns magenta once
+	# shell-ui follows appearance.icon_theme; the compositor follows too.
+	# A theme the machine lacks is refused with the ones it has, and Reset
+	# gives Edel's icons back. Kept as icon-theme.png.
+	followed=$(count 'edel-shell-ui: app icons from "EdelTest"')
+	guest 'icons test'
+	wait_more 'edel-shell-ui: app icons from "EdelTest"' "$followed" || fail "shell-ui did not follow appearance.icon_theme = \"EdelTest\""
+	wait_for 'edel-compositor: app icons from "EdelTest"' || fail "the compositor did not follow appearance.icon_theme = \"EdelTest\""
+	shot icon-theme "$cell" 774 ff00ff >/dev/null || fail "foot's cell at $cell,774 is not EdelTest's magenta icon (icon-theme.png)"
+	guest 'icons bad'
+	wait_for 'DESKTOP-TEST: icons_bad ' || fail "icons bad did not run in the VM"
+	bad=$(value icons_bad)
+	case $bad in
+	*'is not an icon theme this machine has'*EdelTest*) ;;
+	*) fail "an unknown icon theme was not refused with the list: $bad" ;;
+	esac
+	followed=$(count 'edel-shell-ui: app icons from "Edel"')
+	guest 'icons default'
+	wait_more 'edel-shell-ui: app icons from "Edel"' "$followed" || fail "shell-ui did not go back to Edel's icons"
+	shot icon-default "$cell" 774 '!ff00ff' >/dev/null || fail "foot's cell stayed magenta after the reset"
+	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen; EdelTest's icon drew foot's cell magenta (icon-theme.png), NoSuchTheme was refused with the list, and the reset gave it back"
 }
 
 case_taskbar() {
@@ -5314,6 +5339,84 @@ case_fullscreen() {
 	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
 }
 
+case_clipboard() {
+	# Clipboard history (M7.13): the test client clip copies a text on the
+	# key 1 and another on 2, which shell-ui keeps in memory; Super+V opens
+	# the list on the pointer's screen, kept as clipboard.png, and Down and
+	# Return choose the first text copied, which shell-ui sets as the
+	# selection and the compositor pastes into clip with Ctrl+V, so clip
+	# prints it. With clipboard.history off nothing is kept and the list is
+	# empty; a lock and unlock empties it too.
+	mapped=$(count 'edel-compositor: mapped window clip')
+	guest 'clip window'
+	wait_more 'edel-compositor: mapped window clip' "$mapped" || fail "the window clip did not open"
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 17 bytes')
+	python3 ci/qmp.py key 1
+	wait_more 'edel-shell-ui: clipboard kept a text of 17 bytes' "$kept" || fail "shell-ui kept nothing of clip's first copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept')
+	python3 ci/qmp.py key 2
+	wait_more 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept' "$kept" || fail "shell-ui did not keep clip's second copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
+	shown=$(count 'edel-shell-ui: clipboard history shown, 2 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_for 'edel-compositor: clipboard history' || fail "Super+V did not reach the compositor's clipboard_history"
+	wait_more 'edel-shell-ui: clipboard history shown, 2 items' "$shown" || fail "Super+V did not show the list of two"
+	i=0
+	until value layers | grep -q 'edel-clipboard@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no clipboard surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-clipboard@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-clipboard@//; s/[,x]/ /g')
+	# The heading's middle, right of its word, is the card's own colour.
+	shot clipboard $(($1 + $3 / 2)) $(($2 + 22)) "$(token panel)" >/dev/null ||
+		fail "the list's card at $(($1 + $3 / 2)),$(($2 + 22)) is not the panel's colour"
+	pasted=$(count 'edel-compositor: pasted into window clip')
+	python3 ci/qmp.py key down
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: pasted into window clip' "$pasted" || fail "Return in the list pasted nothing into clip"
+	i=0
+	until guest 'clip log' && sleep 0.5 && value clip | grep -q 'pasted first copied text'; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "clip did not print the first text pasted: $(value clip)"
+	done
+	# Off: nothing is kept and the list is empty.
+	off=$(count 'edel-shell-ui: clipboard history off')
+	guest 'clipboard off'
+	wait_more 'edel-shell-ui: clipboard history off' "$off" || fail "shell-ui did not follow clipboard.history = false"
+	python3 ci/qmp.py key 1
+	empty=$(count 'edel-shell-ui: clipboard history shown, 0 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_more 'edel-shell-ui: clipboard history shown, 0 items' "$empty" || fail "with clipboard.history off the list was not empty"
+	python3 ci/qmp.py screendump "$dir/clipboard-off.png"
+	python3 ci/qmp.py key esc
+	wait_for 'edel-shell-ui: clipboard history hidden' || fail "Escape did not close the list"
+	on=$(count 'edel-shell-ui: clipboard history on')
+	guest 'clipboard on'
+	wait_more 'edel-shell-ui: clipboard history on' "$on" || fail "shell-ui did not follow clipboard.history coming back"
+	# A lock and unlock empty it.
+	kept=$(count 'edel-shell-ui: clipboard kept a text')
+	python3 ci/qmp.py key 2
+	wait_more 'edel-shell-ui: clipboard kept a text' "$kept" || fail "shell-ui kept nothing once clipboard.history was on again"
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	emptied=$(count 'edel-shell-ui: clipboard history emptied, the screen locked')
+	locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$locked" || fail "Super+L did not lock the screen"
+	wait_more 'edel-shell-ui: clipboard history emptied, the screen locked' "$emptied" || fail "the lock did not empty the list"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen"
+	empty=$(count 'edel-shell-ui: clipboard history shown, 0 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_more 'edel-shell-ui: clipboard history shown, 0 items' "$empty" || fail "the list was not empty after the lock"
+	python3 ci/qmp.py key esc
+	closed=$(count 'edel-compositor: unmapped window clip')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window clip' "$closed" || fail "Super+Q did not close clip"
+	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -5572,18 +5675,17 @@ case_own_bars() {
 
 case_capture() {
 	# Screenshots and screen sharing (M6.3): an app asking xdg-desktop-portal
-	# for a screenshot gets the URI of a PNG the compositor copied (its log
-	# says so, once per client), and asking to share the screen gets a stream
-	# of the screen's size, 1280x800 here. xdg-desktop-portal offers the
-	# screenshot only beside an Access backend, shell-ui's dialog, which it
-	# asks only through a screenshot backend of version 2 or later; the wlr
-	# backend's is older, so the dialog is asked here as the portal would ask
-	# it, over D-Bus as ci: the call waits for the person, its place is on
-	# the log, Allow is clicked and the call must answer 0.
-	before=$(count 'DESKTOP-TEST: access_result .*uint32')
-	guest 'access ask'
-	wait_for 'edel-shell-ui: access places ' 20 ||
-		fail "shell-ui showed no dialog for the Access portal's question: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
+	# for a screenshot is asked about first in shell-ui's Access dialog,
+	# which the portal asks as shell-ui's screenshot backend is of version 2
+	# (M8.21 part 21f); Allow is clicked, and the app gets the URI of a PNG
+	# that shell-ui copied from the compositor (its log says so, once per
+	# client) into ci's own runtime folder, mode 600, with no /tmp/out.png,
+	# where grim used to leave every picture for anyone to read. Asking to
+	# share the screen gets a stream of the screen's size, 1280x800 here.
+	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
+	guest 'capture screenshot'
+	wait_for 'edel-shell-ui: access places ' 30 ||
+		fail "the screenshot portal showed no Access dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access' | tail -n 1)"
 	# Allow's rectangle in the surface's own logical pixels, from shell-ui,
 	# and the surface's place on the screen, from the compositor's state
 	# file (it centres the dialog in the area the panels leave).
@@ -5603,25 +5705,20 @@ case_capture() {
 	# accent, not the background).
 	shot access "$allow_x" "$allow_y" "!$background" >/dev/null || true
 	python3 ci/qmp.py click "$allow_x" "$allow_y"
-	wait_for 'edel-shell-ui: access allowed for ci-test' 10 ||
+	wait_for 'edel-shell-ui: access allowed for ' 10 ||
 		fail "clicking Allow did not answer the dialog: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: access ' | tail -n 1)"
-	poll_result 'access result' 'DESKTOP-TEST: access_result .*uint32' "$before" ||
-		fail "the Access call did not return after Allow was clicked"
-	answer=$(value access_result)
-	case "$answer" in
-	"(uint32 0,"*) ;;
-	*) fail "the Access call answered \"$answer\", not 0 for allowed" ;;
-	esac
-	before=$(count 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)')
-	guest 'capture screenshot'
 	poll_result 'capture screenshot result' 'DESKTOP-TEST: capture_screenshot .*screenshot (URI|failed)' "$before" ||
-		fail "the screenshot portal did not answer in 30 s"
+		fail "the screenshot portal did not answer in 30 s after Allow"
 	shot=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_screenshot .*screenshot URI \(file:[^ ]*\).*/\1/p' | tail -n 1)
 	if [ -z "$shot" ]; then
 		guest 'capture debug'
-		wait_for 'DESKTOP-TEST: capture_debug grim ' 30 || true
-		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug ' | tail -n 32 | tr '\n' '|')"
+		wait_for 'DESKTOP-TEST: capture_debug portals ' 30 || true
+		fail "the screenshot portal gave no picture: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screenshot ' | tail -n 1); $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_debug \|edel-shell-ui: .*screenshot' | tail -n 32 | tr '\n' '|')"
 	fi
+	case "$shot" in
+	file:///run/user/[0-9]*/edel/screenshots/screenshot-*.png) ;;
+	*) fail "the screenshot is at $shot, not in ci's runtime folder /run/user/UID/edel/screenshots" ;;
+	esac
 	guest 'capture file'
 	wait_for 'DESKTOP-TEST: capture_file ' 20 || fail "the service did not say what the screenshot file holds"
 	file=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: capture_file //p' | tail -n 1)
@@ -5632,6 +5729,13 @@ case_capture() {
 	magic=$(echo "$file" | awk '{ print $3 }')
 	[ "$magic" = 89504e47 ] || fail "the screenshot is not a PNG (its first bytes are $magic): $file"
 	[ "$bytes" -gt 1024 ] || fail "the screenshot is $bytes bytes, under 1 KB: $file"
+	mode=$(echo "$file" | awk '{ print $4, $5 }')
+	[ "$mode" = "600 ci" ] || fail "the screenshot's mode and owner are \"$mode\", not 600 ci: $file"
+	case "$file" in
+	*" out.png absent") ;;
+	*) fail "/tmp/out.png exists, so a screenshot went where other people can read it: $file" ;;
+	esac
+	grep -aq 'edel-shell-ui: screenshot saved, ' "$log" || fail "shell-ui did not say it saved the screenshot"
 	grep -aq 'edel-compositor: screen copied for ' "$log" || fail "the compositor logged no screen copy"
 	guest 'capture screencast'
 	wait_for 'DESKTOP-TEST: capture_screencast ' 60 || fail "the service did not hear back from the screencast portal"
@@ -5639,7 +5743,7 @@ case_capture() {
 	[ -n "$stream" ] || fail "the screencast gave no stream: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: capture_screencast ' | tail -n 1)"
 	size=${stream#* }
 	[ "$size" = 1280x800 ] || fail "the screencast's stream is $size, not the screen's 1280x800"
-	echo "PASS: the Access portal's question showed shell-ui's dialog (access.png) and Allow answered 0; a screenshot portal call gave $shot, a PNG of $bytes bytes the compositor copied; a screencast gave stream ${stream% *} of $size"
+	echo "PASS: a screenshot portal call showed shell-ui's Access dialog (access.png), and after Allow gave $shot, a PNG of $bytes bytes, mode 600 and ci's own, that shell-ui copied from the compositor, with no /tmp/out.png; a screencast gave stream ${stream% *} of $size"
 }
 
 # poll_result COMMAND PATTERN BEFORE: asks the service with COMMAND until
@@ -5904,7 +6008,7 @@ case_lock() {
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
 	guest 'lock magazine reset'
 	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
 # editor_places: the lock screen's edit mode's last whole places line,
@@ -5975,7 +6079,7 @@ case_lock_edit() {
 	# clock is dragged from its middle to the top right (shell-ui logs the
 	# anchor it snapped to), a message is dragged from the drawer to the
 	# bottom middle of the lock's picture (drawn smaller above the drawer,
-	# so 640,480 is its bottom third), and Done writes lock_screen.parts
+	# so 640,480 is its bottom third), and Done writes lock_screen.widgets
 	# into ci's file. The
 	# next lock must place the clock at the top right and show a message.
 	# Kept as lock-editor.png, and the list is reset at the end. The part card
@@ -6010,9 +6114,9 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "classic-2"' ||
 		fail "ci's settings file does not use the look classic-2: $(value settings_file)"
-	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
+	value settings_file | grep -q 'at = "top_right", widget = "clock"' ||
 		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
-	value settings_file | grep -q 'part = "message"' ||
+	value settings_file | grep -q 'widget = "message"' ||
 		fail "ci's settings file does not hold the message: $(value settings_file)"
 	# The next lock reads the file: the clock on the right, the message below.
 	# Its places line is waited for whole (it ends with the corner's power
@@ -6155,8 +6259,8 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "magazine"' ||
 		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
-	value settings_file | grep -q '^parts = ' &&
-		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
+	value settings_file | grep -q '^widgets = ' &&
+		fail "ci's settings file still holds a widgets line with the look: $(value settings_file)"
 	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"
@@ -7851,6 +7955,7 @@ for c in "$@"; do
 	case "$c" in
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
+	fresh) [ "$#" = 1 ] || { echo "fresh runs alone: it boots the released image"; exit 1; } ;;
 	*)
 		case " $cases" in
 		*" $c "*) ;;
@@ -8215,13 +8320,25 @@ if [ "$*" = live ]; then
 	# own (en_US: America/New_York), and the first boot applies it.
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
-	# A computer nobody has an account on (M6.12): the released image as
-	# the computer's own disk, not a stick, so live logs in by itself and
-	# the Welcome asks for the first person and the time zone too. Return
-	# accepts each page's suggestion and the account is typed; Start using
-	# Edel OS makes cleo with edel settings first-boot, as root through
-	# doas, and restarts, which ends this VM (-no-reboot). The disk's next
-	# start leaves the login to the greeter.
+	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png)"
+	exit 0
+fi
+
+# fresh (M6.12): a computer nobody has an account on: the released image as
+# the computer's own disk, not a stick, so live logs in by itself and
+# the Welcome asks for the first person and the time zone too. Return
+# accepts each page's suggestion and the account is typed; Start using
+# Edel OS makes cleo with edel settings first-boot, as root through
+# doas, and restarts, which ends this VM (-no-reboot). The disk's next
+# start leaves the login to the greeter.
+# It runs apart from live, on a runner of its own in CI (ci/vm-tests.sh).
+if [ "$*" = fresh ]; then
+	. ci/names.sh
+	dir=out/desktop-live
+	QMP="$dir/qmp.sock"
+	mkdir -p "$dir"
+	rm -f "$QMP"
 	fresh="$dir/fresh.img"
 	cp --sparse=always out/edel-x86_64.img "$fresh"
 	fresh_log=out/desktop-fresh.log
@@ -8324,8 +8441,8 @@ if [ "$*" = live ]; then
 	stop_vm
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img" "$fresh" "$dir/fresh-data.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png), and the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
+	rm -f "$fresh" "$dir/fresh-data.img"
+	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
 

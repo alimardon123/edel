@@ -629,6 +629,9 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     after_install(&mut env, slot);
     esp.save(&env)?;
     mark_restart_pending(&slot.to_string());
+    if let Some(manifest) = &manifest {
+        crate::addons::remember_source(location, &manifest.version, accept);
+    }
     println!(
         "edel update: {}",
         trf(
@@ -737,6 +740,8 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     }
     esp.save(&env)?;
     lines.push(format!("edel update: slot {} confirmed", disk.running));
+    // The add-ons this boot tried for the first time stay (M7.2b).
+    lines.extend(crate::addons::promote());
     // Only a confirmed slot may change the boot loader (M1.8).
     match crate::boot::efi_target(std::env::consts::ARCH).and_then(|(_, efi)| {
         crate::loader::update_esp(&esp.dir, Path::new(crate::loader::SLOT_DIR), efi)
@@ -755,9 +760,30 @@ fn fallback_record(from: Slot, to: Slot, date: &str) -> String {
     format!("format = 1\nfrom = \"{from}\"\nto = \"{to}\"\ndate = {date}\n")
 }
 
+/// The record of add-ons whose first boot did not finish (M7.2b), in the
+/// same file, which shell-ui shows once as an add-on's notice.
+fn addons_record(names: &[String], date: &str) -> String {
+    let list: Vec<String> = names.iter().map(|n| format!("{n:?}")).collect();
+    format!(
+        "format = 1\naddons = [{}]\ndate = {date}\n",
+        list.join(", ")
+    )
+}
+
 /// Writes `/data/edel/last-fallback.toml`, when the data partition is
 /// mounted (M1.3).
 fn record_fallback(from: Slot, to: Slot) -> Result<()> {
+    write_record(|date| fallback_record(from, to, date))
+}
+
+/// Records that the add-ons `names` did not start (M7.2b).
+pub(crate) fn record_failed_addons(names: &[String]) -> Result<()> {
+    write_record(|date| addons_record(names, date))
+}
+
+/// Writes the record `text` gives for the time now, when the data
+/// partition is mounted.
+fn write_record(text: impl Fn(&str) -> String) -> Result<()> {
     if !crate::data::is_mounted(edel::places::DATA_MOUNT)? {
         return Ok(());
     }
@@ -768,10 +794,7 @@ fn record_fallback(from: Slot, to: Slot) -> Result<()> {
         .context("could not start date")?;
     let date = String::from_utf8_lossy(&date.stdout).trim().to_string();
     fs::create_dir_all(edel::places::DATA_DIR)?;
-    fs::write(
-        edel::places::LAST_FALLBACK,
-        fallback_record(from, to, &date),
-    )?;
+    fs::write(edel::places::LAST_FALLBACK, text(&date))?;
     Ok(())
 }
 
@@ -800,6 +823,18 @@ pub fn rollback() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_add_on_that_did_not_start_is_recorded_with_a_date() {
+        let text = addons_record(&["ci-hang".to_string()], "2026-10-17T10:00:00Z");
+        let table: toml::Table = text.parse().unwrap();
+        assert_eq!(table["format"].as_integer(), Some(1));
+        assert_eq!(
+            table["addons"].as_array().unwrap()[0].as_str(),
+            Some("ci-hang")
+        );
+        assert!(table.contains_key("date") && !table.contains_key("from"));
+    }
 
     /// A sysfs tree like a VM's: vda with partitions 1 to 3, root on `root`.
     fn sysfs(test: &str, root: u32) -> PathBuf {
