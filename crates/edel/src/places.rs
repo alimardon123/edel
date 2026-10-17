@@ -123,6 +123,22 @@ pub const MACHINE_THEMES_DIR: &str = data!("/edel/themes");
 /// same add-on as the image's and kept on the data partition, so it
 /// survives every update and rollback (ADR-007).
 pub const ADDONS_DIR: &str = data!("/addons");
+/// The folder, inside a version's add-ons folder, of the add-ons fetched
+/// by `edel settings apply` and not yet started (M7.2b): the next boot
+/// tries them, and the guard's confirmation moves them beside the others.
+pub const ADDONS_PENDING: &str = "pending";
+/// The one-shot mark in [`ADDONS_PENDING`] that lets the next boot try
+/// the pending add-ons (M7.2b); that boot takes it away before it mounts
+/// them, so a boot that hangs comes back without them.
+pub const ADDONS_TRY: &str = "try";
+/// The list, in a version's add-ons folder, of the add-ons whose first
+/// boot did not finish (M7.2b), one name a line; apply fetches none of
+/// them again until it is taken out of `addons.installed`.
+pub const ADDONS_FAILED: &str = "failed";
+/// Where `edel update` got the release list of the version it installed
+/// (M7.2b), so `edel settings apply` fetches that version's add-ons from
+/// the same list.
+pub const RELEASE_FROM: &str = data!("/edel/release-from.toml");
 
 /// Edel OS's directory for this boot only.
 pub const RUN_DIR: &str = run!("");
@@ -182,11 +198,17 @@ pub const DISKS_BY_ID: &str = "/dev/disk/by-id";
 /// Where an add-on is mounted while the slot's root is built or started
 /// (M7.2a), one folder per add-on.
 pub const ADDONS_RUN: &str = run!("/addons");
+/// The pending add-ons this boot tried (M7.2b), one name a line, which the
+/// guard's confirmation moves beside the others.
+pub const ADDONS_TRIED: &str = run!("/addons-tried");
 
 /// Where a slot keeps Edel OS's own files.
 pub const SHARE_DIR: &str = share!("");
 /// The image's feature files (M4.0).
 pub const FEATURES_DIR: &str = share!("/features");
+/// The feature files of the add-ons built beside this image (M7.2b), so
+/// Settings and `edel addon list` offer them without the network.
+pub const OFFERED_ADDONS_DIR: &str = share!("/addons");
 /// The public keys releases are checked against (M1.6).
 pub const KEYS_DIR: &str = share!("/keys");
 /// Every package in the slot, one per line (M3.1).

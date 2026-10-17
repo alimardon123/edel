@@ -465,7 +465,7 @@ impl Machine {
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
-            addons: crate::addons::mounted(),
+            addons: edel::addon_state::mounted(),
             addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
@@ -762,7 +762,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     for name in file.addons.installed.iter().flatten() {
         if !built.contains(name.as_str()) {
             notes.push(trf(
-                "add-on {name} arrives with the next update",
+                "add-on {name} starts at the next restart, once edel settings apply has fetched it",
                 &[("name", name)],
             ));
         }
@@ -1387,6 +1387,16 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
         );
     } else if changes.is_empty() {
         println!("edel settings: {}", tr("nothing to change"));
+    }
+    // The network part (M7.2b): the chosen add-ons this version lacks are
+    // fetched to start at the next restart; never at boot, which stays
+    // offline. A failed download is a warning, as the settings themselves
+    // are applied and the Welcome's first person must never fail on it;
+    // the Add-ons page shows the add-on still waiting.
+    if !boot {
+        if let Err(err) = crate::addons::fetch_chosen() {
+            eprintln!("warning: {err:#}");
+        }
     }
     if failed > 0 {
         bail!(
