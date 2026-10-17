@@ -39,3 +39,4 @@ Start with the design principles, then the decisions in order. The principles go
 | [guide/commands.md](guide/commands.md) | Every `edel` command and option; generated from `crates/edel/src/main.rs` | Reference |
 | [guide/writing-docs.md](guide/writing-docs.md) | Writing these docs: pages, the table of contents, previewing, generated pages, the look | Guide |
 | [ROADMAP.md](ROADMAP.md) | The plan from phase 0 to the first public release and beyond, one PR per step | Proposed |
+| [ROADMAP-DONE.md](ROADMAP-DONE.md) | The roadmap's finished steps, each with its check and "Done with:" note | Reference |
