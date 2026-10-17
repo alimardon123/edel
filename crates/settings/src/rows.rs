@@ -417,6 +417,12 @@ pub const ROWS: &[Row] = &[
         key: "apps.files",
         title: n_("Files"),
     },
+    // The Add-ons page (M7.2b): one switch for each add-on the image was
+    // built with, under the add-on's own name.
+    Row {
+        key: "addons.installed",
+        title: n_("Add-ons"),
+    },
     // The Updates page (M5.8c).
     Row {
         key: "updates.channel",
@@ -809,10 +815,6 @@ mod tests {
     /// false`) needs neither, as no page shows a row that does not work yet,
     /// and a retired key needs neither either.
     const NO_ROW: &[(&str, &str)] = &[
-        (
-            "addons.installed",
-            "the Add-ons page, a switch for each add-on, comes with M7.2b, when one chosen there arrives at the next boot; until then edel settings set addons.installed+=NAME, and it arrives with the next update",
-        ),
         (
             "users.*.ssh_keys",
             "a key is pasted on the command line or written in the file, as a server's administrator does",

@@ -89,6 +89,12 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "Signed extras to the system, each added or taken away in one switch. A new one downloads at once and starts at the next restart."
+msgstr ""
+
+msgid "This version of Edel OS has no add-ons to choose."
+msgstr ""
+
 msgid "What it may use"
 msgstr ""
 
