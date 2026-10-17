@@ -22,6 +22,9 @@ pub enum Edit {
     LockScreen,
     /// The looks side by side over the lock (M5.10c7h).
     LockLooks,
+    /// The desktop widgets' editor, the lock screen's edit mode over the
+    /// usable area (M8.21 part 21j2).
+    Desktop,
     /// The Access portal's dialog, with the answer's way back to the call.
     Access(Ask),
     /// A screenshot the screenshot portal asked for (M8.21 part 21f): every
@@ -132,12 +135,20 @@ impl ShellBus {
     fn edit_lock_looks(&self) {
         let _ = self.edits.send(Edit::LockLooks);
     }
+
+    /// Opens the desktop widgets' editor over the usable area the panels
+    /// leave (M8.21 part 21j2); it returns at once.
+    fn edit_desktop(&self) {
+        let _ = self.edits.send(Edit::Desktop);
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use edel::panel_edit::{EDIT_LOCK_LOOKS, EDIT_LOCK_SCREEN, EDIT_PANELS, SHELL_INTERFACE};
+    use edel::panel_edit::{
+        EDIT_DESKTOP, EDIT_LOCK_LOOKS, EDIT_LOCK_SCREEN, EDIT_PANELS, SHELL_INTERFACE,
+    };
     use zbus::object_server::Interface;
 
     #[test]
@@ -167,6 +178,10 @@ mod tests {
         );
         assert!(
             xml.contains(&format!("<method name=\"{EDIT_LOCK_LOOKS}\"")),
+            "{xml}"
+        );
+        assert!(
+            xml.contains(&format!("<method name=\"{EDIT_DESKTOP}\"")),
             "{xml}"
         );
     }

@@ -55,6 +55,7 @@ pub mod password;
 #[cfg(feature = "pictures")]
 pub mod pictures;
 pub mod places;
+pub mod platform;
 pub mod power;
 pub mod presets;
 pub mod profile;

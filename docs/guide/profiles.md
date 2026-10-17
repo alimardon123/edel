@@ -4,7 +4,7 @@ A profile is what one kind of work needs, ready made: a few apps, an add-on or t
 
 | Profile | For | What it brings |
 |---|---|---|
-| Office | documents and printing | [profiles/office.toml](https://github.com/alimardon123/edel/blob/main/profiles/office.toml) |
+| Office | documents, printing and scanning | [profiles/office.toml](https://github.com/alimardon123/edel/blob/main/profiles/office.toml) |
 | Developer | containers and code | [profiles/developer.toml](https://github.com/alimardon123/edel/blob/main/profiles/developer.toml) |
 | Creative | drawing and photos | [profiles/creative.toml](https://github.com/alimardon123/edel/blob/main/profiles/creative.toml) |
 | Gaming | games | [profiles/gaming.toml](https://github.com/alimardon123/edel/blob/main/profiles/gaming.toml) |

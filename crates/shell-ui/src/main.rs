@@ -778,6 +778,10 @@ fn run() -> Result<()> {
                             eprintln!("edel-shell-ui: lock looks asked for over the bus");
                             shell.open_lock_looks();
                         }
+                        shell_bus::Edit::Desktop => {
+                            eprintln!("edel-shell-ui: desktop editor asked for over the bus");
+                            shell.open_desktop_editor();
+                        }
                         shell_bus::Edit::Access(ask) => shell.access_asked(ask),
                         shell_bus::Edit::Screenshot { path, answer } => {
                             shell.screenshot(path, answer)

@@ -1147,6 +1147,49 @@ pub(crate) fn paint_time(
     }
 }
 
+/// What lies behind the parts: the made background, else the navy backdrop, so
+/// the screen always has one (Reliable). `paint` and the desktop's editor
+/// (`paint_desktop`) draw it the same way.
+fn behind(
+    pixmap: &mut Pixmap,
+    background: &Background,
+    dim: u32,
+    backdrops: &mut Backdrops,
+    wallpaper: &Wallpaper,
+    tokens: &Tokens,
+) {
+    let size = (pixmap.width(), pixmap.height());
+    match backdrops.get(background, dim, wallpaper, size, tokens) {
+        Some(made) => pixmap.draw_pixmap(
+            0,
+            0,
+            made.as_ref(),
+            &PixmapPaint::default(),
+            Transform::identity(),
+            None,
+        ),
+        None => backdrop(pixmap, tokens),
+    }
+}
+
+/// The desktop's picture for the widgets' editor (M8.21 part 21j2): the
+/// wallpaper sharp and undimmed, as the desktop shows it, with the widgets
+/// `paint_time` draws over it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn paint_desktop(
+    pixmap: &mut Pixmap,
+    view: &View,
+    at: &Layout,
+    tokens: &Tokens,
+    text: &mut Text,
+    backdrops: &mut Backdrops,
+    wallpaper: &Wallpaper,
+    s: f32,
+) {
+    behind(pixmap, &Background::Sharp, 0, backdrops, wallpaper, tokens);
+    paint_time(pixmap, view, at, tokens, text, s);
+}
+
 /// Draws `view` at `scale` into `pixmap`, the screen's size times `scale`,
 /// with the parts `at` places (from `layout`); the apps' icons come from
 /// `icons` when given, and the pictures from `pictures`.
@@ -1165,20 +1208,7 @@ pub fn paint(
 ) {
     let s = scale;
     let w = pixmap.width() as f32 / s;
-    // What lies behind: the made background, else the navy backdrop, so the
-    // screen always has one (Reliable).
-    let size = (pixmap.width(), pixmap.height());
-    match backdrops.get(&at.background, at.dim, wallpaper, size, tokens) {
-        Some(made) => pixmap.draw_pixmap(
-            0,
-            0,
-            made.as_ref(),
-            &PixmapPaint::default(),
-            Transform::identity(),
-            None,
-        ),
-        None => backdrop(pixmap, tokens),
-    }
+    behind(pixmap, &at.background, at.dim, backdrops, wallpaper, tokens);
     let ink = tokens.backdrop_text;
     let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
     paint_time(pixmap, view, at, tokens, text, s);
