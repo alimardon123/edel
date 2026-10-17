@@ -148,6 +148,8 @@ pub struct Edel {
     pub screens_changed: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
+    /// Game mode (M7.7, `games.rs`).
+    pub game: crate::games::Game,
     /// What is opening, closing and sliding (`animate.rs`).
     pub animations: crate::animate::Animations,
     /// The X11 display for X11 apps (`xwayland.rs`).
@@ -237,6 +239,7 @@ impl Edel {
         crate::toplevels::create_global(&display);
         crate::edelshell::create_global(&display);
         crate::screencopy::create_global(&display);
+        crate::games::create_global(&display);
         Ok(Edel {
             dmabuf: crate::dmabuf::Dmabufs::default(),
             compositor: CompositorState::new::<Edel>(&display),
@@ -352,6 +355,7 @@ impl Edel {
             app_icons: crate::decoration::AppIcons::new(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
+            game: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
                 edel_compositor::effects::Tier::Lite,
                 edel_compositor::animation::Motion::Full,
@@ -605,6 +609,7 @@ impl Edel {
         if old.keyboard != new.keyboard {
             self.apply_keyboard();
         }
+        self.follow_game_mode(new.game_mode);
         self.restyle();
         let rescaled = self.apply_scales();
         if old.workspace_names != new.workspace_names {
@@ -886,6 +891,8 @@ impl Edel {
         // The workspace in use: the pointer's screen's, with workspaces on
         // each screen (M5.2k); each screen's own is in its table.
         table.insert("workspace".into(), Value::Integer(shown as i64 + 1));
+        // Whether game mode is on (M7.7).
+        table.insert("game_mode".into(), Value::Boolean(self.game.on()));
         table.insert(
             "workspaces".into(),
             Value::Integer(self.desks.count() as i64),

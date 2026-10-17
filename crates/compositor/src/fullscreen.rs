@@ -103,17 +103,9 @@ impl Edel {
     /// The layers drawn and reached over the windows on `output`: none but
     /// the overlays while a fullscreen window is its top window.
     pub fn layers_over(&self, output: &Output) -> &'static [Layer] {
-        let Some(screen) = self.space.output_geometry(output) else {
-            return &crate::layers::ABOVE;
-        };
-        let top = self.space.elements().rev().find(|window| {
-            self.space
-                .element_geometry(window)
-                .is_some_and(|place| place.overlaps(screen))
-        });
-        match top {
-            Some(window) if self.is_fullscreen(window) => &OVER_FULLSCREEN,
-            _ => &crate::layers::ABOVE,
+        match self.fullscreen_top(output) {
+            Some(_) => &OVER_FULLSCREEN,
+            None => &crate::layers::ABOVE,
         }
     }
 

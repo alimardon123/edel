@@ -17,6 +17,7 @@ mod edelshell;
 mod everyday;
 mod extworkspace;
 mod fullscreen;
+mod games;
 mod glance;
 mod glance_look;
 mod glance_search;

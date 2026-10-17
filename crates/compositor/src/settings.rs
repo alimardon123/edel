@@ -17,6 +17,7 @@ pub use edel::tokens::Scheme;
 
 use crate::animation::{Curve, Motion};
 use crate::frame::Shown;
+use crate::game::When;
 use crate::tiling::Style;
 
 /// The settings the compositor follows, all live.
@@ -70,6 +71,9 @@ pub struct Settings {
     /// `region.input_method` (M6.8): `fcitx5` starts it with the session;
     /// absent or `none` runs none (`session.rs`).
     pub input_method: Option<String>,
+    /// `power.game_mode` (M7.7): when game mode is on by itself; absent
+    /// means while plugged in.
+    pub game_mode: When,
     /// `layout.tiling_style` as the files and the preset give it (M5.16a,
     /// M5.18b): the person's over the machine's, else the preset's, else
     /// stack. Resolved by [`Settings::from_files`].
@@ -297,6 +301,9 @@ impl Settings {
             }
             if file.region.keyboard.is_some() {
                 settings.keyboard.clone_from(&file.region.keyboard);
+            }
+            if let Some(when) = &file.power.game_mode {
+                settings.game_mode = When::parse(Some(when));
             }
             if file.region.input_method.is_some() {
                 settings.input_method.clone_from(&file.region.input_method);

@@ -64,6 +64,8 @@ pub enum Act {
     SwitcherBack,
     /// Show every workspace side by side, or leave that (M5.2j).
     Overview,
+    /// Game mode on or off until the next login (M7.7).
+    GameMode,
 }
 
 impl Act {
@@ -83,6 +85,7 @@ impl Act {
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),
+            "toggle_game_mode" => Some(Act::GameMode),
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
