@@ -473,7 +473,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "appearance.mode",
         help: n_(
-            "Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one.",
+            "Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light.",
         ),
         default: r#""auto""#,
         from: DecidedBy::Token,
