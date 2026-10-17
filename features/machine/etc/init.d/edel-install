@@ -1,0 +1,19 @@
+#!/sbin/openrc-run
+# A stick that installs itself (roadmap M7.3, docs/FLEET.md). `edel install
+# --unattended` returns at once unless the machine's settings file holds an
+# [install] table; with one, it waits until the guard confirmed this slot,
+# installs onto the disk the table names and powers off or restarts. In
+# the background, like the guard, so the boot never waits on it.
+
+description="Install Edel OS as the settings file's [install] table says"
+command=/usr/bin/edel
+command_args="install --unattended"
+command_background=yes
+pidfile=/run/edel-install.pid
+output_log=/dev/console
+error_log=/dev/console
+
+depend() {
+	after edel-settings
+	use logger
+}

@@ -1,0 +1,11 @@
+# Test only (roadmap M7.3): what every machine of CI's fleet shares.
+# build.sh bakes it under each device file into the fleet images.
+format = 1
+
+# The fleet's administrator; the key is no one's, as no test logs in.
+[users.fleet]
+admin = true
+ssh_keys = ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEdlbE9TZmxlZXRDSW9ubHlub2JvZHlzS2V5MDAw fleet@ci"]
+
+[region]
+timezone = "Europe/Berlin"

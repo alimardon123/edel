@@ -470,6 +470,9 @@ This page has no key in the file.
 |---|---|---|---|
 | `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
 | `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
+| `install.disk` | The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name. | `"auto"` | release |
+| `install.erase` | Whether an unattended install erases only an empty disk, or any disk after a ten second countdown. | `"empty-only"` | release |
+| `install.then` | What the machine does once a stick has installed itself: power off or restart. | `"poweroff"` | release |
 
 <!-- end of the keys -->
 

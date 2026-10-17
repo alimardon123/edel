@@ -657,6 +657,10 @@ pub const KEYS: &[Key] = &[
     now("location.enabled", Kind::Flag),
     now("location.place", Kind::TimeZone),
     now("location.online", Kind::Flag),
+    // The stick that installs itself (M7.3): read by `edel install --unattended` only.
+    now("install.disk", Kind::Text),
+    now("install.erase", Kind::OneOf(&["empty-only", "yes"])),
+    now("install.then", Kind::OneOf(&["poweroff", "reboot"])),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -713,6 +717,9 @@ pub struct SettingsFile {
     pub addons: Addons,
     #[serde(default, skip_serializing_if = "is_default")]
     pub system: System,
+    /// The `[install]` table: a stick that installs itself (M7.3)
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub install: Install,
 }
 
 impl Default for SettingsFile {
@@ -742,6 +749,7 @@ impl Default for SettingsFile {
             apps: Apps::default(),
             addons: Addons::default(),
             system: System::default(),
+            install: Install::default(),
         }
     }
 }
@@ -1446,6 +1454,39 @@ pub struct Addons {
     pub installed: Option<Vec<String>>,
 }
 
+/// The `[install]` table (M7.3): a stick that installs itself. Only
+/// `edel install --unattended` reads it, export never writes it, and
+/// it has no Settings page, as it is an instruction to a stick rather
+/// than a setting of a machine (docs/FLEET.md).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Install {
+    /// `auto`, or a `/dev/disk/by-id/` name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk: Option<String>,
+    /// `empty-only` or `yes`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub erase: Option<String>,
+    /// `poweroff` or `reboot`
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub then: Option<String>,
+}
+
+/// The `install.disk` value that picks the one disk a stick may install on (M7.3).
+pub const AUTO_DISK: &str = "auto";
+
+/// The name under `/dev/disk/by-id/` that `disk` gives, when it names a
+/// disk that way: one name after the folder, with no `/` (M7.3).
+pub fn by_id_name(disk: &str) -> Option<&str> {
+    disk.strip_prefix(crate::places::DISKS_BY_ID)?
+        .strip_prefix('/')
+        .filter(|name| !name.is_empty() && !name.contains('/'))
+}
+
+/// Whether `disk` names a disk by its `/dev/disk/by-id/` name (M7.3).
+pub fn is_by_id(disk: &str) -> bool {
+    by_id_name(disk).is_some()
+}
+
 /// Something a reader left out: an unknown key, or a value of the wrong
 /// kind. The key's default is used instead.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1517,7 +1558,39 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     // Across keys: each own preset names a name of its own and a built-in
     // preset to start from, and the preset in use is one of them (M5.17).
     lines.extend(crate::presets::problems(&read.file));
+    // Across keys: the install disk is auto or a by-id name, and erase = "yes" names one (M7.3).
+    lines.extend(install_problems(&read.file));
     Ok(lines)
+}
+
+/// The problems the `[install]` table causes (M7.3), one line each, the
+/// key first: the disk is `auto` or a `/dev/disk/by-id/` name, and
+/// `erase = "yes"` needs such a name, so that only that disk is erased.
+fn install_problems(file: &SettingsFile) -> Vec<String> {
+    let mut lines = Vec::new();
+    // `let` chains need Rust 1.88; this crate's rust-version is 1.85.
+    if let Some(disk) = file.install.disk.as_deref() {
+        if disk != AUTO_DISK && !is_by_id(disk) {
+            lines.push(format!(
+                "install.disk: {}",
+                trf(
+                    "{value} is neither auto nor a /dev/disk/by-id/ name",
+                    &[("value", &format!("{disk:?}"))]
+                )
+            ));
+        }
+    }
+    if file.install.erase.as_deref() == Some("yes")
+        && !file.install.disk.as_deref().is_some_and(is_by_id)
+    {
+        lines.push(format!(
+            "install.erase: {}",
+            tr(
+                "erase = \"yes\" needs install.disk to be a /dev/disk/by-id/ name, so only that disk is ever erased"
+            )
+        ));
+    }
+    lines
 }
 
 /// Why the file's `lock_screen.look` names no look (M5.10c5c), if it does
@@ -3100,6 +3173,36 @@ pub(crate) fn or_list(items: &[&str]) -> String {
     }
 }
 
+/// Writes `text` as the slot's own settings file under the image root
+/// `root` (M7.3, `edel image build --settings`), mode 0644.
+pub fn write_slot_copy(root: &Path, text: &str) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let slot = crate::places::slot_settings();
+    let file = root.join(slot.strip_prefix("/").unwrap_or(&slot));
+    if let Some(dir) = file.parent() {
+        fs::create_dir_all(dir).with_context(|| {
+            trf(
+                "could not create {path}",
+                &[("path", &dir.display().to_string())],
+            )
+        })?;
+    }
+    fs::write(&file, text).with_context(|| {
+        trf(
+            "could not write {path}",
+            &[("path", &file.display().to_string())],
+        )
+    })?;
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).with_context(|| {
+        trf(
+            "could not set the mode of {path}",
+            &[("path", &file.display().to_string())],
+        )
+    })?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3760,6 +3863,7 @@ version = "1.2"
             let section = match key.path.split('.').next().unwrap_or_default() {
                 "themes" => "appearance",
                 "presets" => "layout",
+                "install" => continue, // an instruction to a stick, no page (docs/FLEET.md)
                 section => section,
             };
             assert!(page(section).is_some(), "{section} is on no page");
@@ -4627,5 +4731,50 @@ version = "1.2"
         let bigger = appearance("format = 1\n[appearance]\ntext_size = 120\n");
         assert!(text_changed(&old, &bigger));
         assert!(!shape_changed(&old, &bigger));
+    }
+
+    #[test]
+    fn the_install_table_reads_and_checks() {
+        let text =
+            "format = 1\n[install]\ndisk = \"auto\"\nerase = \"empty-only\"\nthen = \"reboot\"\n";
+        assert_eq!(check(text).unwrap(), Vec::<String>::new());
+        let install = read(text).unwrap().file.install;
+        assert_eq!(install.disk.as_deref(), Some("auto"));
+        assert_eq!(install.erase.as_deref(), Some("empty-only"));
+        assert_eq!(install.then.as_deref(), Some("reboot"));
+    }
+
+    #[test]
+    fn install_disk_must_be_auto_or_by_id() {
+        let lines = check("format = 1\n[install]\ndisk = \"/dev/sda\"\n").unwrap();
+        assert!(
+            lines.contains(
+                &"install.disk: \"/dev/sda\" is neither auto nor a /dev/disk/by-id/ name"
+                    .to_string()
+            ),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn erase_yes_needs_a_by_id_disk() {
+        let auto = check("format = 1\n[install]\ndisk = \"auto\"\nerase = \"yes\"\n").unwrap();
+        assert!(
+            auto.iter()
+                .any(|line| line.starts_with("install.erase: erase = \"yes\" needs")),
+            "{auto:?}"
+        );
+        let by_id = check(
+            "format = 1\n[install]\ndisk = \"/dev/disk/by-id/virtio-abc\"\nerase = \"yes\"\n",
+        )
+        .unwrap();
+        assert_eq!(by_id, Vec::<String>::new());
+    }
+
+    #[test]
+    fn is_by_id_wants_one_name() {
+        assert!(!is_by_id("/dev/disk/by-id/"));
+        assert!(!is_by_id("/dev/disk/by-id/a/b"));
+        assert!(is_by_id("/dev/disk/by-id/ata-X"));
     }
 }

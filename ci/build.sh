@@ -109,6 +109,18 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
 build "$version" images/vm.toml --files "$seed" --no-addons --no-compress --out out/system-test
 
+# The fleet (roadmap M7.3): two VM images, each ci/fleet/base.toml under one
+# device file (`--settings` merges them, the later winning), and a FAT
+# EDEL-SEED volume holding ci/fleet/erase.toml, which fleet-test.sh gives a
+# fresh copy of device B's stick.
+for device in a b; do
+	build "$version" images/vm.toml --settings ci/fleet/base.toml --settings "ci/fleet/device-$device.toml" \
+		--no-compress --out "out/fleet-$device"
+done
+rm -f out/fleet-seed.img
+mkfs.vfat -C -n EDEL-SEED out/fleet-seed.img 4096
+mcopy -i out/fleet-seed.img ci/fleet/erase.toml "::$settings_name"
+
 # The install test image (roadmap M2.4, M2.5): the VM image plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
@@ -217,5 +229,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/desktop-test/update \
-	out/flatpak out/install-test out/keys out/release out/system-test
+	out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/system-test
 ls -ls out out/install-test

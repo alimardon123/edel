@@ -1413,7 +1413,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 
 /// Writes `text` to `path` through a new file and a rename, so a power cut
 /// leaves the old file or the new one, never an empty one.
-fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
+pub(crate) fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
     fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
     let mut out = fs::File::create(&new).with_context(|| could_not_write(&new))?;
@@ -2414,6 +2414,8 @@ pub fn export() -> Result<()> {
     );
     // The zone this machine's own link names (`region.timezone`).
     file.region.timezone = own_timezone();
+    // Only edel install reads [install]; export never writes it (M7.3).
+    file.install = Default::default();
     print!("{EXPORT_HEADER}\n{}", toml::to_string(&file)?);
     let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
     if !changed.is_empty() {

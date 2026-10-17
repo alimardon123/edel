@@ -84,6 +84,10 @@ pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
 /// was installed, so a removable disk that holds it is no stick, which
 /// logs `live` in by itself and installs without a password (M6.17).
 pub const INSTALLED: &str = data!("/edel/installed");
+/// Kept on a stick that installed itself (M7.3): the disk's id under
+/// `/dev/disk/by-id/` and the date, so starting from the stick again in
+/// the same machine never installs twice.
+pub const INSTALLED_TO: &str = data!("/edel/installed-to");
 /// This device's own identity key (M6.12, ADR-011): an ed25519 secret key
 /// in hex, root's only, made once at the first boot, for pairing devices
 /// (M7.10b) and passkeys (M9.11) later; nothing reads it yet.
@@ -156,6 +160,11 @@ pub const CA_BUNDLE: &str = "/etc/ssl/certs/ca-certificates.crt";
 /// The answers to the installer's questions as the new machine's settings
 /// file, before `edel install` copies it to the new disk (M6.6b).
 pub const INSTALL_ANSWERS: &str = run!("/install-answers.toml");
+/// The settings file an unattended install writes to the new disk: the
+/// machine's own without its `[install]` table (M7.3).
+pub const INSTALL_UNATTENDED: &str = run!("/install-unattended.toml");
+/// The links to whole disks and partitions by their hardware ids.
+pub const DISKS_BY_ID: &str = "/dev/disk/by-id";
 /// Where an add-on is mounted while the slot's root is built or started
 /// (M7.2a), one folder per add-on.
 pub const ADDONS_RUN: &str = run!("/addons");
