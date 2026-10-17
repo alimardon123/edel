@@ -1045,6 +1045,7 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     };
     let mut out = Vec::new();
     let mut focused = None;

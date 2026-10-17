@@ -151,18 +151,9 @@ pub fn readable(token: &str) -> String {
 /// custom colour's too.
 pub fn accent_title(name: &str) -> String {
     match name {
-        "blue" => tr("Blue").to_string(),
-        "purple" => tr("Purple").to_string(),
-        "pink" => tr("Pink").to_string(),
-        "red" => tr("Red").to_string(),
-        "orange" => tr("Orange").to_string(),
-        "yellow" => tr("Yellow").to_string(),
-        "green" => tr("Green").to_string(),
-        "teal" => tr("Teal").to_string(),
-        "graphite" => tr("Graphite").to_string(),
         WALLPAPER_SWATCH => tr("From wallpaper").to_string(),
         CUSTOM_SWATCH => tr("Custom").to_string(),
-        other => other.to_string(),
+        other => tokens::accent_title(other).map_or_else(|| other.to_string(), str::to_string),
     }
 }
 

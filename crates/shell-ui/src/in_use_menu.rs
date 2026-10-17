@@ -300,6 +300,7 @@ pub fn nodes(view: &View, layout: &Layout) -> (Vec<Item>, Option<usize>) {
             toggled: None,
             value: None,
             value_text: None,
+            disabled: false,
         });
         for (button, rect) in layout.buttons.iter().filter(|(b, _)| b.row() == r) {
             if held == Some(*button) {
@@ -314,6 +315,7 @@ pub fn nodes(view: &View, layout: &Layout) -> (Vec<Item>, Option<usize>) {
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             });
         }
     }

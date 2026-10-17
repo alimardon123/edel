@@ -62,6 +62,7 @@ pub fn nodes(view: &View, tokens: &Tokens) -> (Vec<Item>, Option<usize>) {
         toggled: None,
         value: None,
         value_text: Some(view.query.clone()),
+        disabled: false,
     };
     let mut items = vec![field];
     for (i, name) in view.names.iter().enumerate() {
@@ -74,6 +75,7 @@ pub fn nodes(view: &View, tokens: &Tokens) -> (Vec<Item>, Option<usize>) {
             toggled: None,
             value: None,
             value_text: None,
+            disabled: false,
         });
     }
     let focus = if view.names.is_empty() {
