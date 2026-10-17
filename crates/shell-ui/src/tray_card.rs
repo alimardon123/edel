@@ -502,7 +502,14 @@ impl Shell {
         // follows that needs them.
         let (machine, person) = crate::settings_texts();
         // The look first (M6.17), so what follows reads the new tokens.
+        let before = self.tokens.clone();
         self.follow_look();
+        // The desktop's widgets (M8.21 part 21j1) draw again in a new look, and
+        // follow `appearance.widgets` as the panels follow theirs.
+        if self.tokens != before {
+            self.desktop_redraw();
+        }
+        self.desktop_follow(machine.as_deref(), person.as_deref());
         // The app icons' theme (M8.21 part g): the panels draw app icons from
         // the chosen theme, so a change makes new icons and draws them again.
         let theme = edel::settings::icon_theme_in(machine.as_deref(), person.as_deref());

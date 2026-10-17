@@ -51,8 +51,13 @@ pub struct Settings {
     pub animation_speed: Option<u32>,
     /// `appearance.animation_curve` (M5.12b4): absent means smooth.
     pub animation_curve: Curve,
-    /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a).
+    /// `appearance.mode` (M5.5c): absent, or `auto`, means light (M5.12a),
+    /// unless `location.place` names a place, where auto follows its sun
+    /// (M7.14, `edel::sun`).
     pub color_scheme: Scheme,
+    /// When the sun changes `color_scheme` next, under auto with a place
+    /// (M7.14); the compositor's one timer waits for it (`sun.rs`).
+    pub next_scheme: Option<edel::sun::Change>,
     /// `[default_apps]` (M6.10): the desktop file id each role opens, by
     /// role (`files`, `browser`), the person's over the machine's; a role
     /// no file sets is absent.
@@ -193,6 +198,7 @@ impl Settings {
         // The keys the files set, before the preset fills in the rest.
         let mut title_bars = None;
         let mut tiling_style = None;
+        let (mut scheme_mode, mut place) = (None, None);
         for file in [machine, person].into_iter().flatten() {
             if file.layout.tiling.is_some() {
                 settings.tiling = file.layout.tiling;
@@ -279,8 +285,17 @@ impl Settings {
             {
                 settings.animation_curve = curve;
             }
-            if let Some(scheme) = file.appearance.mode.as_deref().and_then(Scheme::parse) {
-                settings.color_scheme = scheme;
+            if file
+                .appearance
+                .mode
+                .as_deref()
+                .and_then(Scheme::parse)
+                .is_some()
+            {
+                scheme_mode.clone_from(&file.appearance.mode);
+            }
+            if file.location.place.is_some() {
+                place.clone_from(&file.location.place);
             }
             if file.appearance.wallpaper.is_some() {
                 settings.wallpaper.clone_from(&file.appearance.wallpaper);
@@ -333,6 +348,10 @@ impl Settings {
                 }
             }
         }
+        // Light or dark, by the one rule every part follows (M7.14).
+        let coordinates = edel::sun::place_coordinates(place.as_deref());
+        (settings.color_scheme, settings.next_scheme) =
+            edel::sun::scheme_for(scheme_mode.as_deref(), coordinates, edel::sun::now());
         // One rule for both: the files, then the preset the files name, then
         // the release (M5.18b).
         let preset = presets::named(settings.preset.as_deref()).0;

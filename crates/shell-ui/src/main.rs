@@ -32,6 +32,7 @@ mod clipboard_card;
 mod clipboard_list;
 mod clock_face;
 mod corner;
+mod desktop;
 mod edit_kit;
 mod editor;
 mod editor_card;
@@ -224,6 +225,10 @@ struct Shell {
     /// The panels the settings files ask for as last applied (M5.31b):
     /// `panels_changed` compares with them.
     panel_specs: Vec<presets::Panel>,
+    /// The desktop's widgets (M8.21 part 21j1): the parts `appearance.widgets`
+    /// names that the desktop draws, and one screen per output while any.
+    desktop_parts: Vec<edel::lock_screen::Placed>,
+    desktops: Vec<desktop::Screen>,
     /// The apps the apps widget pins, as the list names them (M5.4c, M5.31d:
     /// `panels.pinned` over the preset's), and each shown pin's index in it,
     /// kept so panels made later can read the apps they show (`read_apps`).
@@ -621,6 +626,8 @@ fn run() -> Result<()> {
         spent: Vec::new(),
         panels,
         panel_specs: preset.panels.clone(),
+        desktop_parts: Vec::new(),
+        desktops: Vec::new(),
         pins,
         pin_slots,
         app_press: None,
@@ -790,6 +797,9 @@ fn run() -> Result<()> {
         shell.clipboard.listen(&seat, &qh);
     }
     shell.watch_status()?;
+    // The desktop's widgets (M8.21 part 21j1), after the panels they lie under.
+    let (machine, person) = settings_texts();
+    shell.desktop_follow(machine.as_deref(), person.as_deref());
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
         .map_err(|e| anyhow::anyhow!("watching the compositor: {e}"))?;
@@ -994,9 +1004,10 @@ fn chosen() -> follow::Chosen {
 }
 
 /// `layout.preset`, `panels.list` and the colour scheme, the person's over
-/// the machine's.
+/// the machine's. The scheme is auto's sun at `location.place` too (M7.14),
+/// worked out by `edel::sun`.
 fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
-    let (mut name, mut panels, mut scheme) = (None, None, None);
+    let (mut name, mut panels) = (None, None);
     let files = [Some(places::machine_settings()), places::person_settings()];
     for path in files.into_iter().flatten().map(|p| places::found(&p)) {
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -1009,7 +1020,6 @@ fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
                 let layout = file.layout;
                 name = layout.preset.or(name);
                 panels = file.panels.list.or(panels);
-                scheme = file.appearance.mode.or(scheme);
             }
             Err(e) => eprintln!(
                 "edel-shell-ui: {}: {e:#}; its keys are left out",
@@ -1017,10 +1027,8 @@ fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
             ),
         }
     }
-    let scheme = scheme
-        .as_deref()
-        .and_then(Scheme::parse)
-        .unwrap_or_default();
+    let (machine, person) = settings_texts();
+    let scheme = edel::sun::scheme_of(machine.as_deref(), person.as_deref()).0;
     (name, panels, scheme)
 }
 
@@ -1102,6 +1110,9 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
         move |_, _, shell: &mut Shell| {
             for i in 0..shell.panels.len() {
                 shell.draw(i);
+            }
+            for i in 0..shell.desktops.len() {
+                shell.draw_desktop(i);
             }
             shell.launcher.reap();
             shell.draw_lock();
@@ -1474,6 +1485,8 @@ impl Shell {
                 )
             })
             .collect();
+        // The desktop's widgets lie under the panels, so they are made after them.
+        self.remake_desktops(&outputs);
     }
 
     /// The look changed from `old` (M6.17): each panel whose height, fillet
@@ -1591,22 +1604,27 @@ impl Shell {
     /// panel of ours on it changes nothing, and a panel the compositor
     /// closes ends shell-ui as it always did.
     fn outputs_changed(&mut self, gone: Option<&WlOutput>) {
-        if !self.panel_specs.iter().any(|s| s.screens == Screens::Every) {
+        // A panel on every screen is made afresh (M5.31c), and the desktop's
+        // widgets on each screen (M8.21 part 21j1), when the screen is one of
+        // theirs; a screen that went with none of ours changes nothing.
+        let panels = self.panel_specs.iter().any(|s| s.screens == Screens::Every)
+            && gone.is_none_or(|gone| self.panels.iter().any(|p| p.output.as_ref() == Some(gone)));
+        let desktops = gone.is_none_or(|gone| self.desktops.iter().any(|d| d.output == *gone));
+        if !panels && !desktops {
             return;
-        }
-        if let Some(gone) = gone {
-            if !self.panels.iter().any(|p| p.output.as_ref() == Some(gone)) {
-                return;
-            }
         }
         let outputs: Vec<WlOutput> = self
             .outputs
             .outputs()
             .filter(|output| gone != Some(output))
             .collect();
-        let specs = self.panel_specs.clone();
-        self.remake_panels(&specs, outputs);
-        self.log_panels();
+        if panels {
+            let specs = self.panel_specs.clone();
+            self.remake_panels(&specs, outputs);
+            self.log_panels();
+        } else {
+            self.remake_desktops(&outputs);
+        }
     }
 
     /// The apps the apps widget and the window list show, read once, when
@@ -2288,6 +2306,8 @@ impl LayerShellHandler for Shell {
             self.hide_switcher();
         } else if self.is_access(surface.wl_surface()) {
             self.close_access();
+        } else if let Some((i, _)) = self.desktop_surface(surface.wl_surface()) {
+            self.desktop_closed(i);
         } else {
             self.exit = true;
         }
@@ -2399,6 +2419,13 @@ impl LayerShellHandler for Shell {
                 flip.configured();
             }
             return self.draw_switcher();
+        }
+        if let Some((i, area)) = self.desktop_surface(surface.wl_surface()) {
+            return if area {
+                self.desktop_area(i, configure.new_size)
+            } else {
+                self.desktop_settled(i)
+            };
         }
         let Some(i) = self.panel_of(surface.wl_surface()) else {
             return;
@@ -2521,6 +2548,9 @@ impl CompositorHandler for Shell {
                 flip.set_scale(factor);
             }
             return self.draw_switcher();
+        }
+        if let Some((i, false)) = self.desktop_surface(surface) {
+            return self.desktop_scaled(i, factor);
         }
         let Some(i) = self.panel_of(surface) else {
             return;
@@ -2648,6 +2678,9 @@ impl CompositorHandler for Shell {
                 flip.framed();
             }
             return self.draw_switcher();
+        }
+        if let Some((i, _)) = self.desktop_surface(surface) {
+            return self.desktop_settled(i);
         }
         let Some(i) = self.panel_of(surface) else {
             return;

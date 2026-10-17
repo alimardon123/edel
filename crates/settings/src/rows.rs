@@ -248,6 +248,12 @@ pub const ROWS: &[Row] = &[
         key: "appearance.switcher_ends",
         title: n_("Switcher ends"),
     },
+    // The Desktop group (M8.21 part 21j1): the clock and the date over the
+    // wallpaper, under the windows.
+    Row {
+        key: "appearance.widgets",
+        title: n_("Desktop widgets"),
+    },
     // The Lock screen page (M5.10c5c): the look, what lies behind it, the
     // clock and the date, and the count of unread notifications.
     Row {
@@ -882,6 +888,10 @@ mod tests {
             "install.then",
             "an instruction to a stick that installs itself, read only by edel install --unattended (docs/FLEET.md)",
         ),
+        (
+            "system.profiles_without",
+            "written by taking out or adding back what a profile brings, on the Add-ons page or with -= and +=; the Profile row's line names it",
+        ),
     ];
 
     #[test]
@@ -920,7 +930,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 34);
+        assert_eq!(on_page("appearance").count(), 35);
         assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
         assert_eq!(on_page("about").count(), 0);
     }

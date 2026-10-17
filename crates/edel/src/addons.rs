@@ -1111,7 +1111,7 @@ pub fn fetch_chosen() -> Result<()> {
 pub fn stage_for_install(settings: &str, data: &Path) {
     let wanted = edel::settings::read(settings)
         .ok()
-        .and_then(|read| read.file.addons.installed)
+        .and_then(|read| edel::profiles::applied(&read.file).addons.installed)
         .unwrap_or_default();
     if wanted.is_empty() {
         return;

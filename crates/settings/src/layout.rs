@@ -25,7 +25,8 @@ use crate::files::{self, Files};
 use crate::style::Theme;
 use crate::widgets;
 use crate::{
-    colours, cursor, depth, motion, panels, preview, rows, shape, text, themes, tray, workspaces,
+    colours, cursor, depth, desktop, motion, panels, preview, rows, shape, text, themes, tray,
+    workspaces,
 };
 
 const PANELS_INTRO: &str = n_("The bars and docks along the screen's edges, and what they hold.");
@@ -191,6 +192,9 @@ struct Ui {
     /// The Appearance page's Motion group, which follows the files too
     /// (M5.12b4).
     motion: Option<Rc<motion::Group>>,
+    /// The Appearance page's Desktop group, which follows the files too
+    /// (M8.21 part 21j1).
+    desktop: Option<Rc<desktop::Group>>,
 }
 
 impl Ui {
@@ -259,6 +263,9 @@ impl Ui {
         }
         if let Some(motion) = &self.motion {
             motion.show();
+        }
+        if let Some(desktop) = &self.desktop {
+            desktop.show();
         }
         let dynamic = now.dynamic_workspaces;
         for setting in &self.settings {
@@ -365,6 +372,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
     let mut cursor_group = None;
     let mut text_group = None;
     let mut motion_group = None;
+    let mut desktop_group = None;
     match section {
         "layout" => {
             let source = widgets::section(&content, rows::title("layout.preset"));
@@ -554,6 +562,9 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             // The motion after the depth (M5.12b4): how much, how fast and
             // with what feel things move.
             motion_group = Some(motion::group(&content, &problem));
+            // The desktop's widgets after the motion (M8.21 part 21j1): the
+            // clock and the date over the wallpaper, one switch.
+            desktop_group = Some(desktop::group(&content, &problem));
             widgets::heading(&content, tr("Workspace switcher"));
             let switcher = widgets::group(&content);
             settings.push(setting(
@@ -613,6 +624,7 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
         depth: depth_group.clone(),
         cursor: cursor_group.clone(),
         motion: motion_group.clone(),
+        desktop: desktop_group.clone(),
     });
     sync_cards(&ui);
     ui.update();
