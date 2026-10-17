@@ -711,6 +711,16 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "appearance.widgets",
+        help: n_(
+            "The widgets on the desktop, over the wallpaper and under the windows, and where each one stands, as a list of tables.",
+        ),
+        default: "none",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
         key: "lock_screen.widgets",
         help: n_(
             "The widgets on the lock and login screens and where each one stands, as a list of tables.",

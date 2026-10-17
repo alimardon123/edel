@@ -6762,6 +6762,64 @@ case_glass() {
 	echo "PASS: appearance.panel_opacity 40 with blur 0 drew the bar at 642,790 #$sharp, the right half #3a8fc0 under the panel at 40 percent (glass-sharp.png), and blur 100 drew #$frosted there, the left half's colour mixed in (glass.png); glass default brought the release's opaque bar back, and the wallpaper went"
 }
 
+case_desktop_widgets() {
+	# The desktop's widgets (M8.21 part 21j1, M5.33c): appearance.widgets puts
+	# the clock over the wallpaper and under the windows, drawn by shell-ui on
+	# the background layer. With the wallpaper a plain colour, nothing of the
+	# clock shows until it is on. Once it is, shell-ui logs where the clock
+	# stands (`clock X+Y+WxH`), and the text colour shows in that box. A person
+	# is refused by edel settings set with its message, and reset takes the
+	# clock away again. Kept as desktop-off.png, desktop-clock.png and
+	# desktop-gone.png.
+	colour=$(count 'edel-compositor: wallpaper colour #336699')
+	guest 'wallpaper colour'
+	wait_more 'edel-compositor: wallpaper colour #336699' "$colour" ||
+		fail "the compositor did not draw the colour #336699 (wallpaper colour)"
+	ink=$(token backdrop_text)
+	python3 ci/qmp.py screendump "$dir/desktop-off.png"
+	blank=$(python3 ci/qmp.py where "$dir/desktop-off.png" 880 0 400 240 "$ink" | awk '{print $3}')
+	[ "${blank:-0}" -lt 20 ] ||
+		fail "with no desktop widgets, ${blank} pixels of the text colour #$ink show in the top right (desktop-off.png)"
+	shown=$(count 'edel-shell-ui: desktop widgets on Virtual-1 ')
+	guest 'desktop clock'
+	wait_more 'edel-shell-ui: desktop widgets on Virtual-1 ' "$shown" ||
+		fail "shell-ui did not place the desktop's clock on Virtual-1 (desktop widgets on)"
+	line=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: desktop widgets on Virtual-1 ' | tail -n 1)
+	rect=$(echo "$line" | sed -n 's/.*clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$rect" ] || fail "shell-ui's desktop line has no clock rectangle: $line"
+	set -- $rect
+	wait_for 'DESKTOP-TEST: layers .*edel-desktop@' ||
+		fail "the desktop's clock is not a layer surface: $(value layers)"
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/desktop-clock.png"
+		drawn=$(python3 ci/qmp.py where "$dir/desktop-clock.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
+		[ "${drawn:-0}" -gt 200 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] ||
+			fail "the desktop clock at $1,$2 ${3}x$4 has ${drawn:-0} pixels of the text colour #$ink (desktop-clock.png)"
+		sleep 1
+	done
+	guest 'desktop bad'
+	wait_for 'DESKTOP-TEST: desktop_bad ' || fail "desktop bad did not run in the VM"
+	bad=$(value desktop_bad)
+	case "$bad" in
+	*'does not stand on the desktop'*) ;;
+	*) fail "a person was not refused on the desktop: $bad" ;;
+	esac
+	widgets_off=$(count 'edel-shell-ui: desktop widgets off')
+	guest 'desktop default'
+	wait_more 'edel-shell-ui: desktop widgets off' "$widgets_off" ||
+		fail "shell-ui did not take the desktop's widgets away (desktop widgets off)"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/desktop-gone.png"
+	gone=$(python3 ci/qmp.py where "$dir/desktop-gone.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
+	[ "${gone:-0}" -lt 20 ] ||
+		fail "after reset, ${gone} pixels of the text colour #$ink still show where the clock was (desktop-gone.png)"
+	guest 'wallpaper default'
+	echo "PASS: appearance.widgets set to the clock drew it at $1,$2 ${3}x$4 with $drawn pixels of the text colour #$ink (desktop-clock.png), a person was refused with its message, and reset took the clock away (desktop-gone.png)"
+}
+
 case_buttons() {
 	# Window buttons on either side (M5.4b): with layout.window_buttons =
 	# "left", close is the bar's leftmost 28 px square, then minimize and
