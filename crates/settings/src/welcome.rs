@@ -32,6 +32,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use gtk::{gio, glib};
 
+use edel::addon_state::{self, Facts, State};
 use edel::i18n::{n_, tr, trf};
 use edel::install::Question;
 use edel::settings::Source;
@@ -270,10 +271,16 @@ pub fn check_account(name: &str, password: &str, again: &str) -> Result<String, 
 
 /// The words of `edel settings first-boot` that make a new machine's first
 /// person `name` (M6.12), with the time zone `zone` and the person's own
-/// choices `own` (each key and value), as `edel settings set` takes them; the
-/// password goes on standard input. The release's time zone is left out, as
-/// writers never write a default.
-pub fn first_person_words(name: &str, zone: &str, own: &[(&str, String)]) -> Vec<String> {
+/// choices `own` (each key and value) and the add-ons `addons` the person
+/// chose (`addons.installed+=NAME`, last), as `edel settings set` takes them;
+/// the password goes on standard input. The release's time zone is left out,
+/// as writers never write a default.
+pub fn first_person_words(
+    name: &str,
+    zone: &str,
+    own: &[(&str, String)],
+    addons: &[&str],
+) -> Vec<String> {
     let mut words: Vec<String> = actions::FIRST_PERSON
         .args
         .iter()
@@ -285,7 +292,26 @@ pub fn first_person_words(name: &str, zone: &str, own: &[(&str, String)]) -> Vec
         words.push(format!("{ZONE_KEY}={zone}"));
     }
     words.extend(own.iter().map(|(key, value)| format!("{key}={value}")));
+    words.extend(
+        addons
+            .iter()
+            .map(|addon| format!("addons.installed+={addon}")),
+    );
     words
+}
+
+/// Whether the add-on `name` is one the image offers (`offered`, by name)
+/// and is neither there nor on its way: not chosen (`state`).
+fn free_offer(offered: &[(String, String)], state: impl Fn(&str) -> State, name: &str) -> bool {
+    offered.iter().any(|(n, _)| n == name) && !state(name).chosen() && state(name) != State::BuiltIn
+}
+
+/// The language the person's file names, or the release's: the one the
+/// Language page shows chosen.
+fn language_now() -> String {
+    Files::here()
+        .chosen(LANGUAGE_KEY)
+        .unwrap_or_else(|| install::LANGUAGE.to_string())
 }
 
 /// What a page built: the places it logs, the widget that takes the keys
@@ -333,6 +359,14 @@ struct Welcome {
     /// Whether the end is running (`edel settings first-boot`, then the
     /// restart), when the buttons wait.
     busy: Cell<bool>,
+    /// The add-on the fonts' checkbox offers, with the checkbox on: Some(NAME)
+    /// when it shows and is on, else None (M7.2b).
+    fonts: RefCell<Option<&'static str>>,
+    /// The Language page's fonts row and its checkbox, rebuilt with the page.
+    fonts_row: RefCell<Option<(gtk::Box, gtk::CheckButton)>>,
+    /// The add-ons the image offers and where each stands, read once when
+    /// the window opens (`edel::addon_state`, no network).
+    add_ons: (Vec<(String, String)>, Facts),
 }
 
 /// Opens the Welcome window on its first page (M6.12): one window, maximized,
@@ -361,6 +395,13 @@ pub fn window(app: &adw::Application) {
         account: RefCell::new(None),
         zone: RefCell::new(None),
         busy: Cell::new(false),
+        fonts: RefCell::new(None),
+        fonts_row: RefCell::new(None),
+        add_ons: if mode == Mode::Stick {
+            (Vec::new(), Facts::default())
+        } else {
+            (addon_state::offered(), Facts::read())
+        },
     });
     eprintln!("edel-settings: welcome for a {}", mode.name());
     welcome.window.set_child(Some(&welcome.holder));
@@ -426,7 +467,7 @@ impl Welcome {
             .build();
         let built = match page {
             Page::Start => self.start(&column),
-            Page::Language => Built::plain(language(&column, &problem)),
+            Page::Language => Built::plain(language(self, &column, &problem)),
             Page::Keyboard => Built::plain(keyboard(&column, &problem)),
             Page::WiFi => {
                 crate::network::parts(&column, &column, problem.clone());
@@ -603,6 +644,7 @@ impl Welcome {
         match self.pages.get(at) {
             Some(Page::Done) if self.mode == Mode::NewMachine => self.make_person(button, problem),
             Some(Page::Done) => {
+                self.ask_fonts();
                 eprintln!("edel-settings: welcome done");
                 self.close();
             }
@@ -640,6 +682,87 @@ impl Welcome {
         if let Some((root, groups)) = self.shown.borrow().clone() {
             log_places(&root, groups);
         }
+    }
+
+    /// The add-on the Language page offers for the language `code`: the
+    /// language's fonts when the image offers them and they are not chosen or
+    /// installed yet, and never on a stick (the installer adds them there).
+    fn offered_font(&self, code: &str) -> Option<&'static str> {
+        if self.mode == Mode::Stick {
+            return None;
+        }
+        let name = edel::languages::font_addon(code)?;
+        let (offered, facts) = &self.add_ons;
+        free_offer(offered, |n| addon_state::state(n, facts), name).then_some(name)
+    }
+
+    /// Shows the fonts row under the language choice when the language now
+    /// chosen has an offer, checked and in `fonts`, and hides it, with `fonts`
+    /// None, when it has none (M7.2b).
+    fn update_fonts(&self) {
+        let offered = self.offered_font(&language_now());
+        let Some((row, check)) = self.fonts_row.borrow().clone() else {
+            return;
+        };
+        row.set_visible(offered.is_some());
+        match offered {
+            Some(name) => {
+                // Checked by default each time it shows; the toggle logs it
+                // and sets `fonts` too, so a check that was on sets it here.
+                check.set_active(true);
+                self.fonts.replace(Some(name));
+            }
+            None => {
+                self.fonts.replace(None);
+            }
+        }
+    }
+
+    /// The fonts checkbox was toggled: `fonts` names the add-on while it is on
+    /// (M7.2b), and the log says which way it went.
+    fn fonts_toggled(&self, on: bool) {
+        let Some(name) = self.offered_font(&language_now()) else {
+            self.fonts.replace(None);
+            return;
+        };
+        if on {
+            self.fonts.replace(Some(name));
+            eprintln!("edel-settings: welcome fonts {name} chosen");
+        } else {
+            self.fonts.replace(None);
+            eprintln!("edel-settings: welcome fonts {name} not chosen");
+        }
+    }
+
+    /// A person's fonts choice, made at the end (Start using Edel OS, M7.2b):
+    /// `edel settings set addons.installed+=NAME` and `apply` as root, on a
+    /// thread the window does not wait for. The application is held until it
+    /// has run, so closing the Welcome does not stop the command.
+    fn ask_fonts(&self) {
+        let Some(name) = *self.fonts.borrow() else {
+            return;
+        };
+        let Some(app) = self.window.application() else {
+            return;
+        };
+        let hold = app.hold();
+        let words = vec![
+            "settings".to_string(),
+            "set".to_string(),
+            format!("addons.installed+={name}"),
+        ];
+        glib::spawn_future_local(async move {
+            let done = gio::spawn_blocking(move || cmd::set_and_apply_as_root(words)).await;
+            let code = match done {
+                Ok((set, _)) => set.code,
+                Err(_) => None,
+            };
+            eprintln!(
+                "edel-settings: welcome fonts {name} asked, exit {}",
+                crate::widgets::exit_text(code)
+            );
+            drop(hold);
+        });
     }
 
     /// The stick's first page: Install Edel OS, which Return presses, and
@@ -839,7 +962,8 @@ impl Welcome {
             .filter(|key| matches!(files.source(key), Source::Person(_)))
             .filter_map(|key| files.chosen(key).map(|value| (*key, value)))
             .collect();
-        let words = first_person_words(&name, &zone, &own);
+        let addons: Vec<&str> = self.fonts.borrow().iter().copied().collect();
+        let words = first_person_words(&name, &zone, &own, &addons);
         self.busy.set(true);
         button.set_sensitive(false);
         button.set_label(tr("Making your account"));
@@ -930,10 +1054,8 @@ fn write(key: &str, value: &str, release: &str, problem: &gtk::Label) {
 /// file names (or the release's) chosen. A pick writes `region.language`
 /// and, while the keyboard still follows the language, the keyboard of the
 /// new language too, as Install does.
-fn language(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
-    let now = Files::here()
-        .chosen(LANGUAGE_KEY)
-        .unwrap_or_else(|| install::LANGUAGE.to_string());
+fn language(welcome: &Rc<Welcome>, column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
+    let now = language_now();
     let (codes, labels) = region::language_offer(&now);
     let at = codes.iter().position(|code| *code == now).unwrap_or(0);
     let choice = widgets::Choice::searchable(labels);
@@ -941,17 +1063,57 @@ fn language(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
     choice.set_width(CONTROL);
     choice.widget().set_halign(gtk::Align::Center);
     let weak = Rc::downgrade(&choice);
-    let problem = problem.clone();
+    let (held, problem) = (Rc::downgrade(welcome), problem.clone());
     choice.connect_changed(move || {
         let Some(choice) = weak.upgrade() else {
             return;
         };
         if let Some(code) = codes.get(choice.selected()) {
             language_picked(code, &problem);
+            if let Some(welcome) = held.upgrade() {
+                welcome.update_fonts();
+            }
         }
     });
+    // The fonts row under the choice, hidden until a language needs fonts the
+    // image offers (M7.2b): a checkbox on by default and a line saying when
+    // they arrive.
+    let fonts = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(4)
+        .width_request(CONTROL)
+        .halign(gtk::Align::Center)
+        .margin_top(8)
+        .visible(false)
+        .build();
+    let check = gtk::CheckButton::builder()
+        .label(tr("Add the fonts this language needs"))
+        .active(true)
+        .halign(gtk::Align::Start)
+        .build();
+    let line = gtk::Label::builder()
+        .label(tr(
+            "They download once this computer is online and show after the next restart.",
+        ))
+        .wrap(true)
+        .xalign(0.0)
+        .css_classes(["edel-row-subtitle"])
+        .build();
+    fonts.append(&check);
+    fonts.append(&line);
+    let weak_fonts = Rc::downgrade(welcome);
+    check.connect_toggled(move |check| {
+        if let Some(welcome) = weak_fonts.upgrade() {
+            welcome.fonts_toggled(check.is_active());
+        }
+    });
+    welcome
+        .fonts_row
+        .replace(Some((fonts.clone(), check.clone())));
     column.append(&choice.widget());
+    column.append(&fonts);
     keep(column, choice);
+    welcome.update_fonts();
     Vec::new()
 }
 
@@ -1293,7 +1455,7 @@ mod tests {
             ("appearance.mode", "dark".to_string()),
         ];
         assert_eq!(
-            first_person_words("ali", "Europe/Berlin", &own),
+            first_person_words("ali", "Europe/Berlin", &own, &[]),
             [
                 "settings",
                 "first-boot",
@@ -1306,7 +1468,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            first_person_words("ali", edel::timezones::DEFAULT, &[]),
+            first_person_words("ali", edel::timezones::DEFAULT, &[], &[]),
             [
                 "settings",
                 "first-boot",
@@ -1315,5 +1477,31 @@ mod tests {
                 "--new-password-stdin"
             ]
         );
+    }
+
+    #[test]
+    fn the_chosen_fonts_add_on_comes_last_in_the_first_person_words() {
+        let own = [("appearance.mode", "dark".to_string())];
+        let words = first_person_words("ali", "Asia/Tokyo", &own, &["fonts-cjk"]);
+        assert_eq!(
+            words.last().map(String::as_str),
+            Some("addons.installed+=fonts-cjk")
+        );
+        assert_eq!(words[words.len() - 2], "appearance.mode=dark");
+    }
+
+    #[test]
+    fn the_fonts_are_offered_only_while_not_chosen() {
+        let offered = vec![("fonts-cjk".to_string(), "CJK fonts".to_string())];
+        let facts = |wanted: &[&str], built_in: &[&str]| Facts {
+            wanted: wanted.iter().map(|n| n.to_string()).collect(),
+            built_in: built_in.iter().map(|n| n.to_string()).collect(),
+            ..Facts::default()
+        };
+        let free = |f: Facts, name: &str| free_offer(&offered, |n| addon_state::state(n, &f), name);
+        assert!(free(facts(&[], &[]), "fonts-cjk"));
+        assert!(!free(facts(&["fonts-cjk"], &[]), "fonts-cjk"));
+        assert!(!free(facts(&[], &["fonts-cjk"]), "fonts-cjk"));
+        assert!(!free(facts(&[], &[]), "fonts-other"));
     }
 }

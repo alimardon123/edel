@@ -24,8 +24,18 @@
 #  2b. Slot B runs a second time. Nothing is applied, as the add-on's
 #      links already stand, and OpenRC read the services before the /etc
 #      layer came: the greeting shows edel-data had it read them again
-#      (M7.2a). Roll back by command.
-#   3. Slot A runs again, without ci-hello and its links (M7.2a).
+#      (M7.2a). Choose the add-on virtualization (QEMU) and apply, which
+#      fetches it from slot B's list to start at the next boot (M7.2b).
+#  2c. The boot tried it and the guard's confirmation kept it: qemu-img is
+#      there, qemu joined the image's kvm group, the file sits beside the
+#      other add-ons and nothing is pending. Choose ci-hang, whose service
+#      hangs, and apply.
+#  2d. The boot that tried ci-hang hung, the guard let the watchdog
+#      restart it, and this boot dropped it: no ci-hang, the failure
+#      recorded in last-fallback.toml and listed, virtualization kept.
+#      Take ci-hang out and roll back by command.
+#   3. Slot A runs again, without ci-hello and its links (M7.2a) and
+#      without QEMU (M7.2b).
 #      Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
@@ -315,12 +325,53 @@ start() {
 	2b)
 		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
 		ab_check "the add-on's service's greeting at a second boot" greeted || return 0
+		# An add-on without an update (M7.2b): apply fetches a real one,
+		# QEMU, from the list slot B came from, to start at the next boot.
+		/usr/bin/edel settings set addons.installed+=virtualization || { ab_end "FAIL: step 2b choosing virtualization"; return 0; }
+		out=$(/usr/bin/edel settings apply 2>&1) || { echo "$out"; ab_end "FAIL: step 2b applying"; return 0; }
+		echo "$out"
+		echo "$out" | grep -q 'add-on virtualization starts at the next restart' || {
+			ab_end "FAIL: step 2b expected add-on virtualization starts at the next restart"
+			return 0
+		}
+		ab_check "no qemu-img before the restart" sh -c '! test -e /usr/bin/qemu-img' || return 0
+		ab_next 2c
+		;;
+	2c)
+		# The boot tried it, and the guard's confirmation, before this
+		# test, kept it beside the others (M7.2b).
+		. /usr/share/edel/places.sh
+		. /usr/lib/os-release
+		ab_check "the add-on's qemu-img" test -x /usr/bin/qemu-img || return 0
+		ab_check "qemu in the image's kvm group" grep -q '^kvm:[^:]*:[^:]*:\(.*,\)\{0,1\}qemu\(,\|$\)' /etc/group || return 0
+		ab_check "virtualization kept beside the other add-ons" test -f "$addons_dir/$VERSION_ID/virtualization.ext4" || return 0
+		ab_check "no pending add-on left" sh -c "! test -e '$addons_dir/$VERSION_ID/pending'" || return 0
+		ab_check "edel addon list saying installed" sh -c '/usr/bin/edel addon list | grep -q "^virtualization  *installed"' || return 0
+		# An add-on whose service hangs the boot that tries it.
+		/usr/bin/edel settings set addons.installed+=ci-hang || { ab_end "FAIL: step 2c choosing ci-hang"; return 0; }
+		/usr/bin/edel settings apply || { ab_end "FAIL: step 2c applying"; return 0; }
+		ab_next 2d
+		;;
+	2d)
+		# The boot that tried ci-hang never reaches this test; the guard
+		# let the watchdog restart it, and this boot dropped the add-on.
+		. /usr/share/edel/places.sh
+		. /usr/lib/os-release
+		ab_expect "running: B" "order: B A" || return 0
+		ab_check "no ci-hang after the boot that hung" sh -c '! test -e /usr/bin/ci-hang' || return 0
+		ab_check "the hang recorded" grep -q '^addons = \["ci-hang"\]' "$last_fallback" || return 0
+		ab_check "ci-hang listed as failed" grep -qx ci-hang "$addons_dir/$VERSION_ID/failed" || return 0
+		ab_check "edel addon list saying failed" sh -c '/usr/bin/edel addon list | grep -q "^ci-hang  *failed"' || return 0
+		ab_check "virtualization still there" test -x /usr/bin/qemu-img || return 0
+		/usr/bin/edel settings set addons.installed-=ci-hang || { ab_end "FAIL: step 2d taking ci-hang out"; return 0; }
+		rm -f "$last_fallback"
 		/usr/bin/edel rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;
 	3)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker || return 0
+		ab_check "no virtualization add-on on slot A" sh -c '! test -e /usr/bin/qemu-img' || return 0
 		ab_check "slot A's boot loader back on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /data/ab-loader-a || return 0
 		# Slot A has no add-on of its version, so apply took slot B's links out.
 		ab_check "no add-on program on slot A" sh -c '! test -e /usr/bin/ci-hello' || return 0

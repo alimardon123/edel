@@ -17,6 +17,8 @@
 //! the `edel` command and Settings take and the compositor and shell-ui
 //! never do (M6.17, ADR-010; `ci/seams.sh` checks it).
 
+#[cfg(feature = "os")]
+pub mod addon_state;
 #[cfg(feature = "icons")]
 pub mod app_icons;
 pub mod app_permissions;

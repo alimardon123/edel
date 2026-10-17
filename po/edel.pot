@@ -5,6 +5,27 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "Installed"
+msgstr ""
+
+msgid "Built into this version of Edel OS"
+msgstr ""
+
+msgid "Downloaded; it starts at the next restart"
+msgstr ""
+
+msgid "It did not start, so Edel OS started without it; turn it off and on to try again"
+msgstr ""
+
+msgid "Chosen; it downloads once this computer is online, or with the next update"
+msgstr ""
+
+msgid "Goes at the next restart"
+msgstr ""
+
+msgid "Not installed"
+msgstr ""
+
 msgid "add-on {name} is built into {version}, so it needs no download"
 msgstr ""
 
@@ -20,7 +41,13 @@ msgstr ""
 msgid "add-on {name} fetched and checked"
 msgstr ""
 
+msgid "could not fetch add-on {name}; nothing changes at the next restart; check the network and run edel settings apply again"
+msgstr ""
+
 msgid "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again"
+msgstr ""
+
+msgid "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; nothing of it was kept; run edel settings apply again"
 msgstr ""
 
 msgid "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; the new slot stays off and this system is unchanged; run edel update again"
@@ -29,7 +56,37 @@ msgstr ""
 msgid "could not take out {path}: {why}"
 msgstr ""
 
-msgid "add-on {name} is chosen but not here yet; it arrives with the next update"
+msgid "could not keep where the release came from ({why}); edel settings apply fetches add-ons from the channel's list instead"
+msgstr ""
+
+msgid "add-on {name} did not start at its first boot, so it is not fetched again; take it out of addons.installed and choose it again to try once more"
+msgstr ""
+
+msgid "add-on {name} comes with the update to {version}, as the release list has moved on from {running}"
+msgstr ""
+
+msgid "add-on {names} starts at the next restart"
+msgstr ""
+
+msgid "add-on {name} was not copied ({why}); it comes once the new system runs edel settings apply online"
+msgstr ""
+
+msgid "the release list has moved on to {version}"
+msgstr ""
+
+msgid "add-on {names} copied; it starts at the first boot"
+msgstr ""
+
+msgid "add-on {name} started, so it stays"
+msgstr ""
+
+msgid "add-on {name} started but could not join the others ({why}); the next boot tries it again"
+msgstr ""
+
+msgid "add-on {names} did not start at the last boot, so Edel OS started without it; it is not fetched again until it is taken out of addons.installed and chosen again"
+msgstr ""
+
+msgid "add-on {name} is chosen but not here yet; edel settings apply fetches it, and it starts at the next restart"
 msgstr ""
 
 msgid "could not mount add-on {name}; the other add-ons still mount, and the next update fetches it again"
@@ -41,13 +98,7 @@ msgstr ""
 msgid "add-ons mounted: {names}"
 msgstr ""
 
-msgid "installed"
-msgstr ""
-
-msgid "built in"
-msgstr ""
-
-msgid "chosen"
+msgid "trying the add-ons fetched since the last boot: {names}; they stay once this boot is confirmed"
 msgstr ""
 
 msgid "could not read the release list ({why}), so only this machine's add-ons are shown"
@@ -56,7 +107,7 @@ msgstr ""
 msgid "no add-ons for this image"
 msgstr ""
 
-msgid "to add one: edel settings set addons.installed+=NAME; it arrives with the next update"
+msgid "to add one: edel settings set addons.installed+=NAME, then edel settings apply; it starts at the next restart"
 msgstr ""
 
 msgid "Camera"
@@ -746,7 +797,7 @@ msgstr ""
 msgid "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id."
 msgstr ""
 
-msgid "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list."
+msgid "The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list."
 msgstr ""
 
 msgid "Whether banners stay away; notifications still arrive and are listed in the notification centre."
@@ -1031,7 +1082,7 @@ msgstr ""
 msgid "could not replace {path}"
 msgstr ""
 
-msgid "add-on {name} arrives with the next update"
+msgid "add-on {name} starts at the next restart, once edel settings apply has fetched it"
 msgstr ""
 
 msgid "add-on {name} goes at the next restart"
@@ -2828,7 +2879,7 @@ msgstr ""
 msgid "The preset's name, as preset list shows it"
 msgstr ""
 
-msgid "addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed"
+msgid "addon: software beside the system, such as more fonts or printing, that comes at the next restart and goes as easily; the same as in the settings file's addons.installed"
 msgstr ""
 
 msgid "List the add-ons of this machine's channel, marked installed, built in or chosen"

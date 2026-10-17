@@ -514,6 +514,16 @@ impl Build<'_> {
         for feature in &self.def.features {
             fs::write(dir.join(format!("{}.toml", feature.name)), &feature.text)?;
         }
+        // The add-ons built beside it, so the machine knows what it can
+        // add without the network (M7.2b).
+        let offered: Vec<&Listed> = self.def.addons.iter().chain(&self.extra_addons).collect();
+        if !offered.is_empty() {
+            let dir = root.join(edel::places::OFFERED_ADDONS_DIR.trim_start_matches('/'));
+            fs::create_dir_all(&dir)?;
+            for addon in offered {
+                fs::write(dir.join(format!("{}.toml", addon.name)), &addon.text)?;
+            }
+        }
         Ok(())
     }
 
@@ -1283,7 +1293,37 @@ impl Build<'_> {
                 fs::read_to_string(base.join(path)).with_context(|| format!("reading {path}"))
             };
             let (image, addon) = (read(root)?, read(a_root)?);
-            let changed = addons::changed_accounts(&image, &addon);
+            let file = path.rsplit('/').next().unwrap_or(path);
+            let dir = tree.join(addons::accounts_dir(name));
+            // Members added to a group the image has, as QEMU puts its
+            // user into kvm, join that group at boot (M7.2b).
+            let members = if file == "group" {
+                addons::added_members(&image, &addon)
+            } else {
+                String::new()
+            };
+            if !members.is_empty() {
+                fs::create_dir_all(&dir)?;
+                fs::write(dir.join(addons::MEMBERS_FILE), &members)?;
+                fs::set_permissions(
+                    dir.join(addons::MEMBERS_FILE),
+                    fs::Permissions::from_mode(0o644),
+                )?;
+            }
+            let was: BTreeMap<&str, &str> = image
+                .lines()
+                .map(|line| (line.split(':').next().unwrap_or_default(), line))
+                .collect();
+            let changed: Vec<String> = addons::changed_accounts(&image, &addon)
+                .into_iter()
+                .filter(|changed| {
+                    let now = addon.lines().find(|l| l.split(':').next() == Some(changed));
+                    !(file == "group"
+                        && now
+                            .zip(was.get(changed.as_str()))
+                            .is_some_and(|(now, was)| addons::members_only(was, now)))
+                })
+                .collect();
             if !changed.is_empty() {
                 let names = changed.join(", ");
                 eprintln!(
@@ -1294,8 +1334,6 @@ impl Build<'_> {
             if new.is_empty() {
                 continue;
             }
-            let file = path.rsplit('/').next().unwrap_or(path);
-            let dir = tree.join(addons::accounts_dir(name));
             fs::create_dir_all(&dir)?;
             fs::write(dir.join(file), &new)?;
             let mode = if file == "shadow" { 0o640 } else { 0o644 };
