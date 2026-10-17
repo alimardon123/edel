@@ -746,6 +746,18 @@ msgstr ""
 msgid "Name, such as my-hive"
 msgstr ""
 
+msgid "none"
+msgstr ""
+
+msgid "Time zone's city ({city})"
+msgstr ""
+
+msgid "Where apps may find this computer. The place stays on this computer unless you let it look online."
+msgstr ""
+
+msgid "Also a tile in quick settings."
+msgstr ""
+
 msgid "Pick a look. Each look keeps its own arrangement and background."
 msgstr ""
 
@@ -1133,7 +1145,28 @@ msgstr ""
 msgid "On battery"
 msgstr ""
 
+msgid "{n} minute"
+msgstr ""
+
+msgid "Suspend locks first; with another screen connected, nothing happens"
+msgstr ""
+
+msgid "Ask opens the lock screen's power menu"
+msgstr ""
+
+msgid "Without any input; a playing video keeps the screen on"
+msgstr ""
+
+msgid "Plugged in, it runs at Balanced, or Performance when chosen here"
+msgstr ""
+
+msgid "A fullscreen game gets variable refresh; Super+G turns it on or off"
+msgstr ""
+
 msgid "Other batteries"
+msgstr ""
+
+msgid "Behaviour"
 msgstr ""
 
 msgid "Battery health"
@@ -1349,6 +1382,18 @@ msgstr ""
 msgid "On"
 msgstr ""
 
+msgid "When the lid closes"
+msgstr ""
+
+msgid "Power button"
+msgstr ""
+
+msgid "Lock the screen after"
+msgstr ""
+
+msgid "Game mode"
+msgstr ""
+
 msgid "Do not disturb"
 msgstr ""
 
@@ -1368,6 +1413,12 @@ msgid "Input method"
 msgstr ""
 
 msgid "Time servers"
+msgstr ""
+
+msgid "Place"
+msgstr ""
+
+msgid "Look online"
 msgstr ""
 
 msgid "Web browser"
@@ -1526,6 +1577,9 @@ msgstr ""
 msgid "Next keyboard layout"
 msgstr ""
 
+msgid "Game mode on or off"
+msgstr ""
+
 msgid "Show tray"
 msgstr ""
 
@@ -1578,6 +1632,21 @@ msgid "Dot"
 msgstr ""
 
 msgid "Count"
+msgstr ""
+
+msgid "Shut down"
+msgstr ""
+
+msgid "Do nothing"
+msgstr ""
+
+msgid "Ask"
+msgstr ""
+
+msgid "Power saver"
+msgstr ""
+
+msgid "When plugged in"
 msgstr ""
 
 msgid "From the preset"

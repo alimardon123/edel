@@ -20,7 +20,11 @@
 #      slot.cfg under slot A's loader (M6.17), and its tagged boot loader
 #      replaced slot A's on the ESP once the slot was confirmed. The
 #      add-on ci-hello is mounted, its /etc file and service linked and its
-#      service ran (M7.2a). Roll back by command.
+#      service ran (M7.2a). Restart into slot B once more.
+#  2b. Slot B runs a second time. Nothing is applied, as the add-on's
+#      links already stand, and OpenRC read the services before the /etc
+#      layer came: the greeting shows edel-data had it read them again
+#      (M7.2a). Roll back by command.
 #   3. Slot A runs again, without ci-hello and its links (M7.2a).
 #      Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
@@ -61,6 +65,10 @@ description="Edel OS A/B update test"
 
 depend() {
 	need edel-boot-ok
+	# OpenRC starts the default runlevel one service at a time, so step 2's
+	# wait for the add-on's greeting would hold ci-hello back if this test
+	# came first.
+	after ci-hello
 }
 
 ab_say() {
@@ -106,6 +114,16 @@ ab_check() {
 root_is_ro() {
 	awk '$2 == "/" { opts = $4 } END { exit !(opts ~ /^ro(,|$)/) }' /proc/mounts &&
 		! touch /usr/ab-test-write 2>/dev/null
+}
+
+# The add-on's service wrote its greeting, within 30 s of this step.
+greeted() {
+	i=0
+	while [ ! -s /run/ci-hello ] && [ $i -lt 30 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	grep -qx "hello from an add-on" /run/ci-hello
 }
 
 # ab_break_b NAME COMMAND [nowatchdog | network | noroot]: install the
@@ -291,7 +309,12 @@ start() {
 		ab_check "the add-on's program" test -x /usr/bin/ci-hello || return 0
 		ab_check "the add-on's /etc file linked" test -L /etc/ci-hello.conf || return 0
 		ab_check "the add-on's service in the runlevel" test -L /etc/runlevels/default/ci-hello || return 0
-		ab_check "the add-on's service's greeting" sh -c 'i=0; while [ ! -s /run/ci-hello ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done; grep -qx "hello from an add-on" /run/ci-hello' || return 0
+		ab_check "the add-on's service's greeting" greeted || return 0
+		ab_next 2b
+		;;
+	2b)
+		ab_expect "running: B" "order: B A" "B: ok=1 try=0" "A: ok=1 try=0" || return 0
+		ab_check "the add-on's service's greeting at a second boot" greeted || return 0
 		/usr/bin/edel rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;

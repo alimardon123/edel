@@ -392,6 +392,15 @@ msgstr ""
 msgid "Display settings"
 msgstr ""
 
+msgid "Power settings"
+msgstr ""
+
+msgid "Game mode on"
+msgstr ""
+
+msgid "Game mode off"
+msgstr ""
+
 msgid "Volume and brightness"
 msgstr ""
 

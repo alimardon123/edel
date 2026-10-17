@@ -274,7 +274,7 @@ jobs:
             cases: >-
               one-screen scheme terminal accent contrast wallpaper glass completion lock lock-edit lock-looks
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
-              default-apps app-permissions in-use flatpak suspend
+              default-apps app-permissions in-use location flatpak suspend lid
           - part: D
             cases: one-screen language settings-tour theme
     steps:

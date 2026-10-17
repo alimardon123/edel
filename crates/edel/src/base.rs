@@ -144,6 +144,7 @@ mod tests {
             line(&remove_from_runlevel("sshd", "default")),
             ["rc-update", "del", "sshd", "default"]
         );
+        assert_eq!(line(&reread_services()), ["rc-update", "--update"]);
         assert_eq!(
             line(&start_service("sshd")),
             ["rc-service", "sshd", "start"]

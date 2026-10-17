@@ -111,10 +111,6 @@ fn missing_var_entries(slot: &Path, data: &Path) -> Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
-/// Account files a machine copies into its own `/etc` once a person or a
-/// package adds a user.
-const ACCOUNT_FILES: [&str; 3] = ["passwd", "group", "shadow"];
-
 /// Lines of the slot's account file (`slot`) whose name, the first field,
 /// is missing from the machine's copy (`machine`): users and groups a
 /// newer slot adds, which the machine's own copy would otherwise hide.
@@ -193,7 +189,8 @@ fn overlay_etc() -> Result<()> {
     let (upper, work) = (data.join("etc/upper"), data.join("etc/work"));
     fs::create_dir_all(&upper)?;
     fs::create_dir_all(&work)?;
-    for file in ACCOUNT_FILES {
+    for file in crate::addons::ACCOUNT_FILES {
+        let file = file.strip_prefix("etc/").unwrap_or(file);
         let machine_path = upper.join(file);
         // The mounted add-ons' users and groups (M7.2a) join the slot's;
         // a machine without its own copy gets one, from the slot's.
@@ -224,6 +221,20 @@ fn overlay_etc() -> Result<()> {
         .arg("/etc"))
     .context("cannot mount the /etc overlay")?;
     println!("edel-data: /etc changes are kept on {MOUNT_POINT}");
+    // OpenRC read the services before this layer was there, so a service
+    // whose script the layer links in, an add-on's (M7.2a), or one added
+    // in developer mode's layer (M7.1, which mounts before this), would
+    // never start without this. It costs a moment, only at a boot with
+    // such an add-on or with developer mode on.
+    let developer_on =
+        fs::read_to_string(places::DEVELOPER_NOW).is_ok_and(|now| now.trim() == "on");
+    if crate::addons::has_services() || developer_on {
+        if let Err(err) = run(&mut base::reread_services()) {
+            eprintln!(
+                "warning: edel-data: OpenRC could not read the services of the add-ons and developer mode again, so they may not start: {err:#}"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -301,13 +312,6 @@ fn developer_layer() -> Result<()> {
         .context("cannot mount developer mode's layer over /usr")?;
     }
     fs::write(now, "on\n")?;
-    // OpenRC read the services before the layer was there, so a service
-    // added in developer mode would not start without this.
-    if let Err(err) = run(&mut base::reread_services()) {
-        eprintln!(
-            "edel-data: warning: cannot read the services in developer mode's layer: {err:#}"
-        );
-    }
     println!(
         "edel-data: developer mode is on: /usr is writable, its changes kept on {MOUNT_POINT}"
     );

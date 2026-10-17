@@ -22,6 +22,7 @@ use edel::settings::{
     DO_NOT_DISTURB, NOTIFICATION_BADGE, NOTIFICATION_LIST, NOTIFICATION_POSITION,
 };
 
+use crate::choice_row::{self, ChoiceRow};
 use crate::files::Files;
 use crate::style::Theme;
 use crate::{preview, rows, widgets};
@@ -113,62 +114,10 @@ const CHOICES: [(&str, &str, &str); 2] = [
     ),
 ];
 
-/// One row choosing one of a key's values, from [`CHOICES`].
-struct ChoiceRow {
-    key: &'static str,
-    what: &'static str,
-    release: &'static str,
-    choice: Rc<widgets::Choice>,
-    row: widgets::Row,
-}
-
-impl ChoiceRow {
-    fn new(
-        group: &gtk::Box,
-        (key, what, release): (&'static str, &'static str, &'static str),
-    ) -> ChoiceRow {
-        let labels = rows::values(key).iter().map(|v| rows::label(v)).collect();
-        let choice = widgets::Choice::new(labels);
-        let row = widgets::row(group, rows::title(key), &choice.widget());
-        ChoiceRow {
-            key,
-            what,
-            release,
-            choice,
-            row,
-        }
-    }
-
-    /// The value that applies now, the release's without a line.
-    fn value(&self, files: &Files) -> String {
-        files
-            .chosen(self.key)
-            .filter(|v| rows::values(self.key).contains(&v.as_str()))
-            .unwrap_or_else(|| self.release.to_string())
-    }
-
-    /// Shows what the files say, without calling back.
-    fn update(&self, files: &Files) {
-        let value = self.value(files);
-        let at = rows::values(self.key)
-            .iter()
-            .position(|v| *v == value)
-            .unwrap_or(0);
-        self.choice.set_selected(at);
-        let source = files.source(self.key);
-        let line = match rows::note(&source, false) {
-            Some(note) => format!("{} · {note}", tr(self.what)),
-            None => tr(self.what).to_string(),
-        };
-        self.row.subtitle.set_label(&line);
-        self.row.reset.set_visible(rows::resettable(&source));
-    }
-}
-
 struct Ui {
     switch: gtk::Switch,
     row: widgets::Row,
-    choices: Vec<ChoiceRow>,
+    choices: Vec<Rc<ChoiceRow>>,
     list: ListRow,
     problem: gtk::Label,
     /// Set while the page itself moves the switch, so that is no choice.
@@ -198,15 +147,8 @@ impl Ui {
         self.row.reset.set_visible(rows::resettable(&source));
     }
 
-    /// Shows why a change was not written, or takes an old message away.
     fn report(&self, result: Result<(), String>) {
-        match result {
-            Ok(()) => self.problem.set_visible(false),
-            Err(e) => {
-                self.problem.set_label(&e);
-                self.problem.set_visible(true);
-            }
-        }
+        choice_row::report(&self.problem, result);
     }
 }
 
@@ -219,18 +161,13 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
         rows::title(DO_NOT_DISTURB),
         &switch.clone().upcast::<gtk::Widget>(),
     );
-    let choices = CHOICES.map(|c| ChoiceRow::new(&group, c)).into();
+    let choices = CHOICES
+        .map(|(key, what, release)| Rc::new(ChoiceRow::new(&group, key, what, release)))
+        .into();
     let list = ListRow::new(&group, theme);
     log_places(&page, &list);
     let files = Files::here();
-    let monitors = std::iter::once(&files.machine)
-        .chain(files.person.as_ref())
-        .filter_map(|path| {
-            gio::File::for_path(path)
-                .monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
-                .ok()
-        })
-        .collect();
+    let monitors = choice_row::watch_files(&files);
     let ui = Rc::new(Ui {
         switch,
         row,
@@ -305,35 +242,20 @@ pub fn page(theme: &Rc<Theme>) -> gtk::Widget {
             .set_text(&rows::command(&[(NOTIFICATION_LIST, value)]));
         widgets::copied(button);
     });
-    for (i, choice) in ui.choices.iter().enumerate() {
-        let weak = Rc::downgrade(&ui);
-        choice.choice.connect_changed(move || {
-            let Some(ui) = weak.upgrade() else { return };
-            if !ui.quiet.get() {
-                // What applies without the key is taken out, not written.
-                let c = &ui.choices[i];
-                let value = rows::values(c.key)[c.choice.selected()];
-                ui.report(Files::here().choose_over(c.key, value, Some(c.release)));
-                ui.update();
-            }
-        });
-        let weak = Rc::downgrade(&ui);
-        choice.row.reset.connect_clicked(move |_| {
-            if let Some(ui) = weak.upgrade() {
-                ui.report(Files::here().set(ui.choices[i].key, None));
-                ui.update();
-            }
-        });
-        let weak = Rc::downgrade(&ui);
-        choice.row.copy.connect_clicked(move |button| {
-            let Some(ui) = weak.upgrade() else { return };
-            let c = &ui.choices[i];
-            let value = c.value(&Files::here());
-            button
-                .clipboard()
-                .set_text(&rows::command(&[(c.key, value)]));
-            widgets::copied(button);
-        });
+    for choice in &ui.choices {
+        let (weak_report, weak_after) = (Rc::downgrade(&ui), Rc::downgrade(&ui));
+        choice.connect(
+            move |result| {
+                if let Some(ui) = weak_report.upgrade() {
+                    ui.report(result);
+                }
+            },
+            move || {
+                if let Some(ui) = weak_after.upgrade() {
+                    ui.update();
+                }
+            },
+        );
     }
     // The page's state lives as long as the page does.
     let keep = ui.clone();

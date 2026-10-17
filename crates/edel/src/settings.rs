@@ -187,6 +187,13 @@ pub const PAGES: &[Page] = &[
         group: "personal",
     },
     Page {
+        // Where apps may find this computer (M6.14c).
+        section: "location",
+        title: n_("Location"),
+        about: n_("where apps may find this computer"),
+        group: "personal",
+    },
+    Page {
         section: "addons",
         title: n_("Add-ons"),
         about: n_("signed extras to the system"),
@@ -562,19 +569,20 @@ pub const KEYS: &[Key] = &[
     now("default_apps.terminal", Kind::Text),
     now("default_apps.mail", Kind::Text),
     now("startup.apps", Kind::Texts),
-    later(
-        "power.lid_close",
+    now(
+        LID_CLOSE,
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
     ),
-    later("power.lock_after_minutes", Kind::Whole),
-    later(
-        "power.power_button",
+    now(LOCK_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(
+        POWER_BUTTON,
         Kind::OneOf(&["suspend", "poweroff", "ask", "nothing"]),
     ),
-    later(
-        "power.on_battery",
+    now(
+        ON_BATTERY,
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
+    now(GAME_MODE, Kind::OneOf(&["plugged-in", "always", "off"])),
     now("services.*", Kind::Flag),
     // The release lists `edel update` takes (M3.8); absent, the image's.
     now("updates.channel", Kind::Channel),
@@ -637,6 +645,18 @@ pub const KEYS: &[Key] = &[
     // The input method for typing languages a keyboard has no keys for
     // (M6.8): fcitx5, started with the session; absent or none runs none.
     now("region.input_method", Kind::OneOf(&["none", "fcitx5"])),
+    // What apps may know of this computer's place (M6.14c): each app's
+    // choice, then the person's switch, the machine's place and its
+    // online lookup.
+    now(
+        "apps.location",
+        Kind::AppChoices(crate::app_permissions::CAMERA_CHOICES),
+    ),
+    // Location (M6.14c): the person's switch, the machine's place and its
+    // online lookup.
+    now("location.enabled", Kind::Flag),
+    now("location.place", Kind::TimeZone),
+    now("location.online", Kind::Flag),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -680,6 +700,8 @@ pub struct SettingsFile {
     pub power: Power,
     #[serde(default, skip_serializing_if = "is_default")]
     pub notifications: Notifications,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub location: Location,
     /// Feature name to on or off, such as `ssh = false`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub services: BTreeMap<String, bool>,
@@ -714,6 +736,7 @@ impl Default for SettingsFile {
             startup: Startup::default(),
             power: Power::default(),
             notifications: Notifications::default(),
+            location: Location::default(),
             services: BTreeMap::new(),
             updates: Updates::default(),
             apps: Apps::default(),
@@ -1317,6 +1340,9 @@ pub struct Power {
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_battery: Option<String>,
+    /// When a fullscreen game gets variable refresh (M7.7)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_mode: Option<String>,
 }
 
 /// The Notifications page (M5.9b).
@@ -1339,6 +1365,25 @@ pub struct Notifications {
     /// is `button` (M5.9l).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub list: Option<String>,
+}
+
+/// The Location page (M6.14c): whether apps may know where this computer
+/// is, the place it is in and whether it is found from the Wi-Fi networks
+/// around it.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Location {
+    /// Whether apps may know where this computer is at all; absent is on.
+    /// Off gives every app nothing, whatever each app's choice is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// The city apps are told this computer is in, named by its time zone
+    /// such as `Asia/Tashkent`; absent is the time zone's city.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub place: Option<String>,
+    /// Whether the place is found from the Wi-Fi networks around the
+    /// computer, through BeaconDB; absent is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub online: Option<bool>,
 }
 
 /// The Updates page.
@@ -1364,6 +1409,10 @@ pub struct Apps {
     pub camera: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub microphone: Option<BTreeMap<String, String>>,
+    /// Which apps may know where this computer is (M6.14c): app id and
+    /// choice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub screenshots: Option<BTreeMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1379,6 +1428,7 @@ impl Apps {
         [
             ("apps.camera", &self.camera),
             ("apps.microphone", &self.microphone),
+            ("apps.location", &self.location),
             ("apps.screenshots", &self.screenshots),
             ("apps.notifications", &self.notifications),
             ("apps.files", &self.files),
@@ -1697,9 +1747,66 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
     }
 }
 
+/// The key what closing the lid does is kept under (M7.8), the one name
+/// shell-ui, Settings and `edel settings` share; its values are [`choices`]'.
+pub const LID_CLOSE: &str = "power.lid_close";
+
+/// The key what the power button does is kept under (M7.8); its values are
+/// [`choices`]'.
+pub const POWER_BUTTON: &str = "power.power_button";
+
+/// The key the minutes without input before the screen locks are kept under
+/// (M7.8), 0 for never.
+pub const LOCK_AFTER_MINUTES: &str = "power.lock_after_minutes";
+
+/// The key how hard the machine works on battery is kept under (M7.8); its
+/// values are [`choices`]'. Plugged in, the machine works at Balanced, or at
+/// Performance when this is set to that.
+pub const ON_BATTERY: &str = "power.on_battery";
+
+/// What closing the lid does when the file does not say (M7.8): suspend,
+/// which locks the screen first.
+pub const LID_CLOSE_DEFAULT: &str = "suspend";
+
+/// What the power button does when the file does not say (M7.8): suspend,
+/// as the lid does.
+pub const POWER_BUTTON_DEFAULT: &str = "suspend";
+
+/// The minutes without input before the screen locks when the file does not
+/// say (M7.8): five.
+pub const LOCK_AFTER_MINUTES_DEFAULT: u32 = 5;
+
+/// [`LOCK_AFTER_MINUTES_DEFAULT`] as the key table and the docs write it.
+pub const LOCK_AFTER_MINUTES_DEFAULT_TEXT: &str = "5";
+
+/// How hard the machine works on battery when the file does not say (M7.8):
+/// balanced.
+pub const ON_BATTERY_DEFAULT: &str = "balanced";
+
+/// The key when game mode is on is kept under (M7.7): `plugged-in`,
+/// `always` or `off`; its values are [`choices`]'. In game mode a fullscreen
+/// window gets variable refresh where the screen offers it; Super+G turns
+/// it on or off over the key until the next login, and the gaming profile
+/// (M7.6) sets it to `always`.
+pub const GAME_MODE: &str = "power.game_mode";
+
+/// When game mode is on when the file does not say (M7.7): while the
+/// machine is plugged in, or has no battery.
+pub const GAME_MODE_DEFAULT: &str = "plugged-in";
+
 /// The key banners and sounds are kept away with (M5.9b), the one name
 /// shell-ui, Settings and `edel settings` share.
 pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
+
+/// The key that says whether apps may know where this computer is (M6.14c),
+/// the one name shell-ui, Settings and `edel settings` share.
+pub const LOCATION_ENABLED: &str = "location.enabled";
+
+/// Whether apps may know where this computer is: the file's choice, and on
+/// when the file names none (M6.14c).
+pub fn location_enabled(file: &SettingsFile) -> bool {
+    file.location.enabled.unwrap_or(true)
+}
 
 /// The key that says where banners appear (M5.9j), the one name shell-ui,
 /// Settings and `edel settings` share; its values are [`choices`]'.
@@ -3130,6 +3237,9 @@ cursor_size = 11
 
 [power]
 lock_after_minutes = 11
+
+[updates]
+version = "1.2"
 "#;
 
     #[test]
@@ -3162,7 +3272,7 @@ lock_after_minutes = 11
         assert!(lines.contains(
             &"appearance.mode: unknown value \"sepia\"; use light, dark or auto".to_string()
         ));
-        assert!(lines.contains(&"power.lock_after_minutes: not supported yet".to_string()));
+        assert!(lines.contains(&"updates.version: not supported yet".to_string()));
         assert!(!lines.iter().any(|line| line.starts_with("network.")));
     }
 
@@ -3657,8 +3767,8 @@ lock_after_minutes = 11
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
-            error("power.lock_after_minutes", "11"),
-            "power.lock_after_minutes: not supported yet; this release does not act on it, so it cannot be set"
+            error("updates.version", "\"1.2\""),
+            "updates.version: not supported yet; this release does not act on it, so it cannot be set"
         );
         assert!(error("users.Ali.admin", "true").contains("not a user name"));
     }
@@ -4061,6 +4171,45 @@ lock_after_minutes = 11
             format!("{refused:#}"),
             "panels.tray: expected a list of texts in quotes, not \"nm-applet\""
         );
+    }
+
+    #[test]
+    fn the_location_keys_read_back_and_check() {
+        let text =
+            "format = 1\n[location]\nenabled = false\nplace = \"Asia/Tashkent\"\nonline = true\n";
+        let parsed = read(text).unwrap();
+        assert_eq!(parsed.file.location.enabled, Some(false));
+        assert_eq!(parsed.file.location.place.as_deref(), Some("Asia/Tashkent"));
+        assert_eq!(parsed.file.location.online, Some(true));
+        assert!(!location_enabled(&parsed.file));
+        assert!(location_enabled(&SettingsFile::default()));
+        assert!(check(text).unwrap().is_empty());
+        // A place is a time zone's name, and `check` names the key that is wrong.
+        let refused = check("format = 1\n[location]\nplace = \"not a zone\"\n").unwrap();
+        assert!(
+            refused
+                .iter()
+                .any(|problem| problem.contains("location.place"))
+        );
+        // The switch is set and reset like any flag.
+        let written = set("format = 1\n", LOCATION_ENABLED, "false").unwrap();
+        assert!(written.contains("[location]\nenabled = false\n"));
+        assert!(
+            !unset(&written, LOCATION_ENABLED)
+                .unwrap()
+                .contains("location")
+        );
+    }
+
+    #[test]
+    fn an_apps_location_choice_reads_into_the_choices() {
+        let text = "format = 1\n[apps.location]\n\"org.example.App\" = \"ask\"\n";
+        let parsed = read(text).unwrap();
+        assert_eq!(
+            parsed.file.apps.choices()["apps.location"]["org.example.App"],
+            "ask"
+        );
+        assert!(check(text).unwrap().is_empty());
     }
 
     #[test]

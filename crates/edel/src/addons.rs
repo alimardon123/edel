@@ -10,6 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -43,12 +44,15 @@ const CACHE_FILES: [&str; 5] = [
 ];
 
 /// Paths that may use `*` for one component, that are caches.
-const CACHE_PATTERNS: [&str; 5] = [
-    "usr/share/icons/*/icon-theme.cache",
-    "usr/share/applications/mimeinfo.cache",
+const CACHE_PATTERNS: [&str; 1] = ["usr/share/icons/*/icon-theme.cache"];
+
+/// Paths that may use `*` for one component, that are merged caches: a
+/// package trigger wrote them for the whole system and nothing reads their
+/// sources, so an add-on keeps its copy (see [`is_merged_cache`]).
+const MERGED_PATTERNS: [&str; 3] = [
     "usr/share/glib-2.0/schemas/gschemas.compiled",
+    "usr/share/applications/mimeinfo.cache",
     "usr/lib/gdk-pixbuf-2.0/*/loaders.cache",
-    "usr/lib/gio/modules/giomodule.cache",
 ];
 
 /// Files the system rewrites for itself, which an add-on never ships.
@@ -110,34 +114,39 @@ pub fn relocate(path: &str, name: &str) -> Option<String> {
     None
 }
 
+/// Whether `path` lies under the folder `dir`, both without a leading slash.
+fn under(path: &str, dir: &str) -> bool {
+    path.strip_prefix(dir)
+        .is_some_and(|rest| rest.starts_with('/'))
+}
+
 /// Whether `path` (relative to a root) is a cache the system rewrites for
-/// itself. A cache is left out of an add-on, so the slot's own is used.
+/// itself, or that apps check against their folder's time and rebuild: left
+/// out of an add-on, so the slot's own is used.
 pub fn is_system_cache(path: &str) -> bool {
-    let under = |dir: &str| {
-        path.strip_prefix(dir)
-            .is_some_and(|rest| rest.starts_with('/'))
-    };
     let font = rel(places::FONT_CACHE_DIR);
-    CACHE_DIRS.iter().any(|dir| under(dir))
+    CACHE_DIRS.iter().any(|dir| under(path, dir))
         || path == font
-        || under(font)
-        || (under("usr/share/mime") && !under("usr/share/mime/packages"))
-        || (path.starts_with("usr/lib/") && path.ends_with("/immodules.cache"))
+        || under(path, font)
         || CACHE_FILES.contains(&path)
         || CACHE_PATTERNS
             .iter()
-            .any(|pattern| glob_matches(path, pattern))
+            .any(|pattern| edel::keep::matches(pattern, path))
 }
 
-/// Whether `pattern` matches `path`, where `*` stands for one component.
-fn glob_matches(path: &str, pattern: &str) -> bool {
-    let want: Vec<&str> = pattern.split('/').collect();
-    let got: Vec<&str> = path.split('/').collect();
-    want.len() == got.len()
-        && want
+/// Whether `path` (relative to a root) is a cache a package trigger wrote
+/// for the whole system that nothing reads the sources of (compiled GSettings
+/// schemas, GIO, gdk-pixbuf and GTK module caches, the MIME and desktop
+/// databases): an add-on keeps its copy, which holds the image's entries and
+/// its own, and the overlay shows it over the slot's. Two add-ons that both
+/// change one are refused as any two add-ons shipping one path unalike.
+pub fn is_merged_cache(path: &str) -> bool {
+    (under(path, "usr/share/mime") && !under(path, "usr/share/mime/packages"))
+        || (path.starts_with("usr/lib/")
+            && (path.ends_with("/immodules.cache") || path.ends_with("/giomodule.cache")))
+        || MERGED_PATTERNS
             .iter()
-            .zip(got.iter())
-            .all(|(w, g)| *w == "*" || w == g)
+            .any(|pattern| edel::keep::matches(pattern, path))
 }
 
 /// Whether the system writes `path` for itself (a copy of the account
@@ -223,6 +232,9 @@ pub struct Diff {
     pub changed: Vec<String>,
     /// Paths that are gone.
     pub removed: Vec<String>,
+    /// Links to the base's small tools a package replaced, which stay the
+    /// image's.
+    pub kept_applets: Vec<String>,
 }
 
 /// Whether a file is unchanged: a link by its target alone, as copying a
@@ -252,8 +264,12 @@ pub fn diff(before: &BTreeMap<String, Stamp>, after: &BTreeMap<String, Stamp>) -
         match before.get(path) {
             None => out.new.push(path.clone()),
             Some(was) => {
-                if !now.dir && !same(was, now) && !is_applet(was) {
-                    out.changed.push(path.clone());
+                if !now.dir && !same(was, now) {
+                    if is_applet(was) {
+                        out.kept_applets.push(path.clone());
+                    } else {
+                        out.changed.push(path.clone());
+                    }
                 }
             }
         }
@@ -287,6 +303,8 @@ pub struct TreePlan {
     pub accounts: Vec<String>,
     /// The caches it changed or made, which are left out.
     pub caches: Vec<String>,
+    /// The caches it keeps a merged copy of, laid over the slot's.
+    pub merged: Vec<String>,
 }
 
 /// Sorts the changes of an add-on's root into what its tree keeps. Every
@@ -299,6 +317,13 @@ pub fn plan_tree(diff: &Diff, after: &BTreeMap<String, Stamp>, name: &str) -> Re
             continue;
         };
         if is_discarded(path) {
+            continue;
+        }
+        if is_merged_cache(path) {
+            if !stamp.dir {
+                plan.copies.push(copy_of(path, path.to_string(), stamp));
+                plan.merged.push(path.clone());
+            }
             continue;
         }
         if is_system_cache(path) {
@@ -318,6 +343,11 @@ pub fn plan_tree(diff: &Diff, after: &BTreeMap<String, Stamp>, name: &str) -> Re
         }
         if ACCOUNT_FILES.contains(&path.as_str()) {
             plan.accounts.push(path.clone());
+        } else if is_merged_cache(path) {
+            if let Some(stamp) = after.get(path) {
+                plan.copies.push(copy_of(path, path.to_string(), stamp));
+                plan.merged.push(path.clone());
+            }
         } else if is_system_cache(path) {
             plan.caches.push(path.clone());
         } else {
@@ -325,7 +355,7 @@ pub fn plan_tree(diff: &Diff, after: &BTreeMap<String, Stamp>, name: &str) -> Re
         }
     }
     for path in &diff.removed {
-        if !is_system_cache(path) {
+        if !(is_system_cache(path) || is_merged_cache(path)) {
             problems.push(format!(
                 "{path} is a file of the image the add-on takes out"
             ));
@@ -389,6 +419,27 @@ pub fn new_accounts(before: &str, after: &str) -> String {
         }
     }
     out
+}
+
+/// The names (the first field) of the account lines that both texts have
+/// with a different line in `after`: a package that added a member to an
+/// existing group, or changed an existing user's shell. `new_accounts` gives
+/// the names only `after` has.
+pub fn changed_accounts(before: &str, after: &str) -> Vec<String> {
+    let known: BTreeMap<&str, &str> = before
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| (line.split(':').next().unwrap_or_default(), line))
+        .collect();
+    after
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter(|line| {
+            let name = line.split(':').next().unwrap_or_default();
+            known.get(name).is_some_and(|was| was != line)
+        })
+        .map(|line| line.split(':').next().unwrap_or_default().to_string())
+        .collect()
 }
 
 /// The users, groups, user ids and group ids that two add-ons both add in
@@ -475,6 +526,20 @@ pub fn stale_versions(present: &[String], keep: &[&str]) -> Vec<String> {
         .collect();
     stale.sort();
     stale
+}
+
+/// The paths of a build-log list, joined by commas, with those under
+/// `usr/share/mime/` (the MIME database's hundreds of files) folded into one
+/// entry that counts them.
+pub fn folded(paths: &[String]) -> String {
+    let (mime, other): (Vec<&String>, Vec<&String>) =
+        paths.iter().partition(|path| under(path, "usr/share/mime"));
+    let mut shown: Vec<String> = other.into_iter().cloned().collect();
+    if !mime.is_empty() {
+        let count = mime.len();
+        shown.push(format!("usr/share/mime/ ({count} files)"));
+    }
+    shown.join(", ")
 }
 
 // ---- On a machine (M7.2a): fetching, mounting and linking. ----
@@ -583,20 +648,45 @@ fn fetch_one(location: &str, entry: &AddonEntry, allow_http: bool, dir: &Path) -
         return Ok(());
     }
     let part = dir.join(format!("{}.ext4.part", entry.name));
+    if let Err(err) = fetch_part(location, entry, allow_http, &part, &dest) {
+        // A failed download, check or rename leaves no part file behind.
+        let _ = fs::remove_file(&part);
+        return Err(err);
+    }
+    println!(
+        "edel update: {}",
+        trf(
+            "add-on {name} fetched and checked",
+            &[("name", &entry.name)]
+        )
+    );
+    Ok(())
+}
+
+/// Downloads an add-on to `part`, checks it by size and sha256 and renames
+/// it to `dest`. The download stops one byte past the size, so a stream that
+/// is too long fails the size check instead of filling the data partition,
+/// where the running system's `/var` and `/home` live.
+fn fetch_part(
+    location: &str,
+    entry: &AddonEntry,
+    allow_http: bool,
+    part: &Path,
+    dest: &Path,
+) -> Result<()> {
     let failed = || {
         trf(
             "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again",
             &[("name", &entry.name)],
         )
     };
-    let mut source =
-        crate::release::open_addon(location, entry, allow_http).with_context(failed)?;
-    let mut file = fs::File::create(&part).with_context(failed)?;
+    let source = crate::release::open_addon(location, entry, allow_http).with_context(failed)?;
+    let mut source = source.take(entry.size.saturating_add(1));
+    let mut file = fs::File::create(part).with_context(failed)?;
     let (size, sum) = crate::update::copy_hashing(&mut source, &mut file).with_context(failed)?;
     file.sync_all().with_context(failed)?;
     drop(file);
     if size != entry.size || to_hex(&sum) != entry.sha256 {
-        let _ = fs::remove_file(&part);
         bail!(
             "{}",
             trf(
@@ -605,14 +695,7 @@ fn fetch_one(location: &str, entry: &AddonEntry, allow_http: bool, dir: &Path) -
             )
         );
     }
-    fs::rename(&part, &dest).with_context(failed)?;
-    println!(
-        "edel update: {}",
-        trf(
-            "add-on {name} fetched and checked",
-            &[("name", &entry.name)]
-        )
-    );
+    fs::rename(part, dest).with_context(failed)?;
     Ok(())
 }
 
@@ -677,10 +760,15 @@ pub fn mount_all() -> Result<()> {
                 .args(["-t", "ext4", "-o", "ro,loop,nodev"])
                 .arg(&file)
                 .arg(&at))
-            .with_context(|| trf("could not mount add-on {name}", &[("name", &name)]));
+            .with_context(|| {
+                trf(
+                    "could not mount add-on {name}; the other add-ons still mount, and the next update fetches it again",
+                    &[("name", &name)],
+                )
+            });
             // One add-on that does not mount never keeps the others away.
             if let Err(err) = mounted {
-                eprintln!("edel-data: {err:#}");
+                eprintln!("warning: edel-data: {err:#}");
                 continue;
             }
         }
@@ -770,8 +858,18 @@ pub struct Links {
     pub provided: Vec<(String, String)>,
     /// (path under `/etc`, target) for each link into the add-ons' folders.
     pub ours: Vec<(String, String)>,
-    /// Paths under `/etc` that hold something other than a link.
+    /// Paths under `/etc` that hold something of the machine's or the
+    /// slot's: a file, a folder or a link that is not ours, which are never
+    /// replaced.
     pub theirs: BTreeSet<String>,
+}
+
+/// Whether a mounted add-on brings a service: its init script is in
+/// `places::ADDON_INIT_DIR`, from where apply links it into `/etc/init.d`.
+pub fn has_services() -> bool {
+    fs::read_dir(places::ADDON_INIT_DIR)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
 }
 
 impl Links {
@@ -820,10 +918,8 @@ impl Links {
             .iter()
             .map(|(rest, _)| rest)
             .filter(|rest| {
-                Path::new("/etc")
-                    .join(rest)
-                    .symlink_metadata()
-                    .is_ok_and(|m| !m.file_type().is_symlink())
+                Path::new("/etc").join(rest).symlink_metadata().is_ok()
+                    && !ours.iter().any(|(mine, _)| mine == *rest)
             })
             .cloned()
             .collect();
@@ -1103,16 +1199,10 @@ mod tests {
             "etc/apk/world",
             "var/cache/apk/index",
             "usr/share/icons/hicolor/icon-theme.cache",
-            "usr/share/glib-2.0/schemas/gschemas.compiled",
-            "usr/share/applications/mimeinfo.cache",
-            "usr/share/mime/mime.cache",
-            "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache",
-            "usr/lib/gio/modules/giomodule.cache",
             "usr/share/info/dir",
             "etc/shells",
             "etc/udev/hwdb.bin",
             "usr/lib/udev/hwdb.bin",
-            "usr/lib/gtk-3.0/3.0.0/immodules.cache",
             "usr/lib/fontconfig/cache/a.cache-9",
         ] {
             assert!(is_system_cache(cache), "{cache}");
@@ -1121,6 +1211,27 @@ mod tests {
         assert!(!is_system_cache("usr/share/icons/hicolor/48x48/a.png"));
         assert!(!is_system_cache("usr/bin/tool"));
         assert!(!is_system_cache("etc/conf"));
+    }
+
+    #[test]
+    fn a_merged_cache_is_recognised_by_its_path() {
+        for cache in [
+            "usr/share/glib-2.0/schemas/gschemas.compiled",
+            "usr/share/applications/mimeinfo.cache",
+            "usr/share/mime/mime.cache",
+            "usr/lib/gdk-pixbuf-2.0/2.10.0/loaders.cache",
+            "usr/lib/gio/modules/giomodule.cache",
+            "usr/lib/gtk-3.0/3.0.0/immodules.cache",
+            "usr/lib/gtk-4.0/4.0.0/printbackends/giomodule.cache",
+        ] {
+            assert!(is_merged_cache(cache), "{cache}");
+        }
+        assert!(!is_merged_cache("usr/share/mime/packages/x.xml"));
+        assert!(!is_merged_cache("usr/share/icons/hicolor/icon-theme.cache"));
+        assert!(!is_merged_cache("usr/bin/tool"));
+        assert!(!is_system_cache(
+            "usr/share/glib-2.0/schemas/gschemas.compiled"
+        ));
     }
 
     #[test]
@@ -1144,6 +1255,7 @@ mod tests {
                 new: vec!["usr/new".into(), "var".into()],
                 changed: vec!["etc/a".into(), "etc/l".into()],
                 removed: vec!["etc/gone".into()],
+                kept_applets: vec![],
             }
         );
         // A folder whose only change is its time is not changed.
@@ -1152,7 +1264,13 @@ mod tests {
         // A small tool of the base a package replaced keeps the base's link.
         let applet = tree(&[("usr/bin/bc", link("/bin/busybox"))]);
         let replaced = tree(&[("usr/bin/bc", file(7))]);
-        assert_eq!(diff(&applet, &replaced), Diff::default());
+        assert_eq!(
+            diff(&applet, &replaced),
+            Diff {
+                kept_applets: vec!["usr/bin/bc".into()],
+                ..Default::default()
+            }
+        );
     }
 
     #[test]
@@ -1185,6 +1303,46 @@ mod tests {
         );
         assert_eq!(plan.accounts, vec!["etc/passwd".to_string()]);
         assert_eq!(plan.caches, vec!["var/cache/apk/index".to_string()]);
+    }
+
+    #[test]
+    fn plan_tree_keeps_a_merged_cache_the_packages_rewrote() {
+        let before = tree(&[
+            ("usr/share/glib-2.0/schemas/gschemas.compiled", file(1)),
+            ("usr/share/icons/hicolor/icon-theme.cache", file(1)),
+        ]);
+        let after = tree(&[
+            ("usr/lib/gtk-3.0/3.0.0/immodules.cache", file(3)),
+            ("usr/share/glib-2.0/schemas/gschemas.compiled", file(2)),
+            ("usr/share/icons/hicolor/icon-theme.cache", file(2)),
+        ]);
+        let plan = plan_tree(&diff(&before, &after), &after, "ci-hello").unwrap();
+        let copies: Vec<(&str, &str)> = plan
+            .copies
+            .iter()
+            .map(|c| (c.from.as_str(), c.to.as_str()))
+            .collect();
+        assert_eq!(
+            copies,
+            vec![
+                (
+                    "usr/lib/gtk-3.0/3.0.0/immodules.cache",
+                    "usr/lib/gtk-3.0/3.0.0/immodules.cache"
+                ),
+                (
+                    "usr/share/glib-2.0/schemas/gschemas.compiled",
+                    "usr/share/glib-2.0/schemas/gschemas.compiled"
+                ),
+            ]
+        );
+        assert_eq!(
+            plan.merged,
+            [
+                "usr/lib/gtk-3.0/3.0.0/immodules.cache",
+                "usr/share/glib-2.0/schemas/gschemas.compiled"
+            ]
+        );
+        assert_eq!(plan.caches, ["usr/share/icons/hicolor/icon-theme.cache"]);
     }
 
     #[test]
@@ -1229,6 +1387,14 @@ mod tests {
         let before = "root:x:0:0:root:/root:/bin/sh\n";
         let after = "root:x:0:0:root:/root:/bin/sh\napp:x:1001:1001::/:/bin/sh\n";
         assert_eq!(new_accounts(before, after), "app:x:1001:1001::/:/bin/sh\n");
+    }
+
+    #[test]
+    fn changed_accounts_names_lines_a_package_rewrote() {
+        let image = "root:x:0:0:root:/root:/bin/sh\nwheel:x:10:\n";
+        let addon = "root:x:0:0:root:/root:/bin/sh\nwheel:x:10:alice\napp:x:1001:1001::/:/bin/sh\n";
+        assert_eq!(changed_accounts(image, addon), ["wheel"]);
+        assert!(changed_accounts(image, image).is_empty());
     }
 
     #[test]
@@ -1307,6 +1473,22 @@ mod tests {
             stale_versions(&present, &["edel-2"]),
             vec!["edel-0".to_string(), "edel-1".to_string()]
         );
+    }
+
+    #[test]
+    fn folded_lists_the_mime_database_as_one_entry() {
+        let paths = [
+            "usr/lib/gio/modules/giomodule.cache",
+            "usr/share/mime/mime.cache",
+            "usr/share/mime/a/b.cache",
+        ]
+        .map(String::from);
+        assert_eq!(
+            folded(&paths),
+            "usr/lib/gio/modules/giomodule.cache, usr/share/mime/ (2 files)"
+        );
+        assert_eq!(folded(&["etc/shells".to_string()]), "etc/shells");
+        assert_eq!(folded(&[]), "");
     }
 
     #[test]

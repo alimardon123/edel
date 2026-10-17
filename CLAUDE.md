@@ -23,7 +23,7 @@ Ranked, from [docs/DESIGN-PRINCIPLES.md](docs/DESIGN-PRINCIPLES.md). When two co
 
 1. **Reliable:** never leaves anyone with a broken machine.
 2. **Instant:** reacts on the next frame, on old hardware too.
-3. **Simple:** fewest parts, plain files, one way to do each thing.
+3. **Simple and modular:** fewest parts, plain files, one way to do each thing; each fact and each piece of code in one place, reused, never copied; every feature added, changed, swapped or removed alone, in one PR (joined Simple on 2026-10-16, Alimardon's choice).
 4. **Efficient:** light and small, no waste.
 5. **Beautiful:** one coherent, pleasant look and feel.
 6. **Functional:** the basics all work, every time.

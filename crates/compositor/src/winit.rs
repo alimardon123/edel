@@ -40,7 +40,12 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
-    let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
+    let mut state = Edel::new(
+        display.handle(),
+        event_loop.get_signal(),
+        event_loop.handle(),
+        tokens,
+    )?;
     let handle = event_loop.handle();
 
     let name = crate::state::listen(&handle, &mut state, display)?;
@@ -54,6 +59,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;
     state.start_effects(&crate::tiers::renderer_name(backend.renderer()));
     state.start_animations(backend.renderer());
+    state.start_rounded(backend.renderer());
     let size = backend.window_size();
     let output = Output::new(
         "winit".into(),
@@ -111,6 +117,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     event_loop.run(None, &mut state, |state| {
         state.space.refresh();
         state.popups.cleanup();
+        state.sync_idle_inhibit();
         let _ = state.display.flush_clients();
         // A client's commit or new window marks the screen dirty outside
         // the window's events; ask for a frame here, once per dispatch.

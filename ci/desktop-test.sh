@@ -258,7 +258,12 @@
 #   suspend     edel suspend, as ci, suspends the VM to memory (QEMU reports
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
-#               printed; run last, after flatpak (M6.7)
+#               printed; run after flatpak (M6.7)
+#   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
+#               root: the compositor hears it, shell-ui locks the screen and
+#               suspends the VM (QEMU reports it suspended), QMP's
+#               system_wakeup brings it back, the lid opens, and ci's password
+#               unlocks the screen; run after suspend (M7.8)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -287,7 +292,7 @@
 #               popup the compositor shows (`input method popup shown`,
 #               input-method.png); Escape, Super+Q, and reset stop fcitx5
 #               (`input method off, fcitx5 ended`) (M6.8)
-#   flatpak     last but suspend: `edel settings set apps.installed` lists io.mpv.Mpv
+#   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
 #               window maps in the session (flatpak-mpv.png); `edel settings
@@ -633,6 +638,12 @@ suspend_fail() {
 	fail "$1; edel suspend said: $(value suspend_log)"
 }
 
+lid_fail() {
+	guest 'lid log' 2>/dev/null || :
+	wait_for 'DESKTOP-TEST: lid_log ' 10 || :
+	fail "$1; edel-testclient's lid said: $(value lid_log)"
+}
+
 case_suspend() {
 	# Suspend and resume (M6.7). The VM offers suspend to memory only with
 	# q35's S3 on (the -global line of the desktop VM); ci runs edel
@@ -688,6 +699,69 @@ case_suspend() {
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
+}
+
+case_lid() {
+	# The lid (M7.8): a lid switch on uinput, which edel-testclient --lid
+	# shuts as root for 8 s (the test service's `lid close`), as a laptop's
+	# lid reports itself. The compositor hears it, shell-ui locks the screen
+	# and then suspends the VM (its lid default), so QEMU reports suspended;
+	# QMP's system_wakeup brings it back, the lid opens, and ci's password
+	# unlocks the screen. Kept as lid.png. Each line is counted before the
+	# lid closes, as earlier cases may have logged the same one.
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	closed=$(count 'edel-compositor: lid closed')
+	shell=$(count 'edel-shell-ui: lid closed: suspend')
+	locked=$(count 'edel-compositor: screen locked$')
+	opened=$(count 'edel-compositor: lid opened')
+	guest 'lid close'
+	# The guest suspends within a second of the lid closing, before its log
+	# lines reach the serial line, so QEMU is asked first and the lines are
+	# read after the wakeup.
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = suspended ]; do
+		i=$((i + 1))
+		if [ "$i" -ge 30 ]; then
+			wait_more 'edel-compositor: lid closed' "$closed" 1 || lid_fail "the compositor did not hear the lid close"
+			wait_more 'edel-shell-ui: lid closed: suspend' "$shell" 1 || lid_fail "shell-ui did not take the lid close for suspend"
+			lid_fail "QEMU did not report the guest suspended within 30 s of the lid closing"
+		fi
+		sleep 1
+	done
+	sleep 2
+	python3 ci/qmp.py wakeup
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = running ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "QEMU did not report the guest running within 20 s of system_wakeup"
+		sleep 1
+	done
+	# As in case_suspend, the serial line loses the first bytes sent after
+	# the wakeup, so a command that changes nothing is sent until answered.
+	i=0
+	answered=$(count 'DESKTOP-TEST: ran lid log')
+	until [ "$(count 'DESKTOP-TEST: ran lid log')" -gt "$answered" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the test service answered no command within 20 s of the wakeup"
+		guest 'lid log'
+		sleep 1
+	done
+	wait_more 'edel-compositor: lid closed' "$closed" || lid_fail "the compositor did not hear the lid close"
+	wait_more 'edel-shell-ui: lid closed: suspend' "$shell" || lid_fail "shell-ui did not take the lid close for suspend"
+	wait_more 'edel-compositor: screen locked$' "$locked" || lid_fail "the screen was not locked before the suspend"
+	wait_more 'edel-compositor: lid opened' "$opened" 30 || lid_fail "the compositor did not hear the lid open after the wakeup"
+	# QEMU's virtio-gpu shows "Display output is not active" after S3, as
+	# in case_suspend's picture, whatever the guest draws: the picture is
+	# kept, and the unlock below proves the lock screen still takes keys.
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/lid.png"
+	uniform=$(python3 ci/qmp.py uniform "$dir/lid.png")
+	[ "$uniform" = varied ] || fail "the locked screen after the lid opened is $uniform"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen after the lid opened"
+	echo "PASS: the lid closed (uinput), shell-ui locked the screen and suspended the VM (QEMU said suspended), system_wakeup woke it, the lid opened and ci's password unlocked it (lid.png)"
 }
 
 case_default_apps_keys() {
@@ -3645,6 +3719,120 @@ case_in_use() {
 	echo "PASS: gst-launch-1.0 watching a fake camera showed the in-use sign in in_use's amber ($sign at $sx,$sy, in-use.png), its card's Stop cut it off and the use was recorded (in-use-card.png); Test A recording in its sandbox was named by its Flatpak id, and set to never it was not shown again ($refused); ci's record: $record; Settings listed Test A's recent use (settings-app-recent.png)"
 }
 
+# location_ask: Test A asks the Location portal from its sandbox and holds
+# the place 8 s; prints its answer line.
+location_ask() {
+	asked=$(count 'DESKTOP-TEST: location_answer ')
+	guest 'location ask'
+	wait_more 'DESKTOP-TEST: location_answer ' "$asked" 60 || fail "Test A did not answer within 60 s of asking for its location"
+	value location_answer
+}
+
+# location_choice CHOICE: sets Test A's apps.location as ci and waits for
+# shell-ui to write VALUES into the permission store.
+location_choice() {
+	stored=$(count "edel-shell-ui: app permission location $2 for org.edel.TestA")
+	asked=$(count 'DESKTOP-TEST: location_choice ')
+	guest "location $1"
+	wait_more 'DESKTOP-TEST: location_choice ' "$asked" || fail "the service did not set Test A's location"
+	[ "$(value location_choice)" = 0 ] || fail "edel settings set as ci refused apps.location $1"
+	wait_more "edel-shell-ui: app permission location $2 for org.edel.TestA" "$stored" 30 ||
+		fail "shell-ui did not write Test A's location as $2 into the permission store within 30 s"
+}
+
+case_location() {
+	# Location (M6.14c): the machine's city, picked once as root, is what
+	# GeoClue's static source tells Test A through the location portal
+	# while apps.location allows it, with the in-use sign up while Test A
+	# holds it (location.png) and no GeoClue socket on the network, as the
+	# online lookup is off; set to never Test A gets nothing; with the
+	# person's Location off it gets nothing though allowed; and quick
+	# settings' Location tile turns the switch off and on.
+	asked=$(count 'DESKTOP-TEST: location_place ')
+	guest 'location place'
+	wait_more 'DESKTOP-TEST: location_place ' "$asked" 30 || fail "the service did not pick the city"
+	place=$(value location_place)
+	case "$place" in '0 '*41.333333\;69.300000\;*) ;; *) fail "edel settings set location.place=Asia/Tashkent and apply did not write Tashkent to /etc/geolocation: $place" ;; esac
+	location_choice allow 'EXACT 0'
+	shown=$(count 'edel-shell-ui: in use: .*org.edel.TestA location')
+	asked=$(count 'DESKTOP-TEST: location_answer ')
+	guest 'location ask'
+	wait_more 'edel-shell-ui: in use: .*org.edel.TestA location' "$shown" 30 ||
+		fail "shell-ui did not show Test A holding the location within 30 s: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: .*location' | tail -n 5)"
+	wait_for 'edel-shell-ui: in use sign [0-9]' 10 || fail "shell-ui did not log where the in-use sign is"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/location.png"
+	place=$(in_use_place sign) || fail "no place for the in-use sign"
+	set -- $place
+	amber=$(token in_use)
+	sign=$(python3 ci/qmp.py pixel "$dir/location.png" $(($1 + 3)) $(($2 + $4 / 2)))
+	near "$sign" "$(printf '%d' "0x$(echo "$amber" | cut -c1-2)")" "$(printf '%d' "0x$(echo "$amber" | cut -c3-4)")" "$(printf '%d' "0x$(echo "$amber" | cut -c5-6)")" ||
+		fail "the in-use sign at $1,$2 is $sign, not the token in_use $amber (location.png)"
+	asked_sockets=$(count 'DESKTOP-TEST: location_sockets ')
+	guest 'location sockets'
+	wait_more 'DESKTOP-TEST: location_sockets ' "$asked_sockets" 40 || fail "the service did not list GeoClue's sockets"
+	sockets=$(value location_sockets)
+	case "$sockets" in '0 '*) ;; *) fail "GeoClue holds network sockets, or does not run, while the lookup is off: $sockets" ;; esac
+	case "$sockets" in *60-edel-online*) fail "the online lookup's file is there while location.online is off: $sockets" ;; esac
+	wait_more 'DESKTOP-TEST: location_answer ' "$asked" 60 || fail "Test A did not answer within 60 s of asking for its location"
+	answer=$(value location_answer)
+	case "$answer" in 'location 41.3333 69.3000 '*) ;; *) fail "Test A was not told Tashkent's place: $answer" ;; esac
+	# The sign follows GeoClue's InUse (with shell-ui as its agent), not
+	# shell-ui's fallback for a GeoClue that never says it is in use.
+	if tr -d '\r' <"$log" | grep -aq 'GeoClue does not say the place is in use\|GeoClue did not take the shell as its agent'; then
+		fail "GeoClue did not count Test A's place as in use: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: GeoClue' | tail -n 2)"
+	fi
+	# Never: the portal gives Test A nothing.
+	location_choice never 'NONE 0'
+	never=$(location_ask)
+	case "$never" in 'location failed '*) ;; *) fail "Test A set to never was answered: $never" ;; esac
+	# Location off: nothing though allowed.
+	location_choice allow 'EXACT 0'
+	told=$(count 'edel-shell-ui: location off told to the portal')
+	asked=$(count 'DESKTOP-TEST: location_off ')
+	guest 'location off'
+	wait_more 'DESKTOP-TEST: location_off ' "$asked" || fail "the service did not turn Location off"
+	wait_more 'edel-shell-ui: location off told to the portal' "$told" 30 || fail "shell-ui did not tell the portal Location is off within 30 s"
+	off=$(location_ask)
+	case "$off" in 'location failed create'*) ;; *) fail "Test A was answered while Location is off: $off" ;; esac
+	# Quick settings' Location tile: on, then off, then on again.
+	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies"
+	pill_x=$(($1 + $2 / 2))
+	shown=$(count 'edel-shell-ui: quick settings shown')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "a click on the status area did not open quick settings"
+	i=0
+	until value layers | grep -q 'edel-quick@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no quick settings surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-quick@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-quick@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.*quick places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where the card's parts lie: $line"
+	cx=$((sx + (sw - $1) / 2)) cy=$((sy + (sh - $2) / 2))
+	set -- $(echo "$line" | sed -n 's/.* location \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "quick settings has no Location tile: $line"
+	lx=$(($1 + cx + $3 / 2)) ly=$(($2 + cy + $4 / 2))
+	python3 ci/qmp.py screendump "$dir/location-tile-off.png"
+	for state in on off on; do
+		said=$(count "edel-shell-ui: location $state\$")
+		told=$(count "edel-shell-ui: location $state told to the portal")
+		python3 ci/qmp.py click "$lx" "$ly"
+		wait_more "edel-shell-ui: location $state\$" "$said" 10 || fail "a click on the Location tile at $lx,$ly did not turn Location $state"
+		wait_more "edel-shell-ui: location $state told to the portal" "$told" 30 || fail "shell-ui did not tell the portal Location is $state"
+	done
+	python3 ci/qmp.py screendump "$dir/location-tile-on.png"
+	python3 ci/qmp.py key esc
+	asked=$(count 'DESKTOP-TEST: location_reset ')
+	guest 'location reset'
+	wait_more 'DESKTOP-TEST: location_reset ' "$asked" 30 || fail "the service did not reset the location keys"
+	echo "PASS: Test A was told Tashkent ($answer) with the sign up (location.png) and GeoClue on no network ($sockets); never gave '$never', Location off gave '$off', and the quick settings tile turned it on, off and on (location-tile-off.png, location-tile-on.png)"
+}
+
 case_default_apps() {
 	# The default apps (M6.2): the image build installed the test app
 	# org.edel.TestA from a repository made with no network into the data
@@ -5067,6 +5255,32 @@ case_fullscreen() {
 	wait_for 'DESKTOP-TEST: windows .* full@0,0,1280x800!' || fail "the windows line does not show full at 0,0 1280x800, fullscreen: $(value windows)"
 	shot fullscreen 640 790 33aa66 >/dev/null || fail "640,790, where the panel is, is not full's colour"
 	shot fullscreen 4 4 33aa66 >/dev/null || fail "the top left corner is not full's colour"
+	# Direct scanout (M7.7): full draws in shared memory, so it cannot go
+	# straight to the screen, and the compositor says why.
+	wait_for 'edel-compositor: scanout=unavailable for window full on ' ||
+		fail "the compositor did not say whether full goes straight to the screen"
+	# Game mode (M7.7): the VM has no battery, so power.game_mode's
+	# plugged-in has it on; the virtual screen has no variable refresh,
+	# which the compositor said when it lit it, and the compositor offers
+	# tearing-control-v1. Super+G turns game mode off and on again, each
+	# shown in shell-ui's pop-up over the fullscreen window, the first
+	# kept as game-mode.png; the state file follows.
+	value vrr | grep -q 'edel-compositor: screen [^ ]* has no variable refresh' ||
+		fail "the compositor did not say the screen has no variable refresh: $(value vrr)"
+	case " $(value globals) " in
+	*" wp_tearing_control_manager_v1 "*) ;;
+	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
+	esac
+	game=$(count 'edel-compositor: game mode off \(Super\+G\)')
+	shown=$(count 'edel-shell-ui: osd shown, game mode off')
+	python3 ci/qmp.py key meta_l-g
+	wait_more 'edel-compositor: game mode off \(Super\+G\)' "$game" || fail "Super+G did not turn game mode off"
+	wait_more 'edel-shell-ui: osd shown, game mode off' "$shown" || fail "shell-ui did not show game mode off"
+	shot game-mode 4 4 33aa66 >/dev/null || fail "full did not stay under the game mode pop-up"
+	state_now && grep -q '^game_mode = false' "$dir/state-now.toml" || fail "the state file does not say game_mode = false"
+	game=$(count 'edel-compositor: game mode on \(Super\+G\)')
+	python3 ci/qmp.py key meta_l-g
+	wait_more 'edel-compositor: game mode on \(Super\+G\)' "$game" || fail "Super+G did not turn game mode on again"
 	left=$(count 'edel-compositor: window full not fullscreen')
 	python3 ci/qmp.py key meta_l-f
 	wait_more 'edel-compositor: window full not fullscreen' "$left" || fail "Super+F did not take full out of fullscreen"
@@ -5094,7 +5308,7 @@ case_fullscreen() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+F took it out and back; foot went fullscreen and back with Super+F"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
 }
 
 case_portal() {
@@ -5183,6 +5397,53 @@ case_own_bars() {
 		[ "$(apart "$gap" "$bar")" -lt 30 ] ||
 			fail "the close glyph is filled between its arms at $mx,$((my - 5)) $2: $gap against the bar's $bar ($1)"
 	}
+	# adw_line WORD: waits until the libadwaita window's latest line says
+	# contrast WORD (M6.18), asking up to 30 times, a second apart.
+	adw_line() {
+		i=0
+		while [ "$i" -lt 30 ]; do
+			guest 'headerbar adw log'
+			sleep 1
+			adwaita=$(value adwaita_log)
+			case "$adwaita" in
+			*"contrast $1"*) return 0 ;;
+			esac
+			i=$((i + 1))
+		done
+		fail "the libadwaita window did not report contrast $1: ${adwaita:-nothing}"
+	}
+	# adw_place BEFORE: from the compositor's windows, the libadwaita window's
+	# place on the screen (wx, wy, ww, wh). The windows line is printed only
+	# when the windows change, so a window that has just mapped is read once
+	# the count of its lines has grown past BEFORE, counted before the
+	# window was started; with BEFORE 0 it is read from the last line, the
+	# window being up already (M6.18).
+	adw_place() {
+		wait_more 'DESKTOP-TEST: windows .*adwaita@' "$1" 20 ||
+			fail "the compositor's windows hold no adwaita window: $(value windows)"
+		set -- $(value windows | grep -o 'adwaita@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1 | sed 's/adwaita@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\)/\1 \2 \3 \4/')
+		wx=$1 wy=$2 ww=$3 wh=$4
+		for v in "$wx" "$wy" "$ww" "$wh"; do
+			[ -n "$v" ] || fail "the libadwaita window has no place: windows: $(value windows)"
+		done
+	}
+	# adw_bar FILE: the colour of the libadwaita window's header bar in the
+	# screenshot FILE, 40 px in and 12 px down from the window's corner.
+	adw_bar() {
+		python3 ci/qmp.py pixel "$1" $((wx + 40)) $((wy + 12))
+	}
+	# near A B: whether two hex colours differ by at most 4 in every channel.
+	near() {
+		python3 -c 'import sys; a, b = (bytes.fromhex(x) for x in sys.argv[1:3]); sys.exit(0 if max(abs(p - q) for p, q in zip(a, b)) <= 4 else 1)' "$1" "$2"
+	}
+	# bar_is FILE WANT WHEN: screendumps FILE and wants the libadwaita
+	# window's header bar in it to be WANT (M6.18).
+	bar_is() {
+		python3 ci/qmp.py screendump "$1"
+		got=$(adw_bar "$1")
+		near "$got" "$2" ||
+			fail "the libadwaita window's header bar is $got, not $2, $3 ($1) (an unfocused window's bar takes the backdrop colour, the background token $(raw_token background))"
+	}
 	guest 'portal buttons'
 	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
 	first=$(layout_of)
@@ -5239,7 +5500,71 @@ case_own_bars() {
 	python3 ci/qmp.py screendump "$dir/headerbar-right.png"
 	cross_drawn "$dir/headerbar-right.png" 'on the right after the reset'
 	guest 'headerbar off'
-	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png)"
+	# A libadwaita window (M6.18), its header bar in our colours: Flatpak
+	# apps may read gtk.css, which shell-ui writes from the tokens and the
+	# settings, so the person's override must show it.
+	guest 'flatpak override'
+	wait_for 'DESKTOP-TEST: flatpak_override ' 30 || fail "the service did not print the Flatpak override"
+	value flatpak_override | grep -q 'xdg-config/gtk-4.0:ro' ||
+		fail "Flatpak apps may not read gtk.css: $(value flatpak_override)"
+	# The light scheme: a libadwaita window takes the light title_bar.
+	mapped=$(count 'edel-compositor: mapped window adwaita')
+	windows=$(count 'DESKTOP-TEST: windows .*adwaita@')
+	guest 'headerbar adw'
+	wait_more 'edel-compositor: mapped window adwaita' "$mapped" 60 ||
+		fail "the libadwaita window did not map: $(value windows)"
+	adw_line normal
+	adw_place "$windows"
+	sleep 1
+	bar_is "$dir/adwaita-light.png" "$(raw_token title_bar)" 'in the light scheme'
+	# High contrast reaches the open window with no restart: shell-ui tells
+	# apps, and libadwaita's header bar takes the high-contrast title_bar.
+	told=$(count 'edel-shell-ui: contrast told to apps')
+	guest 'contrast high'
+	wait_more 'edel-shell-ui: contrast told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps about high contrast: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: contrast' | tail -n 1)"
+	adw_line high
+	sleep 1
+	bar_is "$dir/adwaita-contrast.png" "$(raw_token title_bar colour.light.contrast)" 'with high contrast, with no restart'
+	# High contrast taken out again, which the open window hears too.
+	told=$(count 'edel-shell-ui: contrast told to apps')
+	guest 'contrast default'
+	wait_more 'edel-shell-ui: contrast told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps that high contrast was taken out: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: contrast' | tail -n 1)"
+	adw_line normal
+	# The person's own header bar colours (M6.18): the window is closed,
+	# shell-ui writes gtk.css again, and the window opened below reads it.
+	guest 'headerbar off'
+	written=$(count "edel-shell-ui: apps' colours written")
+	guest 'title colours'
+	wait_more "edel-shell-ui: apps' colours written" "$written" 30 ||
+		fail "shell-ui did not write apps' colours for the person's title_bar: $(tr -d '\r' <"$log" | grep -a "apps' colours" | tail -n 1)"
+	mapped=$(count 'edel-compositor: mapped window adwaita')
+	windows=$(count 'DESKTOP-TEST: windows .*adwaita@')
+	guest 'headerbar adw'
+	wait_more 'edel-compositor: mapped window adwaita' "$mapped" 60 ||
+		fail "the libadwaita window did not map again: $(value windows)"
+	adw_line normal
+	adw_place "$windows"
+	sleep 1
+	bar_is "$dir/adwaita-own-light.png" f0b8cc 'with appearance.colours.light.title_bar set'
+	# The dark scheme: the person's dark title_bar. The window is up already
+	# and keeps its place, so its last windows line is read (adw_place 0).
+	said=$(count 'edel-compositor: colour scheme dark')
+	guest 'scheme dark'
+	wait_more 'edel-compositor: colour scheme dark' "$said" 30 ||
+		fail "appearance.mode=dark did not reach the compositor's log"
+	sleep 2
+	adw_place 0
+	bar_is "$dir/adwaita-own-dark.png" 4a2a6a 'in the dark scheme with appearance.colours.dark.title_bar set'
+	# Back to the light scheme, the window closed and the colours taken out.
+	said=$(count 'edel-compositor: colour scheme light')
+	guest 'scheme default'
+	wait_more 'edel-compositor: colour scheme light' "$said" 30 ||
+		fail "taking appearance.mode out did not bring the light scheme back"
+	guest 'headerbar off'
+	guest 'colours default'
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png); a libadwaita window's header bar took the light title_bar, high contrast's live, and the person's own colour in light and in dark, and Flatpak apps may read gtk.css (adwaita-light.png, adwaita-contrast.png, adwaita-own-light.png, adwaita-own-dark.png)"
 }
 
 case_capture() {
@@ -7515,7 +7840,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

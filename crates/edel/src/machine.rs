@@ -20,6 +20,7 @@ use edel::apps::{self, FLATHUB_REMOTE};
 use edel::base;
 use edel::i18n::{tr, trf};
 use edel::key_help::{self, DecidedBy};
+use edel::location;
 use edel::panel_edit;
 use edel::places;
 use edel::presets;
@@ -27,6 +28,7 @@ use edel::services;
 use edel::settings::{self, SettingsFile, User};
 use edel::theme_file;
 use edel::themes;
+use edel::timezones;
 use edel::users::ADMIN_GROUP;
 
 use crate::boot::GRUB_PREFIX;
@@ -247,6 +249,17 @@ enum Change {
     /// The file names no zone: take this machine's `/etc/localtime` and
     /// `/etc/timezone` out, so the clock is UTC again
     TimezoneDefault,
+    /// Write GeoClue's static place, `/etc/geolocation`, with `text` for
+    /// the zone's coordinates (M6.14c)
+    Geolocation {
+        zone: String,
+        text: String,
+    },
+    /// The file names no place: take this machine's `/etc/geolocation` out,
+    /// so apps get no place (M6.14c)
+    GeolocationNone,
+    /// Turn GeoClue's Wi-Fi lookup on or off, by its drop-in (M6.14c)
+    LocationOnline(bool),
     AddUser {
         name: String,
         shell: String,
@@ -305,6 +318,11 @@ impl fmt::Display for Change {
             Change::HostnameDefault => write!(f, "network.hostname: back to the release's"),
             Change::Timezone(z) => write!(f, "region.timezone: set to {z}"),
             Change::TimezoneDefault => write!(f, "region.timezone: back to the release's (UTC)"),
+            Change::Geolocation { zone, .. } => write!(f, "location.place: set to {zone}"),
+            Change::GeolocationNone => write!(f, "location.place: none, so apps get no place"),
+            Change::LocationOnline(on) => {
+                write!(f, "location.online: {}", if *on { "on" } else { "off" })
+            }
             Change::AddUser { name, shell } => write!(f, "users.{name}: add, with shell {shell}"),
             Change::Shell { name, shell } => write!(f, "users.{name}.login_shell: set to {shell}"),
             Change::Unlock(name) => write!(f, "users.{name}: allow key logins"),
@@ -365,6 +383,9 @@ struct Machine {
     hostname_set: bool,
     /// The zone this machine's own `/etc/localtime` names, if it has one
     timezone: Option<String>,
+    /// What the location settings compare with (M6.14c); None without the
+    /// location feature
+    location: Option<LocationState>,
     passwd: String,
     group: String,
     /// `None` when this user may not read it
@@ -425,10 +446,12 @@ impl Machine {
                 fs::metadata(s).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
             })
             .collect();
+        let features = services::installed();
         Ok(Machine {
             hostname: fs::read_to_string("/etc/hostname").unwrap_or_default(),
             hostname_set: Path::new(ETC_UPPER).join("hostname").exists(),
             timezone: own_timezone(),
+            location: location_state(&features),
             passwd,
             group: fs::read_to_string("/etc/group")?,
             shadow: fs::read_to_string("/etc/shadow").ok(),
@@ -437,7 +460,7 @@ impl Machine {
             default_shell: default_shell().to_string(),
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
-            features: services::installed(),
+            features,
             services_off: services::off_by_default(
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
@@ -501,6 +524,75 @@ fn own_timezone() -> Option<String> {
     zone_of_target(&fs::read_link(places::LOCALTIME).ok()?)
 }
 
+/// What the location settings compare with on a machine with the location
+/// feature (M6.14c): this machine's own GeoClue files and tzdata's zone table.
+#[derive(Default)]
+struct LocationState {
+    /// The place this machine's own `/etc/geolocation` holds, if it has one
+    geolocation: Option<String>,
+    /// Whether this machine's own GeoClue drop-in turns the Wi-Fi lookup on
+    online: bool,
+    /// tzdata's `zone1970.tab`, the source of a zone's coordinates; empty
+    /// when the machine has no zone files
+    zone_table: String,
+}
+
+/// The file at `path` as this machine's own copy: where the overlay's upper
+/// layer keeps what was written under `/etc`, so only our file is ever read
+/// or taken out, never the slot's.
+fn own_file(path: &str) -> PathBuf {
+    Path::new(ETC_UPPER).join(path.trim_start_matches("/etc/"))
+}
+
+/// The location state of a machine that has the location feature (M6.14c),
+/// read from its own files; None for a machine without it.
+fn location_state(features: &[(String, edel::features::Feature)]) -> Option<LocationState> {
+    if !features.iter().any(|(name, _)| name == "location") {
+        return None;
+    }
+    Some(LocationState {
+        geolocation: fs::read_to_string(own_file(places::GEOLOCATION)).ok(),
+        online: own_file(places::GEOCLUE_ONLINE).exists(),
+        zone_table: timezones::zone_table(Path::new(places::ZONEINFO_DIR)),
+    })
+}
+
+/// The location changes (M6.14c): GeoClue's static place, from
+/// `location.place` or else the time zone, and the Wi-Fi lookup from
+/// `location.online`. A zone with no coordinates gives no place, and the
+/// note says so only when the person named that place.
+fn plan_location(
+    file: &SettingsFile,
+    state: &LocationState,
+    changes: &mut Vec<Change>,
+    notes: &mut Vec<String>,
+) {
+    let wanted = location::zone_of(file).and_then(|zone| {
+        let found = timezones::coordinates_in(&state.zone_table, zone);
+        if found.is_none() && file.location.place.is_some() {
+            notes.push(format!(
+                "location.place: no coordinates for {zone}, so apps get no place"
+            ));
+        }
+        found.map(|(lat, lon)| (zone, location::geolocation_text(zone, lat, lon)))
+    });
+    match wanted {
+        Some((zone, text)) if state.geolocation.as_deref() != Some(text.as_str()) => {
+            changes.push(Change::Geolocation {
+                zone: zone.to_string(),
+                text,
+            })
+        }
+        Some(_) => {}
+        None if state.geolocation.is_some() => changes.push(Change::GeolocationNone),
+        None => {}
+    }
+    let online = file.location.online.unwrap_or(false);
+    if online != state.online {
+        changes.push(Change::LocationOnline(online));
+    }
+}
+
 /// The zone a link to `target` names: the target without the zone files'
 /// folder in front of it, None when it is not inside that folder.
 fn zone_of_target(target: &Path) -> Option<String> {
@@ -528,6 +620,9 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         }
         None if machine.timezone.is_some() => changes.push(Change::TimezoneDefault),
         _ => {}
+    }
+    if let Some(state) = &machine.location {
+        plan_location(file, state, &mut changes, &mut notes);
     }
     let all = accounts(&machine.passwd);
     let mut admin_group = members(&machine.group, ADMIN_GROUP).is_some();
@@ -840,6 +935,40 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             }
             let _ = fs::write("/proc/sys/vm/drop_caches", "2");
         }
+        Change::Geolocation { text, .. } => {
+            // GeoClue reads its static source when it is asked, so nothing
+            // is restarted.
+            let path = Path::new(places::GEOLOCATION);
+            write_whole(path, text.as_bytes())?;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+                .with_context(|| could_not_write(path))?;
+        }
+        Change::GeolocationNone => {
+            let upper = own_file(places::GEOLOCATION);
+            match fs::remove_file(&upper) {
+                Ok(()) => {}
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err).with_context(|| could_not_write(&upper)),
+            }
+            let _ = fs::write("/proc/sys/vm/drop_caches", "2");
+        }
+        Change::LocationOnline(on) => {
+            // GeoClue reads its drop-ins when it starts and runs only while
+            // an app asks, so nothing is restarted here either.
+            if *on {
+                let path = Path::new(places::GEOCLUE_ONLINE);
+                write_whole(path, location::ONLINE_CONF.as_bytes())?;
+                fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+                    .with_context(|| could_not_write(path))?;
+            } else {
+                let upper = own_file(places::GEOCLUE_ONLINE);
+                match fs::remove_file(&upper) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => return Err(err).with_context(|| could_not_write(&upper)),
+                }
+            }
+        }
         Change::AddUser { name, shell } => {
             run(&mut base::add_person(name, shell))?;
             unlock(name)?;
@@ -1020,7 +1149,9 @@ pub(crate) fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
 
 /// Takes out the links in `/etc` of add-ons that went, each service out of
 /// its runlevels first (stopped, unless at boot), then links the mounted
-/// add-ons' files in (M7.2a). A machine's own file is never touched.
+/// add-ons' files in (M7.2a), and has OpenRC read the services again when a
+/// service's script or `conf.d` file came or went. A machine's own file is
+/// never touched.
 fn link_addons(make: &[(String, String)], remove: &[String], boot: bool) -> Result<()> {
     let etc = Path::new("/etc");
     for rest in remove {
@@ -1048,7 +1179,24 @@ fn link_addons(make: &[(String, String)], remove: &[String], boot: bool) -> Resu
         }
         std::os::unix::fs::symlink(target, &link).with_context(|| could_not_write(&link))?;
     }
+    // OpenRC starts a runlevel from its cache of the services, remade on
+    // its own only when /etc/init.d or /etc/conf.d is newer than the cache,
+    // to the second. At boot the cache was made moments before this runs,
+    // so a script linked now could be missed and its service never started.
+    if service_files_changed(make, remove) {
+        run(&mut base::reread_services())?;
+    }
     Ok(())
+}
+
+/// Whether the links `make` and `remove` change what OpenRC reads a
+/// service from: `/etc/init.d/NAME`, or `/etc/conf.d/NAME`, which may set
+/// its dependencies.
+fn service_files_changed(make: &[(String, String)], remove: &[String]) -> bool {
+    make.iter()
+        .map(|(rest, _)| rest.as_str())
+        .chain(remove.iter().map(String::as_str))
+        .any(|rest| rest.starts_with("init.d/") || rest.starts_with("conf.d/"))
 }
 
 /// What apply says in place of `change` when it runs at boot (M6.1): the
@@ -1624,7 +1772,13 @@ fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
         || edel::app_permissions::find(key).is_some()
-        || ["region.language", "region.keyboard", "region.input_method"].contains(&key)
+        || [
+            "region.language",
+            "region.keyboard",
+            "region.input_method",
+            "location.enabled",
+        ]
+        .contains(&key)
         || [
             "layout.",
             "panels.",
@@ -2564,7 +2718,8 @@ mod tests {
                 "region",
                 "default_apps",
                 "startup",
-                "apps"
+                "apps",
+                "location"
             ]
         );
         assert_eq!(
@@ -2632,6 +2787,7 @@ mod tests {
             hostname: "lab-1\n".into(),
             hostname_set: true,
             timezone: None,
+            location: None,
             passwd: PASSWD.into(),
             group: "admin:x:101:ci\n".into(),
             shadow: Some("ci:*:1::::::\nali:!:1::::::\n".into()),
@@ -2772,6 +2928,104 @@ mod tests {
         assert!(!changes.contains(&Change::TimezoneDefault));
     }
 
+    /// A machine with the location feature, its own GeoClue files as given
+    /// and a zone table with Tashkent in it.
+    fn located(geolocation: Option<&str>, online: bool) -> Machine {
+        let mut machine = machine();
+        machine.location = Some(LocationState {
+            geolocation: geolocation.map(str::to_string),
+            online,
+            zone_table: "UZ\t+4120+06918\tAsia/Tashkent\tTashkent\n".into(),
+        });
+        machine
+    }
+
+    const TASHKENT_PLACE: &str = "# Written by edel settings apply from location.place (Asia/Tashkent); edit that, not this file.\n41.333333\n69.300000\n0\n10000\n";
+
+    #[test]
+    fn plans_the_place_for_geoclue_and_nothing_once_it_is_there() {
+        let file = settings::read("format = 1\n[location]\nplace = \"Asia/Tashkent\"\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&file, &located(None, false));
+        assert!(changes.contains(&Change::Geolocation {
+            zone: "Asia/Tashkent".into(),
+            text: TASHKENT_PLACE.into(),
+        }));
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.to_string() == "location.place: set to Asia/Tashkent")
+        );
+        let (changes, _) = plan(&file, &located(Some(TASHKENT_PLACE), false));
+        assert!(
+            !changes
+                .iter()
+                .any(|c| matches!(c, Change::Geolocation { .. } | Change::GeolocationNone))
+        );
+    }
+
+    #[test]
+    fn takes_the_place_out_when_the_zone_is_utc_and_ours_is_there() {
+        let file = settings::read("format = 1\n[region]\ntimezone = \"UTC\"\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&file, &located(Some(TASHKENT_PLACE), false));
+        assert!(changes.contains(&Change::GeolocationNone));
+        let (changes, _) = plan(&file, &located(None, false));
+        assert!(!changes.contains(&Change::GeolocationNone));
+    }
+
+    #[test]
+    fn plans_the_wifi_lookup_the_file_turns_on_and_off() {
+        let on = settings::read("format = 1\n[location]\nonline = true\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&on, &located(None, false));
+        assert!(changes.contains(&Change::LocationOnline(true)));
+        let (changes, _) = plan(&on, &located(None, true));
+        assert!(
+            !changes
+                .iter()
+                .any(|c| matches!(c, Change::LocationOnline(_)))
+        );
+        // Absent is off, so our drop-in is taken out.
+        let off = settings::read("format = 1\n").unwrap().file;
+        let (changes, _) = plan(&off, &located(None, true));
+        assert!(changes.contains(&Change::LocationOnline(false)));
+    }
+
+    #[test]
+    fn plans_no_location_change_without_the_location_feature() {
+        let file =
+            settings::read("format = 1\n[location]\nplace = \"Asia/Tashkent\"\nonline = true\n")
+                .unwrap()
+                .file;
+        let (changes, _) = plan(&file, &machine());
+        assert!(!changes.iter().any(|c| matches!(
+            c,
+            Change::Geolocation { .. } | Change::GeolocationNone | Change::LocationOnline(_)
+        )));
+    }
+
+    #[test]
+    fn a_named_place_without_coordinates_gives_none_and_says_so() {
+        let named = settings::read("format = 1\n[location]\nplace = \"Etc/UTC\"\n")
+            .unwrap()
+            .file;
+        let (changes, notes) = plan(&named, &located(Some(TASHKENT_PLACE), false));
+        assert!(changes.contains(&Change::GeolocationNone));
+        assert!(notes.contains(
+            &"location.place: no coordinates for Etc/UTC, so apps get no place".to_string()
+        ));
+        // A zone from the time zone alone is silent.
+        let zoned = settings::read("format = 1\n[region]\ntimezone = \"Etc/UTC\"\n")
+            .unwrap()
+            .file;
+        let (_, notes) = plan(&zoned, &located(None, false));
+        assert!(!notes.iter().any(|n| n.starts_with("location.place")));
+    }
+
     #[test]
     fn reads_the_zone_a_link_names_only_inside_the_zone_files() {
         assert_eq!(
@@ -2858,6 +3112,24 @@ mod tests {
         );
         assert_eq!(deferred(&change, false), None);
         assert_eq!(deferred(&Change::AdminGroup, true), None);
+    }
+
+    #[test]
+    fn the_services_are_read_again_only_when_a_service_file_came_or_went() {
+        let make = |rest: &str| {
+            vec![(
+                rest.to_string(),
+                "/usr/lib/edel/init.d/ci-hello".to_string(),
+            )]
+        };
+        assert!(service_files_changed(&make("init.d/ci-hello"), &[]));
+        assert!(service_files_changed(&make("conf.d/ci-hello"), &[]));
+        assert!(service_files_changed(&[], &["init.d/ci-hello".to_string()]));
+        assert!(!service_files_changed(
+            &make("ci-hello.conf"),
+            &["ssh/sshd_config.d/x".to_string()]
+        ));
+        assert!(!service_files_changed(&[], &[]));
     }
 
     #[test]
@@ -3003,6 +3275,9 @@ mod tests {
         }
         // The clock's zone and servers are the machine's, which apply sets.
         assert!(!desktop_follows("region.timezone"));
+        assert!(desktop_follows("location.enabled"));
+        assert!(!desktop_follows("location.place"));
+        assert!(!desktop_follows("location.online"));
         assert!(!desktop_follows("region.time_servers"));
     }
 

@@ -1,12 +1,12 @@
-//! What each app may use (M6.14a, M6.14b): the `apps.camera`,
-//! `apps.microphone`, `apps.screenshots`, `apps.notifications` and
-//! `apps.files` keys, each a table of Flatpak app ids and a choice, such as
-//! `{ "org.gnome.Snapshot" = "never" }`, laid onto Flatpak's own state, so
-//! there is no store of ours (ADR-008, level 1 of ADR-007). The first four
-//! are entries of the portals' permission store, which shell-ui sets over
-//! the session bus (the portals read three of them, WirePlumber the
-//! microphone's); the files are a line of the app's override file, which
-//! shell-ui writes. Both are per person, as
+//! What each app may use (M6.14a, M6.14b, M6.14c): the `apps.camera`,
+//! `apps.microphone`, `apps.screenshots`, `apps.notifications`,
+//! `apps.files` and `apps.location` keys, each a table of Flatpak app ids
+//! and a choice, such as `{ "org.gnome.Snapshot" = "never" }`, laid onto
+//! Flatpak's own state, so there is no store of ours (ADR-008, level 1 of
+//! ADR-007). The first five are entries of the portals' permission store,
+//! which shell-ui sets over the session bus (the portals read three of
+//! them, WirePlumber the microphone's); the files are a line of the app's
+//! override file, which shell-ui writes. Both are per person, as
 //! the keys are. A key that is absent leaves Flatpak's own behaviour: the
 //! portal asks the first time and keeps the answer. Pure functions, tested
 //! on text; shell-ui does the bus calls and the writing.
@@ -20,7 +20,8 @@ pub const ALLOW: &str = "allow";
 pub const ASK: &str = "ask";
 pub const NEVER: &str = "never";
 
-/// The camera portal asks every time when its entry is `ask`.
+/// The camera portal asks every time when its entry is `ask`. The location
+/// portal takes the same three (M6.14c): `ask` leaves no entry, so it asks.
 pub const CAMERA_CHOICES: &[&str] = &[ALLOW, ASK, NEVER];
 /// The screenshot and notification portals keep an answer once given, so
 /// they have no `ask`.
@@ -105,6 +106,18 @@ pub const PERMISSIONS: &[Permission] = &[
         place: Place::Files,
         asks_first: false,
     },
+    // Location (M6.14c): the location portal keeps an accuracy and a time,
+    // EXACT or NONE here, and asks the person when an app has no entry, then
+    // keeps the answer; shell-ui takes the entry out again for an app set to
+    // ask, so it is asked every time.
+    Permission {
+        key: "apps.location",
+        icon: "location",
+        title: n_("Location"),
+        choices: CAMERA_CHOICES,
+        place: Place::Store("location", "location"),
+        asks_first: true,
+    },
 ];
 
 /// The permission store's bus name, path and interface (xdg-desktop-portal's
@@ -119,23 +132,35 @@ pub fn find(key: &str) -> Option<&'static Permission> {
     PERMISSIONS.iter().find(|p| p.key == key)
 }
 
-/// What the permission store holds for a choice: `yes`, `ask` or `no`.
-pub fn store_value(choice: &str) -> Option<&'static str> {
+/// What the permission store holds for a choice of `key`: the words of its
+/// entry, `yes`, `ask` or `no` for most keys. A location is an accuracy and
+/// a time, `EXACT` or `NONE` with `0`, and `ask` leaves no entry at all, so
+/// the portal asks (M6.14c). None when there is nothing to set.
+pub fn store_values(key: &str, choice: &str) -> Option<&'static [&'static str]> {
+    if key == "apps.location" {
+        return match choice {
+            ALLOW => Some(&["EXACT", "0"]),
+            NEVER => Some(&["NONE", "0"]),
+            _ => None,
+        };
+    }
     match choice {
-        ALLOW => Some("yes"),
-        ASK => Some("ask"),
-        NEVER => Some("no"),
+        ALLOW => Some(&["yes"]),
+        ASK => Some(&["ask"]),
+        NEVER => Some(&["no"]),
         _ => None,
     }
 }
 
 /// The choice a permission store entry stands for, the inverse of
-/// [`store_value`]; None for anything else, such as a location's accuracy.
+/// [`store_values`]: the words `yes`, `ask` and `no`, and a location's
+/// accuracy (`EXACT`, `STREET`, `NEIGHBORHOOD`, `CITY` or `COUNTRY`, which
+/// is allow) or `NONE` (never). None for anything else.
 pub fn choice_of(entry: &[String]) -> Option<&'static str> {
     match entry.first().map(String::as_str) {
-        Some("yes") => Some(ALLOW),
+        Some("yes" | "EXACT" | "STREET" | "NEIGHBORHOOD" | "CITY" | "COUNTRY") => Some(ALLOW),
         Some("ask") => Some(ASK),
-        Some("no") => Some(NEVER),
+        Some("no" | "NONE") => Some(NEVER),
         _ => None,
     }
 }
@@ -157,13 +182,13 @@ pub fn choices_between(machine: Option<&str>, person: Option<&str>) -> Choices {
     all
 }
 
-/// One entry the store should hold: table, id, app and value.
+/// One entry the store should hold: table, id, app and its words.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub table: &'static str,
     pub id: &'static str,
     pub app: String,
-    pub value: &'static str,
+    pub values: &'static [&'static str],
 }
 
 /// The choices a settings file makes, each permission's key with its table
@@ -183,12 +208,12 @@ pub fn entries(choices: &Choices) -> Vec<Entry> {
             if !permission.choices.contains(&choice.as_str()) {
                 continue;
             }
-            if let Some(value) = store_value(choice) {
+            if let Some(values) = store_values(permission.key, choice) {
                 out.push(Entry {
                     table,
                     id,
                     app: app.clone(),
-                    value,
+                    values,
                 });
             }
         }
@@ -209,6 +234,21 @@ pub fn dropped(before: &[Entry], now: &[Entry]) -> Vec<Entry> {
         })
         .cloned()
         .collect()
+}
+
+/// The apps whose choice for `key` is `ask`, sorted. shell-ui uses it for
+/// `apps.location`, whose `ask` leaves no entry for the portal to keep, so
+/// it has to ask every time itself (M6.14c).
+pub fn asked_every_time(choices: &Choices, key: &str) -> Vec<String> {
+    let mut apps: Vec<String> = choices
+        .get(key)
+        .into_iter()
+        .flatten()
+        .filter(|(_, choice)| choice.as_str() == ASK)
+        .map(|(app, _)| app.clone())
+        .collect();
+    apps.sort();
+    apps
 }
 
 /// The apps whose files `choices` set to `ask`.
@@ -357,8 +397,15 @@ mod tests {
                 p.key,
                 p.icon
             );
+            // Only a location's `ask` has no entry: the portal asks itself.
             for choice in p.choices {
-                assert!(store_value(choice).is_some(), "{choice}");
+                let no_entry = p.key == "apps.location" && *choice == ASK;
+                assert_eq!(
+                    store_values(p.key, choice).is_none(),
+                    no_entry,
+                    "{} {choice}",
+                    p.key
+                );
             }
         }
     }
@@ -366,11 +413,58 @@ mod tests {
     #[test]
     fn a_choice_becomes_the_stores_word_and_back() {
         for choice in [ALLOW, ASK, NEVER] {
-            let value = store_value(choice).unwrap();
-            assert_eq!(choice_of(&[value.to_string()]), Some(choice));
+            let values = store_values("apps.camera", choice).unwrap();
+            assert_eq!(choice_of(&[values[0].to_string()]), Some(choice));
         }
-        assert_eq!(choice_of(&["EXACT".into(), "0".into()]), None);
         assert_eq!(choice_of(&[]), None);
+        assert_eq!(choice_of(&["maybe".into()]), None);
+    }
+
+    #[test]
+    fn a_location_is_its_accuracy_and_a_time_and_back() {
+        // Allowed, the portal keeps an accuracy and a time; never, none.
+        assert_eq!(
+            store_values("apps.location", ALLOW),
+            Some(&["EXACT", "0"][..])
+        );
+        assert_eq!(
+            store_values("apps.location", NEVER),
+            Some(&["NONE", "0"][..])
+        );
+        assert_eq!(store_values("apps.location", ASK), None);
+        assert_eq!(choice_of(&["EXACT".into(), "0".into()]), Some(ALLOW));
+        assert_eq!(choice_of(&["CITY".into(), "5".into()]), Some(ALLOW));
+        assert_eq!(choice_of(&["NONE".into(), "0".into()]), Some(NEVER));
+    }
+
+    #[test]
+    fn an_allowed_location_is_set_and_an_asked_one_is_not() {
+        let allowed = choices("apps.location", &[("org.example.A", "allow")]);
+        let entry = entries(&allowed);
+        assert_eq!(entry.len(), 1);
+        assert_eq!(entry[0].values, ["EXACT", "0"]);
+        let asked = choices("apps.location", &[("org.example.A", "ask")]);
+        assert_eq!(entries(&asked), []);
+        let never = choices("apps.location", &[("org.example.A", "never")]);
+        assert_eq!(entries(&never)[0].values, ["NONE", "0"]);
+        assert_eq!(asked_every_time(&asked, "apps.location"), ["org.example.A"]);
+    }
+
+    #[test]
+    fn asked_every_time_lists_only_the_asking_apps_sorted() {
+        let all = choices(
+            "apps.location",
+            &[
+                ("org.example.B", "ask"),
+                ("org.example.A", "allow"),
+                ("org.example.C", "ask"),
+            ],
+        );
+        assert_eq!(
+            asked_every_time(&all, "apps.location"),
+            ["org.example.B", "org.example.C"]
+        );
+        assert_eq!(asked_every_time(&all, "apps.camera"), Vec::<String>::new());
     }
 
     #[test]
@@ -386,13 +480,13 @@ mod tests {
                     table: "devices",
                     id: "camera",
                     app: "com.zoom.Zoom".into(),
-                    value: "ask"
+                    values: &["ask"]
                 },
                 Entry {
                     table: "devices",
                     id: "camera",
                     app: "org.gnome.Snapshot".into(),
-                    value: "no"
+                    values: &["no"]
                 },
             ]
         );

@@ -30,12 +30,19 @@ pub fn known_in(dir: &Path, name: &str) -> bool {
     is_zone_name(name) && !name.contains("..") && dir.join(name).is_file()
 }
 
+/// The text of tzdata's `zone1970.tab` in `dir`, the one place its name is
+/// written; empty when it cannot be read.
+pub fn zone_table(dir: &Path) -> String {
+    std::fs::read_to_string(dir.join("zone1970.tab")).unwrap_or_default()
+}
+
 /// The zones a person picks from: tzdata's `zone1970.tab` in `dir` (its third
 /// column), and `UTC`, each once, sorted by `label`. Empty without the file.
 pub fn list_in(dir: &Path) -> Vec<String> {
-    let Ok(table) = std::fs::read_to_string(dir.join("zone1970.tab")) else {
+    let table = zone_table(dir);
+    if table.is_empty() {
         return Vec::new();
-    };
+    }
     let mut zones: Vec<String> = table
         .lines()
         .filter(|line| !line.starts_with('#'))
@@ -47,6 +54,65 @@ pub fn list_in(dir: &Path) -> Vec<String> {
     zones.dedup();
     zones.sort_by_key(|zone| label(zone));
     zones
+}
+
+/// The latitude and longitude, in degrees, of `zone`'s principal city, from
+/// the text of tzdata's `zone1970.tab` (`table`). The second column is ISO
+/// 6709, `+DDMM+DDDMM` or `+DDMMSS+DDDMMSS`, `+` north and east, `-` south
+/// and west. None for `UTC`, a zone the table lacks, or a malformed field.
+pub fn coordinates_in(table: &str, zone: &str) -> Option<(f64, f64)> {
+    if zone == DEFAULT {
+        return None;
+    }
+    let iso = table
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .find_map(|line| {
+            let mut columns = line.split('\t');
+            let iso = columns.nth(1)?;
+            (columns.next()? == zone).then_some(iso)
+        })?;
+    // The second sign starts the longitude, which has three degree digits
+    // where the latitude has two.
+    let cut = iso
+        .char_indices()
+        .skip(1)
+        .find(|(_, c)| *c == '+' || *c == '-')?
+        .0;
+    Some((degrees(&iso[..cut], 2)?, degrees(&iso[cut..], 3)?))
+}
+
+/// One ISO 6709 coordinate, `+DDMM` or `+DDMMSS` with `width` degree
+/// digits, in degrees with its sign.
+fn degrees(part: &str, width: usize) -> Option<f64> {
+    let sign = match part.chars().next()? {
+        '+' => 1.0,
+        '-' => -1.0,
+        _ => return None,
+    };
+    let digits = &part[1..];
+    if !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let len = digits.len();
+    if len != width + 2 && len != width + 4 {
+        return None;
+    }
+    let number = |from: usize, to: usize| digits.get(from..to)?.parse::<f64>().ok();
+    let whole = number(0, width)?;
+    let minutes = number(width, width + 2)?;
+    let seconds = if len == width + 4 {
+        number(width + 2, width + 4)?
+    } else {
+        0.0
+    };
+    Some(sign * (whole + minutes / 60.0 + seconds / 3600.0))
+}
+
+/// The coordinates of `zone` from the tzdata files in `places::ZONEINFO_DIR`,
+/// as [`coordinates_in`] reads them; None without the files.
+pub fn coordinates(zone: &str) -> Option<(f64, f64)> {
+    coordinates_in(&zone_table(Path::new(places::ZONEINFO_DIR)), zone)
 }
 
 /// How a zone reads in a list: its city with spaces, then its region after a
@@ -129,6 +195,46 @@ mod tests {
         );
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(list_in(&dir).is_empty());
+    }
+
+    fn close(value: Option<(f64, f64)>, lat: f64, lon: f64) -> bool {
+        value.is_some_and(|(a, b)| (a - lat).abs() < 1e-6 && (b - lon).abs() < 1e-6)
+    }
+
+    #[test]
+    fn coordinates_read_the_iso_6709_fields_of_the_table() {
+        let table = "# comment\n\
+            UZ\t+4120+06918\tAsia/Tashkent\tTashkent\n\
+            AU\t-3352+15113\tAustralia/Sydney\tNSW\n\
+            XX\t+651234-1502345\tExample/Seconds\tsecond form\n\
+            YY\t+41x0+06918\tExample/Broken\tbroken\n";
+        assert!(close(
+            coordinates_in(table, "Asia/Tashkent"),
+            41.0 + 20.0 / 60.0,
+            69.3
+        ));
+        assert!(close(
+            coordinates_in(table, "Australia/Sydney"),
+            -(33.0 + 52.0 / 60.0),
+            151.0 + 13.0 / 60.0
+        ));
+        assert!(close(
+            coordinates_in(table, "Example/Seconds"),
+            65.0 + 12.0 / 60.0 + 34.0 / 3600.0,
+            -(150.0 + 23.0 / 60.0 + 45.0 / 3600.0)
+        ));
+        assert_eq!(coordinates_in(table, "Example/Broken"), None);
+        assert_eq!(coordinates_in(table, "Nowhere/Land"), None);
+        assert_eq!(coordinates_in(table, DEFAULT), None);
+    }
+
+    #[test]
+    fn a_zone_without_the_files_has_no_coordinates() {
+        let dir = scratch("coordinates");
+        assert!(zone_table(&dir).is_empty());
+        std::fs::write(dir.join("zone1970.tab"), "UZ\t+4120+06918\tAsia/Tashkent\n").unwrap();
+        assert!(zone_table(&dir).contains("Asia/Tashkent"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

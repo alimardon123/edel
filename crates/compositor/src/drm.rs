@@ -28,13 +28,16 @@ use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{
-    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::ImportDma;
-use smithay::backend::renderer::element::default_primary_scanout_output_compare;
+use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
+use smithay::backend::renderer::element::{
+    RenderElementPresentationState, RenderingReason, default_primary_scanout_output_compare,
+};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
@@ -89,8 +92,22 @@ struct Screen {
     dirty: bool,
     /// A frame was queued and its vblank has not come yet.
     pending: bool,
+    /// The queued frame was drawn locked: its vblank confirms the lock
+    /// (M7.8), so a suspend that waits for the lock never sleeps before the
+    /// locked frame is on the screen.
+    locked_frame: bool,
     /// Its first frame was shown and announced.
     ready: bool,
+    /// Whether it changes its refresh with the frames (M7.7), as its
+    /// connector says once lit; only `Supported`, which needs no mode
+    /// change, is used.
+    vrr: VrrSupport,
+    /// What apps are told to draw in for it (M7.7), so a fullscreen window
+    /// can go straight to the screen.
+    feedbacks: Option<crate::dmabuf::Feedbacks>,
+    /// What was last said of the fullscreen window on top (M7.7):
+    /// `scanout=direct` or `scanout=unavailable`, and why.
+    direct: Option<String>,
 }
 
 /// Opens the seat, trying for up to 10 s: at boot greetd may start a
@@ -309,6 +326,9 @@ struct Gpu {
     /// areas a frame says changed, onto one picture of its own
     /// (`draws_whole`).
     whole_frames: bool,
+    /// The GPU buffers offered to apps (M5.19), for each screen's scanout
+    /// feedback (M7.7), and the display device's number.
+    offer: Option<(crate::dmabuf::Offer, u64)>,
 }
 
 /// Whether frames on a screen driven by `driver` must be drawn whole. The
@@ -329,7 +349,12 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
-    let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
+    let mut state = Edel::new(
+        display.handle(),
+        event_loop.get_signal(),
+        event_loop.handle(),
+        tokens,
+    )?;
     let handle = event_loop.handle();
     let name = listen(&handle, &mut state, display)?;
     state.socket = name.clone();
@@ -370,6 +395,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         unsafe { GlesRenderer::new(context) }.context("starting the GLES renderer")?;
     state.start_effects(&crate::tiers::renderer_name(&mut renderer));
     state.start_animations(&renderer);
+    state.start_rounded(&mut renderer);
 
     let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
     if libinput.udev_assign_seat(&seat).is_err() {
@@ -405,6 +431,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         announced: false,
         started: Instant::now(),
         whole_frames,
+        offer: None,
     }));
     // Apps' GPU buffers (M5.19): the renderer's formats on the GPU's render
     // node, each buffer checked by importing it once.
@@ -416,7 +443,14 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                 _ => node,
             });
     if let Some(device) = device {
-        let formats = gpu.borrow().renderer.dmabuf_formats().into_iter().collect();
+        let formats: Vec<_> = gpu.borrow().renderer.dmabuf_formats().into_iter().collect();
+        if let Ok(display) = DrmNode::from_path(&path) {
+            let offer = crate::dmabuf::Offer {
+                device: device.dev_id(),
+                formats: formats.clone(),
+            };
+            gpu.borrow_mut().offer = Some((offer, display.dev_id()));
+        }
         let importer = Rc::clone(&gpu);
         state.offer_dmabuf(
             device.dev_id(),
@@ -449,7 +483,9 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             move |event, metadata, state: &mut Edel| match event {
                 DrmEvent::VBlank(crtc) => {
                     let mut gpu = vblank.borrow_mut();
-                    gpu.presented(crtc, metadata.as_ref());
+                    if let Some(name) = gpu.presented(crtc, metadata.as_ref()) {
+                        state.lock_drawn(&name);
+                    }
                     gpu.render(state);
                     // Once the desktop is on screen (M4.7b).
                     if gpu.announced {
@@ -492,12 +528,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                     if let Err(e) = gpu.drm.activate(false) {
                         eprintln!("edel-compositor: {}", messages::screens_lost(e));
                     }
-                    for screen in gpu.screens.values_mut() {
-                        if let Err(e) = screen.compositor.reset_state() {
-                            eprintln!("edel-compositor: resetting a screen failed: {e}");
-                        }
-                        screen.pending = false;
-                    }
+                    gpu.reset_screens();
                     gpu.active = true;
                     state.dirty = true;
                     // Screens may have changed while another terminal had them.
@@ -524,6 +555,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     event_loop.run(None, &mut state, |state| {
         state.space.refresh();
         state.popups.cleanup();
+        state.sync_idle_inhibit();
         let _ = state.display.flush_clients();
         if let Ok(mut gpu) = gpu.try_borrow_mut() {
             if std::mem::take(&mut state.screens_changed) {
@@ -711,6 +743,24 @@ impl Gpu {
             Some(self.gbm.clone()),
         )
         .map_err(|e| anyhow::anyhow!("setting up frames for the screen: {e}"))?;
+        let vrr = compositor
+            .vrr_supported(info.handle())
+            .unwrap_or(VrrSupport::NotSupported);
+        eprintln!(
+            "edel-compositor: {}",
+            match vrr {
+                VrrSupport::Supported => format!("screen {} has variable refresh", output.name()),
+                VrrSupport::RequiresModeset => format!(
+                    "screen {} has variable refresh only with a mode change, so it keeps its own",
+                    output.name()
+                ),
+                VrrSupport::NotSupported =>
+                    format!("screen {} has no variable refresh", output.name()),
+            }
+        );
+        let feedbacks = self.offer.as_ref().and_then(|(offer, display)| {
+            offer.feedbacks(*display, &compositor.surface().plane_info().formats)
+        });
         state.space.map_output(&output, (0, 0));
         self.screens.insert(
             crtc,
@@ -722,10 +772,25 @@ impl Gpu {
                 mode,
                 dirty: true,
                 pending: false,
+                locked_frame: false,
                 ready: false,
+                vrr,
+                feedbacks,
+                direct: None,
             },
         );
         Ok(())
+    }
+
+    /// Forgets what each screen showed, so the next frame sets it up and
+    /// draws it whole, after another terminal had the screens.
+    fn reset_screens(&mut self) {
+        for screen in self.screens.values_mut() {
+            if let Err(e) = screen.compositor.reset_state() {
+                eprintln!("edel-compositor: resetting a screen failed: {e}");
+            }
+            screen.pending = false;
+        }
     }
 
     /// Draws a frame on every screen where something changed, the seat is
@@ -751,10 +816,11 @@ impl Gpu {
                 continue;
             }
             screen.dirty = false;
+            follow_vrr(screen, state);
             let started = Instant::now();
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
-                state.lock_drawn(&screen.output.name());
+                screen.locked_frame = state.locked.is_some();
                 state.last_frame = Some(Instant::now());
                 state.telemetry.frame(started.elapsed(), true);
                 state.frame_drawn(
@@ -808,13 +874,17 @@ impl Gpu {
     }
 
     /// The frame queued on `crtc` is shown: tell the clients when, and
-    /// announce the screen's first one.
-    fn presented(&mut self, crtc: crtc::Handle, metadata: Option<&DrmEventMetadata>) {
+    /// announce the screen's first one. Gives the screen's name when that
+    /// frame was drawn locked, for the lock's confirmation.
+    fn presented(
+        &mut self,
+        crtc: crtc::Handle,
+        metadata: Option<&DrmEventMetadata>,
+    ) -> Option<String> {
         let now = Duration::from(self.clock.now());
-        let Some(screen) = self.screens.get_mut(&crtc) else {
-            return;
-        };
+        let screen = self.screens.get_mut(&crtc)?;
         screen.pending = false;
+        let locked = std::mem::take(&mut screen.locked_frame).then(|| screen.output.name());
         match screen.compositor.frame_submitted() {
             Ok(Some(Some(mut feedback))) => {
                 let (time, sequence) = match metadata {
@@ -829,7 +899,12 @@ impl Gpu {
                     .current_mode()
                     .filter(|mode| mode.refresh > 0)
                     .map_or(Refresh::Unknown, |mode| {
-                        Refresh::Fixed(Duration::from_secs_f64(1000.0 / f64::from(mode.refresh)))
+                        let interval = Duration::from_secs_f64(1000.0 / f64::from(mode.refresh));
+                        if screen.compositor.vrr_enabled() {
+                            Refresh::Variable(interval)
+                        } else {
+                            Refresh::Fixed(interval)
+                        }
                     });
                 feedback.presented::<_, Monotonic>(
                     time,
@@ -849,6 +924,7 @@ impl Gpu {
             self.announced = true;
             announce(&screen.output, first);
         }
+        locked
     }
 }
 
@@ -880,10 +956,86 @@ fn choose_mode(info: &connector::Info, state: &Edel) -> smithay::reexports::drm:
         .unwrap_or(modes[0])
 }
 
+/// Turns variable refresh on for a screen whose fullscreen window runs in
+/// game mode, and off again when that ends (M7.7); a screen that refuses
+/// is not asked again.
+fn follow_vrr(screen: &mut Screen, state: &Edel) {
+    let want = screen.vrr == VrrSupport::Supported && state.wants_vrr(&screen.output);
+    if want == screen.compositor.vrr_enabled() {
+        return;
+    }
+    let name = screen.output.name();
+    match screen.compositor.use_vrr(want) {
+        Ok(()) => eprintln!(
+            "edel-compositor: variable refresh {} on {name}",
+            if want { "on" } else { "off" }
+        ),
+        Err(e) => {
+            eprintln!("edel-compositor: {}", messages::vrr_refused(&name, e));
+            screen.vrr = VrrSupport::NotSupported;
+        }
+    }
+}
+
+/// Tells the windows on a screen the buffers to draw in (M7.7): the
+/// screen's own formats for a window that goes, or could go, straight to
+/// it, else the renderer's; and says, when it changes, whether the
+/// fullscreen window on top goes straight to the screen (`scanout=direct`)
+/// or is drawn by the compositor, and why (`scanout=unavailable`).
+fn send_feedbacks(
+    output: &Output,
+    feedbacks: Option<&crate::dmabuf::Feedbacks>,
+    was: &mut Option<String>,
+    state: &Edel,
+    states: &smithay::backend::renderer::element::RenderElementStates,
+) {
+    if let Some(feedbacks) = feedbacks {
+        for window in state.space.elements() {
+            window.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
+                select_dmabuf_feedback(surface, states, &feedbacks.render, &feedbacks.scanout)
+            });
+        }
+    }
+    let line = state.fullscreen_top(output).map(|window| {
+        let title = crate::decoration::title(window);
+        let shown = window
+            .toplevel()
+            .and_then(|toplevel| states.element_render_state(toplevel.wl_surface()));
+        let why = match shown.map(|shown| shown.presentation_state) {
+            Some(RenderElementPresentationState::ZeroCopy) => None,
+            _ if feedbacks.is_none() => Some("the screen offers apps none of its formats"),
+            Some(RenderElementPresentationState::Rendering {
+                reason: Some(RenderingReason::FormatUnsupported),
+            }) => Some("its buffer is in a format the screen cannot show"),
+            Some(RenderElementPresentationState::Rendering {
+                reason: Some(RenderingReason::ScanoutFailed),
+            }) => Some("the screen refused its buffer"),
+            _ => Some("its buffer is not a GPU buffer the screen can show"),
+        };
+        match why {
+            None => format!("scanout=direct for window {title} on {}", output.name()),
+            Some(why) => format!(
+                "scanout=unavailable for window {title} on {} ({why})",
+                output.name()
+            ),
+        }
+    });
+    if line != *was {
+        if let Some(line) = &line {
+            eprintln!("edel-compositor: {line}");
+        }
+        *was = line;
+    }
+}
+
 /// Draws one screen; returns whether a frame was queued.
 fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut Edel) -> bool {
     let Screen {
-        compositor, output, ..
+        compositor,
+        output,
+        feedbacks,
+        direct,
+        ..
     } = screen;
     let elements = state.elements(renderer, output);
     let frame = match compositor.render_frame(
@@ -912,6 +1064,7 @@ fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut E
             );
         });
     }
+    send_feedbacks(output, feedbacks.as_ref(), direct, state, &frame.states);
     if frame.is_empty {
         return false;
     }

@@ -1,8 +1,10 @@
 //! Window animations on screen (roadmap M5.11b): a window fades in when it
 //! opens, growing a little on Balanced and Full; a closed window's last
 //! picture fades out, shrinking a little; a window the layout moves slides
-//! to its new place; on a workspace switch (M5.2f) the shown windows'
-//! pictures slide off the screen while the other workspace's slide in. `edel_compositor::animation` holds the rules (how
+//! to its new place; a workspace switch (M5.2f) is one spring per screen
+//! (M5.14) that the shown windows' pictures and the other workspace's windows
+//! share, so the pictures slide off the screen as the others slide in, and
+//! three fingers on a touchpad can hold it. `edel_compositor::animation` holds the rules (how
 //! long and how far, by tier and `appearance.animations`); this keeps what is
 //! animating, starts it from the window events and gives `render.rs` each
 //! window's look. While anything animates the backends draw a frame every
@@ -23,8 +25,11 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{TraversalAction, with_surface_tree_downward};
 
-use edel_compositor::animation::{Anim, Curve, Motion, Slide, Style, closing, opening, style};
+use edel_compositor::animation::{
+    Anim, Curve, Motion, Slide, Style, Switch, closing, opening, style,
+};
 use edel_compositor::effects::Tier;
+use edel_compositor::frame::Border;
 
 use crate::decoration::data;
 use crate::state::Edel;
@@ -35,6 +40,12 @@ pub struct Animations {
     pub style: Style,
     opening: HashMap<Window, Anim>,
     slides: HashMap<Window, Slide>,
+    /// Each screen's workspace switch, by screen name, or `None` for one
+    /// switch across every screen when workspaces are not per screen (M5.14).
+    pub switches: HashMap<Option<String>, Switch>,
+    /// Three fingers hold the workspaces, so a switch is made even where
+    /// slides take no time (M5.14).
+    pub swiping: bool,
     pub closing: Vec<Closing>,
     /// The renderer whose textures a closed window's picture is made of.
     context: Option<ContextId<GlesTexture>>,
@@ -55,6 +66,8 @@ pub struct Animations {
 /// A closed window's last picture, fading out, or a window's picture
 /// sliding away with the workspace it is on.
 pub struct Closing {
+    /// It times the fade of a closed window; a leaving picture uses its
+    /// spring instead.
     pub anim: Anim,
     /// How many windows were above it: it fades out at that depth.
     pub above: usize,
@@ -70,8 +83,45 @@ pub struct Closing {
     pub borders: Vec<(SolidColorBuffer, Rectangle<i32, Logical>)>,
     /// The bottom strip of a gradient border, its last pixels and place.
     pub strip: Option<Bar>,
-    /// How far it slides when its workspace is left; none when it closed.
-    pub leave: Option<Point<i32, Logical>>,
+    /// Its picture of a window whose workspace is being left, moving with
+    /// that screen's switch; none when it closed.
+    pub leave: Option<Leaving>,
+    /// The window's corner radius in logical pixels when it was snapshot;
+    /// 0 is square (M5.14).
+    pub radius: u32,
+    /// Where its surfaces were clipped, the window's place, when it was
+    /// drawn rounded; none when square (M5.14).
+    pub clip_frame: Option<Rectangle<i32, Logical>>,
+    /// The border's colours, when its frame has a border drawn (M5.14).
+    pub border: Option<Border>,
+    /// The border's width in logical pixels.
+    pub edge: i32,
+}
+
+/// A window's picture of a workspace being left (M5.14): it is drawn at
+/// `base` from its workspace's place, and moves with the switch of its
+/// screen, which is the same spring as the incoming windows', so both move
+/// as one. The picture goes when its switch ends or the window comes back.
+pub struct Leaving {
+    /// Where the picture is drawn from the incoming workspace's place: a
+    /// screen's width away, plus where it was sliding.
+    pub base: Point<f64, Logical>,
+    /// The switch it moves with: its screen's, or `None` for all screens.
+    pub screen: Option<String>,
+    /// The window it is a picture of, so the picture goes when the window
+    /// itself comes back.
+    pub window: Window,
+}
+
+impl Closing {
+    /// Whether it has ended by `now`. A leaving picture is pruned by its
+    /// switch's end instead (`Animations::prune`), so it never ends here.
+    pub fn done(&self, now: Duration) -> bool {
+        match &self.leave {
+            Some(_) => false,
+            None => self.anim.done(now),
+        }
+    }
 }
 
 /// A closed window's title bar: its last pixels, their size and the bar's
@@ -114,6 +164,8 @@ impl Animations {
             style,
             opening: HashMap::new(),
             slides: HashMap::new(),
+            switches: HashMap::new(),
+            swiping: false,
             closing: Vec::new(),
             context: None,
             popups: HashMap::new(),
@@ -131,19 +183,34 @@ impl Animations {
     /// Forgets what ended by `now`; called before each frame is drawn.
     pub fn prune(&mut self, now: Duration) {
         self.opening.retain(|_, anim| !anim.done(now));
-        self.slides.retain(|_, slide| !slide.anim.done(now));
-        self.closing.retain(|c| !c.anim.done(now));
+        self.slides.retain(|_, slide| !slide.done(now));
+        self.switches.retain(|_, switch| !switch.done(now));
+        // A leaving picture lives as long as its switch does.
+        let switches = &self.switches;
+        self.closing.retain(|c| match &c.leave {
+            Some(leave) => switches.contains_key(&leave.screen),
+            None => !c.done(now),
+        });
         self.drawn = now;
     }
 
     /// Whether anything still animates, so another frame is wanted. A
     /// popup counts until a frame was drawn after its end, so its last
     /// frame on screen is the whole one, not one a step short of it (a
-    /// greeter left a shade transparent until the next damage).
+    /// greeter left a shade transparent until the next damage). A held
+    /// switch counts for nothing: a still hand on a touchpad draws no
+    /// frames (M5.14).
     pub fn running(&self) -> bool {
+        let held = |screen: &Option<String>| self.switches.get(screen).is_some_and(Switch::held);
+        let closing = self.closing.iter().any(|c| match &c.leave {
+            Some(leave) => !held(&leave.screen),
+            None => true,
+        });
+        let switching = !self.switches.values().all(Switch::held);
         !(self.opening.is_empty()
             && self.slides.is_empty()
-            && self.closing.is_empty()
+            && !closing
+            && !switching
             && popups_drawn_whole(self.popups.values(), self.drawn))
     }
 
@@ -186,20 +253,56 @@ impl Animations {
         self.slides.remove(window);
     }
 
-    /// How `window` is drawn at `now`.
-    pub fn look(&self, window: &Window, now: Duration) -> Look {
+    /// How `window` is drawn at `now`, on the workspace switch of `screen`
+    /// (M5.14) as well as its own slide.
+    pub fn look(&self, window: &Window, now: Duration, screen: &Option<String>) -> Look {
         let (alpha, zoom) = self.opening.get(window).map_or((1.0, 1.0), |anim| {
             opening(&self.style, anim.eased(now, self.style.curve))
         });
-        let offset = self
+        let slide = self
             .slides
             .get(window)
             .map_or_else(Point::default, |slide| slide.offset_at(now));
+        let switch = self
+            .switches
+            .get(screen)
+            .map_or_else(Point::default, |switch| switch.offset_at(now));
         Look {
             alpha,
             zoom,
-            offset,
+            offset: slide + switch,
         }
+    }
+
+    /// A switch of `by` begins on `screen` at `now` (M5.14): the switch there
+    /// before, if any, is carried on, and the pictures already leaving there
+    /// move `by` further along, so nothing on the screen jumps. False when
+    /// the switch takes no time (and there is no swipe): then the switch on
+    /// that screen and its pictures are dropped, and the windows jump.
+    pub fn begin_switch(&mut self, screen: &Option<String>, by: Point<f64, Logical>) -> bool {
+        let now = self.now();
+        let length = self.style.slide;
+        if length.is_zero() && !self.swiping {
+            self.switches.remove(screen);
+            self.closing
+                .retain(|c| c.leave.as_ref().is_none_or(|l| &l.screen != screen));
+            return false;
+        }
+        for closed in &mut self.closing {
+            if let Some(leave) = closed.leave.as_mut().filter(|l| &l.screen == screen) {
+                leave.base += by;
+            }
+        }
+        let next = Switch::start(self.switches.get(screen), by, now, length, self.style.curve);
+        self.switches.insert(screen.clone(), next);
+        true
+    }
+
+    /// `window` is shown again: its leaving pictures go, as a window shown
+    /// again is drawn itself, not its picture.
+    pub fn came_back(&mut self, window: &Window) {
+        self.closing
+            .retain(|c| c.leave.as_ref().is_none_or(|l| &l.window != window));
     }
 
     /// How an overlay surface that popped up is drawn at `now`: its alpha
@@ -212,14 +315,19 @@ impl Animations {
 
     /// How a closed or leaving window is drawn at `now`.
     pub fn closing_look(&self, closed: &Closing, now: Duration) -> Look {
-        let progress = closed.anim.eased(now, self.style.curve);
-        if let Some(by) = closed.leave {
+        if let Some(leaving) = &closed.leave {
+            let switch = self
+                .switches
+                .get(&leaving.screen)
+                .map_or_else(Point::default, |switch| switch.offset_at(now));
+            let at = leaving.base + switch;
             return Look {
                 alpha: 1.0,
                 zoom: 1.0,
-                offset: (f64::from(by.x) * progress, f64::from(by.y) * progress).into(),
+                offset: at,
             };
         }
+        let progress = closed.anim.eased(now, self.style.curve);
         let (alpha, zoom) = closing(&self.style, progress);
         Look {
             alpha,
@@ -252,6 +360,12 @@ impl Edel {
         let new = style(tier, motion, speed, curve);
         // Said once the renderer, and so the tier, is known, then on change.
         let known = self.animations.context.is_some();
+        // A new tier may square or round the corners (M5.14): the windows
+        // that did not move are drawn whole again.
+        if known && self.animations.logged.is_some_and(|(was, ..)| was != tier) {
+            self.repaint = true;
+            self.dirty = true;
+        }
         if known && self.animations.logged != Some((tier, motion, speed, curve)) {
             self.animations.logged = Some((tier, motion, speed, curve));
             eprintln!(
@@ -350,29 +464,39 @@ impl Edel {
         self.snapshot(window, None);
     }
 
-    /// `window`'s workspace is being left: its picture slides `by` off
-    /// the screen, at the tier's slide length. The window keeps its
-    /// picture, for when its workspace is shown again.
-    pub fn snapshot_leaving(&mut self, window: &Window, by: Point<i32, Logical>) {
-        self.snapshot(window, Some(by));
+    /// `window`'s workspace is being left on `screen`'s switch (M5.14), which
+    /// began `by` away: its picture is drawn from where it is, moving with
+    /// that switch. The window keeps its picture, for when its workspace is
+    /// shown again. The caller snapshots only when `begin_switch` said the
+    /// switch takes time, so slides taking none does not skip it here.
+    pub fn snapshot_leaving(
+        &mut self,
+        window: &Window,
+        by: Point<f64, Logical>,
+        screen: Option<String>,
+    ) {
+        self.snapshot(window, Some((by, screen)));
     }
 
-    fn snapshot(&mut self, window: &Window, leave: Option<Point<i32, Logical>>) {
+    /// Keeps `window`'s picture for a close, or for a workspace being left
+    /// (`leave`: where its switch began, and the switch's screen). A closed
+    /// window's picture is skipped when its close takes no time; a leaving
+    /// one is not (see `snapshot_leaving`).
+    fn snapshot(&mut self, window: &Window, leave: Option<(Point<f64, Logical>, Option<String>)>) {
         let style = self.animations.style;
         let Some(place) = self.space.element_geometry(window) else {
             return;
         };
-        let length = if leave.is_some() {
-            style.slide
-        } else {
-            style.close
-        };
-        if length.is_zero() {
+        if leave.is_none() && style.close.is_zero() {
             return;
         }
         let origin = place.loc - window.geometry().loc;
         let insets = self.insets(window);
         let frame = insets.frame(place);
+        let radius = self.corner_radius(window);
+        let focused = self.focused_window().as_ref() == Some(window);
+        let border = (insets.top > 0 && (insets.side > 0 || insets.bottom > 0))
+            .then(|| Border::of(&self.tokens, focused));
         let mut frame_data = data(window).borrow_mut();
         let picture = if leave.is_some() {
             frame_data.picture.clone()
@@ -424,8 +548,28 @@ impl Edel {
             .rev()
             .position(|w| w == window)
             .unwrap_or(0);
+        let now = self.animations.now();
+        // A picture still sliding is drawn where the slide has it, so it does
+        // not jump; the slide is still here, as `hide` comes after.
+        let leave = leave.map(|(by, screen)| {
+            let slide = self
+                .animations
+                .slides
+                .get(window)
+                .map_or_else(Point::default, |slide| slide.offset_at(now));
+            Leaving {
+                base: by + slide,
+                screen,
+                window: window.clone(),
+            }
+        });
+        let length = if leave.is_some() {
+            Duration::ZERO
+        } else {
+            style.close
+        };
         self.animations.closing.push(Closing {
-            anim: Anim::new(self.animations.now(), length),
+            anim: Anim::new(now, length),
             above,
             frame,
             parts,
@@ -433,6 +577,10 @@ impl Edel {
             borders,
             strip,
             leave,
+            radius,
+            clip_frame: (radius > 0).then_some(place),
+            border,
+            edge: insets.side,
         });
         self.dirty = true;
     }

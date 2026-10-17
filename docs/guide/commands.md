@@ -14,6 +14,7 @@
 | `edel restart` | Restart this machine now: the system's own reboot, through doas when you are not root |
 | `edel shutdown` | Shut this machine down now: the system's own poweroff, through doas when you are not root |
 | `edel suspend` | Suspend this machine to memory now; a key or the power button wakes it |
+| `edel power` | power: how hard the machine works, its power profile; shell-ui sets it on battery and on the charger, as power.on_battery says |
 | `edel install` | Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings |
 | `edel report` | Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs |
 | `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
@@ -55,6 +56,18 @@ Shut this machine down now: the system's own poweroff, through doas when you are
 ## `edel suspend`
 
 Suspend this machine to memory now; a key or the power button wakes it.
+
+## `edel power`
+
+power: how hard the machine works, its power profile; shell-ui sets it on battery and on the charger, as power.on_battery says.
+
+### `edel power profile [NAME]`
+
+Show the power profile the kernel uses and the ones it offers, or set it: power-saver, balanced or performance.
+
+| | What it does |
+|---|---|
+| `NAME` | The profile to set, as power.on_battery names them |
 
 ## `edel install [DISK] [OPTIONS]`
 

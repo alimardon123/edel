@@ -184,8 +184,6 @@ pub const KEYS_DIR: &str = share!("/keys");
 pub const PACKAGES_FILE: &str = share!("/packages");
 /// The design tokens a slot may carry in place of the built-in ones.
 pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
-/// GTK's colours from the tokens (M5.5b).
-pub const GTK_CSS: &str = share!("/gtk.css");
 /// foot's font and colours from the tokens (M6.13), which every person's
 /// foot config includes.
 pub const FOOT_INI: &str = share!("/foot.ini");
@@ -232,6 +230,10 @@ pub const PASSWORD_CHECKERS: &[&str] = &["/sbin/unix_chkpwd", "/usr/sbin/unix_ch
 pub const AS_ROOT: &str = "doas";
 /// The variable [`AS_ROOT`] sets to the login name of the person who ran it.
 pub const AS_ROOT_USER: &str = "DOAS_USER";
+/// Where the `edel` command is installed on a machine, which the rules of
+/// the login feature (`etc/doas.d/`) name when a person's `edel` runs it as
+/// root (M7.8).
+pub const EDEL_BIN: &str = "/usr/bin/edel";
 
 /// The boot loader the slot carries, which rides along with updates (M1.8).
 pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";
@@ -258,6 +260,12 @@ pub const ZONEINFO_DIR: &str = "/usr/share/zoneinfo";
 pub const LOCALTIME: &str = "/etc/localtime";
 /// The time zone's name, beside [`LOCALTIME`], for programs that read the name.
 pub const TIMEZONE_FILE: &str = "/etc/timezone";
+/// The place of this computer, the static source GeoClue reads when it is
+/// asked (M6.14c): `edel settings apply` writes it from `location.place`.
+pub const GEOLOCATION: &str = "/etc/geolocation";
+/// The drop-in that turns GeoClue's lookup of nearby Wi-Fi on, written from
+/// `location.online` (M6.14c); GeoClue reads it when it starts.
+pub const GEOCLUE_ONLINE: &str = "/etc/geoclue/conf.d/60-edel-online.conf";
 /// The system's default apps, written by `edel settings apply` from
 /// `[default_apps]` (M6.10): freedesktop's `mimeapps.list`, read by every
 /// desktop app and by `xdg-open`. Only a file that starts with
@@ -346,15 +354,29 @@ pub fn etc_settings() -> PathBuf {
 /// A person's own directory for Edel OS: `$XDG_CONFIG_HOME/edel`, else
 /// `~/.config/edel`; none without either variable.
 pub fn person_dir() -> Option<PathBuf> {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
+    config_home().map(|config| config.join("edel"))
+}
+
+/// A person's configuration folder: `$XDG_CONFIG_HOME`, else `~/.config`;
+/// none without either variable.
+fn config_home() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
             std::env::var_os("HOME")
                 .filter(|v| !v.is_empty())
                 .map(|home| PathBuf::from(home).join(".config"))
-        })?;
-    Some(config.join("edel"))
+        })
+}
+
+/// A person's GTK 4 stylesheet, `$XDG_CONFIG_HOME/gtk-4.0/gtk.css`, else
+/// `~/.config/gtk-4.0/gtk.css`, which every GTK 4 and libadwaita app reads
+/// at its start and shell-ui writes from the tokens (M6.18); a Flatpak app
+/// reads it through the shell feature's read-only override of that folder.
+/// None without either variable.
+pub fn person_gtk_css() -> Option<PathBuf> {
+    config_home().map(|config| config.join("gtk-4.0").join("gtk.css"))
 }
 
 /// A person's state directory for Edel OS: `$XDG_STATE_HOME/edel`, else

@@ -146,6 +146,12 @@ enum Commands {
     Shutdown,
     /// Suspend this machine to memory now; a key or the power button wakes it
     Suspend,
+    /// power: how hard the machine works, its power profile; shell-ui sets it
+    /// on battery and on the charger, as power.on_battery says
+    Power {
+        #[command(subcommand)]
+        command: PowerCommands,
+    },
     /// Steps the boot services run
     #[command(hide = true)]
     Boot {
@@ -301,6 +307,17 @@ enum ThemeCommands {
         /// The .edeltheme file to read; a file that does not check is refused
         #[arg(value_name = "FILE")]
         file: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum PowerCommands {
+    /// Show the power profile the kernel uses and the ones it offers, or set
+    /// it: power-saver, balanced or performance
+    Profile {
+        /// The profile to set, as power.on_battery names them
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
     },
 }
 
@@ -606,6 +623,7 @@ impl Commands {
             Commands::Restart => "restart",
             Commands::Shutdown => "shutdown",
             Commands::Suspend => "suspend",
+            Commands::Power { .. } => "power",
             Commands::Install { .. } => "install",
             Commands::Report { .. } => "report",
             Commands::Settings { .. } => "settings",
@@ -843,6 +861,9 @@ fn run(command: Commands) -> Result<()> {
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
+        Commands::Power { command } => match command {
+            PowerCommands::Profile { name } => system_power::profile(name.as_deref()),
+        },
         Commands::Install { list: true, .. } => installer::list(),
         Commands::Install {
             find_settings: true,

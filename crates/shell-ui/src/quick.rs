@@ -55,6 +55,9 @@ pub const DARK_PAGE: &str = "appearance";
 pub const SOUND_PAGE: &str = "sound";
 /// The Displays page of Settings, which a right click on the brightness opens (M5.9c).
 pub const DISPLAYS_PAGE: &str = "displays";
+/// The Power page of Settings, where the game mode row is; the game mode
+/// pop-up's button opens it (M7.7).
+pub const POWER_PAGE: &str = "power";
 /// The room between the player's card (`player.rs`, M5.9d) and quick
 /// settings' card, logical pixels: above the card on a bottom panel, below
 /// it on a top one.
@@ -70,15 +73,22 @@ pub enum Tile {
     /// A plain toggle of `notifications.do_not_disturb` (M5.9b), with no
     /// page behind an arrow: its row is in the notification centre.
     DoNotDisturb,
+    /// A plain toggle of `location.enabled` (M6.14c), whose right click opens
+    /// Settings' Location page; shown only where the location feature is.
+    Location,
     DarkStyle,
 }
 
+/// The Settings page a Location tile's right click opens (M6.14c).
+pub const LOCATION_PAGE: &str = "location";
+
 /// Every tile, in the order `edel::presets::TILES` lists them.
-pub const ALL: [Tile; 5] = [
+pub const ALL: [Tile; 6] = [
     Tile::Wifi,
     Tile::Bluetooth,
     Tile::Airplane,
     Tile::DoNotDisturb,
+    Tile::Location,
     Tile::DarkStyle,
 ];
 
@@ -89,6 +99,7 @@ impl Tile {
             Tile::Bluetooth => "bluetooth",
             Tile::Airplane => "airplane",
             Tile::DoNotDisturb => "do_not_disturb",
+            Tile::Location => "location",
             Tile::DarkStyle => "dark_style",
         }
     }
@@ -103,6 +114,7 @@ impl Tile {
             Tile::Bluetooth => tr("Bluetooth"),
             Tile::Airplane => tr("Airplane mode"),
             Tile::DoNotDisturb => tr("Do not disturb"),
+            Tile::Location => tr("Location"),
             Tile::DarkStyle => tr("Dark style"),
         }
     }
@@ -114,6 +126,7 @@ impl Tile {
             Tile::Bluetooth => tr("Bluetooth"),
             Tile::Airplane => tr("Airplane"),
             Tile::DoNotDisturb => tr("Do not disturb"),
+            Tile::Location => tr("Location"),
             Tile::DarkStyle => tr("Dark"),
         }
     }
@@ -131,6 +144,7 @@ impl Tile {
             Tile::Bluetooth => "page-bluetooth",
             Tile::Airplane => "airplane",
             Tile::DoNotDisturb => "do-not-disturb",
+            Tile::Location => "location",
             Tile::DarkStyle => "moon",
         }
     }
@@ -142,6 +156,7 @@ impl Tile {
             Tile::Wifi => Some("network"),
             Tile::Bluetooth => Some("bluetooth"),
             Tile::Airplane | Tile::DoNotDisturb => None,
+            Tile::Location => Some(LOCATION_PAGE),
             Tile::DarkStyle => Some(DARK_PAGE),
         }
     }
@@ -358,6 +373,13 @@ pub fn tiles(
                 state: switch(switches.dnd),
                 on: switches.dnd,
             },
+            // Only where the location feature is installed (M6.14c).
+            Tile::Location if !switches.location_there => continue,
+            Tile::Location => TileView {
+                tile,
+                state: switch(switches.location),
+                on: switches.location,
+            },
             Tile::DarkStyle => TileView {
                 tile,
                 state: switch(switches.dark),
@@ -387,12 +409,16 @@ pub fn volume(status: &Status, percent: Option<u32>, muted: Option<bool>) -> Opt
     })
 }
 
-/// The two tiles that are lines of the person's settings file: whether
-/// the colour scheme is dark and whether banners are kept away.
+/// The tiles that are lines of the person's settings file: whether the
+/// colour scheme is dark, whether banners are kept away and whether the
+/// place is given to apps (M6.14c), and whether the location feature is
+/// installed, without which the Location tile is not shown.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Switches {
     pub dark: bool,
     pub dnd: bool,
+    pub location: bool,
+    pub location_there: bool,
 }
 
 /// What the open card keeps besides what the machine says: its width, the
@@ -405,6 +431,10 @@ pub struct State {
     pub compact: bool,
     pub dark: bool,
     pub dnd: bool,
+    /// Whether apps may have the place, and whether the location feature is
+    /// installed (M6.14c).
+    pub location: bool,
+    pub location_there: bool,
     pub list: bool,
     pub focus: Option<Focus>,
     pub hover: Option<Focus>,
@@ -428,6 +458,8 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
             Switches {
                 dark: state.dark,
                 dnd: state.dnd,
+                location: state.location,
+                location_there: state.location_there,
             },
             &state.pending,
         ),
@@ -1379,6 +1411,28 @@ pub(crate) struct Bar<'a> {
     pub(crate) focused: bool,
 }
 
+/// The words on a bar: their size, logical pixels before the scale (M5.9c).
+pub(crate) const BAR_TEXT: f32 = 11.5;
+
+/// A bar's empty track: the veil the fill lies over (M5.9c, and the game
+/// mode pill of the pop-up, M7.7).
+pub(crate) fn bar_empty(pixmap: &mut Pixmap, track: Rect, tokens: &Tokens, s: f32) {
+    let (tx, ty, tw, th) = track.device(s);
+    fill(pixmap, tx, ty, tw, th, th / 2.0, veil(tokens, 0.07));
+}
+
+/// A bar's icon: 16 px across, 13 px from the track's left end (M5.9c).
+pub(crate) fn bar_icon(track: Rect) -> Rect {
+    Rect::new(track.x + 13.0, track.y, 16.0, track.h)
+}
+
+/// The top, in device pixels, of a line of `size` device pixels set in the
+/// middle of the track's height (M5.9c).
+pub(crate) fn bar_text_top(track: Rect, s: f32, size: f32) -> f32 {
+    let (_, ty, _, th) = track.device(s);
+    ty + (th - size * 1.25) / 2.0
+}
+
 /// A slider's bar, drawn for the volume and the brightness alike (M5.9c):
 /// the track, the fill to the level at least a bar wide, the icon 13 px
 /// from the track's left end, the number 14 px in from its right end and
@@ -1391,9 +1445,9 @@ pub(crate) fn slider(
     tokens: &Tokens,
     s: f32,
 ) {
-    let (tx, ty, tw, th) = track.device(s);
+    let (tx, ty, _, th) = track.device(s);
     let round = th / 2.0;
-    fill(pixmap, tx, ty, tw, th, round, veil(tokens, 0.07));
+    bar_empty(pixmap, track, tokens, s);
     let share = bar.percent.min(100) as f32 / 100.0;
     let filled = if bar.percent > 0 {
         (share * track.w).max(track.h).min(track.w)
@@ -1410,7 +1464,7 @@ pub(crate) fn slider(
         fill(pixmap, tx, ty, filled * s, th, round, c);
     }
     // The icon, 16 px across; its ink is the card's text where the fill covers it.
-    let icon = Rect::new(track.x + 13.0, track.y, 16.0, track.h);
+    let icon = bar_icon(track);
     let covered = filled >= 29.0;
     let ink = if !covered {
         dim(tokens)
@@ -1421,10 +1475,10 @@ pub(crate) fn slider(
     };
     icon_in(pixmap, bar.icon, 16.0, icon, s, ink);
     if let Some(text) = text {
-        let size = 11.5 * s;
+        let size = BAR_TEXT * s;
         let mut number = text.line_in(&bar.percent.to_string(), size, Face::SEMIBOLD.tabular());
         let right = (track.right() - 14.0) * s;
-        let top = ty + (th - size * 1.25) / 2.0;
+        let top = bar_text_top(track, s, size);
         let left = right - number.width;
         text.draw(pixmap, &mut number, left, top, dim(tokens));
     }
@@ -1654,6 +1708,7 @@ mod tests {
             }),
             bluetooth: Some(false),
             brightness: None,
+            on_battery: Some(true),
         }
     }
 
@@ -1724,6 +1779,10 @@ mod tests {
             main.contains(&format!("\"{SOUND_PAGE}\" => Some(Page {{")),
             "the Settings app has no page called {SOUND_PAGE}"
         );
+        assert!(
+            main.contains(&format!("\"{POWER_PAGE}\" => Some(Page {{")),
+            "the Settings app has no page called {POWER_PAGE}"
+        );
     }
 
     #[test]
@@ -1750,6 +1809,7 @@ mod tests {
             Switches {
                 dark: true,
                 dnd: true,
+                ..Switches::default()
             },
             &[],
         );
@@ -1770,6 +1830,25 @@ mod tests {
             .map(|t| t.tile)
             .collect();
         assert_eq!(shown, [Tile::DoNotDisturb, Tile::DarkStyle]);
+        // With the location feature installed, its tile joins the others,
+        // on or off as the person's switch says (M6.14c).
+        let there = Switches {
+            location: true,
+            location_there: true,
+            ..Switches::default()
+        };
+        let shown: Vec<_> = tiles(&list, &vm, there, &[])
+            .iter()
+            .map(|t| (t.tile, t.on))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (Tile::DoNotDisturb, false),
+                (Tile::Location, true),
+                (Tile::DarkStyle, false)
+            ]
+        );
         // Bluetooth alone is enough for flight mode.
         let bluetooth = Status {
             bluetooth: Some(true),
@@ -1934,6 +2013,31 @@ mod tests {
             l.tiles[2].whole.x, 18.0,
             "a last one alone keeps the left column"
         );
+    }
+
+    /// The Location tile lies after Do not disturb and moves Dark style along
+    /// (M6.14c); the test machine without the feature shows five tiles.
+    #[test]
+    fn location_lies_after_do_not_disturb_when_its_feature_is_there() {
+        let list = names(edel::presets::DEFAULT_TILES);
+        let state = State {
+            width: WIDTH,
+            location: true,
+            location_there: true,
+            ..State::default()
+        };
+        let view = view(&state, &laptop(), &list, false);
+        assert_eq!(view.tiles.len(), 6);
+        let l = layout(&view);
+        let line = places(&view, &l);
+        assert!(
+            line.contains(
+                ", do_not_disturb 102+86+64x64, location 186+86+64x64, dark_style 270+86+64x64, "
+            ),
+            "{line}"
+        );
+        let plain = view_of(&laptop(), false, 1280);
+        assert_eq!(plain.tiles.len(), 5, "no feature, no tile");
     }
 
     #[test]

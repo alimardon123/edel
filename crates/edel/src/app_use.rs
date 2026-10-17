@@ -1,5 +1,6 @@
-//! The record of use (M6.14b): which app used the camera, the microphone or
-//! the screen, when and for how long, kept on this machine only, as there is
+//! The record of use (M6.14b, M6.14c): which app used the camera, the
+//! microphone, the screen or the place of this computer, when and for how
+//! long, kept on this machine only, as there is
 //! no telemetry. shell-ui writes a line when a use ends, and Settings' app
 //! pages read them; the file is `places::APP_USE` in the person's state
 //! directory, plain text, newest last, one use a line:
@@ -10,7 +11,8 @@
 //! ```
 //!
 //! START is when it began, in seconds since 1970 (UTC), SECONDS how long it
-//! lasted, KIND `camera`, `microphone` or `screen`, and APP the Flatpak app
+//! lasted, KIND `camera`, `microphone`, `screen` or `location`, and APP the
+//! Flatpak app
 //! id, or for an app outside Flatpak its program's name. A line a later
 //! release writes and this one does not understand is skipped. The record
 //! keeps the last `KEEP_DAYS` days and at most `KEEP_LINES` lines
@@ -34,11 +36,13 @@ pub enum Kind {
     Camera,
     Microphone,
     Screen,
+    /// An app that asked where this computer is (M6.14c).
+    Location,
 }
 
 impl Kind {
     /// Every kind, in the order the panel's sign and Settings show them.
-    pub const ALL: [Kind; 3] = [Kind::Camera, Kind::Microphone, Kind::Screen];
+    pub const ALL: [Kind; 4] = [Kind::Camera, Kind::Microphone, Kind::Screen, Kind::Location];
 
     /// Its name in the record.
     pub fn name(self) -> &'static str {
@@ -46,6 +50,7 @@ impl Kind {
             Kind::Camera => "camera",
             Kind::Microphone => "microphone",
             Kind::Screen => "screen",
+            Kind::Location => "location",
         }
     }
 
@@ -70,6 +75,7 @@ impl Kind {
             Kind::Camera => "apps.camera",
             Kind::Microphone => "apps.microphone",
             Kind::Screen => "apps.screenshots",
+            Kind::Location => "apps.location",
         };
         app_permissions::find(key).map_or("app-generic", |p| p.icon)
     }
@@ -81,6 +87,7 @@ impl Kind {
             Kind::Camera => app_permissions::find("apps.camera"),
             Kind::Microphone => app_permissions::find("apps.microphone"),
             Kind::Screen => None,
+            Kind::Location => app_permissions::find("apps.location"),
         }
     }
 }
@@ -260,6 +267,8 @@ mod tests {
         }
         assert_eq!(Kind::Camera.title(), "Camera");
         assert_eq!(Kind::Screen.permission(), None);
+        assert_eq!(Kind::named("location"), Some(Kind::Location));
+        assert_eq!(Kind::Location.icon(), "location");
     }
 
     #[test]
