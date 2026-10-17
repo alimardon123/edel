@@ -663,6 +663,16 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "appearance.icon_theme",
+        help: n_(
+            "The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's.",
+        ),
+        default: r#""Edel""#,
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
         key: "appearance.icon_size",
         help: n_(
             "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150.",
@@ -701,9 +711,9 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
-        key: "lock_screen.parts",
+        key: "lock_screen.widgets",
         help: n_(
-            "The parts of the lock and login screens and where each one stands, as a list of tables.",
+            "The widgets on the lock and login screens and where each one stands, as a list of tables.",
         ),
         default: "the look's",
         from: DecidedBy::Release,
@@ -721,9 +731,9 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
-        key: "lock_screen.background",
+        key: "lock_screen.wallpaper",
         help: n_(
-            "What lies behind the lock screen's parts: the backdrop, the wallpaper blurred or sharp, a colour or a picture.",
+            "What lies behind the lock screen's widgets: the backdrop, the desktop wallpaper blurred or sharp, a colour or a picture.",
         ),
         default: "the look's",
         from: DecidedBy::Release,
@@ -733,9 +743,9 @@ pub const HELP: &[Help] = &[
     Help {
         key: "lock_screen.dim",
         help: n_(
-            "How much the lock screen's background is darkened, in percent from 0 to 80, so the words read.",
+            "How much the lock screen's wallpaper is darkened, in percent from 0 to 80, so the words read.",
         ),
-        default: "30, or 40 for a sharp background or picture",
+        default: "30, or 40 for a sharp wallpaper or picture",
         from: DecidedBy::Release,
         belongs: Belongs::Person,
         retired: None,
@@ -752,7 +762,9 @@ pub const HELP: &[Help] = &[
     },
     Help {
         key: "lock_screen.looks",
-        help: n_("Your own lock screen looks, each with its parts and background, chosen by name."),
+        help: n_(
+            "Your own lock screen looks, each with its widgets and wallpaper, chosen by name.",
+        ),
         default: "none",
         from: DecidedBy::Release,
         belongs: Belongs::Person,

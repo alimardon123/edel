@@ -1,0 +1,14 @@
+# CI's icon theme (M8.21 part g): foot's icon a solid magenta square,
+# unlike hicolor's, so desktop-test sees the panel draw the theme chosen.
+[Icon Theme]
+Name=EdelTest
+Comment=CI's test icon theme
+Inherits=hicolor
+Directories=scalable/apps
+
+[scalable/apps]
+Size=48
+MinSize=8
+MaxSize=512
+Type=Scalable
+Context=Applications

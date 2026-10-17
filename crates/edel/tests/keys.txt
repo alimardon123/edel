@@ -77,9 +77,9 @@ workspaces.overview_strip
 appearance.switcher_look
 appearance.switcher_shown
 appearance.switcher_ends
-lock_screen.parts
+lock_screen.widgets
 lock_screen.look
-lock_screen.background
+lock_screen.wallpaper
 lock_screen.notifications
 lock_screen.looks
 appearance.colours.*
@@ -118,3 +118,4 @@ install.disk
 install.erase
 install.then
 clipboard.history
+appearance.icon_theme

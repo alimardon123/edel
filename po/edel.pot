@@ -689,6 +689,9 @@ msgstr ""
 msgid "The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow."
 msgstr ""
 
+msgid "The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's."
+msgstr ""
+
 msgid "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150."
 msgstr ""
 
@@ -701,22 +704,22 @@ msgstr ""
 msgid "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little)."
 msgstr ""
 
-msgid "The parts of the lock and login screens and where each one stands, as a list of tables."
+msgid "The widgets on the lock and login screens and where each one stands, as a list of tables."
 msgstr ""
 
 msgid "The look of the lock and login screens: classic, magazine, minimal or one of your own."
 msgstr ""
 
-msgid "What lies behind the lock screen's parts: the backdrop, the wallpaper blurred or sharp, a colour or a picture."
+msgid "What lies behind the lock screen's widgets: the backdrop, the desktop wallpaper blurred or sharp, a colour or a picture."
 msgstr ""
 
-msgid "How much the lock screen's background is darkened, in percent from 0 to 80, so the words read."
+msgid "How much the lock screen's wallpaper is darkened, in percent from 0 to 80, so the words read."
 msgstr ""
 
 msgid "Whether the lock screen shows how many notifications are unread: count, or none to hide it."
 msgstr ""
 
-msgid "Your own lock screen looks, each with its parts and background, chosen by name."
+msgid "Your own lock screen looks, each with its widgets and wallpaper, chosen by name."
 msgstr ""
 
 msgid "One of your own themes: its title, its pictures and the appearance values it sets."
@@ -962,7 +965,7 @@ msgstr ""
 msgid "Chinese (Traditional)"
 msgstr ""
 
-msgid "the lock screen needs the person and their password field; add { part = \"person\", at = \"centre\" }"
+msgid "the lock screen needs the person and their password field; add { widget = \"person\", at = \"centre\" }"
 msgstr ""
 
 msgid "the person stands once; take out the second"
@@ -1058,7 +1061,7 @@ msgstr ""
 msgid "{name} is a built-in look; name yours another way, such as \"home\""
 msgstr ""
 
-msgid "the look {name} has the background {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path"
+msgid "the look {name} has the wallpaper {background}; use backdrop, blurred, sharp, a colour such as \"#1f2b48\" or a picture's full path"
 msgstr ""
 
 msgid "the look {name} has the dim {dim}; use a whole number from 0 to {most}"
@@ -1703,7 +1706,7 @@ msgstr ""
 msgid "Lock screen"
 msgstr ""
 
-msgid "its look, parts and background"
+msgid "its look, widgets and wallpaper"
 msgstr ""
 
 msgid "Network"
@@ -1800,6 +1803,9 @@ msgid "developer mode and profiles"
 msgstr ""
 
 msgid "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
+msgstr ""
+
+msgid "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
 msgstr ""
 
 msgid "the file is not valid TOML"
@@ -1937,10 +1943,10 @@ msgstr ""
 msgid "expected panels as a preset writes them: {why}"
 msgstr ""
 
-msgid "expected parts as the lock screen writes them: {why}"
+msgid "expected widgets as the lock screen writes them: {why}"
 msgstr ""
 
-msgid "a list of parts, such as [{ part = \"person\", at = \"centre\" }]"
+msgid "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]"
 msgstr ""
 
 msgid "{value} is not a look's name; use letters, digits and hyphens, such as \"minimal\""
@@ -1949,16 +1955,16 @@ msgstr ""
 msgid "a look's name in quotes, such as \"minimal\""
 msgstr ""
 
-msgid "{value} is not a background; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)"
+msgid "{value} is not a wallpaper for the lock screen; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)"
 msgstr ""
 
-msgid "a background in quotes, such as \"blurred\" or \"#1f2b48\""
+msgid "a wallpaper in quotes, such as \"blurred\" or \"#1f2b48\""
 msgstr ""
 
 msgid "expected looks as the lock screen writes them: {why}"
 msgstr ""
 
-msgid "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }"
+msgid "looks as tables, such as { home = { widgets = [{ widget = \"person\", at = \"centre\" }] } }"
 msgstr ""
 
 msgid "{value} is not a theme's name; use letters, digits and hyphens, such as \"aurora\""
@@ -2022,6 +2028,9 @@ msgid "a channel name in quotes, such as \"stable\""
 msgstr ""
 
 msgid "a cursor theme's name in quotes, such as \"default\""
+msgstr ""
+
+msgid "an icon theme's name in quotes, such as \"Edel\""
 msgstr ""
 
 msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""

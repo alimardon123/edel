@@ -431,9 +431,6 @@ msgstr ""
 msgid "The panel's icons and the app icons in the bar and the dock"
 msgstr ""
 
-msgid "The pointer's look in every app that starts after this"
-msgstr ""
-
 msgid "Your choice"
 msgstr ""
 
@@ -450,6 +447,12 @@ msgid "Cursor and icons"
 msgstr ""
 
 msgid "The pointer and the icons. Apps already open keep their cursor until they start again"
+msgstr ""
+
+msgid "The pointer's look in every app that starts after this"
+msgstr ""
+
+msgid "The apps' icons in the panel, the dock, the launcher and the title bars"
 msgstr ""
 
 msgid "Automatic"
@@ -767,7 +770,7 @@ msgstr ""
 msgid "Also a tile in quick settings."
 msgstr ""
 
-msgid "Pick a look. Each look keeps its own arrangement and background."
+msgid "Pick a look. Each look keeps its own arrangement and wallpaper."
 msgstr ""
 
 msgid "Your own arrangement"
@@ -875,7 +878,7 @@ msgstr ""
 msgid "Rename look"
 msgstr ""
 
-msgid "Give this look another name. It keeps its parts and its background, and shows in the cards above."
+msgid "Give this look another name. It keeps its widgets and its wallpaper, and shows in the cards above."
 msgstr ""
 
 msgid "Name, such as home"
@@ -1349,6 +1352,9 @@ msgstr ""
 msgid "Cursor"
 msgstr ""
 
+msgid "Icons"
+msgstr ""
+
 msgid "Icon size"
 msgstr ""
 
@@ -1368,9 +1374,6 @@ msgid "Switcher ends"
 msgstr ""
 
 msgid "Look"
-msgstr ""
-
-msgid "Background"
 msgstr ""
 
 msgid "Clock and date"

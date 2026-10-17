@@ -4717,7 +4717,28 @@ case_app_windows() {
 		python3 ci/qmp.py key meta_l-q
 		wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot window $n"
 	done
-	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen"
+	# The app icon style (M8.21 part g): EdelTest, the image's test theme,
+	# draws foot as a magenta square, so foot's cell turns magenta once
+	# shell-ui follows appearance.icon_theme; the compositor follows too.
+	# A theme the machine lacks is refused with the ones it has, and Reset
+	# gives Edel's icons back. Kept as icon-theme.png.
+	followed=$(count 'edel-shell-ui: app icons from "EdelTest"')
+	guest 'icons test'
+	wait_more 'edel-shell-ui: app icons from "EdelTest"' "$followed" || fail "shell-ui did not follow appearance.icon_theme = \"EdelTest\""
+	wait_for 'edel-compositor: app icons from "EdelTest"' || fail "the compositor did not follow appearance.icon_theme = \"EdelTest\""
+	shot icon-theme "$cell" 774 ff00ff >/dev/null || fail "foot's cell at $cell,774 is not EdelTest's magenta icon (icon-theme.png)"
+	guest 'icons bad'
+	wait_for 'DESKTOP-TEST: icons_bad ' || fail "icons bad did not run in the VM"
+	bad=$(value icons_bad)
+	case $bad in
+	*'is not an icon theme this machine has'*EdelTest*) ;;
+	*) fail "an unknown icon theme was not refused with the list: $bad" ;;
+	esac
+	followed=$(count 'edel-shell-ui: app icons from "Edel"')
+	guest 'icons default'
+	wait_more 'edel-shell-ui: app icons from "Edel"' "$followed" || fail "shell-ui did not go back to Edel's icons"
+	shot icon-default "$cell" 774 '!ff00ff' >/dev/null || fail "foot's cell stayed magenta after the reset"
+	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen; EdelTest's icon drew foot's cell magenta (icon-theme.png), NoSuchTheme was refused with the list, and the reset gave it back"
 }
 
 case_taskbar() {
@@ -5987,7 +6008,7 @@ case_lock() {
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
 	guest 'lock magazine reset'
 	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
 # editor_places: the lock screen's edit mode's last whole places line,
@@ -6058,7 +6079,7 @@ case_lock_edit() {
 	# clock is dragged from its middle to the top right (shell-ui logs the
 	# anchor it snapped to), a message is dragged from the drawer to the
 	# bottom middle of the lock's picture (drawn smaller above the drawer,
-	# so 640,480 is its bottom third), and Done writes lock_screen.parts
+	# so 640,480 is its bottom third), and Done writes lock_screen.widgets
 	# into ci's file. The
 	# next lock must place the clock at the top right and show a message.
 	# Kept as lock-editor.png, and the list is reset at the end. The part card
@@ -6093,9 +6114,9 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "classic-2"' ||
 		fail "ci's settings file does not use the look classic-2: $(value settings_file)"
-	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
+	value settings_file | grep -q 'at = "top_right", widget = "clock"' ||
 		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
-	value settings_file | grep -q 'part = "message"' ||
+	value settings_file | grep -q 'widget = "message"' ||
 		fail "ci's settings file does not hold the message: $(value settings_file)"
 	# The next lock reads the file: the clock on the right, the message below.
 	# Its places line is waited for whole (it ends with the corner's power
@@ -6238,8 +6259,8 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "magazine"' ||
 		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
-	value settings_file | grep -q '^parts = ' &&
-		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
+	value settings_file | grep -q '^widgets = ' &&
+		fail "ci's settings file still holds a widgets line with the look: $(value settings_file)"
 	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"

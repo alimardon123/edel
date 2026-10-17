@@ -498,8 +498,22 @@ impl Shell {
     /// at once. shell-ui's own writes come back here too and change
     /// nothing more.
     pub fn settings_changed(&mut self) {
+        // The settings files are read once here (M8.21 part g), by what
+        // follows that needs them.
+        let (machine, person) = crate::settings_texts();
         // The look first (M6.17), so what follows reads the new tokens.
         self.follow_look();
+        // The app icons' theme (M8.21 part g): the panels draw app icons from
+        // the chosen theme, so a change makes new icons and draws them again.
+        let theme = edel::settings::icon_theme_in(machine.as_deref(), person.as_deref());
+        if theme != self.icons.theme() {
+            eprintln!("edel-shell-ui: app icons from {theme:?}");
+            self.icons = edel::app_icons::Icons::new(edel::apps::data_dirs(), &theme);
+            for panel in &mut self.panels {
+                panel.drawn = None;
+            }
+            self.draw_all();
+        }
         // Clipboard history follows clipboard.history (M7.13).
         self.clipboard_settings_changed();
         // The glass follows the wallpaper the files name (M5.12b3): the
@@ -520,7 +534,6 @@ impl Shell {
         }
         // panels.list and the preset's panels (M5.31b, M6.17): the panels
         // follow the files at once.
-        let (machine, person) = crate::settings_texts();
         // The power rules: the lid, the button, the idle lock and the profile (M7.8).
         self.power_changed(machine.as_deref(), person.as_deref());
         // What each app may use (M6.14a), and which apps are asked for the
@@ -538,7 +551,7 @@ impl Shell {
         if let Some(connection) = &self._portal {
             let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
             let high = edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref());
-            crate::portal::follow(connection, &self.tokens, &buttons, high);
+            crate::portal::follow(connection, &self.tokens, &buttons, high, &theme);
             let off = !crate::location::enabled(machine.as_deref(), person.as_deref());
             crate::portal::follow_location(connection, off);
         }

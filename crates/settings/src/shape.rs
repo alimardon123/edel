@@ -844,6 +844,10 @@ pub(crate) fn log_places(
     reset: Option<gtk::Widget>,
 ) {
     let scrolled = Cell::new(false);
+    // Asked for by one of its keys, the group scrolls to the top again on
+    // each frame until the places settle: the pictures above it (the theme
+    // card's) load after the first frame and push it down (M8.21 part g).
+    let asked_here = Cell::new(false);
     let last = RefCell::new(String::new());
     card.add_tick_callback(move |card, _| {
         let Some(window) = card.root().and_downcast::<gtk::Window>() else {
@@ -856,6 +860,7 @@ pub(crate) fn log_places(
             let asked =
                 widgets::asked_row().and_then(|row| keys.iter().position(|key| *key == row));
             if let Some(index) = asked {
+                asked_here.set(true);
                 widgets::scroll_to_top(card.upcast_ref());
                 let page = std::iter::successors(
                     Some(card.clone().upcast::<gtk::Widget>()),
@@ -867,6 +872,9 @@ pub(crate) fn log_places(
                 }
             }
             return glib::ControlFlow::Continue;
+        }
+        if asked_here.get() {
+            widgets::scroll_to_top(card.upcast_ref());
         }
         let mut places: Vec<String> = keys
             .iter()

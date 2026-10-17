@@ -101,8 +101,16 @@ pub fn run(words: &[String]) -> Result<()> {
     let dark = quick::is_dark(machine.as_deref(), person.as_deref());
     let wallpaper = lock::wallpaper_of(machine.as_deref(), person.as_deref(), dark);
     let tokens = scheme_tokens(dark);
-    let picture = render(&args.name, &lock, &wallpaper, &tokens, args.width)
-        .context("could not draw the lock look")?;
+    let icon_theme = edel::settings::icon_theme_in(machine.as_deref(), person.as_deref());
+    let picture = render(
+        &args.name,
+        &lock,
+        &wallpaper,
+        &tokens,
+        &icon_theme,
+        args.width,
+    )
+    .context("could not draw the lock look")?;
     write_png(&picture, &args.out)?;
     Ok(())
 }
@@ -125,13 +133,15 @@ pub const SAMPLE_SCREEN: (u32, u32) = (1280, 800);
 
 /// The look `name` drawn at `width` pixels wide, 16 to 10 (`SAMPLE_SCREEN` scaled):
 /// `lock` gives its parts and background, as Settings' card applies the look
-/// alone, and `wallpaper` what lies behind the glass. None when the picture
-/// has no pixels to draw on.
+/// alone, and `wallpaper` what lies behind the glass; `icon_theme` is the
+/// app icons' theme (M8.21 part g). None when the picture has no pixels to
+/// draw on.
 pub fn render(
     name: &str,
     lock: &LockScreen,
     wallpaper: &Wallpaper,
     tokens: &Tokens,
+    icon_theme: &str,
     width: u32,
 ) -> Option<Pixmap> {
     let look = LockScreen {
@@ -141,7 +151,7 @@ pub fn render(
     };
     let applied = lock_screen::applied(&look, false);
     let mut text = Text::load(&tokens.font);
-    let mut icons = edel::app_icons::Icons::new(edel::apps::data_dirs());
+    let mut icons = edel::app_icons::Icons::new(edel::apps::data_dirs(), icon_theme);
     let mut pictures = lock::Pictures::default();
     let mut backdrops = lock::Backdrops::default();
     let view = sample_view(sample_name());
@@ -286,8 +296,15 @@ mod tests {
     fn classic_draws_a_picture_of_the_asked_width() {
         let tokens = Tokens::built_in();
         let wallpaper = lock::wallpaper_of(None, None, false);
-        let picture = render("classic", &LockScreen::default(), &wallpaper, &tokens, 480)
-            .expect("classic draws");
+        let picture = render(
+            "classic",
+            &LockScreen::default(),
+            &wallpaper,
+            &tokens,
+            edel::settings::ICON_THEME_DEFAULT,
+            480,
+        )
+        .expect("classic draws");
         assert_eq!((picture.width(), picture.height()), (480, 300));
         let middle = picture.pixel(240, 150).expect("a middle pixel");
         assert_ne!(middle.alpha(), 0, "the middle of the picture is drawn");

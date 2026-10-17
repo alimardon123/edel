@@ -371,7 +371,10 @@ impl Edel {
             window_shadows: std::collections::HashMap::new(),
             settings: Settings::default(),
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),
-            app_icons: crate::decoration::AppIcons::new(),
+            // The settings are the defaults here; `watch.rs` calls
+            // `reload_settings` at start, which follows a theme the files name
+            // (M8.21 part g).
+            app_icons: crate::decoration::AppIcons::new(edel::settings::ICON_THEME_DEFAULT),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             game: Default::default(),
@@ -614,6 +617,16 @@ impl Edel {
         }
         let old = std::mem::replace(&mut self.settings, new.clone());
         self.cursor_settings(new.cursor_theme.as_deref(), new.cursor_size);
+        // The app icons' theme (M8.21 part g): the title bars draw their icons
+        // from it, so they are drawn again the way a changed title font is
+        // (`text_key`).
+        let icon_theme = edel::settings::icon_theme_or_default(new.icon_theme.as_deref());
+        if icon_theme != self.app_icons.theme() {
+            self.app_icons.set_theme(icon_theme);
+            eprintln!("edel-compositor: app icons from {icon_theme:?}");
+            self.text_key += 1;
+            self.dirty = true;
+        }
         let (bindings, notes) = crate::shortcuts::bind(&new.shortcuts);
         for line in notes
             .iter()

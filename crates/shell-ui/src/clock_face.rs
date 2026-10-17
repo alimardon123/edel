@@ -3,7 +3,7 @@
 //! and the drawing of the faces with tiny-skia and the shell's text. The
 //! options are `edel::lock_screen`'s (`face`, `hours`, `size`, `weight`
 //! of a clock; `show` and `style` of a date), read from the settings file's
-//! `lock_screen.parts`; `lock.rs` lays the parts out and calls these.
+//! `lock_screen.widgets`; `lock.rs` lays the parts out and calls these.
 
 use edel::lock_screen::{DatePart, DateStyle, Face, Size};
 use edel::tokens::Colour;
