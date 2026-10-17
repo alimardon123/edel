@@ -103,11 +103,12 @@
     <event name="media_key">
       <description summary="a volume or brightness key was pressed">
         The keyboard's volume, mute or brightness key (M5.9c): shell-ui
-        changes the level and shows it. The compositor keeps these keys
-        from apps.
+        changes the level and shows it. The power button is one of them
+        too (M7.8): shell-ui does what power.power_button says. The
+        compositor keeps these keys from apps.
       </description>
       <arg name="key" type="string"
-           summary="volume_up, volume_down, mute, brightness_up or brightness_down"/>
+           summary="volume_up, volume_down, mute, brightness_up, brightness_down or power"/>
     </event>
 
     <event name="keyboard">
@@ -143,6 +144,15 @@
         says otherwise): shell-ui opens the layout button's menu of tiling
         styles with the keyboard on it, or closes it (M6.9).
       </description>
+    </event>
+
+    <event name="lid">
+      <description summary="the lid was closed or opened">
+        A laptop's lid switch changed (M7.8), as libinput reports it:
+        shell-ui does what power.lid_close says when it closes. Sent to
+        every link, the greeter's too.
+      </description>
+      <arg name="closed" type="uint" summary="1 when the lid closed, 0 when it opened"/>
     </event>
   </interface>
 </protocol>
