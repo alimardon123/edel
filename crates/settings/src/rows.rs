@@ -851,6 +851,18 @@ mod tests {
             "apps.installed",
             "the machine's list of apps installed for everyone, which an administrator changes as root with edel settings set apps.installed+=ID",
         ),
+        (
+            "install.disk",
+            "an instruction to a stick that installs itself, read only by edel install --unattended (docs/FLEET.md)",
+        ),
+        (
+            "install.erase",
+            "an instruction to a stick that installs itself, read only by edel install --unattended (docs/FLEET.md)",
+        ),
+        (
+            "install.then",
+            "an instruction to a stick that installs itself, read only by edel install --unattended (docs/FLEET.md)",
+        ),
     ];
 
     #[test]

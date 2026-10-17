@@ -254,6 +254,15 @@ jobs:
           compression-level: 0
           path: out/vm-live.tar.zst
 
+      - name: Hand the fleet archive to its lanes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-vm-images-fleet
+          retention-days: 1
+          # Already zstd: zipping it again gains nothing.
+          compression-level: 0
+          path: out/vm-fleet.tar.zst
+
       - name: List the desktop image to try
         # The image the live lane boots as a USB stick in desktop-test live
         # (M3.6). A push to main keeps it as a download; every run lists

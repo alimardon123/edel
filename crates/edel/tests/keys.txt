@@ -114,3 +114,6 @@ apps.location
 location.enabled
 location.place
 location.online
+install.disk
+install.erase
+install.then

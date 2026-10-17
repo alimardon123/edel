@@ -1,0 +1,9 @@
+# Test only (roadmap M7.3): device B of CI's fleet, over base.toml, a
+# stick that installs itself onto the one blank fixed disk it finds.
+format = 1
+
+[network]
+hostname = "fleet-b"
+
+[install]
+disk = "auto"

@@ -150,7 +150,7 @@ docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 
 cargo build --release --locked -p edel --bin edel && EDEL=target/release/edel sh ci/sign.sh
 sh ci/container-test.sh
 sh ci/initramfs-check.sh
-sh ci/vm-tests.sh    # the VM tests' lanes, installed beside system, live and fresh; CI runs each lane on its own runner
+sh ci/vm-tests.sh    # the VM tests' lanes, installed beside system, live, fresh and fleet; CI runs each lane on its own runner
 sh ci/sizes.sh
 sh ci/desktop-part.sh floating titlebar ...   # one of CI's four "Desktop part" jobs, after build.sh desktop-test
 ```
@@ -237,7 +237,7 @@ For docs, code comments, commits, PRs and replies:
 
 ## Current state
 
-This section holds only what changes slowly; it names no PR and repeats no step, so pull requests running side by side do not edit the same lines (Alimardon's ask of 2026-10-07, after merges kept making the others conflict). What is on `main` is `git log --first-parent main`; what each step built is its tick and its "Done with:" note in the roadmap; plan changes are the roadmap's log. Check those and the open PRs and branches for anything newer: an earlier session, or the other session (see "Two sessions at once"), may have left a step half done. Continue an open PR for the same step rather than opening a second one.
+This section holds only what changes slowly; it names no PR and repeats no step, so pull requests running side by side do not edit the same lines (Alimardon's ask of 2026-10-07, after merges kept making the others conflict). What is on `main` is `git log --first-parent main`; what each step built is its tick and its "Done with:" note in the roadmap, or in `docs/ROADMAP-DONE.md` once moved there; plan changes are the roadmap's log. Check those and the open PRs and branches for anything newer: an earlier session, or the other session (see "Two sessions at once"), may have left a step half done. Continue an open PR for the same step rather than opening a second one.
 
 - The tool's commands are its own table, shown by `edel --help` and written into `docs/guide/commands.md`. Images are lists of features (`features/NAME.toml`, [docs/FEATURES.md](docs/FEATURES.md)); the desktop image logs people in with greetd, whose greeter is our compositor, and logs `live` in by itself on a USB stick (`edel boot live`).
 - Waiting for Alimardon: making CI's jobs required for `main` (branch protection, M2.5); the release key and `EDEL_PUBLISH` for the first preview ([docs/RELEASE.md](docs/RELEASE.md)), which also waits for the narrow review of the updater, the guard and the signing path (M3.4), and M3.5 is skipped while no preview exists; `EDEL_SITE` and GitHub Pages to publish the docs site (M8.10a); required reviewers on the `release` environment, if wanted (M3.7).

@@ -11,10 +11,12 @@
 #              image as a USB stick
 #   fresh      `desktop-test.sh fresh`, the released image as a computer's
 #              own disk with nobody on it; it reads live's archive
+#   fleet      fleet-test.sh, the fleet images and the stick that installs
+#              itself (M7.3)
 # Each lane runs its tests in order and stops at the first failure.
 #
 #   sh ci/vm-tests.sh             every lane on this machine: installed beside
-#                                 system, live and fresh, which share no file,
+#                                 system, live, fresh and fleet, which share no file,
 #                                 port or disk; exits 1 if any failed
 #   sh ci/vm-tests.sh LANE        one lane, as each CI job runs it
 #   sh ci/vm-tests.sh lanes       the lanes' names, one per line
@@ -48,6 +50,7 @@ run_lane() {
 	system) lane boot-test.sh system-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
+	fleet) lane fleet-test.sh ;;
 	*) no_lane "$1" ;;
 	esac
 }
@@ -70,12 +73,13 @@ files() {
 	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test ;;
 	system) echo out/edel-vm-x86_64.img out/keys out/system-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-desktop-x86_64.img out/install-file.img ;;
+	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img ;;
 	*) no_lane "$1" ;;
 	esac
 }
 
 no_lane() {
-	echo "vm-tests.sh: there is no lane $1; the lanes are installed, system, live and fresh" >&2
+	echo "vm-tests.sh: there is no lane $1; the lanes are installed, system, live, fresh and fleet" >&2
 	exit 2
 }
 
@@ -85,6 +89,7 @@ lanes)
 	echo system
 	echo live
 	echo fresh
+	echo fleet
 	;;
 archives)
 	for name in $(sh "$0" lanes); do
@@ -107,13 +112,13 @@ unpack)
 	;;
 '')
 	mkdir -p out
-	{ run_lane system && run_lane live && run_lane fresh; } >out/lane-other.log 2>&1 &
+	{ run_lane system && run_lane live && run_lane fresh && run_lane fleet; } >out/lane-other.log 2>&1 &
 	other=$!
 	run_lane installed
 	installed=$?
 	wait "$other"
 	other=$?
-	echo "== the other lanes: system, live, then fresh"
+	echo "== the other lanes: system, live, fresh, then fleet"
 	cat out/lane-other.log
 	[ "$installed" = 0 ] && [ "$other" = 0 ]
 	;;

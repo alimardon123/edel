@@ -1088,6 +1088,34 @@ pub const HELP: &[Help] = &[
         belongs: Belongs::Device,
         retired: None,
     },
+    Help {
+        key: "install.disk",
+        help: n_(
+            "The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name.",
+        ),
+        default: r#""auto""#,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "install.erase",
+        help: n_(
+            "Whether an unattended install erases only an empty disk, or any disk after a ten second countdown.",
+        ),
+        default: r#""empty-only""#,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "install.then",
+        help: n_("What the machine does once a stick has installed itself: power off or restart."),
+        default: r#""poweroff""#,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
 ];
 
 /// The line for `key`, a concrete key (`users.ali.admin`) or a table path
