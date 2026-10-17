@@ -1196,6 +1196,9 @@ msgstr ""
 msgid "Power information is not available"
 msgstr ""
 
+msgid "{brings}; {without}"
+msgstr ""
+
 msgid "What this computer is for"
 msgstr ""
 

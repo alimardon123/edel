@@ -1138,6 +1138,16 @@ pub const HELP: &[Help] = &[
         belongs: Belongs::Device,
         retired: None,
     },
+    Help {
+        key: "system.profiles_without",
+        help: n_(
+            "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off.",
+        ),
+        default: "[]",
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
 ];
 
 /// The line for `key`, a concrete key (`users.ali.admin`) or a table path

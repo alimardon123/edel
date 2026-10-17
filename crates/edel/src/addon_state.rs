@@ -189,7 +189,7 @@ impl Facts {
         let path = places::found(&places::machine_settings());
         let wanted = crate::settings::read_on_machine(&path)
             .ok()
-            .and_then(|read| read.file.addons.installed)
+            .and_then(|read| crate::profiles::applied(&read.file).addons.installed)
             .unwrap_or_default();
         let mounted = mounted();
         let built_in = services::installed()
