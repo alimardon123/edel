@@ -63,6 +63,12 @@ Every new doc gets a line in `SUMMARY.md`, the docs site's table of contents (M8
 
 `FORMATS.md` exists since M1.6, `SPIKE-flatpak.md` since M1.9, `settings.md` since M2.1, and `TRY-IT.md` (also every release's notes) and `RELEASE.md` since M3.4, and `FEATURES.md` since M4.0, `MESSAGES.md` since 2026-10-06, `layout-guide.md` since M5.6c `INSTALL.md` since M6.6b and `FLEET.md` since M7.3; M2.1 added the system-file rules and M3.3b the slot size. Docs the roadmap will add, each in its step: `settings.md` generated from M6.11 on, `SHORTCUTS.md` (M5.13), the generated `defaults.md` (M6.11), `hardware/*.toml` (M8.1), `SECURITY.md` (M8.3), `platform-levels.md` (M8.8), `backports.md` (M8.10b) and `REVIEW-zfs.md` (M11.9).
 
+## The docs lane: keeping what a session reads short
+
+- The CLAUDE.md files hold rules and pointers only; every CLAUDE.md a session touches is read whole into its context. Descriptions live in reference files beside them, read when needed: each crate's `LAYOUT.md` (one bullet per module), `ci/SCRIPTS.md` (one row per script, and the A/B test's steps) and `ci/CASES.md` (one line per desktop case). A new description goes there, never back into a CLAUDE.md (M6.17, line 11).
+- A cut moves text whole and unchanged, by a script, and proves it: every line taken out is in the new file, byte for byte (`grep -vxFf NEW REMOVED` prints nothing). Rewording waits for its own PR.
+- Open step PRs keep editing the old places, so a cut is a conflict for each of them: their line moves to the new file when they merge `main`. Do a cut when few PRs are open, tell the coordinator before it merges, and leave the files of PRs about to merge for the next cut.
+
 ## Known inconsistencies: do not copy them
 
 - ADR-006 says applied settings make a new deployment and that the last few deployments stay in the boot menu; since ADR-008 settings apply at once on `/data`, and there are two slots plus `edel rollback` (M1.1).
