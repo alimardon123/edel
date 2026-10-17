@@ -518,8 +518,18 @@ pub fn mount_data() -> Result<()> {
     // Each step runs even when one before it failed: a failed /etc overlay
     // must not also leave /home, /var and /tmp off /data.
     let mut first_error = None;
+    // A safe start (M7.1) leaves the add-ons off as it does developer
+    // mode's layer: they live on /data, which both slots share.
+    let addons = if is_safe_start(&fs::read_to_string("/proc/cmdline").unwrap_or_default()) {
+        println!(
+            "edel-data: add-ons are left off, as this start is a safe one: no slot had a try left"
+        );
+        Ok(())
+    } else {
+        crate::addons::mount_all()
+    };
     for (step, result) in [
-        ("add-ons", crate::addons::mount_all()),
+        ("add-ons", addons),
         // After the add-ons, so the layer goes over their overlay too.
         ("developer mode", developer_layer()),
         ("/etc", overlay_etc()),
