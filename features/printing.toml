@@ -1,9 +1,27 @@
-# Printing (M7.2a, M7.6): CUPS and its filters, as an add-on for the
-# machines that print.
+# Printing and scanning (M7.2a, M7.6, M7.6d): CUPS and its filters, and
+# SANE with the scanners people have most, as an add-on for the machines
+# that print and scan.
 format = 1
-summary = "Printing: CUPS, with drivers for most printers"
-why = "Printing is a basic for office work, and CUPS is the one print system Linux apps and the GTK print dialog talk to. cups-filters turns documents into what printers take, and with CUPS's driverless IPP most printers of the last ten years need no driver of their own. Its daemon, cupsd, runs only on machines whose person added printing, and is switchable, so it can be turned off without taking the add-on out (ADR-008)."
-packages = ["cups", "cups-openrc", "cups-filters"]
+summary = "Printing and scanning: CUPS and SANE, with drivers for most printers and scanners"
+why = "Printing is a basic for office work, and CUPS is the one print system Linux apps and the GTK print dialog talk to. cups-filters turns documents into what printers take, and with CUPS's driverless IPP most printers of the last ten years need no driver of their own. Its daemon, cupsd, runs only on machines whose person added printing, and is switchable, so it can be turned off without taking the add-on out (ADR-008). Scanning is SANE, the one scanner library Linux apps use: sane-airscan finds the driverless scanners (eSCL and WSD) of most printers sold since about 2015 on the network, and the backends listed are the USB families people have most (HP, Canon, Epson, Fujitsu's and Canon's document scanners, Samsung and Xerox, Plustek and Avision), 6.3 MiB against 17.2 for all of SANE's (Efficient); another family is one name in this list. Scanning runs no service: an app opens the scanner while it scans."
+packages = [
+  "cups",
+  "cups-openrc",
+  "cups-filters",
+  "sane-utils",
+  "sane-udev",
+  "sane-airscan",
+  "sane-backend-hpaio",
+  "sane-backend-pixma",
+  "sane-backend-genesys",
+  "sane-backend-epson2",
+  "sane-backend-epsonds",
+  "sane-backend-fujitsu",
+  "sane-backend-canon_dr",
+  "sane-backend-xerox_mfp",
+  "sane-backend-plustek",
+  "sane-backend-avision",
+]
 switchable = true
 addon = true
 

@@ -1,7 +1,7 @@
 format = 1
-summary = "Fonts: Inter for the interface, Noto for the rest and the terminal"
-why = "Inter is the one interface font the design tokens name (ADR-004); Noto, which ADR-008 names for other scripts, brings Noto Sans Mono, the monospace font foot and code need, and Latin fallbacks. Arabic and Hindi (Devanagari) come first, with their regular and bold sans faces (M5.12b5); the other scripts come when a language needs them (M5.30)."
-packages = ["font-inter", "font-noto", "font-noto-arabic", "font-noto-devanagari"]
+summary = "Fonts: Inter for the interface, Noto for the rest and the terminal, and the widths of Microsoft Office's fonts"
+why = "Inter is the one interface font the design tokens name (ADR-004); Noto, which ADR-008 names for other scripts, brings Noto Sans Mono, the monospace font foot and code need, and Latin fallbacks. Arabic and Hindi (Devanagari) come first, with their regular and bold sans faces (M5.12b5); the other scripts come when a language needs them (M5.30). Liberation (Arial, Times New Roman and Courier New) and Carlito (Calibri) have the same widths as the fonts Microsoft Office documents name, which fontconfig's own metric aliases put in their place, so a Word or PowerPoint file keeps its lines and pages (M7.6d); they are 6.8 MiB, about 1 percent of the desktop, so every desktop has them rather than only the printing add-on's machines, as the size budget allows (Efficient, then Functional: a browser and a PDF viewer meet those fonts too)."
+packages = ["font-inter", "font-noto", "font-noto-arabic", "font-noto-devanagari", "font-liberation", "font-carlito"]
 
 # What the image keeps of the fonts (M5.30b): Inter as its variable files
 # alone, which hold every weight (Inter.ttc, its static weights, is 12.6
@@ -29,3 +29,7 @@ files = [
   "NotoSansDevanagari-Regular.ttf",
   "NotoSansDevanagari-Bold.ttf",
 ]
+
+[[basics]]
+name = "Office documents' fonts"
+test = "office-fonts"

@@ -139,6 +139,12 @@ enum Commands {
     /// desktop's effect tier while a session runs, and which log to read
     /// when the last boot or desktop session went wrong
     Status,
+    /// platform: what apps can count on from this system, its platform
+    /// level, kept by every later release
+    Platform {
+        #[command(subcommand)]
+        command: PlatformCommands,
+    },
     /// Restart this machine now: the system's own reboot, through doas when
     /// you are not root
     Restart,
@@ -314,6 +320,13 @@ enum ThemeCommands {
         #[arg(value_name = "FILE")]
         file: PathBuf,
     },
+}
+
+#[derive(Subcommand)]
+enum PlatformCommands {
+    /// Show this system's platform level: its kernel, Flatpak and portal
+    /// versions against the level's floors, and its runtimes
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -631,6 +644,7 @@ impl Commands {
             Commands::Update { .. } => "update",
             Commands::Rollback => "rollback",
             Commands::Status => "status",
+            Commands::Platform { .. } => "platform",
             Commands::Restart => "restart",
             Commands::Shutdown => "shutdown",
             Commands::Suspend => "suspend",
@@ -912,6 +926,9 @@ fn run(command: Commands) -> Result<()> {
         }
         Commands::Rollback => update::rollback(),
         Commands::Status => update::status(),
+        Commands::Platform { command } => match command {
+            PlatformCommands::Status => update::platform_status(),
+        },
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),

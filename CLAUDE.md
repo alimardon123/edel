@@ -110,6 +110,7 @@ When docs disagree, the newer ADR wins.
 | `crates/testclient/` | `edel-testclient` (M4.3): a window of a given size, colour and title for CI's pixel checks; only CI's images ship it |
 | `crates/testheader/` | `edel-testheader` (M6.16): a GTK 4 window with a header bar of its own for CI's `own-bars` case; only CI's images ship it |
 | `po/` | The words shell-ui, Settings and `edel` show, `PART.pot`, gathered from their source (and `edel`'s help) by tests in `crates/edel` (M5.24a, M5.24b); a word two parts show is in `edel.pot` only; a language's translation is `LANG/PART.po` |
+| `platform/` | The platform levels, `level-N.toml`, what apps can count on from every release of a level, built into `edel::platform`, which `edel image build` checks every image against and `edel platform status` shows (M8.8, [docs/platform-levels.md](docs/platform-levels.md)) |
 | `profiles/` | The profiles, one file each, a few lines of the settings file a machine names in `system.profiles`, built into `edel::profiles` (M7.6): office, developer, creative and gaming |
 | `presets/` | The layout presets, one file each, built into `edel::presets` (M5.1c): Classic, Mac-like, Windows-like and Hive (M5.4) and Zen (M5.18b); Tablet and Phone come later |
 | `design/` | `tokens.toml`, the one set of colours and sizes everything is drawn with (M4.2a; M5.5 completes it), `icons/`, the shell's own icons as SVG files (M5.5d), and `wallpapers/make.py`, which makes the `wallpapers` feature's pictures, ours from the tokens and NASA's Earth (M5.10c4b) |

@@ -508,10 +508,15 @@ pub fn elements(
     elements
 }
 
-/// Frame callbacks for `output`'s layer surfaces, after a frame is drawn.
-pub fn send_frames(output: &Output, now: Duration) {
+/// Frame callbacks for `output`'s layer surfaces, after a frame is drawn:
+/// only those on the layers `only` names when a game plays there (M7.7c),
+/// every layer otherwise.
+pub fn send_frames(output: &Output, now: Duration, only: Option<&[Layer]>) {
     let map = layer_map_for_output(output);
     for layer in map.layers() {
+        if only.is_some_and(|only| !only.contains(&layer.layer())) {
+            continue;
+        }
         layer.send_frame(output, now, Some(Duration::ZERO), |_, _| {
             Some(output.clone())
         });

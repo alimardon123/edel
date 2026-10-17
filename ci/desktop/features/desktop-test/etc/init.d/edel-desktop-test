@@ -219,6 +219,14 @@ commands() {
 		'desktop clock') edel settings set 'appearance.widgets=[{ widget = "clock", at = "top_right" }]' ;;
 		'desktop bad') say "desktop_bad $(edel settings set 'appearance.widgets=[{ widget = "person", at = "centre" }]' 2>&1 | tr '\n' ' ')" ;;
 		'desktop default') edel settings reset appearance.widgets ;;
+		# The desktop's widgets editor (M8.21 part 21j2): the call Settings' Edit
+		# makes, as ci on ci's session bus, which opens the editor over the usable
+		# area; and the editor's line out of ci's own file.
+		'desktop editor')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.edel.Shell --object-path /org/edel/Shell --method org.edel.Shell1.EditDesktop" </dev/null
+			;;
+		'desktop mine default') as_ci "sed -i -E '/^\[appearance\]/,/^\[/{/^widgets = /d}' /home/ci/.config/edel/$settings_name" ;;
 		# The family fontconfig names first for Arabic and for Hindi (M5.12b5
 		# part A), said back as values.
 		'fonts scripts')
@@ -245,6 +253,45 @@ commands() {
 		'panels default') edel settings reset panels.list ;;
 		# A dock that hides while covered (M5.4f), and a window to cover it.
 		'dock hiding') edel settings set 'panels.list=[{ edge = "bottom", style = "dock", hide = "covered", centre = ["apps"] }]' ;;
+		# A window that draws on every frame the compositor gives it (M7.7c):
+		# the frames it gets show whether a game hides it; `busy close` ends it.
+		'busy window')
+			as_ci edel-testclient --busy --size 300x200 --colour 3a8fc0 --title busy </dev/null >/tmp/busy.log 2>&1 &
+			;;
+		'busy close') pkill -f 'edel-testclient --busy' ;;
+		# The desktop's CPU over 30 s, and the busy window's frames before and
+		# after (M7.7c). It runs in the background, so the reader of commands
+		# is not held for the 30 s.
+		'desktop cpu')
+			(
+				# The compositor's pid is the state file's `pid`, shell-ui's is
+				# pidof's. Their utime and stime are fields 14 and 15 of
+				# /proc/PID/stat, in USER_HZ, which is 100.
+				comp=$(sed -n 's/^pid = //p' "$state_file")
+				shell=$(pidof edel-shell-ui | cut -d' ' -f1)
+				ticks() {
+					awk '{ print $14 + $15 }' "/proc/$1/stat" 2>/dev/null || echo 0
+				}
+				busy_count() {
+					n=$(grep frames /tmp/busy.log 2>/dev/null | tail -n 1 | awk '{ print $2 }')
+					echo "${n:-0}"
+				}
+				before=$(($(ticks "$comp") + $(ticks "$shell")))
+				frames_before=$(busy_count)
+				sleep 30
+				after=$(($(ticks "$comp") + $(ticks "$shell")))
+				frames_after=$(busy_count)
+				percent=$(awk -v t="$((after - before))" 'BEGIN { hz = 100; printf "%.1f", t / (30 * hz) * 100 }')
+				say "desktop_cpu_percent $percent"
+				say "busy_frames $frames_before $frames_after"
+			) &
+			;;
+		# An update that waits for a game (M7.7c): it has no release file, so
+		# once it may go on it fails at once, and its log says both.
+		'update during game')
+			edel update /tmp/no-release/release.toml >/tmp/update.log 2>&1 &
+			;;
+		'update log') say "update $(tr '\n' ';' </tmp/update.log)" ;;
 		# A window that asks to fill its screen (M5.20).
 		'full window')
 			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
@@ -1166,6 +1213,11 @@ commands() {
 		# which adds Flathub for ci and installs the app with flatpak --user.
 		# The download takes minutes, so the command's verdict is its status
 		# and the last lines of its log.
+		# Office documents' fonts (M7.6d): what fontconfig draws for the
+		# fonts Microsoft Office names, one family a line.
+		'fonts office')
+			say "fonts_office $(for f in Calibri Arial 'Times New Roman' 'Courier New'; do fc-match -f '%{family[0]}' "$f"; printf ';'; done 2>&1)"
+			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No
 		# download: the plan alone shows whether Steam would install.
