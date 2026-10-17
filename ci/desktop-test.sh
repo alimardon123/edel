@@ -7933,6 +7933,7 @@ for c in "$@"; do
 	case "$c" in
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
+	fresh) [ "$#" = 1 ] || { echo "fresh runs alone: it boots the released image"; exit 1; } ;;
 	*)
 		case " $cases" in
 		*" $c "*) ;;
@@ -8297,13 +8298,25 @@ if [ "$*" = live ]; then
 	# own (en_US: America/New_York), and the first boot applies it.
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
-	# A computer nobody has an account on (M6.12): the released image as
-	# the computer's own disk, not a stick, so live logs in by itself and
-	# the Welcome asks for the first person and the time zone too. Return
-	# accepts each page's suggestion and the account is typed; Start using
-	# Edel OS makes cleo with edel settings first-boot, as root through
-	# doas, and restarts, which ends this VM (-no-reboot). The disk's next
-	# start leaves the login to the greeter.
+	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png)"
+	exit 0
+fi
+
+# fresh (M6.12): a computer nobody has an account on: the released image as
+# the computer's own disk, not a stick, so live logs in by itself and
+# the Welcome asks for the first person and the time zone too. Return
+# accepts each page's suggestion and the account is typed; Start using
+# Edel OS makes cleo with edel settings first-boot, as root through
+# doas, and restarts, which ends this VM (-no-reboot). The disk's next
+# start leaves the login to the greeter.
+# It runs apart from live, on a runner of its own in CI (ci/vm-tests.sh).
+if [ "$*" = fresh ]; then
+	. ci/names.sh
+	dir=out/desktop-live
+	QMP="$dir/qmp.sock"
+	mkdir -p "$dir"
+	rm -f "$QMP"
 	fresh="$dir/fresh.img"
 	cp --sparse=always out/edel-desktop-x86_64.img "$fresh"
 	fresh_log=out/desktop-fresh.log
@@ -8406,8 +8419,8 @@ if [ "$*" = live ]; then
 	stop_vm
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img" "$fresh" "$dir/fresh-data.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png), and the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
+	rm -f "$fresh" "$dir/fresh-data.img"
+	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
 
