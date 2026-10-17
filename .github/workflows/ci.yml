@@ -354,7 +354,8 @@ jobs:
   images:
     name: Build and boot images
     needs: [changes, build, vm]
-    if: always()
+    # Not on a cancelled run, which a newer one replaces.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: The images were built and every VM test lane passed
@@ -456,7 +457,7 @@ jobs:
   desktop:
     name: Desktop tests
     needs: [changes, desktop-part]
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
