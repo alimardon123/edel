@@ -22,5 +22,9 @@ name = "Suspend and resume"
 test = "suspend"
 
 [[basics]]
-name = "Lid and power key"
-needs = "M7.8"
+name = "Lid"
+test = "lid"
+
+[[basics]]
+name = "Power key"
+needs = "hardware"

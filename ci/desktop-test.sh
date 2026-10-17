@@ -258,7 +258,12 @@
 #   suspend     edel suspend, as ci, suspends the VM to memory (QEMU reports
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
-#               printed; run last, after flatpak (M6.7)
+#               printed; run after flatpak (M6.7)
+#   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
+#               root: the compositor hears it, shell-ui locks the screen and
+#               suspends the VM (QEMU reports it suspended), QMP's
+#               system_wakeup brings it back, the lid opens, and ci's password
+#               unlocks the screen; run after suspend (M7.8)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -287,7 +292,7 @@
 #               popup the compositor shows (`input method popup shown`,
 #               input-method.png); Escape, Super+Q, and reset stop fcitx5
 #               (`input method off, fcitx5 ended`) (M6.8)
-#   flatpak     last but suspend: `edel settings set apps.installed` lists io.mpv.Mpv
+#   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
 #               window maps in the session (flatpak-mpv.png); `edel settings
@@ -633,6 +638,12 @@ suspend_fail() {
 	fail "$1; edel suspend said: $(value suspend_log)"
 }
 
+lid_fail() {
+	guest 'lid log' 2>/dev/null || :
+	wait_for 'DESKTOP-TEST: lid_log ' 10 || :
+	fail "$1; edel-testclient's lid said: $(value lid_log)"
+}
+
 case_suspend() {
 	# Suspend and resume (M6.7). The VM offers suspend to memory only with
 	# q35's S3 on (the -global line of the desktop VM); ci runs edel
@@ -688,6 +699,69 @@ case_suspend() {
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
+}
+
+case_lid() {
+	# The lid (M7.8): a lid switch on uinput, which edel-testclient --lid
+	# shuts as root for 8 s (the test service's `lid close`), as a laptop's
+	# lid reports itself. The compositor hears it, shell-ui locks the screen
+	# and then suspends the VM (its lid default), so QEMU reports suspended;
+	# QMP's system_wakeup brings it back, the lid opens, and ci's password
+	# unlocks the screen. Kept as lid.png. Each line is counted before the
+	# lid closes, as earlier cases may have logged the same one.
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	closed=$(count 'edel-compositor: lid closed')
+	shell=$(count 'edel-shell-ui: lid closed: suspend')
+	locked=$(count 'edel-compositor: screen locked$')
+	opened=$(count 'edel-compositor: lid opened')
+	guest 'lid close'
+	# The guest suspends within a second of the lid closing, before its log
+	# lines reach the serial line, so QEMU is asked first and the lines are
+	# read after the wakeup.
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = suspended ]; do
+		i=$((i + 1))
+		if [ "$i" -ge 30 ]; then
+			wait_more 'edel-compositor: lid closed' "$closed" 1 || lid_fail "the compositor did not hear the lid close"
+			wait_more 'edel-shell-ui: lid closed: suspend' "$shell" 1 || lid_fail "shell-ui did not take the lid close for suspend"
+			lid_fail "QEMU did not report the guest suspended within 30 s of the lid closing"
+		fi
+		sleep 1
+	done
+	sleep 2
+	python3 ci/qmp.py wakeup
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = running ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "QEMU did not report the guest running within 20 s of system_wakeup"
+		sleep 1
+	done
+	# As in case_suspend, the serial line loses the first bytes sent after
+	# the wakeup, so a command that changes nothing is sent until answered.
+	i=0
+	answered=$(count 'DESKTOP-TEST: ran lid log')
+	until [ "$(count 'DESKTOP-TEST: ran lid log')" -gt "$answered" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the test service answered no command within 20 s of the wakeup"
+		guest 'lid log'
+		sleep 1
+	done
+	wait_more 'edel-compositor: lid closed' "$closed" || lid_fail "the compositor did not hear the lid close"
+	wait_more 'edel-shell-ui: lid closed: suspend' "$shell" || lid_fail "shell-ui did not take the lid close for suspend"
+	wait_more 'edel-compositor: screen locked$' "$locked" || lid_fail "the screen was not locked before the suspend"
+	wait_more 'edel-compositor: lid opened' "$opened" 30 || lid_fail "the compositor did not hear the lid open after the wakeup"
+	# QEMU's virtio-gpu shows "Display output is not active" after S3, as
+	# in case_suspend's picture, whatever the guest draws: the picture is
+	# kept, and the unlock below proves the lock screen still takes keys.
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/lid.png"
+	uniform=$(python3 ci/qmp.py uniform "$dir/lid.png")
+	[ "$uniform" = varied ] || fail "the locked screen after the lid opened is $uniform"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen after the lid opened"
+	echo "PASS: the lid closed (uinput), shell-ui locked the screen and suspended the VM (QEMU said suspended), system_wakeup woke it, the lid opened and ci's password unlocked it (lid.png)"
 }
 
 case_default_apps_keys() {
@@ -5181,6 +5255,32 @@ case_fullscreen() {
 	wait_for 'DESKTOP-TEST: windows .* full@0,0,1280x800!' || fail "the windows line does not show full at 0,0 1280x800, fullscreen: $(value windows)"
 	shot fullscreen 640 790 33aa66 >/dev/null || fail "640,790, where the panel is, is not full's colour"
 	shot fullscreen 4 4 33aa66 >/dev/null || fail "the top left corner is not full's colour"
+	# Direct scanout (M7.7): full draws in shared memory, so it cannot go
+	# straight to the screen, and the compositor says why.
+	wait_for 'edel-compositor: scanout=unavailable for window full on ' ||
+		fail "the compositor did not say whether full goes straight to the screen"
+	# Game mode (M7.7): the VM has no battery, so power.game_mode's
+	# plugged-in has it on; the virtual screen has no variable refresh,
+	# which the compositor said when it lit it, and the compositor offers
+	# tearing-control-v1. Super+G turns game mode off and on again, each
+	# shown in shell-ui's pop-up over the fullscreen window, the first
+	# kept as game-mode.png; the state file follows.
+	value vrr | grep -q 'edel-compositor: screen [^ ]* has no variable refresh' ||
+		fail "the compositor did not say the screen has no variable refresh: $(value vrr)"
+	case " $(value globals) " in
+	*" wp_tearing_control_manager_v1 "*) ;;
+	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
+	esac
+	game=$(count 'edel-compositor: game mode off \(Super\+G\)')
+	shown=$(count 'edel-shell-ui: osd shown, game mode off')
+	python3 ci/qmp.py key meta_l-g
+	wait_more 'edel-compositor: game mode off \(Super\+G\)' "$game" || fail "Super+G did not turn game mode off"
+	wait_more 'edel-shell-ui: osd shown, game mode off' "$shown" || fail "shell-ui did not show game mode off"
+	shot game-mode 4 4 33aa66 >/dev/null || fail "full did not stay under the game mode pop-up"
+	state_now && grep -q '^game_mode = false' "$dir/state-now.toml" || fail "the state file does not say game_mode = false"
+	game=$(count 'edel-compositor: game mode on \(Super\+G\)')
+	python3 ci/qmp.py key meta_l-g
+	wait_more 'edel-compositor: game mode on \(Super\+G\)' "$game" || fail "Super+G did not turn game mode on again"
 	left=$(count 'edel-compositor: window full not fullscreen')
 	python3 ci/qmp.py key meta_l-f
 	wait_more 'edel-compositor: window full not fullscreen' "$left" || fail "Super+F did not take full out of fullscreen"
@@ -5208,7 +5308,7 @@ case_fullscreen() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+F took it out and back; foot went fullscreen and back with Super+F"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
 }
 
 case_portal() {

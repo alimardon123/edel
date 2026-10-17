@@ -47,6 +47,7 @@ power.lid_close
 power.lock_after_minutes
 power.power_button
 power.on_battery
+power.game_mode
 services.*
 updates.channel
 updates.version

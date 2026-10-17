@@ -285,6 +285,28 @@ pub const ROWS: &[Row] = &[
         key: "displays.*.enabled",
         title: n_("On"),
     },
+    // The Power page (M7.8): the lid, the power button, the screen lock and
+    // the battery's profile, in the page's order.
+    Row {
+        key: edel::settings::LID_CLOSE,
+        title: n_("When the lid closes"),
+    },
+    Row {
+        key: edel::settings::POWER_BUTTON,
+        title: n_("Power button"),
+    },
+    Row {
+        key: edel::settings::LOCK_AFTER_MINUTES,
+        title: n_("Lock the screen after"),
+    },
+    Row {
+        key: edel::settings::ON_BATTERY,
+        title: n_("On battery"),
+    },
+    Row {
+        key: edel::settings::GAME_MODE,
+        title: n_("Game mode"),
+    },
     // The Notifications page (M5.9b).
     Row {
         key: edel::settings::DO_NOT_DISTURB,
@@ -587,6 +609,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Next keyboard layout"),
     },
     Row {
+        key: "shortcuts.toggle_game_mode",
+        title: n_("Game mode on or off"),
+    },
+    Row {
         key: "shortcuts.show_tray",
         title: n_("Show tray"),
     },
@@ -672,6 +698,12 @@ pub fn label(value: &str) -> String {
         "dot" => n_("Dot"),
         "count" => n_("Count"),
         "none" => n_("None"),
+        "poweroff" => n_("Shut down"),
+        "nothing" => n_("Do nothing"),
+        "ask" => n_("Ask"),
+        "lock" => n_("Lock the screen"),
+        "power-saver" => n_("Power saver"),
+        "plugged-in" => n_("When plugged in"),
         _ => return crate::files::title(&value.replace('-', " ")),
     };
     tr(word).to_string()

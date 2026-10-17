@@ -221,6 +221,17 @@ fn overlay_etc() -> Result<()> {
         .arg("/etc"))
     .context("cannot mount the /etc overlay")?;
     println!("edel-data: /etc changes are kept on {MOUNT_POINT}");
+    // OpenRC read the services before this layer was there, so a service
+    // whose script the layer links in, an add-on's (M7.2a), would never
+    // start without this. It costs a moment, only at a boot with such an
+    // add-on.
+    if crate::addons::has_services() {
+        if let Err(err) = run(&mut base::reread_services()) {
+            eprintln!(
+                "warning: edel-data: OpenRC could not read the add-ons' services again, so they may not start: {err:#}"
+            );
+        }
+    }
     Ok(())
 }
 

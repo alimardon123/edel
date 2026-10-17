@@ -75,6 +75,11 @@ pub fn need(command: &Commands) -> Need {
         Commands::Install { .. } => Need::Password,
         Commands::Status => Need::Anyone,
         Commands::Restart | Commands::Shutdown | Commands::Suspend => Need::Admin,
+        // A profile is how hard the machine works, not what can break or
+        // open it, and the login feature's rule lets the people at the
+        // machine (group seat) set it with no password, so no administrator
+        // is asked for it (M7.8).
+        Commands::Power { .. } => Need::Anyone,
         Commands::Boot { .. } => Need::Admin,
         Commands::Report { esp } => {
             if *esp {
@@ -554,6 +559,8 @@ mod tests {
             (&["edel", "theme", "list"], Need::Anyone),
             (&["edel", "theme", "save", "mine"], Need::Admin),
             (&["edel", "theme", "export", "mine"], Need::Admin),
+            (&["edel", "power", "profile"], Need::Anyone),
+            (&["edel", "power", "profile", "balanced"], Need::Anyone),
             (&["edel", "preset", "list"], Need::Anyone),
             (&["edel", "preset", "delete", "mine"], Need::Admin),
             (&["edel", "web-app", "add", "example.org"], Need::Anyone),

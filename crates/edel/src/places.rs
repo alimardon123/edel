@@ -216,6 +216,10 @@ pub const PASSWORD_CHECKERS: &[&str] = &["/sbin/unix_chkpwd", "/usr/sbin/unix_ch
 pub const AS_ROOT: &str = "doas";
 /// The variable [`AS_ROOT`] sets to the login name of the person who ran it.
 pub const AS_ROOT_USER: &str = "DOAS_USER";
+/// Where the `edel` command is installed on a machine, which the rules of
+/// the login feature (`etc/doas.d/`) name when a person's `edel` runs it as
+/// root (M7.8).
+pub const EDEL_BIN: &str = "/usr/bin/edel";
 
 /// The boot loader the slot carries, which rides along with updates (M1.8).
 pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";

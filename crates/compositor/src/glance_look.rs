@@ -451,8 +451,9 @@ pub fn ring(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i32)
 /// The soft shadow under a spread window `w` by `h` logical pixels at
 /// `scale`, cast by the one light above (`shadow`, `shadow_blur`,
 /// `shadow_offset`, drawn by `edel::draw::shadow`): a picture that lies
-/// `margin` pixels out from the window's corner on every side.
-pub fn shadow(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i32)> {
+/// `margin` pixels out from the window's corner on every side. Its corners
+/// are `radius` logical pixels round (the overview's 6, a window's own).
+pub fn shadow(w: i32, h: i32, scale: f64, tokens: &Tokens, radius: f32) -> Option<(Pixmap, i32)> {
     let s = scale as f32;
     // A wide, light lift, as the mockup has it: the menus' shadow
     // (`edel::draw::shadow`) spread 2.25 times as far, falling half as far,
@@ -465,7 +466,7 @@ pub fn shadow(w: i32, h: i32, scale: f64, tokens: &Tokens) -> Option<(Pixmap, i3
         (w as f32 * s).round() as u32,
         (h as f32 * s).round() as u32,
         margin as u32,
-        6.0 * s,
+        radius * s,
         blur,
         drop,
         Colour {

@@ -1492,7 +1492,7 @@ fn overview_shadow(
         .get(window)
         .is_none_or(|(p, _)| p.shows != shows)
     {
-        match glance_look::shadow(at.size.w, at.size.h, scale, tokens) {
+        match glance_look::shadow(at.size.w, at.size.h, scale, tokens, 6.0) {
             Some((pixmap, margin)) => {
                 overview
                     .shadows

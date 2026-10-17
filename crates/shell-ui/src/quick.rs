@@ -55,6 +55,9 @@ pub const DARK_PAGE: &str = "appearance";
 pub const SOUND_PAGE: &str = "sound";
 /// The Displays page of Settings, which a right click on the brightness opens (M5.9c).
 pub const DISPLAYS_PAGE: &str = "displays";
+/// The Power page of Settings, where the game mode row is; the game mode
+/// pop-up's button opens it (M7.7).
+pub const POWER_PAGE: &str = "power";
 /// The room between the player's card (`player.rs`, M5.9d) and quick
 /// settings' card, logical pixels: above the card on a bottom panel, below
 /// it on a top one.
@@ -1408,6 +1411,28 @@ pub(crate) struct Bar<'a> {
     pub(crate) focused: bool,
 }
 
+/// The words on a bar: their size, logical pixels before the scale (M5.9c).
+pub(crate) const BAR_TEXT: f32 = 11.5;
+
+/// A bar's empty track: the veil the fill lies over (M5.9c, and the game
+/// mode pill of the pop-up, M7.7).
+pub(crate) fn bar_empty(pixmap: &mut Pixmap, track: Rect, tokens: &Tokens, s: f32) {
+    let (tx, ty, tw, th) = track.device(s);
+    fill(pixmap, tx, ty, tw, th, th / 2.0, veil(tokens, 0.07));
+}
+
+/// A bar's icon: 16 px across, 13 px from the track's left end (M5.9c).
+pub(crate) fn bar_icon(track: Rect) -> Rect {
+    Rect::new(track.x + 13.0, track.y, 16.0, track.h)
+}
+
+/// The top, in device pixels, of a line of `size` device pixels set in the
+/// middle of the track's height (M5.9c).
+pub(crate) fn bar_text_top(track: Rect, s: f32, size: f32) -> f32 {
+    let (_, ty, _, th) = track.device(s);
+    ty + (th - size * 1.25) / 2.0
+}
+
 /// A slider's bar, drawn for the volume and the brightness alike (M5.9c):
 /// the track, the fill to the level at least a bar wide, the icon 13 px
 /// from the track's left end, the number 14 px in from its right end and
@@ -1420,9 +1445,9 @@ pub(crate) fn slider(
     tokens: &Tokens,
     s: f32,
 ) {
-    let (tx, ty, tw, th) = track.device(s);
+    let (tx, ty, _, th) = track.device(s);
     let round = th / 2.0;
-    fill(pixmap, tx, ty, tw, th, round, veil(tokens, 0.07));
+    bar_empty(pixmap, track, tokens, s);
     let share = bar.percent.min(100) as f32 / 100.0;
     let filled = if bar.percent > 0 {
         (share * track.w).max(track.h).min(track.w)
@@ -1439,7 +1464,7 @@ pub(crate) fn slider(
         fill(pixmap, tx, ty, filled * s, th, round, c);
     }
     // The icon, 16 px across; its ink is the card's text where the fill covers it.
-    let icon = Rect::new(track.x + 13.0, track.y, 16.0, track.h);
+    let icon = bar_icon(track);
     let covered = filled >= 29.0;
     let ink = if !covered {
         dim(tokens)
@@ -1450,10 +1475,10 @@ pub(crate) fn slider(
     };
     icon_in(pixmap, bar.icon, 16.0, icon, s, ink);
     if let Some(text) = text {
-        let size = 11.5 * s;
+        let size = BAR_TEXT * s;
         let mut number = text.line_in(&bar.percent.to_string(), size, Face::SEMIBOLD.tabular());
         let right = (track.right() - 14.0) * s;
-        let top = ty + (th - size * 1.25) / 2.0;
+        let top = bar_text_top(track, s, size);
         let left = right - number.width;
         text.draw(pixmap, &mut number, left, top, dim(tokens));
     }
@@ -1683,6 +1708,7 @@ mod tests {
             }),
             bluetooth: Some(false),
             brightness: None,
+            on_battery: Some(true),
         }
     }
 
@@ -1752,6 +1778,10 @@ mod tests {
         assert!(
             main.contains(&format!("\"{SOUND_PAGE}\" => Some(Page {{")),
             "the Settings app has no page called {SOUND_PAGE}"
+        );
+        assert!(
+            main.contains(&format!("\"{POWER_PAGE}\" => Some(Page {{")),
+            "the Settings app has no page called {POWER_PAGE}"
         );
     }
 

@@ -119,9 +119,9 @@ pub struct Edel {
     /// The modifier pressed alone while nothing else was, until another
     /// key or a button comes (M5.3b).
     pub tap: Option<smithay::input::keyboard::Keysym>,
-    /// A touchpad swipe under way: its fingers and how far it slid down
-    /// (M5.2j-b4).
-    pub swipe: Option<(u32, f64)>,
+    /// A touchpad swipe under way: its fingers, how far it slid, and the
+    /// workspaces three of them hold (M5.2j-b4, M5.14).
+    pub swipe: Option<crate::workspaces::Swipe>,
     /// `EDEL_LOG_KEYS=1`: each key's code, press or release and the
     /// modifiers held are logged, for CI's desktop test alone; a session
     /// never sets it, as a log of keys holds what people type.
@@ -138,6 +138,9 @@ pub struct Edel {
     /// Each window's shadow, kept with what it shows and its margin in
     /// pixels, painted again only when its size or the shadow changes
     /// (`render.rs`, M5.12b3).
+    /// The rounded corners' programs, once the renderer made them; none
+    /// keeps the corners square (M5.14).
+    pub rounded: Option<crate::rounded::Rounded>,
     pub window_shadows: std::collections::HashMap<Window, (crate::glance::Painted, i32)>,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
@@ -148,6 +151,8 @@ pub struct Edel {
     pub screens_changed: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
+    /// Game mode (M7.7, `games.rs`).
+    pub game: crate::games::Game,
     /// What is opening, closing and sliding (`animate.rs`).
     pub animations: crate::animate::Animations,
     /// The X11 display for X11 apps (`xwayland.rs`).
@@ -202,6 +207,9 @@ pub struct Edel {
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     /// The surfaces that asked to keep the screen on.
     pub idle_inhibitors: Vec<WlSurface>,
+    /// ext-idle-notify-v1: the clients told when the person is idle
+    /// (`everyday.rs`, M7.8).
+    pub idle_notifier: smithay::wayland::idle_notify::IdleNotifierState<Edel>,
     _pointer_constraints: smithay::wayland::pointer_constraints::PointerConstraintsState,
     _relative_pointer: smithay::wayland::relative_pointer::RelativePointerManagerState,
     _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
@@ -220,7 +228,12 @@ pub struct Edel {
 }
 
 impl Edel {
-    pub fn new(display: DisplayHandle, signal: LoopSignal, tokens: Tokens) -> Result<Edel> {
+    pub fn new(
+        display: DisplayHandle,
+        signal: LoopSignal,
+        loop_handle: LoopHandle<'static, Edel>,
+        tokens: Tokens,
+    ) -> Result<Edel> {
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&display, "seat0");
         seat.add_keyboard(Default::default(), 600, 25)?;
@@ -229,6 +242,7 @@ impl Edel {
         crate::toplevels::create_global(&display);
         crate::edelshell::create_global(&display);
         crate::screencopy::create_global(&display);
+        crate::games::create_global(&display);
         Ok(Edel {
             dmabuf: crate::dmabuf::Dmabufs::default(),
             compositor: CompositorState::new::<Edel>(&display),
@@ -262,6 +276,10 @@ impl Edel {
                 ),
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Edel>(&display),
             idle_inhibitors: Vec::new(),
+            idle_notifier: smithay::wayland::idle_notify::IdleNotifierState::new(
+                &display,
+                loop_handle,
+            ),
             _pointer_constraints:
                 smithay::wayland::pointer_constraints::PointerConstraintsState::new::<Edel>(
                     &display,
@@ -334,12 +352,14 @@ impl Edel {
             switcher: None,
             overview: None,
             overview_kept: Default::default(),
+            rounded: None,
             window_shadows: std::collections::HashMap::new(),
             settings: Settings::default(),
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),
             app_icons: crate::decoration::AppIcons::new(),
             screens_changed: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
+            game: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
                 edel_compositor::effects::Tier::Lite,
                 edel_compositor::animation::Motion::Full,
@@ -593,6 +613,7 @@ impl Edel {
         if old.keyboard != new.keyboard {
             self.apply_keyboard();
         }
+        self.follow_game_mode(new.game_mode);
         self.restyle();
         let rescaled = self.apply_scales();
         if old.workspace_names != new.workspace_names {
@@ -874,6 +895,8 @@ impl Edel {
         // The workspace in use: the pointer's screen's, with workspaces on
         // each screen (M5.2k); each screen's own is in its table.
         table.insert("workspace".into(), Value::Integer(shown as i64 + 1));
+        // Whether game mode is on (M7.7).
+        table.insert("game_mode".into(), Value::Boolean(self.game.on()));
         table.insert(
             "workspaces".into(),
             Value::Integer(self.desks.count() as i64),

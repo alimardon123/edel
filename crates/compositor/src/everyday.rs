@@ -8,7 +8,9 @@
 //! - primary selection, so selected text pastes with a middle click;
 //! - idle inhibit, so a playing video keeps the screen on: the state file
 //!   counts the surfaces that ask (`idle_inhibitors`), which M7.8's idle
-//!   honours;
+//!   honours: ext-idle-notify (M7.8) tells clients when the person is idle,
+//!   and holds off while a surface asks, even one that died without saying
+//!   so (`sync_idle_inhibit`);
 //! - xdg-activation, so a link clicked in one app raises the browser that
 //!   opens it: the window comes forward, to its workspace if it is on
 //!   another, as a click in the window list does;
@@ -19,6 +21,7 @@
 //!   screen's keys aside).
 
 use smithay::delegate_idle_inhibit;
+use smithay::delegate_idle_notify;
 use smithay::delegate_keyboard_shortcuts_inhibit;
 use smithay::delegate_pointer_constraints;
 use smithay::delegate_primary_selection;
@@ -29,6 +32,7 @@ use smithay::reexports::wayland_server::Resource as _;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point};
 use smithay::wayland::idle_inhibit::IdleInhibitHandler;
+use smithay::wayland::idle_notify::{IdleNotifierHandler, IdleNotifierState};
 use smithay::wayland::keyboard_shortcuts_inhibit::{
     KeyboardShortcutsInhibitHandler, KeyboardShortcutsInhibitState, KeyboardShortcutsInhibitor,
 };
@@ -120,12 +124,14 @@ impl IdleInhibitHandler for Edel {
     fn inhibit(&mut self, surface: WlSurface) {
         if !self.idle_inhibitors.contains(&surface) {
             self.idle_inhibitors.push(surface);
+            self.sync_idle_inhibit();
             self.state_changed();
         }
     }
 
     fn uninhibit(&mut self, surface: WlSurface) {
         self.idle_inhibitors.retain(|s| *s != surface);
+        self.sync_idle_inhibit();
         self.state_changed();
     }
 }
@@ -134,6 +140,20 @@ impl Edel {
     /// The surfaces that keep the screen on now: those still alive.
     pub fn idle_inhibited(&self) -> usize {
         self.idle_inhibitors.iter().filter(|s| s.is_alive()).count()
+    }
+
+    /// Holds the idle notifications while a surface keeps the screen on.
+    /// Run after every dispatch: a surface that dies without asking to
+    /// stop leaves the count with no call to `uninhibit`.
+    pub fn sync_idle_inhibit(&mut self) {
+        let inhibited = self.idle_inhibited() > 0;
+        self.idle_notifier.set_is_inhibited(inhibited);
+    }
+}
+
+impl IdleNotifierHandler for Edel {
+    fn idle_notifier_state(&mut self) -> &mut IdleNotifierState<Self> {
+        &mut self.idle_notifier
     }
 }
 
@@ -185,6 +205,7 @@ delegate_pointer_constraints!(Edel);
 delegate_relative_pointer!(Edel);
 delegate_primary_selection!(Edel);
 delegate_idle_inhibit!(Edel);
+delegate_idle_notify!(Edel);
 delegate_keyboard_shortcuts_inhibit!(Edel);
 delegate_xdg_activation!(Edel);
 

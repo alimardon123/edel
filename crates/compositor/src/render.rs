@@ -7,20 +7,25 @@
 //! faded, grown or shrunk about its centre, or off its place.
 
 use smithay::backend::renderer::Renderer;
+use smithay::backend::renderer::Texture;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
-    WaylandSurfaceRenderElement, render_elements_from_surface_tree,
+    WaylandSurfaceRenderElement, WaylandSurfaceTexture, render_elements_from_surface_tree,
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
-use smithay::backend::renderer::element::utils::RescaleRenderElement;
-use smithay::backend::renderer::element::{AsRenderElements, Kind};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
-use smithay::desktop::Window;
+use smithay::backend::renderer::element::utils::{
+    Relocate, RelocateRenderElement, RescaleRenderElement,
+};
+use smithay::backend::renderer::element::{AsRenderElements, Element as _, Kind};
+use smithay::backend::renderer::gles::element::PixelShaderElement;
+use smithay::backend::renderer::gles::{GlesRenderer, GlesTexProgram, GlesTexture};
+use smithay::desktop::{PopupManager, Window};
 use smithay::input::pointer::CursorImageStatus;
 use smithay::output::Output;
-use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Scale, Size, Transform};
 
+use edel_compositor::corners;
 use edel_compositor::effects::Tier;
 use edel_compositor::frame::{Border, Insets, Look};
 use edel_compositor::tokens::Tokens;
@@ -30,6 +35,7 @@ use crate::decoration::{data, title};
 use crate::glance::painted;
 use crate::glance_look;
 use crate::pointer::surface_hotspot;
+use crate::rounded::{Clipped, RingLook, ring_element, ring_once};
 use crate::state::Edel;
 
 smithay::backend::renderer::element::render_elements! {
@@ -38,6 +44,9 @@ smithay::backend::renderer::element::render_elements! {
     Bar=MemoryRenderBufferRenderElement<GlesRenderer>,
     Border=SolidColorRenderElement,
     Picture=TextureRenderElement<GlesTexture>,
+    Clipped=crate::rounded::Clipped<WaylandSurfaceRenderElement<GlesRenderer>>,
+    ClippedPicture=crate::rounded::Clipped<TextureRenderElement<GlesTexture>>,
+    Ring=RelocateRenderElement<PixelShaderElement>,
 }
 
 // What a frame draws: elements as they are, or grown or shrunk about a
@@ -105,6 +114,87 @@ pub(crate) fn centre_of(
 ) -> Point<i32, Physical> {
     let centre = (frame.loc - screen).to_f64() + frame.size.to_f64().downscale(2.0).to_point();
     centre.to_physical(scale).to_i32_round() + shift
+}
+
+/// `window`'s surfaces drawn at `origin`, as smithay draws a window: its
+/// popups above its toplevel's tree, unclipped (M5.14). With `clip` (the
+/// clip shader, the rectangle in pixels and the corner radii) the toplevel's
+/// textures are clipped to their rounded corners; a window with no
+/// toplevel is drawn as smithay draws it.
+fn surfaces(
+    renderer: &mut GlesRenderer,
+    window: &Window,
+    origin: Point<i32, Physical>,
+    scale: f64,
+    alpha: f32,
+    clip: Option<(GlesTexProgram, Rectangle<i32, Physical>, [f32; 4])>,
+) -> Vec<Element> {
+    let Some(toplevel) = window.toplevel() else {
+        return window
+            .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
+                renderer,
+                origin,
+                Scale::from(scale),
+                alpha,
+            )
+            .into_iter()
+            .map(Element::Surface)
+            .collect();
+    };
+    let surface = toplevel.wl_surface();
+    let mut elements = Vec::new();
+    for (popup, popup_offset) in PopupManager::popups_for_surface(surface) {
+        let offset = (window.geometry().loc + popup_offset - popup.geometry().loc)
+            .to_physical_precise_round(scale);
+        elements.extend(
+            render_elements_from_surface_tree(
+                renderer,
+                popup.wl_surface(),
+                origin + offset,
+                Scale::from(scale),
+                alpha,
+                Kind::Unspecified,
+            )
+            .into_iter()
+            .map(Element::Surface),
+        );
+    }
+    let tree: Vec<WaylandSurfaceRenderElement<GlesRenderer>> = render_elements_from_surface_tree(
+        renderer,
+        surface,
+        origin,
+        Scale::from(scale),
+        alpha,
+        Kind::Unspecified,
+    );
+    let Some((program, rect, radii)) = clip else {
+        elements.extend(tree.into_iter().map(Element::Surface));
+        return elements;
+    };
+    for element in tree {
+        // A texture drawn untransformed and not upside down is clipped; any
+        // other is drawn as it is, unclipped (`Clipped::new`'s `plain`).
+        let clipped = match element.texture() {
+            WaylandSurfaceTexture::Texture(texture) => Some((
+                texture.size(),
+                element.transform() == Transform::Normal && !texture.is_y_inverted(),
+            )),
+            WaylandSurfaceTexture::SolidColor(_) => None,
+        };
+        match clipped {
+            Some((size, plain)) => elements.push(Element::Clipped(Clipped::new(
+                element,
+                Scale::from(scale),
+                &program,
+                rect,
+                radii,
+                size,
+                plain,
+            ))),
+            None => elements.push(Element::Surface(element)),
+        }
+    }
+    elements
 }
 
 impl Edel {
@@ -223,7 +313,13 @@ impl Edel {
             let Some(place) = self.space.element_geometry(&window) else {
                 continue;
             };
-            let mut look = self.animations.look(&window, now);
+            // A switch's key is built only while one runs (M5.14).
+            let switch = if self.animations.switches.is_empty() {
+                None
+            } else {
+                self.window_switch_key(&window)
+            };
+            let mut look = self.animations.look(&window, now, &switch);
             // The window's opacity (M5.12b3) multiplies its own fade, so its
             // picture, title bar and border all show it.
             look.alpha *= self.opacity_of(&window);
@@ -231,6 +327,22 @@ impl Edel {
             let origin = (place.loc - window.geometry().loc - screen.loc)
                 .to_physical_precise_round(scale)
                 + shift;
+            // Rounded corners (M5.14): the window's surfaces are clipped to
+            // its place in pixels, with the radii its frame leaves.
+            let radius = self.corner_radius(&window);
+            let insets = self.insets(&window);
+            let clip = self.rounded.as_ref().filter(|_| radius > 0).map(|rounded| {
+                let rect = Rectangle::new(
+                    origin + window.geometry().loc.to_physical_precise_round(scale),
+                    place.size.to_physical_precise_round(scale),
+                );
+                let radii = corners::surface_radii(
+                    radius as f32 * scale as f32,
+                    insets.side as f32 * scale as f32,
+                    insets.top > 0,
+                );
+                (rounded.clip.clone(), rect, radii)
+            });
             // An input method's popup (M6.8) lies above the window it types
             // into, so it comes first, as the top of the window's parts.
             let mut parts: Vec<Element> = window
@@ -248,20 +360,10 @@ impl Edel {
                 .into_iter()
                 .map(Element::Surface)
                 .collect();
-            parts.extend(
-                window
-                    .render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
-                        renderer,
-                        origin,
-                        Scale::from(scale),
-                        look.alpha,
-                    )
-                    .into_iter()
-                    .map(Element::Surface),
-            );
+            parts.extend(surfaces(renderer, &window, origin, scale, look.alpha, clip));
             self.remember_picture(&window);
             parts.extend(self.frame_elements(renderer, &window, place, screen.loc, scale, look));
-            let outer = self.insets(&window).frame(place);
+            let outer = insets.frame(place);
             let centre = centre_of(outer, screen.loc, scale, shift);
             elements.extend(parts.into_iter().map(|e| zoomed(e, centre, look.zoom)));
             // Its shadow lies under the window's own parts (M5.12b3).
@@ -304,8 +406,14 @@ impl Edel {
         {
             return Vec::new();
         }
+        // The shadow follows the window's corners (M5.14); square, the 6 it
+        // always had.
+        let radius = match self.corner_radius(window) {
+            0 => 6.0,
+            r => r as f32,
+        };
         let shows = format!(
-            "{:?} {scale} {:?} {} {}",
+            "{:?} {scale} {:?} {} {} {radius}",
             outer.size, self.tokens.shadow, self.tokens.shadow_blur, self.tokens.shadow_offset
         );
         if self
@@ -313,7 +421,7 @@ impl Edel {
             .get(window)
             .is_none_or(|(p, _)| p.shows != shows)
         {
-            match glance_look::shadow(outer.size.w, outer.size.h, scale, &self.tokens) {
+            match glance_look::shadow(outer.size.w, outer.size.h, scale, &self.tokens, radius) {
                 Some((pixmap, margin)) => {
                     self.window_shadows
                         .insert(window.clone(), (painted(shows, &pixmap), margin));
@@ -364,11 +472,31 @@ impl Edel {
         let shift = look.offset.to_physical(scale);
         let centre = centre_of(closed.frame, screen, scale, shift.to_i32_round());
         let at = |p: Point<i32, Logical>| (p - screen).to_f64().to_physical(scale) + shift;
+        // A rounded closing window's pictures are clipped to the place it
+        // had (M5.14), with the radii its frame leaves.
+        let clip = self
+            .rounded
+            .as_ref()
+            .zip(closed.clip_frame)
+            .filter(|_| closed.radius > 0)
+            .map(|(rounded, place)| {
+                let rect = Rectangle::new(
+                    at(place.loc).to_i32_round::<i32>(),
+                    place.size.to_physical_precise_round(scale),
+                );
+                let top = place.loc.y - closed.frame.loc.y;
+                let radii = corners::surface_radii(
+                    closed.radius as f32 * scale as f32,
+                    closed.edge as f32 * scale as f32,
+                    top > 0,
+                );
+                (&rounded.clip, rect, radii)
+            });
         let mut parts: Vec<Element> = closed
             .parts
             .iter()
             .map(|(id, part)| {
-                Element::Picture(TextureRenderElement::from_static_texture(
+                let texture = TextureRenderElement::from_static_texture(
                     id.clone(),
                     context.clone(),
                     at(part.at),
@@ -380,7 +508,23 @@ impl Edel {
                     Some(part.size),
                     None,
                     Kind::Unspecified,
-                ))
+                );
+                match clip {
+                    Some((program, rect, radii)) => {
+                        let plain =
+                            part.transform == Transform::Normal && !part.texture.is_y_inverted();
+                        Element::ClippedPicture(Clipped::new(
+                            texture,
+                            Scale::from(scale),
+                            program,
+                            rect,
+                            radii,
+                            part.texture.size(),
+                            plain,
+                        ))
+                    }
+                    None => Element::Picture(texture),
+                }
             })
             .collect();
         if let Some(bar) = &closed.bar {
@@ -399,29 +543,62 @@ impl Edel {
                 Err(e) => eprintln!("edel-compositor: drawing a title bar failed: {e}"),
             }
         }
-        for (buffer, place) in &closed.borders {
-            parts.push(Element::Border(SolidColorRenderElement::from_buffer(
-                buffer,
-                at(place.loc).to_i32_round(),
-                scale,
-                look.alpha,
-                Kind::Unspecified,
-            )));
-        }
-        if let Some(strip) = &closed.strip {
-            match MemoryRenderBufferRenderElement::from_buffer(
-                renderer,
-                at(strip.place.loc),
-                &strip.buffer,
-                Some(look.alpha),
-                Some(Rectangle::from_size(
-                    (f64::from(strip.pixels.0), f64::from(strip.pixels.1)).into(),
-                )),
-                Some(strip.place.size),
-                Kind::Unspecified,
-            ) {
-                Ok(element) => parts.push(Element::Bar(element)),
-                Err(e) => eprintln!("edel-compositor: drawing a window's border failed: {e}"),
+        // A rounded window's border is one ring (M5.14); a square one keeps
+        // its sides and its strip.
+        let ring = match (self.rounded.as_ref(), closed.clip_frame, closed.border) {
+            (Some(rounded), Some(place), Some(border)) => {
+                let top = place.loc.y - closed.frame.loc.y;
+                let area = Rectangle::new(
+                    Point::from((closed.frame.loc.x, closed.frame.loc.y + top)) - screen,
+                    Size::from((closed.frame.size.w, closed.frame.size.h - top)),
+                );
+                let edge = RingLook {
+                    start: border.start.rgba(),
+                    end: border.end.rgba(),
+                    edge: closed.edge as f32,
+                    radius: closed.radius as f32,
+                    scale: scale as f32,
+                };
+                Some(ring_once(
+                    &rounded.ring,
+                    area,
+                    edge,
+                    look.alpha,
+                    shift.to_i32_round::<i32>(),
+                ))
+            }
+            _ => None,
+        };
+        match ring {
+            Some(ring) => parts.push(Element::Ring(ring)),
+            None => {
+                for (buffer, place) in &closed.borders {
+                    parts.push(Element::Border(SolidColorRenderElement::from_buffer(
+                        buffer,
+                        at(place.loc).to_i32_round(),
+                        scale,
+                        look.alpha,
+                        Kind::Unspecified,
+                    )));
+                }
+                if let Some(strip) = &closed.strip {
+                    match MemoryRenderBufferRenderElement::from_buffer(
+                        renderer,
+                        at(strip.place.loc),
+                        &strip.buffer,
+                        Some(look.alpha),
+                        Some(Rectangle::from_size(
+                            (f64::from(strip.pixels.0), f64::from(strip.pixels.1)).into(),
+                        )),
+                        Some(strip.place.size),
+                        Kind::Unspecified,
+                    ) {
+                        Ok(element) => parts.push(Element::Bar(element)),
+                        Err(e) => {
+                            eprintln!("edel-compositor: drawing a window's border failed: {e}")
+                        }
+                    }
+                }
             }
         }
         parts
@@ -448,6 +625,7 @@ impl Edel {
             return parts;
         }
         let border = Border::of(&self.tokens, is_focused);
+        let radius = self.corner_radius(window);
         let outer = insets.frame(place);
         let shift = seen.offset.to_physical(scale);
         let at = |p: Point<i32, Logical>| (p - screen).to_f64().to_physical(scale) + shift;
@@ -478,6 +656,7 @@ impl Edel {
             shown: self.shown(window),
             scheme: self.settings.color_scheme,
             border,
+            radius: (f64::from(radius) * scale).round() as u32,
         };
         let mut frame = data(window).borrow_mut();
         let icon = icon_name.and_then(|name| self.app_icons.picture(&name, icon_px));
@@ -497,6 +676,29 @@ impl Edel {
             Err(e) => eprintln!("edel-compositor: drawing a title bar failed: {e}"),
         }
         if insets.side == 0 && insets.bottom == 0 {
+            return parts;
+        }
+        // A rounded window's border is one ring (M5.14), its bottom corners
+        // curved, drawn below the bar and moved with it as the bar is.
+        if let Some(rounded) = self.rounded.as_ref().filter(|_| radius > 0) {
+            let area = Rectangle::new(
+                outer.loc + Point::from((0, insets.top)) - screen,
+                Size::from((outer.size.w, outer.size.h - insets.top)),
+            );
+            let look = RingLook {
+                start: border.start.rgba(),
+                end: border.end.rgba(),
+                edge: insets.side as f32,
+                radius: radius as f32,
+                scale: scale as f32,
+            };
+            let ring = ring_element(&mut frame.ring, &rounded.ring, area, look, seen.alpha);
+            let relocated = RelocateRenderElement::from_element(
+                ring,
+                shift.to_i32_round::<i32>(),
+                Relocate::Relative,
+            );
+            parts.push(Element::Ring(relocated));
             return parts;
         }
         // The border round the window, as the mockups draw it (M5.12b2b):

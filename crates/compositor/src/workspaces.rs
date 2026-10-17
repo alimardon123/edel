@@ -4,32 +4,72 @@
 //! windows leave the `Space`, so they are not drawn and get no frame
 //! callbacks; each workspace keeps its stacking order and its own policy.
 //! Nothing happens during a drag, whose grab holds a shown window. A
-//! switch slides at the tier's slide length (M5.2f): the shown windows'
-//! pictures leave towards one side while the other workspace's windows
-//! come in from the other, as the workspaces lie in a row; on Lite, whose
-//! slides take no time, the switch is instant. Minimizing (M5.2h) hides a
+//! switch is one spring per screen (M5.2f, M5.14) that the shown windows'
+//! pictures and the other workspace's windows share: the pictures leave
+//! towards one side while the windows come in from the other, as the
+//! workspaces lie in a row. Three fingers on a touchpad hold that spring and
+//! move the workspaces one to one (`swipe_moved`); on Lite, whose slides take
+//! no time, a switch is instant. Minimizing (M5.2h) hides a
 //! window the same way, on its own workspace, until the window list
 //! brings it back. With `workspaces.per_screen` (M5.2k) each
 //! screen shows its own workspace: Super+1 to Super+9 switch the screen
 //! the pointer is on, and a window put on another screen joins the
 //! workspace shown there.
 
+use std::time::Duration;
+
 use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER};
 
 use edel::places;
 use edel::settings::{self, WORKSPACE_NAMES, WORKSPACE_WALLPAPERS};
+use edel_compositor::animation::{SWIPE_START, swipe_goes, swipe_offset};
 use edel_compositor::desks::{MOST, dynamic_plan, names_to_write, reordered_names, slide_by};
 use edel_compositor::messages;
 
 use crate::decoration::{data, title};
 use crate::state::Edel;
 
+/// A touchpad swipe under way (M5.2j-b4, M5.14): its fingers, how far
+/// they slid across and down, and, once three took the workspaces, the
+/// switch they hold.
+pub struct Swipe {
+    /// How many fingers are on the touchpad.
+    pub fingers: u32,
+    /// How far they slid across, in touchpad pixels, from where they began.
+    pub dx: f64,
+    /// How far they slid down, in touchpad pixels; up is negative.
+    pub dy: f64,
+    /// The workspaces three fingers hold, once they took them.
+    pub held: Option<Held>,
+}
+
+/// The workspaces three fingers hold: which screen's switch, its `by` along
+/// x, the screen's width, and the offset and speed the fingers last gave it
+/// with when.
+pub struct Held {
+    /// The screen whose switch it is, by name, or `None` for every screen.
+    key: Option<String>,
+    /// How far the switch moves the workspace along x, as `slide_by` gives.
+    by_x: f64,
+    /// The screen's width, which the fingers' slide is measured against.
+    width: f64,
+    /// Where the switch is held along x, as an offset from its place.
+    offset: f64,
+    /// How fast the fingers moved it along x, in logical px a second.
+    velocity: f64,
+    /// When the fingers last moved it, on the animations' clock.
+    at: Duration,
+    /// The workspace shown before the swipe, which a swipe back returns to.
+    from: usize,
+}
+
 impl Edel {
     /// Shows workspace `to`, from 0, if it is not shown: on every screen,
-    /// or, with workspaces on each screen, on the pointer's.
+    /// or, with workspaces on each screen, on the pointer's. Nothing
+    /// happens while three fingers hold the workspaces (M5.14).
     pub fn switch_workspace(&mut self, to: usize) {
-        if self.dragging {
+        if self.dragging || self.swipe.as_ref().is_some_and(|s| s.held.is_some()) {
             return;
         }
         if self.desks.per_screen() {
@@ -50,14 +90,18 @@ impl Edel {
         };
         let width = self.window_area().map_or(0, |area| area.size.w);
         let by = Point::from((slide_by(from, to, width), 0));
+        // One switch for every screen, so its key is `None`.
+        let key: Option<String> = None;
+        let slid = self.animations.begin_switch(&key, by.to_f64());
         for (window, _) in &shown {
-            self.snapshot_leaving(window, by);
+            if slid {
+                self.snapshot_leaving(window, by.to_f64(), key.clone());
+            }
             self.hide(window);
         }
-        // Each comes in from a screen's width away; the relayout below
-        // slides it to its place, or puts it there at once on Lite.
+        // Each comes in from a screen's width away, with the switch.
         for (window, frame) in back {
-            self.show(window, frame, Point::default() - by);
+            self.show(window, frame);
         }
         eprintln!("edel-compositor: workspace {}", to + 1);
         self.focus_top();
@@ -70,7 +114,7 @@ impl Edel {
     /// With workspaces on each screen, shows workspace `to` on screen
     /// `name` alone, its windows there sliding in as a switch's do.
     pub fn switch_screen(&mut self, to: usize, name: &str) {
-        if self.dragging {
+        if self.dragging || self.swipe.as_ref().is_some_and(|s| s.held.is_some()) {
             return;
         }
         let shown: Vec<(Window, Rectangle<i32, Logical>)> = self
@@ -89,12 +133,16 @@ impl Edel {
             .find(|(n, _)| n == name)
             .map_or(0, |(_, area)| area.size.w);
         let by = Point::from((slide_by(from, to, width), 0));
+        let key = self.switch_key(name);
+        let slid = self.animations.begin_switch(&key, by.to_f64());
         for (window, _) in &shown {
-            self.snapshot_leaving(window, by);
+            if slid {
+                self.snapshot_leaving(window, by.to_f64(), key.clone());
+            }
             self.hide(window);
         }
         for (window, frame) in back {
-            self.show(window, frame, Point::default() - by);
+            self.show(window, frame);
         }
         eprintln!("edel-compositor: workspace {} on {name}", to + 1);
         self.focus_top();
@@ -102,6 +150,25 @@ impl Edel {
         self.repoint();
         self.settle_dynamic();
         self.announce_workspaces();
+    }
+
+    /// The switch key of screen `name` (M5.14): the screen's own with
+    /// workspaces on each screen, else `None`, one switch for every screen.
+    fn switch_key(&self, screen: &str) -> Option<String> {
+        self.desks.per_screen().then(|| screen.to_string())
+    }
+
+    /// The switch key of the screen `window` is on, for the look of its
+    /// window (M5.14): with workspaces on each screen, its screen's, else
+    /// `None`.
+    pub fn window_switch_key(&self, window: &Window) -> Option<String> {
+        if !self.desks.per_screen() {
+            return None;
+        }
+        self.desks
+            .layout_of(window)
+            .screen_of(window)
+            .map(str::to_string)
     }
 
     /// Shows workspace `desk` where `window` is: on every screen, or, with
@@ -135,7 +202,7 @@ impl Edel {
             .filter_map(|window| Some((window.clone(), self.frame_of(window)?)))
             .collect();
         for (window, frame) in self.desks.settle_screens(&shown, &areas) {
-            self.show(window, frame, Point::default());
+            self.show(window, frame);
         }
     }
 
@@ -152,7 +219,7 @@ impl Edel {
             }
         }
         for (window, frame) in self.desks.set_per_screen(on) {
-            self.show(window, frame, Point::default());
+            self.show(window, frame);
         }
         self.settle_screens();
         eprintln!(
@@ -311,7 +378,7 @@ impl Edel {
             self.hide(window);
         }
         if shows {
-            self.show(window.clone(), place, Point::default());
+            self.show(window.clone(), place);
         }
         self.focus_top();
         self.relayout();
@@ -328,7 +395,8 @@ impl Edel {
     /// state file. The count is logged when it changes. Nothing happens
     /// unless `workspaces.dynamic` is on.
     pub fn settle_dynamic(&mut self) {
-        if !self.settings.dynamic() {
+        // Fingers still hold the workspaces: their swipe settles it (M5.14).
+        if !self.settings.dynamic() || self.animations.swiping {
             return;
         }
         let before = self.desks.count();
@@ -376,7 +444,7 @@ impl Edel {
         };
         eprintln!("edel-compositor: {count} workspaces");
         for (window, frame) in joined {
-            self.show(window, frame, Point::default());
+            self.show(window, frame);
         }
         self.settle_screens();
         self.relayout();
@@ -424,7 +492,7 @@ impl Edel {
             return false;
         };
         eprintln!("edel-compositor: restored window {}", title(window));
-        self.show(window.clone(), frame, Point::default());
+        self.show(window.clone(), frame);
         self.animations.opened(window);
         self.focus(window);
         self.relayout();
@@ -463,12 +531,14 @@ impl Edel {
         }
     }
 
-    /// `window` comes back on top, its frame at `frame`, drawn `from`
-    /// away from it; the relayout after it fits the frame to the screen as
-    /// it is now, sliding the window there.
-    fn show(&mut self, window: Window, frame: Rectangle<i32, Logical>, from: Point<i32, Logical>) {
+    /// `window` comes back on top, its frame at `frame`, where the layout
+    /// has it; the relayout after it fits the frame to the screen as it is
+    /// now. A window shown again is drawn itself, not the picture it left
+    /// behind (M5.14).
+    fn show(&mut self, window: Window, frame: Rectangle<i32, Logical>) {
         let place = self.insets(&window).window(frame);
-        self.space.map_element(window, place.loc + from, false);
+        self.animations.came_back(&window);
+        self.space.map_element(window, place.loc, false);
     }
 
     /// The keyboard goes to the top window, or to nothing on an empty
@@ -496,6 +566,168 @@ impl Edel {
         } else if let Some(keyboard) = self.seat.get_keyboard() {
             keyboard.set_focus(self, None, SERIAL_COUNTER.next_serial());
         }
+    }
+
+    /// A touchpad swipe moved by `dx` across and `dy` down (touchpad
+    /// pixels). Three fingers that slid far enough across take the
+    /// workspaces, and from then on the switch they hold moves one to one
+    /// with them (M5.14); other swipes only count for the four-finger
+    /// overview, decided when they end (`swipe_ended`).
+    pub fn swipe_moved(&mut self, dx: f64, dy: f64) {
+        let Some(swipe) = self.swipe.as_mut() else {
+            return;
+        };
+        swipe.dx += dx;
+        swipe.dy += dy;
+        let (fingers, across, down) = (swipe.fingers, swipe.dx, swipe.dy);
+        match swipe.held.take() {
+            Some(held) => {
+                let held = self.hold_swipe(held, across);
+                if let Some(swipe) = self.swipe.as_mut() {
+                    swipe.held = Some(held);
+                }
+            }
+            None if fingers == 3
+                && across.abs() >= SWIPE_START
+                && across.abs() > down.abs()
+                && !self.dragging
+                && self.overview.is_none()
+                && !self.is_locked() =>
+            {
+                if let Some(held) = self.take_workspaces(across < 0.0, across) {
+                    if let Some(swipe) = self.swipe.as_mut() {
+                        swipe.held = Some(held);
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+
+    /// Fingers that hold the workspaces moved `across` from where they
+    /// began: the switch follows them one to one, and its speed is what
+    /// they moved it at since they last did (`held.velocity`, smoothed).
+    fn hold_swipe(&mut self, mut held: Held, across: f64) -> Held {
+        let now = self.animations.now();
+        let offset = swipe_offset(held.by_x, across, held.width);
+        let dt = now.saturating_sub(held.at).as_secs_f64();
+        if dt > 0.0 {
+            let new = (offset - held.offset) / dt;
+            held.velocity = 0.5 * held.velocity + 0.5 * new;
+        }
+        held.offset = offset;
+        held.at = now;
+        if let Some(switch) = self.animations.switches.get_mut(&held.key) {
+            switch.hold((offset, 0.0).into(), (held.velocity, 0.0).into());
+        }
+        self.dirty = true;
+        held
+    }
+
+    /// Three fingers took the workspaces (M5.14): the next one (`forward`)
+    /// or the one before comes in on the screen the pointer is on, held by
+    /// the fingers from where they are, with `across` slid so far. None when
+    /// nothing is there to switch to, or no screen.
+    fn take_workspaces(&mut self, forward: bool, across: f64) -> Option<Held> {
+        let (name, area) = if self.desks.per_screen() {
+            let (name, area) = self.pointer_screen()?;
+            (Some(name), area)
+        } else {
+            (None, self.window_area()?)
+        };
+        let width = area.size.w;
+        if width <= 0 {
+            return None;
+        }
+        let moved_screen = name
+            .as_ref()
+            .is_some_and(|name| self.desks.use_screen(name));
+        if moved_screen {
+            self.announce_workspaces();
+            self.state_changed();
+        }
+        let to = self.desks.neighbour(forward)?;
+        let from = self.desks.active();
+        let by_x = f64::from(slide_by(from, to, width));
+        let key = name.as_ref().and_then(|name| self.switch_key(name));
+        self.animations.swiping = true;
+        self.switch_workspace(to);
+        let shown = match &name {
+            Some(name) => self.desks.shown_on(name),
+            None => self.desks.active(),
+        };
+        if shown != to || !self.animations.switches.contains_key(&key) {
+            self.animations.swiping = false;
+            return None;
+        }
+        let offset = swipe_offset(by_x, across, f64::from(width));
+        if let Some(switch) = self.animations.switches.get_mut(&key) {
+            switch.hold((offset, 0.0).into(), (0.0, 0.0).into());
+        }
+        eprintln!("edel-compositor: swipe to workspace {}", to + 1);
+        self.dirty = true;
+        Some(Held {
+            key,
+            by_x,
+            width: f64::from(width),
+            offset,
+            velocity: 0.0,
+            at: self.animations.now(),
+            from,
+        })
+    }
+
+    /// Three fingers lifted, or the touchpad cancelled the swipe (M5.14). A
+    /// swipe that held the workspaces goes on to the incoming one when it is
+    /// past half way or flicked, else it springs back to where it was; a
+    /// swipe that did not hold them is the four-finger overview's, as before
+    /// (M5.2j-b4).
+    pub fn swipe_ended(&mut self, cancelled: bool) {
+        let Some(swipe) = self.swipe.take() else {
+            return;
+        };
+        let Some(held) = swipe.held else {
+            let open = self.overview.is_some();
+            if !cancelled
+                && !self.is_locked()
+                && edel_compositor::overview::swiped(swipe.fingers, swipe.dy, open)
+            {
+                eprintln!("edel-compositor: overview swipe");
+                self.toggle_overview();
+            }
+            return;
+        };
+        let now = self.animations.now();
+        self.animations.swiping = false;
+        // Fingers that stopped before they lifted send no update, so an
+        // old speed is no speed.
+        let velocity = if now.saturating_sub(held.at) > Duration::from_millis(50) {
+            0.0
+        } else {
+            held.velocity
+        };
+        let goes = !cancelled && swipe_goes(held.offset, velocity, held.by_x);
+        let style = self.animations.style;
+        if let Some(switch) = self.animations.switches.get_mut(&held.key) {
+            switch.hold((held.offset, 0.0).into(), (velocity, 0.0).into());
+            if goes {
+                switch.release(now, style.slide, style.curve);
+            }
+        }
+        if goes {
+            let shown = match held.key.as_deref() {
+                Some(name) => self.desks.shown_on(name),
+                None => self.desks.active(),
+            };
+            eprintln!("edel-compositor: swipe went to workspace {}", shown + 1);
+        } else {
+            // Back to where the fingers found it: the switch carries on from
+            // where it is held, so it springs back (on Lite it jumps).
+            self.switch_workspace(held.from);
+            eprintln!("edel-compositor: swipe went back");
+        }
+        self.dirty = true;
+        self.settle_dynamic();
     }
 }
 

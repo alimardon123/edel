@@ -373,7 +373,7 @@ impl Build<'_> {
         // The data partition's mount point; / may be read-only at boot.
         fs::create_dir_all(root.join("data"))?;
         let exe = std::env::current_exe().context("finding the running edel binary")?;
-        let dest = root.join("usr/bin/edel");
+        let dest = root.join(edel::places::EDEL_BIN.trim_start_matches('/'));
         fs::create_dir_all(root.join("usr/bin"))?;
         fs::copy(&exe, &dest).with_context(|| format!("copying {}", exe.display()))?;
         fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
