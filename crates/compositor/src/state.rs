@@ -138,6 +138,9 @@ pub struct Edel {
     /// Each window's shadow, kept with what it shows and its margin in
     /// pixels, painted again only when its size or the shadow changes
     /// (`render.rs`, M5.12b3).
+    /// The rounded corners' programs, once the renderer made them; none
+    /// keeps the corners square (M5.14).
+    pub rounded: Option<crate::rounded::Rounded>,
     pub window_shadows: std::collections::HashMap<Window, (crate::glance::Painted, i32)>,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
@@ -349,6 +352,7 @@ impl Edel {
             switcher: None,
             overview: None,
             overview_kept: Default::default(),
+            rounded: None,
             window_shadows: std::collections::HashMap::new(),
             settings: Settings::default(),
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),

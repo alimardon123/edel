@@ -31,6 +31,7 @@ mod outputs;
 mod pointer;
 mod program;
 mod render;
+mod rounded;
 mod sandbox;
 mod screencopy;
 mod session;

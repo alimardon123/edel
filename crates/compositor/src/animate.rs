@@ -29,6 +29,7 @@ use edel_compositor::animation::{
     Anim, Curve, Motion, Slide, Style, Switch, closing, opening, style,
 };
 use edel_compositor::effects::Tier;
+use edel_compositor::frame::Border;
 
 use crate::decoration::data;
 use crate::state::Edel;
@@ -85,6 +86,16 @@ pub struct Closing {
     /// Its picture of a window whose workspace is being left, moving with
     /// that screen's switch; none when it closed.
     pub leave: Option<Leaving>,
+    /// The window's corner radius in logical pixels when it was snapshot;
+    /// 0 is square (M5.14).
+    pub radius: u32,
+    /// Where its surfaces were clipped, the window's place, when it was
+    /// drawn rounded; none when square (M5.14).
+    pub clip_frame: Option<Rectangle<i32, Logical>>,
+    /// The border's colours, when its frame has a border drawn (M5.14).
+    pub border: Option<Border>,
+    /// The border's width in logical pixels.
+    pub edge: i32,
 }
 
 /// A window's picture of a workspace being left (M5.14): it is drawn at
@@ -349,6 +360,12 @@ impl Edel {
         let new = style(tier, motion, speed, curve);
         // Said once the renderer, and so the tier, is known, then on change.
         let known = self.animations.context.is_some();
+        // A new tier may square or round the corners (M5.14): the windows
+        // that did not move are drawn whole again.
+        if known && self.animations.logged.is_some_and(|(was, ..)| was != tier) {
+            self.repaint = true;
+            self.dirty = true;
+        }
         if known && self.animations.logged != Some((tier, motion, speed, curve)) {
             self.animations.logged = Some((tier, motion, speed, curve));
             eprintln!(
@@ -476,6 +493,10 @@ impl Edel {
         let origin = place.loc - window.geometry().loc;
         let insets = self.insets(window);
         let frame = insets.frame(place);
+        let radius = self.corner_radius(window);
+        let focused = self.focused_window().as_ref() == Some(window);
+        let border = (insets.top > 0 && (insets.side > 0 || insets.bottom > 0))
+            .then(|| Border::of(&self.tokens, focused));
         let mut frame_data = data(window).borrow_mut();
         let picture = if leave.is_some() {
             frame_data.picture.clone()
@@ -556,6 +577,10 @@ impl Edel {
             borders,
             strip,
             leave,
+            radius,
+            clip_frame: (radius > 0).then_some(place),
+            border,
+            edge: insets.side,
         });
         self.dirty = true;
     }
