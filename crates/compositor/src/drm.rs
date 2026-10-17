@@ -531,7 +531,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                 gpu.scan(state);
             }
             if std::mem::take(&mut state.woke) {
-                gpu.reset_screens();
+                state.repaint = true;
                 state.dirty = true;
             }
             gpu.render(state);
@@ -734,8 +734,7 @@ impl Gpu {
     }
 
     /// Forgets what each screen showed, so the next frame sets it up and
-    /// draws it whole: after another terminal had the screens, or after the
-    /// lid opened from a suspend that reset the GPU (M7.8).
+    /// draws it whole, after another terminal had the screens.
     fn reset_screens(&mut self) {
         for screen in self.screens.values_mut() {
             if let Err(e) = screen.compositor.reset_state() {

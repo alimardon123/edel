@@ -147,7 +147,8 @@ pub struct Edel {
     /// (`drm.rs`).
     pub screens_changed: bool,
     /// The lid opened (M7.8), as after a suspend: the screens may have lost
-    /// what they showed, so the backend sets them up and draws them whole.
+    /// what they showed, so the backend draws them whole again, into the
+    /// buffers it has (a new buffer then could hang a virtual GPU).
     pub woke: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
