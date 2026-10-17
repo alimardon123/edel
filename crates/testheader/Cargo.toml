@@ -12,3 +12,6 @@ publish = false
 # its own, so the test client builds where GTK is not installed (the
 # desktop on another distribution, M5.15a).
 gtk = { package = "gtk4", version = "0.11", features = ["v4_12"] }
+# libadwaita apps' header bars (M6.18), the window `--adw` draws, so CI
+# sees the colours and the high contrast a libadwaita app takes from us.
+adw = { package = "libadwaita", version = "0.9", features = ["v1_4"] }
