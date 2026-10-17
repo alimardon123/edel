@@ -73,10 +73,6 @@ pub struct Build<'a> {
     pub runner: Runner,
 }
 
-/// The platform level images promise (ADR-005, M8.8): 0 until level 1
-/// exists.
-pub const PLATFORM_LEVEL: u32 = 0;
-
 /// `os-release` with the build's version and channel (M3.1): the version
 /// replaces `VERSION_ID`, `VERSION` and `PRETTY_NAME` when given, and
 /// `EDEL_CHANNEL`, `EDEL_ARCH` and `EDEL_PLATFORM_LEVEL` are added.
@@ -93,8 +89,10 @@ pub fn with_version(os_release: &str, version: Option<&str>, channel: &str, arch
         out.push_str(&replaced);
         out.push('\n');
     }
+    let key = edel::platform::OS_RELEASE_KEY;
+    let level = edel::platform::LEVEL;
     out.push_str(&format!(
-        "EDEL_CHANNEL=\"{channel}\"\nEDEL_ARCH=\"{arch}\"\nEDEL_PLATFORM_LEVEL={PLATFORM_LEVEL}\n"
+        "EDEL_CHANNEL=\"{channel}\"\nEDEL_ARCH=\"{arch}\"\n{key}={level}\n"
     ));
     out
 }
@@ -288,10 +286,11 @@ impl Build<'_> {
         let beside = self.out.join(format!("{stem}.packages"));
         let bom = self.out.join(format!("{stem}.cdx.json"));
         self.runner.step(&format!(
-            "record the installed packages in {} and {}, and their bill of materials in {}",
+            "record the installed packages in {} and {} and their bill of materials in {}, and check them against platform level {}",
             edel::places::PACKAGES_FILE,
             beside.display(),
-            bom.display()
+            bom.display(),
+            edel::platform::LEVEL
         ));
         if self.runner.dry_run {
             return Ok(());
@@ -304,6 +303,7 @@ impl Build<'_> {
             )
         })?;
         let packages = crate::bom::parse_installed(&text);
+        self.check_platform(&packages)?;
         let mut lines: Vec<String> = packages
             .iter()
             .map(|p| format!("{}-{}", p.name, p.version))
@@ -319,6 +319,35 @@ impl Build<'_> {
         let document = crate::bom::cyclonedx(&stem, version, &distro, &packages);
         fs::write(&bom, document)
             .with_context(|| format!("writing the bill of materials {}", bom.display()))?;
+        Ok(())
+    }
+
+    /// Refuses an image that falls below the platform level it promises
+    /// (ADR-005, M8.8): its kernel and the app platform's packages, read
+    /// from the level's file, against the packages apk recorded.
+    fn check_platform(&self, packages: &[crate::bom::Package]) -> Result<()> {
+        let number = edel::platform::LEVEL;
+        let Some(level) = edel::platform::level(number) else {
+            bail!("platform level {number} is not built in; see platform/level-{number}.toml");
+        };
+        let pairs: Vec<(&str, &str)> = packages
+            .iter()
+            .map(|p| (p.name.as_str(), p.version.as_str()))
+            .collect();
+        let kernel = self
+            .def
+            .vm
+            .as_ref()
+            .map(|vm| format!("linux-{}", vm.kernel));
+        let features: Vec<&str> = self.def.features.iter().map(|f| f.name.as_str()).collect();
+        let short =
+            edel::platform::shortfalls(number, &level, &pairs, kernel.as_deref(), &features);
+        if !short.is_empty() {
+            bail!(
+                "the image falls below platform level {number} (platform/level-{number}.toml): {}",
+                short.join("; ")
+            );
+        }
         Ok(())
     }
 
@@ -775,9 +804,10 @@ impl Build<'_> {
             ));
         }
         self.runner.step(&format!(
-            "write version {}, channel {} and platform level {PLATFORM_LEVEL} into /usr/lib/os-release",
+            "write version {}, channel {} and platform level {} into /usr/lib/os-release",
             self.version.as_deref().unwrap_or("of the overlay"),
-            self.channel
+            self.channel,
+            edel::platform::LEVEL
         ));
         self.runner.step("lock the root password");
         if let Some(hostname) = &self.def.hostname {
@@ -2043,7 +2073,7 @@ mod tests {
         assert!(text.contains("\nPRETTY_NAME=\"Edel OS 2026.10.57\"\n"));
         assert!(
             text.ends_with(
-                "EDEL_CHANNEL=\"preview\"\nEDEL_ARCH=\"x86_64\"\nEDEL_PLATFORM_LEVEL=0\n"
+                "EDEL_CHANNEL=\"preview\"\nEDEL_ARCH=\"x86_64\"\nEDEL_PLATFORM_LEVEL=1\n"
             )
         );
         let dev = with_version(os, None, "dev", "x86_64");

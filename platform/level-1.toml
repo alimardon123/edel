@@ -1,0 +1,42 @@
+# Platform level 1 (ADR-005, roadmap M8.8): what an app can count on from
+# every Edel OS release that promises this level, now and in every later
+# one. The first release of a level sets its floors to the versions it
+# ships, to the minor number (Alpine v3.24 on 2026-10-17: linux-lts and
+# linux-virt 6.18.57, flatpak 1.16.6, xdg-desktop-portal 1.21.2, its gtk
+# backend 1.15.3, its wlr backend 0.8.2). A level only ever rises: no later
+# release may ship less, and `edel image build` refuses an image that
+# would (edel::platform). docs/platform-levels.md is the contract in
+# words; `edel platform status` shows it on a machine.
+format = 1
+
+# The oldest kernel an image of this level boots: the version of its
+# kernel package (`linux-` and the image's vm.kernel). Images without a
+# kernel, such as the container, run on their host's.
+kernel = "6.18"
+
+# The runtimes apps of this level run on. CI's flatpak test installs and
+# runs the newest branch Flathub serves on every change.
+runtimes = ["org.freedesktop.Platform"]
+
+# The app platform's own packages, each at least this version wherever it
+# is in an image, and always in an image with the feature named.
+
+[[packages]]
+name = "flatpak"
+at_least = "1.16"
+feature = "flatpak"
+
+[[packages]]
+name = "xdg-desktop-portal"
+at_least = "1.21"
+feature = "flatpak"
+
+[[packages]]
+name = "xdg-desktop-portal-gtk"
+at_least = "1.15"
+feature = "flatpak"
+
+[[packages]]
+name = "xdg-desktop-portal-wlr"
+at_least = "0.8"
+feature = "capture"

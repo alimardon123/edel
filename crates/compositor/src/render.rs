@@ -269,7 +269,6 @@ impl Edel {
         let scale = output.current_scale().fractional_scale();
         let now = self.animations.now();
         self.animations.prune(now);
-        let windows: Vec<_> = self.space.elements().rev().cloned().collect();
         let mut elements: Vec<Drawn> = self
             .cursor_elements(renderer, screen.loc, scale)
             .into_iter()
@@ -287,6 +286,13 @@ impl Edel {
             elements.extend(self.overview_elements(renderer, output, scale));
             return elements;
         }
+        // A game plays alone on its screen (M7.7c): its window is drawn,
+        // the layers over it and the cursor, nothing else.
+        let game = self.playing_on(output).cloned();
+        let windows: Vec<_> = match &game {
+            Some(top) => vec![top.clone()],
+            None => self.space.elements().rev().cloned().collect(),
+        };
         // Panels over the windows, backgrounds under them (M5.1a); a dock
         // a window covers is not drawn (M5.4f).
         let hidden = self.hidden_layers();
@@ -306,16 +312,20 @@ impl Edel {
         for spot in &mut spots {
             spot.after += base;
         }
-        // Closed windows fading out where they were in the stack (M5.11b).
-        let mut pictures: Vec<(usize, Vec<Drawn>)> = self
-            .animations
-            .closing
-            .iter()
-            .map(|closed| {
-                let drawn = self.closing_elements(renderer, closed, screen.loc, scale, now);
-                (closed.above, drawn)
-            })
-            .collect();
+        // Closed windows fading out where they were in the stack (M5.11b),
+        // none behind a game (M7.7c).
+        let mut pictures: Vec<(usize, Vec<Drawn>)> = if game.is_some() {
+            Vec::new()
+        } else {
+            self.animations
+                .closing
+                .iter()
+                .map(|closed| {
+                    let drawn = self.closing_elements(renderer, closed, screen.loc, scale, now);
+                    (closed.above, drawn)
+                })
+                .collect()
+        };
         for (index, window) in windows.into_iter().enumerate() {
             for (_, drawn) in pictures.iter_mut().filter(|(above, _)| *above == index) {
                 elements.append(drawn);
@@ -382,6 +392,12 @@ impl Edel {
         }
         for (_, drawn) in &mut pictures {
             elements.append(drawn);
+        }
+        // The layers under the windows and the wallpaper are not drawn
+        // behind a game (M7.7c), and nothing is blurred behind it.
+        if game.is_some() {
+            self.drop_backdrop(output);
+            return elements;
         }
         elements.extend(crate::layers::elements(
             renderer,

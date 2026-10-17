@@ -296,6 +296,9 @@
 #               popup the compositor shows (`input method popup shown`,
 #               input-method.png); Escape, Super+Q, and reset stop fcitx5
 #               (`input method off, fcitx5 ended`) (M6.8)
+#   office-fonts  fontconfig draws Carlito for Calibri and Liberation Sans,
+#               Serif and Mono for Arial, Times New Roman and Courier New,
+#               as a Word or PowerPoint file asks (M7.6d)
 #   profiles    with gaming named, `edel settings set apps.installed-=` Steam
 #               leaves it out (system.profiles_without), apply ends 0 and
 #               the diff no longer installs it; reset takes the key out (M7.6c)
@@ -1044,6 +1047,16 @@ wait_more() {
 		i=$((i + 1))
 		[ "$i" -lt $((${3:-20} * 5)) ] || return 1
 		sleep 0.2
+	done
+}
+
+# update_log PATTERN: asks the guest for the update's log until its newest
+# `update` line matches PATTERN, up to 10 tries a second apart (M7.7c).
+update_log() {
+	i=0
+	until guest 'update log' && sleep 1 && value update | grep -q "$1"; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || return 1
 	done
 }
 
@@ -5280,6 +5293,11 @@ case_fullscreen() {
 	# again; Super+Q closes it. Then Super+F does the same for foot.
 	# Kept as fullscreen.png and fullscreen-left.png.
 	panel=$(token panel)
+	# A window that draws on every frame (M7.7c) opens first, under full,
+	# so the frames it gets show whether a game hides it.
+	mapped=$(count 'edel-compositor: mapped window busy')
+	guest 'busy window'
+	wait_more 'edel-compositor: mapped window busy' "$mapped" || fail "the window busy did not open"
 	opened=$(count 'edel-compositor: window full fullscreen')
 	guest 'full window'
 	wait_more 'edel-compositor: window full fullscreen' "$opened" || fail "the window full did not go fullscreen"
@@ -5302,6 +5320,25 @@ case_fullscreen() {
 	*" wp_tearing_control_manager_v1 "*) ;;
 	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
 	esac
+	# A game plays (M7.7c): full is fullscreen with game mode on, so the
+	# compositor and shell-ui step aside and the state file says so. The
+	# desktop's CPU over 30 s and the busy window's frames show it.
+	wait_for 'edel-compositor: a game is playing; the desktop steps aside' || fail "the compositor did not say a game plays"
+	wait_for 'edel-shell-ui: a game is playing; the timers stop' || fail "shell-ui did not stop its timers for the game"
+	state_now && grep -q '^playing = true' "$dir/state-now.toml" || fail "the state file does not say playing = true"
+	n=$(count 'DESKTOP-TEST: busy_frames ')
+	guest 'desktop cpu'
+	wait_more 'DESKTOP-TEST: busy_frames ' "$n" 50 || fail "desktop cpu did not answer with a game playing"
+	percent=$(value desktop_cpu_percent)
+	set -- $(value busy_frames)
+	on_before=${1:-0} on_after=${2:-0}
+	limit=$(budget desktop_behind_game_cpu_percent)
+	awk -v p="$percent" -v b="$limit" 'BEGIN { exit !(p != "" && p < b) }' ||
+		fail "with a game playing the compositor and shell-ui used ${percent:-?} percent of a CPU over 30 s, over the budget of $limit percent"
+	[ "$((on_after - on_before))" -le 1 ] || fail "the busy window got $((on_after - on_before)) frames in 30 s behind a game"
+	# An update waits for the game, so it does not take the machine from it.
+	guest 'update during game'
+	update_log 'a game is playing, so this waits until it ends' || fail "edel update did not wait for the game: $(value update)"
 	game=$(count 'edel-compositor: game mode off \(Super\+G\)')
 	shown=$(count 'edel-shell-ui: osd shown, game mode off')
 	python3 ci/qmp.py key meta_l-g
@@ -5309,6 +5346,17 @@ case_fullscreen() {
 	wait_more 'edel-shell-ui: osd shown, game mode off' "$shown" || fail "shell-ui did not show game mode off"
 	shot game-mode 4 4 33aa66 >/dev/null || fail "full did not stay under the game mode pop-up"
 	state_now && grep -q '^game_mode = false' "$dir/state-now.toml" || fail "the state file does not say game_mode = false"
+	# The game ended (M7.7c): the compositor says so and the update goes on.
+	wait_for 'edel-compositor: the game ended; the desktop is back' || fail "the compositor did not say the game ended"
+	update_log 'the game ended; going on' || fail "edel update did not go on once the game ended: $(value update)"
+	# With game mode off the desktop is back; this CPU number is the before
+	# of the desktop's cost, and it has no gate.
+	n=$(count 'DESKTOP-TEST: busy_frames ')
+	guest 'desktop cpu'
+	wait_more 'DESKTOP-TEST: busy_frames ' "$n" 50 || fail "desktop cpu did not answer with game mode off"
+	percent_off=$(value desktop_cpu_percent)
+	set -- $(value busy_frames)
+	off_before=${1:-0} off_after=${2:-0}
 	game=$(count 'edel-compositor: game mode on \(Super\+G\)')
 	python3 ci/qmp.py key meta_l-g
 	wait_more 'edel-compositor: game mode on \(Super\+G\)' "$game" || fail "Super+G did not turn game mode on again"
@@ -5339,7 +5387,11 @@ case_fullscreen() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
+	guest 'busy close'
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Behind a fullscreen game (M7.7c): the compositor and shell-ui used $percent percent of a CPU over 30 s in game mode, $percent_off percent with it off; the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game"
 }
 
 case_clipboard() {
@@ -6904,8 +6956,10 @@ case_desktop_widgets() {
 	esac
 	guest 'desktop default'
 	sleep 1
-	# Where the machine's clock stood, as the first desktop line gave it.
+	# Where the machine's clock stood, as the first desktop line gave it,
+	# with the pointer that clicked Done moved out of that box.
 	set -- $rect
+	python3 ci/qmp.py move 640 600
 	python3 ci/qmp.py screendump "$dir/desktop-gone.png"
 	gone=$(python3 ci/qmp.py where "$dir/desktop-gone.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
 	[ "${gone:-0}" -lt 20 ] ||
@@ -8147,6 +8201,19 @@ case_profiles() {
 	echo "PASS: with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
 }
 
+case_office_fonts() {
+	# Office documents keep their layout (M7.6d): the fonts Microsoft
+	# Office names are drawn with fonts of the same widths, as fontconfig's
+	# metric aliases map them.
+	asked=$(count 'DESKTOP-TEST: fonts_office ')
+	guest 'fonts office'
+	wait_more 'DESKTOP-TEST: fonts_office ' "$asked" || fail "the service did not ask fontconfig for the office fonts"
+	got=$(value fonts_office)
+	want='Carlito;Liberation Sans;Liberation Serif;Liberation Mono;'
+	[ "$got" = "$want" ] || fail "fc-match for Calibri, Arial, Times New Roman and Courier New gave $got, not $want"
+	echo "PASS: fc-match drew Calibri with Carlito, and Arial, Times New Roman and Courier New with Liberation Sans, Serif and Mono"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -8186,7 +8253,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
