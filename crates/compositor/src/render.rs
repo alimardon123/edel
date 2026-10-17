@@ -223,7 +223,13 @@ impl Edel {
             let Some(place) = self.space.element_geometry(&window) else {
                 continue;
             };
-            let mut look = self.animations.look(&window, now);
+            // A switch's key is built only while one runs (M5.14).
+            let switch = if self.animations.switches.is_empty() {
+                None
+            } else {
+                self.window_switch_key(&window)
+            };
+            let mut look = self.animations.look(&window, now, &switch);
             // The window's opacity (M5.12b3) multiplies its own fade, so its
             // picture, title bar and border all show it.
             look.alpha *= self.opacity_of(&window);
