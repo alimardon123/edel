@@ -115,6 +115,11 @@ pub const BUILT_IN: [(&str, &str); 80] = [
         "page-system",
         include_str!("../../../design/icons/page-system.svg"),
     ),
+    // The Add-ons page's (M7.2b).
+    (
+        "page-addons",
+        include_str!("../../../design/icons/page-addons.svg"),
+    ),
     ("search", include_str!("../../../design/icons/search.svg")),
     ("copy", include_str!("../../../design/icons/copy.svg")),
     ("check", include_str!("../../../design/icons/check.svg")),
