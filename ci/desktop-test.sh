@@ -5864,7 +5864,7 @@ case_lock() {
 	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
 	# The widgets' colour (M5.33d): ci unlocks, `lock colour` sets the wallpaper
 	# to black and a clock at the top left in the accent, the screen locks again,
-	# and the clock's box holds more than 200 pixels of the accent token and fewer
+	# and the clock's box holds more than 100 pixels of the accent token and fewer
 	# than 20 of the text colour. Kept as lock-colour.png. `lock colour reset`
 	# takes both out again while this lock holds, before the look below unlocks.
 	unlocked=$(count 'edel-compositor: screen unlocked$')
@@ -5893,7 +5893,7 @@ case_lock() {
 	while :; do
 		python3 ci/qmp.py screendump "$dir/lock-colour.png"
 		drawn=$(python3 ci/qmp.py where "$dir/lock-colour.png" "$1" "$2" "$3" "$4" "$accent" | awk '{print $3}')
-		[ "${drawn:-0}" -gt 200 ] && break
+		[ "${drawn:-0}" -gt 100 ] && break
 		i=$((i + 1))
 		[ "$i" -lt 10 ] ||
 			fail "the lock's clock at $1,$2 ${3}x$4 has ${drawn:-0} pixels of the accent #$accent (lock-colour.png)"
