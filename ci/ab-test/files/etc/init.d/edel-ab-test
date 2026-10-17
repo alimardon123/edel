@@ -10,15 +10,19 @@
 #      refused. The update comes over HTTP from the host. Write markers into /home and
 #      /var, delete /var/lib/ci-new, change the hostname, note the ssh
 #      host key, add a user and drop a system user from this machine's
-#      /etc/passwd, then install the update into slot B.
+#      /etc/passwd, name the add-ons ci-hello and ci-gone, see an update
+#      whose add-on does not match its list leave slot B off, then install
+#      the update into slot B, ci-gone skipped with a notice (M7.2a).
 #   2. Slot B runs and is confirmed. The markers, the hostname, the host
 #      key and the new user survived, the dropped system user came back
 #      from the slot, and so did /var/lib/ci-new; slot B's bytes are still
 #      the signed image's, after a boot (M1.12), it was started by its own
 #      slot.cfg under slot A's loader (M6.17), and its tagged boot loader
-#      replaced slot A's on the ESP once the slot was confirmed. Roll back
-#      by command.
-#   3. Slot A runs again. Install the update into slot B, then break slot
+#      replaced slot A's on the ESP once the slot was confirmed. The
+#      add-on ci-hello is mounted, its /etc file and service linked and its
+#      service ran (M7.2a). Roll back by command.
+#   3. Slot A runs again, without ci-hello and its links (M7.2a).
+#      Install the update into slot B, then break slot
 #      B's initramfs, the way a bad update could.
 #   4. Slot B panicked on each of its three tries, so GRUB started slot A
 #      again: slot A runs, slot B is switched off, a rollback to it is
@@ -245,7 +249,27 @@ start() {
 		adduser -D abuser
 		awk -F: '$3 > 0 && $3 < 1000 { u = $1 } END { print u }' /etc/passwd >/data/ab-dropped
 		sed -i "/^$(cat /data/ab-dropped):/d" /etc/passwd
-		/usr/bin/edel update --allow-http "$update" || { ab_end "FAIL: installing into slot B"; return 0; }
+		# Add-ons (M7.2a): ci-hello comes with the update; ci-gone is in no
+		# list, so it is skipped with a notice. An add-on that does not
+		# match its signed sha256 leaves the written slot off.
+		/usr/bin/edel settings set 'addons.installed=["ci-hello", "ci-gone"]' || { ab_end "FAIL: step 1 naming the add-ons"; return 0; }
+		if refused=$(/usr/bin/edel update --allow-http http://10.0.2.2:8000/badaddon.toml 2>&1); then
+			ab_end "FAIL: step 1 installed a release whose add-on did not match its list"
+			return 0
+		fi
+		echo "$refused"
+		echo "$refused" | grep -q 'refused: add-on ci-hello does not match' || {
+			ab_end "FAIL: step 1 expected refused: add-on ci-hello does not match"
+			return 0
+		}
+		slots=$(/usr/bin/edel status)
+		ab_expect "running: A" "B: ok=0" || return 0
+		out=$(/usr/bin/edel update --allow-http "$update" 2>&1) || { echo "$out"; ab_end "FAIL: installing into slot B"; return 0; }
+		echo "$out"
+		echo "$out" | grep -q 'add-on ci-gone is not in' || {
+			ab_end "FAIL: step 1 expected add-on ci-gone is not in"
+			return 0
+		}
 		ab_next 2
 		;;
 	2)
@@ -264,6 +288,10 @@ start() {
 		ab_check "the same ssh host key" cmp -s /etc/ssh/ssh_host_ed25519_key.pub /data/ab-hostkey || return 0
 		ab_check "user abuser" grep -q '^abuser:' /etc/passwd || return 0
 		ab_check "system user $(cat /data/ab-dropped) back" grep -q "^$(cat /data/ab-dropped):" /etc/passwd || return 0
+		ab_check "the add-on's program" test -x /usr/bin/ci-hello || return 0
+		ab_check "the add-on's /etc file linked" test -L /etc/ci-hello.conf || return 0
+		ab_check "the add-on's service in the runlevel" test -L /etc/runlevels/default/ci-hello || return 0
+		ab_check "the add-on's service's greeting" sh -c 'i=0; while [ ! -s /run/ci-hello ] && [ $i -lt 30 ]; do sleep 1; i=$((i + 1)); done; grep -qx "hello from an add-on" /run/ci-hello' || return 0
 		/usr/bin/edel rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;
@@ -271,6 +299,10 @@ start() {
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=1 try=0" || return 0
 		ab_has /home/ab-marker /var/ab-marker || return 0
 		ab_check "slot A's boot loader back on the ESP" cmp -s "$esp/EFI/edel/loader.toml" /data/ab-loader-a || return 0
+		# Slot A has no add-on of its version, so apply took slot B's links out.
+		ab_check "no add-on program on slot A" sh -c '! test -e /usr/bin/ci-hello' || return 0
+		ab_check "no add-on link left in /etc" sh -c '! test -L /etc/ci-hello.conf && ! test -L /etc/init.d/ci-hello' || return 0
+		ab_check "no add-on service left in the runlevel" sh -c '! test -L /etc/runlevels/default/ci-hello' || return 0
 		/usr/bin/edel update --allow-http "$update" || { ab_end "FAIL: installing into slot B again"; return 0; }
 		slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 		mkdir -p /run/ab-test/slot

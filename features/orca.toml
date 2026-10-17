@@ -1,0 +1,8 @@
+# The Orca screen reader (M6.9, M7.2a): an add-on, as Orca with a voice is
+# larger than the desktop image's room under its budget (measured
+# 2026-10-13). The base keeps AT-SPI, so every part is ready for it.
+format = 1
+summary = "Orca, the screen reader, with the eSpeak NG voice"
+why = "People who cannot see the screen use the desktop through a screen reader, and Orca is the one that reads GTK apps and our own surfaces over AT-SPI, which the base already carries (M6.9). It speaks through speech-dispatcher with the eSpeak NG voice, which knows about a hundred languages and needs no network. speech-dispatcher starts when Orca first speaks and stops when it is idle, so nothing runs until a person starts Orca."
+packages = ["orca", "speech-dispatcher", "espeak-ng"]
+addon = true
