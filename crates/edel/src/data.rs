@@ -301,6 +301,13 @@ fn developer_layer() -> Result<()> {
         .context("cannot mount developer mode's layer over /usr")?;
     }
     fs::write(now, "on\n")?;
+    // OpenRC read the services before the layer was there, so a service
+    // added in developer mode would not start without this.
+    if let Err(err) = run(&mut base::reread_services()) {
+        eprintln!(
+            "edel-data: warning: cannot read the services in developer mode's layer: {err:#}"
+        );
+    }
     println!(
         "edel-data: developer mode is on: /usr is writable, its changes kept on {MOUNT_POINT}"
     );

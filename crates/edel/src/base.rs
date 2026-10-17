@@ -25,6 +25,14 @@ pub fn add_to_runlevel(service: &str, runlevel: &str) -> Command {
     command
 }
 
+/// Reads the services again, as OpenRC caches them before `/etc` and `/usr`
+/// get their layers from the data partition (developer mode, M7.1).
+pub fn reread_services() -> Command {
+    let mut command = Command::new("rc-update");
+    command.arg("--update");
+    command
+}
+
 /// Takes `service` out of `runlevel`.
 pub fn remove_from_runlevel(service: &str, runlevel: &str) -> Command {
     let mut command = Command::new("rc-update");
