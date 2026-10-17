@@ -3703,6 +3703,11 @@ case_location() {
 	wait_more 'DESKTOP-TEST: location_answer ' "$asked" 60 || fail "Test A did not answer within 60 s of asking for its location"
 	answer=$(value location_answer)
 	case "$answer" in 'location 41.3333 69.3000 '*) ;; *) fail "Test A was not told Tashkent's place: $answer" ;; esac
+	# The sign follows GeoClue's InUse (with shell-ui as its agent), not
+	# shell-ui's fallback for a GeoClue that never says it is in use.
+	if tr -d '\r' <"$log" | grep -aq 'GeoClue does not say the place is in use\|GeoClue did not take the shell as its agent'; then
+		fail "GeoClue did not count Test A's place as in use: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: GeoClue' | tail -n 2)"
+	fi
 	# Never: the portal gives Test A nothing.
 	location_choice never 'NONE 0'
 	never=$(location_ask)
