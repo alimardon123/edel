@@ -229,6 +229,14 @@ pub fn location_not_watched(why: impl Display) -> String {
     )
 }
 
+/// GeoClue would not take shell-ui as its agent, which it needs before it
+/// answers the portal on Edel OS (M6.14c).
+pub fn location_agent_not_added(why: impl Display) -> String {
+    format!(
+        "GeoClue did not take the shell as its agent: {why}; apps get their place only if another agent runs"
+    )
+}
+
 /// GeoClue does not say the place is in use, so the sign ends the use
 /// after a few seconds (M6.14c).
 pub fn location_not_in_use(why: impl Display) -> String {
@@ -556,6 +564,10 @@ mod tests {
             "could not keep location: Permission denied (os error 13); it stays as it was"
         );
         assert!(LOCATION_NO_HOME.contains("edel settings set location.enabled=false"));
+        assert!(
+            location_agent_not_added("Access denied")
+                .starts_with("GeoClue did not take the shell as its agent: Access denied; apps")
+        );
         assert_eq!(
             location_not_in_use("no system bus"),
             "GeoClue does not say the place is in use: no system bus; the sign shows the app for 10 s only"

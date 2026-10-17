@@ -13,8 +13,11 @@
 //!   until GeoClue, the system's location service, stops using it. GeoClue
 //!   runs on the system bus only while an app asks, so a system-bus
 //!   connection is opened only while an app holds the place and dropped when
-//!   it ends. The waiter polls GeoClue's `InUse` once a second, with no
-//!   name owner counted as not in use, so it never starts GeoClue itself.
+//!   it ends. On it shell-ui is GeoClue's agent for the person, as GeoClue
+//!   holds every client until its user has one: it answers that the place
+//!   may be had, and GeoClue lets in only the portal, which asked the app
+//!   already. The waiter then polls GeoClue's `InUse` once a second, with no
+//!   name owner counted as not in use.
 //! - asks every time: an app set to `ask` has its entry deleted whenever it
 //!   appears, so the portal asks again next time, a Deny too.
 //!
@@ -44,13 +47,18 @@ use crate::messages;
 /// The permission store's table and id for the place, as the portal writes them.
 const TABLE: &str = "location";
 const ID: &str = "location";
-/// GeoClue's manager on the system bus, read for `InUse` only.
+/// GeoClue's manager on the system bus, told of the agent and read for `InUse`.
 const GEOCLUE_BUS: &str = "org.freedesktop.GeoClue2";
 const GEOCLUE_PATH: &str = "/org/freedesktop/GeoClue2/Manager";
 const GEOCLUE_INTERFACE: &str = "org.freedesktop.GeoClue2.Manager";
-/// How long GeoClue may take to say it is in use after an app got the place
-/// (with no agent it waits 5 s for one before it starts), how often it is
-/// asked, and the back-off of a failed subscription.
+/// Where GeoClue finds an agent, and the name the location feature's drop-in
+/// lets act as one (`[agent] whitelist`).
+const AGENT_PATH: &str = "/org/freedesktop/GeoClue2/Agent";
+const AGENT_ID: &str = "edel-shell-ui";
+/// GeoClue's `GCLUE_ACCURACY_LEVEL_EXACT`, the most an agent allows.
+const EXACT: u32 = 8;
+/// How long GeoClue may take to say it is in use after an app got the place,
+/// how often it is asked, and the back-off of a failed subscription.
 const WAIT_FOR_USE: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_secs(1);
 const FIRST_WAIT: Duration = Duration::from_secs(1);
@@ -296,8 +304,44 @@ fn forget(connection: &zbus::blocking::Connection, app: &str) {
     }
 }
 
-/// Whether GeoClue is using the place: a name with no owner is not, so
-/// nothing here starts GeoClue.
+/// GeoClue's agent for the person. GeoClue asks it only how exact a place may
+/// be (`MaxAccuracyLevel`, 0 turning location off for the person) and, for an
+/// app it does not let in itself, whether that app may have it. The portal is
+/// the one client the drop-in lets in, and it asks each app first, so the
+/// agent allows the place at the exactness asked and no other app.
+struct Agent;
+
+#[zbus::interface(name = "org.freedesktop.GeoClue2.Agent")]
+impl Agent {
+    fn authorize_app(&self, desktop_id: &str, accuracy: u32) -> (bool, u32) {
+        let portal = desktop_id == "xdg-desktop-portal";
+        (portal, if portal { accuracy } else { 0 })
+    }
+
+    #[zbus(property)]
+    fn max_accuracy_level(&self) -> u32 {
+        EXACT
+    }
+}
+
+/// A system-bus connection serving the agent and telling GeoClue of it, which
+/// starts GeoClue as the portal's request does. GeoClue forgets the agent when
+/// this connection closes.
+fn agent_connection() -> zbus::Result<zbus::blocking::Connection> {
+    let system = zbus::blocking::connection::Builder::system()?
+        .serve_at(AGENT_PATH, Agent)?
+        .build()?;
+    system.call_method(
+        Some(GEOCLUE_BUS),
+        GEOCLUE_PATH,
+        Some(GEOCLUE_INTERFACE),
+        "AddAgent",
+        &(AGENT_ID,),
+    )?;
+    Ok(system)
+}
+
+/// Whether GeoClue is using the place: a name with no owner is not.
 fn geoclue_in_use(system: &zbus::blocking::Connection) -> zbus::Result<bool> {
     let dbus = zbus::blocking::fdo::DBusProxy::new(system)?;
     if !dbus.name_has_owner(zbus::names::BusName::try_from(GEOCLUE_BUS)?)? {
@@ -314,13 +358,19 @@ fn geoclue_in_use(system: &zbus::blocking::Connection) -> zbus::Result<bool> {
 }
 
 /// Waits while GeoClue uses the place, on a system-bus connection of its own
-/// that lives only here. It waits up to `WAIT_FOR_USE` for GeoClue to say it
-/// is in use, then until it does not (or its name has no owner). When GeoClue
-/// never says so, or there is no system bus, the sign ends the use after that
-/// wait and says why once. Then it clears the apps and sends no uses.
+/// that lives only here and serves GeoClue's agent. It waits up to
+/// `WAIT_FOR_USE` for GeoClue to say it is in use, then until it does not (or
+/// its name has no owner). When GeoClue never says so, or there is no system
+/// bus or no agent, the sign ends the use after that wait and says why once.
+/// Then it clears the apps and sends no uses.
 fn wait_for_use(holding: Holding) {
     let mut reason = None;
-    match zbus::blocking::Connection::system() {
+    let system = agent_connection().or_else(|e| {
+        // Another agent, as on another desktop, may still let the portal in.
+        eprintln!("edel-shell-ui: {}", messages::location_agent_not_added(&e));
+        zbus::blocking::Connection::system()
+    });
+    match system {
         Err(e) => reason = Some(e.to_string()),
         Ok(system) => {
             let deadline = Instant::now() + WAIT_FOR_USE;
