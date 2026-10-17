@@ -57,6 +57,36 @@ struct Report {
     /// The last lines of each person's desktop session logs (M5.28a): the
     /// one running it, or for root everyone's.
     sessions: Vec<Session>,
+    /// Each game's smoothness the last time it played (M7.7d), by person
+    /// and app, as the compositor keeps it.
+    games: Vec<Game>,
+}
+
+/// One game's smoothness, from a person's games file (M7.7d).
+#[derive(Debug, PartialEq, Serialize)]
+struct Game {
+    person: String,
+    app: String,
+    #[serde(flatten)]
+    record: edel::smoothness::Record,
+}
+
+/// The games `people` played, each app's last time.
+fn games(people: &[session_log::Person]) -> Vec<Game> {
+    let mut found = Vec::new();
+    for person in people {
+        let Some(text) = session_log::read_log(person, places::GAMES) else {
+            continue;
+        };
+        for (app, record) in edel::smoothness::read(&text) {
+            found.push(Game {
+                person: person.name.clone(),
+                app,
+                record,
+            });
+        }
+    }
+    found
 }
 
 /// One person's session log, its last lines.
@@ -343,6 +373,7 @@ pub fn report(esp: bool) -> Result<()> {
     let dmesg = dmesg_now();
     let missing = missing_firmware(&dmesg);
     let (names, notes) = installed_features(Path::new(features::DIR));
+    let people = session_log::people(Path::new(places::HOMES), as_root());
     let report = Report {
         format: FORMAT,
         version: os_release_value(&os_release, "VERSION_ID").unwrap_or_default(),
@@ -362,7 +393,8 @@ pub fn report(esp: bool) -> Result<()> {
         pci: pci_devices(Path::new("/sys/bus/pci/devices")),
         missing_firmware: missing,
         missing_script: missing_script_now(),
-        sessions: sessions(&session_log::people(Path::new(places::HOMES), as_root())),
+        sessions: sessions(&people),
+        games: games(&people),
     };
     let text = render(&report)?;
     if esp {
@@ -509,6 +541,17 @@ mod tests {
                 ended: false,
                 last_lines: "edel-compositor: output Virtual-1 ready\n".into(),
             }],
+            games: vec![Game {
+                person: "ci".into(),
+                app: "edel.test.game".into(),
+                record: edel::smoothness::Record {
+                    frames: 600,
+                    seconds: 10.0,
+                    average_fps: 59.9,
+                    slowest_1_percent_ms: 18.0,
+                    slowest_0_1_percent_ms: 20.0,
+                },
+            }],
         };
         let text = render(&report).unwrap();
         let parsed: toml::Table = toml::from_str(&text).unwrap();
@@ -517,6 +560,8 @@ mod tests {
         assert!(parsed["dmesg"].as_str().unwrap().contains("\"quoted\""));
         assert_eq!(parsed["pci"][0]["driver"].as_str(), Some("i915"));
         assert_eq!(parsed["sessions"][0]["person"].as_str(), Some("ci"));
+        assert_eq!(parsed["games"][0]["app"].as_str(), Some("edel.test.game"));
+        assert_eq!(parsed["games"][0]["frames"].as_integer(), Some(600));
         assert!(parsed["system_log"].as_str().unwrap().contains("syslogd"));
         assert_eq!(
             parsed["missing_firmware"][0]["file"].as_str(),
@@ -619,6 +664,41 @@ mod tests {
         assert!(found[0].path.ends_with(places::SESSION_LOG_BEFORE));
         assert!(found[1].ended);
         assert!(found[1].last_lines.starts_with("ready\n"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn shows_each_game_a_person_played() {
+        let dir = std::env::temp_dir().join(format!("edel-report-games-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let record = edel::smoothness::Record {
+            frames: 600,
+            seconds: 10.0,
+            average_fps: 59.9,
+            slowest_1_percent_ms: 18.0,
+            slowest_0_1_percent_ms: 20.0,
+        };
+        fs::write(
+            dir.join(places::GAMES),
+            edel::smoothness::with("", "edel.test.game", record.clone()),
+        )
+        .unwrap();
+        let person = session_log::Person {
+            name: "ci".into(),
+            dir: dir.clone(),
+            owner: Some(std::os::unix::fs::MetadataExt::uid(
+                &fs::metadata(&dir).unwrap(),
+            )),
+        };
+        let found = games(&[person]);
+        assert_eq!(
+            found,
+            [Game {
+                person: "ci".into(),
+                app: "edel.test.game".into(),
+                record,
+            }]
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 }
