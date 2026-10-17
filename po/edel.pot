@@ -1571,7 +1571,7 @@ msgstr ""
 msgid "Gaming"
 msgstr ""
 
-msgid "LibreOffice and printing"
+msgid "LibreOffice, printing and scanning"
 msgstr ""
 
 msgid "Podman containers and the VSCodium editor"
