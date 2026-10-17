@@ -36,6 +36,7 @@ mod notifications;
 mod panels;
 mod power;
 mod preview;
+mod profiles;
 mod region;
 mod rows;
 mod screens;

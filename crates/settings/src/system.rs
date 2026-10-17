@@ -154,6 +154,9 @@ pub fn page() -> gtk::Widget {
     // reset, which is shown only while developer mode has changes to delete.
     let dev = developer(&content);
 
+    // The machine's profile (M7.6), after developer mode.
+    crate::profiles::group(&content);
+
     let ui = Rc::new(Ui {
         page: page.clone(),
         export_out,

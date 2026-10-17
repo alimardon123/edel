@@ -545,12 +545,13 @@ pub fn folded(paths: &[String]) -> String {
 // ---- On a machine (M7.2a): fetching, mounting and linking. ----
 
 /// The add-ons the machine's settings file names (`addons.installed`),
-/// read leniently: none when the file is missing or unreadable.
+/// its profiles' included (M7.6), read leniently: none when the file is
+/// missing or unreadable.
 pub fn wanted_on_machine() -> Vec<String> {
     let path = places::found(&places::machine_settings());
     edel::settings::read_on_machine(&path)
         .ok()
-        .and_then(|read| read.file.addons.installed)
+        .and_then(|read| edel::profiles::applied(&read.file).addons.installed)
         .unwrap_or_default()
 }
 

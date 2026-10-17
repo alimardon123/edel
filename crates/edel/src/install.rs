@@ -310,7 +310,12 @@ pub struct Answers {
     pub timezone: Option<String>,
     pub hostname: Option<String>,
     pub preset: Option<String>,
+    /// One profile (M7.6), or [`NO_PROFILE`]
+    pub profile: Option<String>,
 }
+
+/// The profile answer for none: the machine names no profile.
+pub const NO_PROFILE: &str = "none";
 
 /// The preset a new machine has when the file names none.
 const DEFAULT_PRESET: &str = "classic";
@@ -357,6 +362,9 @@ impl Answers {
         if let Some(preset) = self.preset.as_ref().filter(|p| *p != DEFAULT_PRESET) {
             text.push_str(&format!("\n[layout]\npreset = {}\n", quoted(preset)));
         }
+        if let Some(profile) = self.profile.as_ref().filter(|p| *p != NO_PROFILE) {
+            text.push_str(&format!("\n[system]\nprofiles = [{}]\n", quoted(profile)));
+        }
         let problems = settings::check(&text)?;
         if !problems.is_empty() {
             bail!("{}", problems.join("\n"));
@@ -380,6 +388,7 @@ pub fn answered(file: &settings::SettingsFile) -> Vec<&'static str> {
             "region.timezone" => file.region.timezone.is_some(),
             "network.hostname" => file.network.hostname.is_some(),
             "layout.preset" => file.layout.preset.is_some(),
+            "system.profiles" => file.system.profiles.is_some(),
             _ => false,
         })
         .collect()
@@ -408,6 +417,13 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
         if let Some(value) = value.as_ref().filter(|_| !done.contains(&key)) {
             wanted.push((key.to_string(), value.clone()));
         }
+    }
+    if let Some(profile) = answers
+        .profile
+        .as_ref()
+        .filter(|p| *p != NO_PROFILE && !done.contains(&"system.profiles"))
+    {
+        wanted.push(("system.profiles".into(), format!("[{}]", quoted(profile))));
     }
     let mut text = text.to_string();
     for (key, value) in wanted {
@@ -531,6 +547,22 @@ pub fn user_answer(value: &str) -> Result<String, String> {
         Err(trf(
             "lowercase letters, digits, - and _, starting with a letter, and not root or {live}",
             &[("live", crate::places::LIVE_USER)],
+        ))
+    }
+}
+
+/// The profile answer (M7.6): one of the release's profiles, or
+/// [`NO_PROFILE`].
+pub fn profile_answer(value: &str) -> Result<String, String> {
+    if value == NO_PROFILE || crate::profiles::is_built_in(value) {
+        Ok(value.to_string())
+    } else {
+        Err(trf(
+            "one of {names}",
+            &[(
+                "names",
+                &format!("{NO_PROFILE}, {}", crate::profiles::NAMES.join(", ")),
+            )],
         ))
     }
 }
@@ -817,6 +849,27 @@ mod tests {
                 q.key
             );
         }
+    }
+
+    #[test]
+    fn a_profile_answer_names_only_the_profile_and_none_writes_nothing() {
+        let gaming = Answers {
+            profile: Some("gaming".into()),
+            ..Answers::default()
+        };
+        let text = gaming.settings_text().unwrap();
+        assert!(text.contains("[system]\nprofiles = [\"gaming\"]"), "{text}");
+        assert!(!text.contains("Steam"), "{text}");
+        let none = Answers {
+            profile: Some(NO_PROFILE.into()),
+            ..Answers::default()
+        };
+        assert!(!none.settings_text().unwrap().contains("profiles"));
+        assert!(profile_answer("chess").unwrap_err().contains("office"));
+        let added = merged("format = 1\n", &gaming).unwrap();
+        assert!(added.contains("profiles = [\"gaming\"]"), "{added}");
+        let kept = merged("format = 1\n[system]\nprofiles = [\"office\"]\n", &gaming).unwrap();
+        assert!(!kept.contains("gaming"), "{kept}");
     }
 
     #[test]
