@@ -9,7 +9,9 @@
 //! which shows or hides shell-ui's launcher; and the window switcher's
 //! titles and its end (M5.3c), which shell-ui draws; and the keyboard's
 //! layouts and the one in use (M5.9f), for the layout indicator, with the
-//! request that goes to the next one. Any client may
+//! request that goes to the next one; the battery, which shell-ui reads and
+//! tells us (M7.7c), and whether a game plays, which shell-ui is told so its
+//! timers stop behind one. Any client may
 //! bind it, as with the workspace protocol: a narrower rule waits for a
 //! client the person did not start.
 
@@ -50,6 +52,8 @@ pub struct Links(RefCell<Vec<(EdelShellV1, Told)>>);
 pub struct Told {
     policy: String,
     keyboard: Option<(String, u32)>,
+    /// Whether a game plays on every screen (M7.7c).
+    playing: bool,
 }
 
 /// Offers `edel_shell_v1` to every client.
@@ -58,17 +62,24 @@ pub fn create_global(display: &DisplayHandle) {
 }
 
 impl Edel {
-    /// Tells each link the shown workspace's policy if it changed.
+    /// Tells each link the shown workspace's policy if it changed, and
+    /// whether a game plays on every screen (M7.7c), so its timers stop
+    /// behind it.
     pub fn sync_shell(&self) {
         let Ok(mut links) = self.links.0.try_borrow_mut() else {
             return;
         };
         links.retain(|(link, _)| link.is_alive());
         let now = self.desks.layout().name();
+        let playing = self.playing_everywhere();
         for (link, told) in links.iter_mut() {
             if told.policy != now {
                 link.policy(now.to_string());
                 told.policy = now.to_string();
+            }
+            if told.playing != playing {
+                link.playing(u32::from(playing));
+                told.playing = playing;
             }
         }
     }
@@ -262,6 +273,7 @@ impl Dispatch<EdelShellV1, ()> for Edel {
             edel_shell_v1::Request::NextKeyboardLayout => state.next_keyboard_layout(),
             edel_shell_v1::Request::ToggleOverview => state.toggle_overview(),
             edel_shell_v1::Request::Paste => state.paste(),
+            edel_shell_v1::Request::OnBattery { on } => state.battery_changed(on != 0),
             edel_shell_v1::Request::MoveWorkspace { from, to } => {
                 state.move_workspace(from as usize, to as usize);
             }

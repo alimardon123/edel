@@ -417,7 +417,9 @@ impl Edel {
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
         self.dirty = true;
-        self.sync_toplevels();
+        // The raise may put another window on top of a game (M7.7c);
+        // this also syncs the toplevels.
+        self.state_changed();
         if scrolled {
             self.relayout();
         }
@@ -901,6 +903,18 @@ impl Edel {
         if self.dragging {
             return;
         }
+        // A game starting or ending is logged once, here (M7.7c).
+        let playing = self.playing();
+        if self.game.stepped_aside.replace(playing) != playing {
+            eprintln!(
+                "edel-compositor: {}",
+                if playing {
+                    "a game is playing; the desktop steps aside"
+                } else {
+                    "the game ended; the desktop is back"
+                }
+            );
+        }
         self.state_file.send(self.state_toml());
         self.sync_toplevels();
         self.sync_shell();
@@ -925,6 +939,11 @@ impl Edel {
         table.insert("workspace".into(), Value::Integer(shown as i64 + 1));
         // Whether game mode is on (M7.7).
         table.insert("game_mode".into(), Value::Boolean(self.game.on()));
+        // Whether a game plays on a screen (M7.7c).
+        table.insert("playing".into(), Value::Boolean(self.playing()));
+        // This process's id, so a reader can tell a file a dead compositor
+        // left behind (M7.7c).
+        table.insert("pid".into(), Value::Integer(i64::from(std::process::id())));
         table.insert(
             "workspaces".into(),
             Value::Integer(self.desks.count() as i64),

@@ -275,6 +275,8 @@ impl Edel {
         eprintln!("edel-compositor: overview shown");
         self.hover = None;
         self.dirty = true;
+        // A game stops behind the overview (M7.7c).
+        self.state_changed();
         self.repoint();
     }
 
@@ -283,6 +285,8 @@ impl Edel {
         if self.overview.take().is_some() {
             eprintln!("edel-compositor: overview hidden");
             self.dirty = true;
+            // A game may play again behind it (M7.7c).
+            self.state_changed();
             self.repoint();
         }
     }
