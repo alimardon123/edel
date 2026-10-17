@@ -402,6 +402,12 @@ fn holder(held: &str) -> String {
     }
 }
 
+/// Whether a process with this pid runs, from `/proc` (the lock files and
+/// the compositor's state file, M7.7c).
+pub(crate) fn alive(pid: u32) -> bool {
+    Path::new("/proc").join(pid.to_string()).exists()
+}
+
 /// A lock whose pid no longer runs. A lock with no pid yet is only stale
 /// once it is a few seconds old, since its holder writes the pid right
 /// after creating it.
@@ -411,7 +417,7 @@ fn is_stale(path: &Path) -> bool {
             .next()
             .and_then(|p| p.parse::<u32>().ok())
     }) {
-        Some(pid) => !Path::new("/proc").join(pid.to_string()).exists(),
+        Some(pid) => !alive(pid),
         None => fs::metadata(path)
             .and_then(|m| m.modified())
             .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > 5)),
@@ -542,6 +548,11 @@ fn slot_os_release(device: &Path) -> Option<String> {
 /// its own (M1.12).
 pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) -> Result<()> {
     let _lock = Lock::take("update", "edel update")?;
+    // A game gets the whole machine, so the update waits for it (M7.7c).
+    // The wait is here, after the lock and before the disk: a second update
+    // names its holder at once. App updates (`default_apps::follow`) run
+    // only after this install, so they wait with it.
+    crate::shell::wait_for_game("edel update");
     let disk = Disk::find()?;
     let slot = disk.running.other();
     let target = Path::new("/dev").join(&disk.install_target()?.name);
