@@ -67,6 +67,15 @@
       </description>
     </request>
 
+    <request name="on_battery">
+      <description summary="the machine runs on its battery or not">
+        Whether the machine runs on its battery, as UPower tells shell-ui
+        (M7.7c), sent when it changes: game mode's plugged-in rule follows
+        it, so the compositor reads no battery of its own.
+      </description>
+      <arg name="on" type="uint" summary="1 on the battery, 0 on the charger or with no battery"/>
+    </request>
+
     <event name="launcher">
       <description summary="show or hide the launcher">
         The launcher's key was pressed (Super, tapped alone, unless
@@ -170,6 +179,16 @@
         power.game_mode: shell-ui shows it for a moment.
       </description>
       <arg name="on" type="uint" summary="1 when game mode is on, 0 when it is off"/>
+    </event>
+
+    <event name="playing">
+      <description summary="a game is playing, or no longer">
+        A game is playing (M7.7c): game mode is on and a fullscreen window
+        is on top of a screen while nothing locks it and no overview is
+        open. Sent when it changes, and when shell-ui binds while one
+        plays: shell-ui stops its timers and draws nothing until it ends.
+      </description>
+      <arg name="on" type="uint" summary="1 while a game plays, 0 when it ended"/>
     </event>
 
     <event name="clipboard">

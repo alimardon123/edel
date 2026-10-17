@@ -837,6 +837,11 @@ impl Gpu {
             // are rather than by what the last frame showed (M5.2j-b4).
             let live = state.overview_is_live();
             for window in state.space.elements() {
+                // Behind a game, a window draws again once it is visible
+                // (M7.7c).
+                if state.behind_game(window) {
+                    continue;
+                }
                 if live {
                     if state
                         .space
@@ -857,7 +862,13 @@ impl Gpu {
                     surface_primary_scanout_output,
                 );
             }
-            crate::layers::send_frames(&screen.output, now);
+            // A game plays alone on its screen: only the layers over it
+            // get frames (M7.7c).
+            let only = state
+                .playing_on(&screen.output)
+                .is_some()
+                .then(|| state.layers_over(&screen.output));
+            crate::layers::send_frames(&screen.output, now, only);
             state.lock_frames(&screen.output, now);
             state.cursor_frame(&screen.output, now);
         }
