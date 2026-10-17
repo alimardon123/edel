@@ -84,7 +84,7 @@ for def in images/*.toml; do
 	build "$version" "$def" --out out
 done
 
-# The system test image (roadmap M2.2, M2.3): the VM image with a seed
+# The system test image (roadmap M2.2, M2.3): the CI VM image (ci/vm/vm.toml) with a seed
 # settings file in its slot that names the machine and adds user ci, who logs
 # in with a fresh ssh key, as root does. The unknown key and the comment
 # must survive `edel settings set` and `reset` byte for byte.
@@ -107,12 +107,12 @@ ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 [users.root]
 ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
 EOF
-build "$version" images/vm.toml --files "$seed" --no-addons --no-compress --out out/system-test
+build "$version" ci/vm/vm.toml --files "$seed" --no-addons --no-compress --out out/system-test
 
-# The developer mode test image (roadmap M7.1): the VM image with the
+# The developer mode test image (roadmap M7.1): the CI VM image (ci/vm/vm.toml) with the
 # test's steps (ci/developer-test.sh); health_timeout 30 keeps the hang
 # to a minute.
-build "$version" images/vm.toml --files ci/developer-test/files --no-addons --health-timeout 30 \
+build "$version" ci/vm/vm.toml --files ci/developer-test/files --no-addons --health-timeout 30 \
 	--no-compress --out out/developer-test
 
 # The fleet (roadmap M7.3): two VM images, each ci/fleet/base.toml under one
@@ -120,26 +120,26 @@ build "$version" images/vm.toml --files ci/developer-test/files --no-addons --he
 # EDEL-SEED volume holding ci/fleet/erase.toml, which fleet-test.sh gives a
 # fresh copy of device B's stick.
 for device in a b; do
-	build "$version" images/vm.toml --settings ci/fleet/base.toml --settings "ci/fleet/device-$device.toml" \
+	build "$version" ci/vm/vm.toml --settings ci/fleet/base.toml --settings "ci/fleet/device-$device.toml" \
 		--no-compress --out "out/fleet-$device"
 done
 rm -f out/fleet-seed.img
 mkfs.vfat -C -n EDEL-SEED out/fleet-seed.img 4096
 mcopy -i out/fleet-seed.img ci/fleet/erase.toml "::$settings_name"
 
-# The install test image (roadmap M2.4, M2.5): the VM image plus a test
+# The install test image (roadmap M2.4, M2.5): the CI VM image (ci/vm/vm.toml) plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
 # keeps the hang cases to minutes (roadmap M1.5). Its slots are 1024 MiB,
 # smaller than an installed slot, as on the desktop stick, so the install
 # copies slot A into a 4096 MiB slot, unchanged (M3.3b, M1.12).
-build "$version" images/vm.toml --files ci/ab-test/files --files ci/install-test/files --slot-mib 1024 \
+build "$version" ci/vm/vm.toml --files ci/ab-test/files --files ci/install-test/files --slot-mib 1024 \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--no-addons --no-compress --out out/install-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 # With it, the test add-on ci-hello (M7.2a), built from its root.
-build "$version.1" images/vm.toml --files ci/ab-test/files \
+build "$version.1" ci/vm/vm.toml --files ci/ab-test/files \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--loader-tag ci --no-addons --addon ci-hello --features ci/features --no-compress --out out/ab-test-update
 
@@ -166,7 +166,7 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 sed 's/^expires = .*$/expires = "2020-01-01"/' "$update/release.toml" >"$update/expired.toml"
 ./target/release/edel release sign --key out/keys/ci-1.key "$update/expired.toml"
 
-# The Flatpak spike image: the VM image plus dbus, flatpak and a test
+# The Flatpak spike image: the CI VM image (ci/vm/vm.toml) plus dbus, flatpak and a test
 # service that installs and runs a Flathub runtime (roadmap M1.9).
 build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
@@ -181,7 +181,7 @@ ln out/desktop-test/edel-desktop-x86_64.ext4.gz "$update/"
 ./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-desktop-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
 
-# The default apps' test (roadmap M6.2, ci/apps-test.sh): the VM image with
+# The default apps' test (roadmap M6.2, ci/apps-test.sh): the CI VM image (ci/vm/vm.toml) with
 # Flatpak, whose default app is TestA from the repository desktop_test_image
 # made, and its update, whose default app is TestB and which drops TestA.
 # Both are built from the local repository and point their machines at it
