@@ -58,6 +58,15 @@
       <arg name="to" type="uint" summary="its place after the move"/>
     </request>
 
+    <request name="paste">
+      <description summary="paste the selection into the focused window">
+        The clipboard history (M7.13) set the item chosen as the
+        selection over ext-data-control-v1 and closed its list: the
+        compositor gives the keyboard back to the top window, if a
+        layer holds it, and sends it Ctrl+V. Nothing while locked.
+      </description>
+    </request>
+
     <event name="launcher">
       <description summary="show or hide the launcher">
         The launcher's key was pressed (Super, tapped alone, unless
@@ -161,6 +170,13 @@
         power.game_mode: shell-ui shows it for a moment.
       </description>
       <arg name="on" type="uint" summary="1 when game mode is on, 0 when it is off"/>
+    </event>
+
+    <event name="clipboard">
+      <description summary="the clipboard history's key was pressed">
+        Super+V, unless [shortcuts] says otherwise (M7.13): shell-ui
+        opens its clipboard history, or closes it if it is open.
+      </description>
     </event>
   </interface>
 </protocol>

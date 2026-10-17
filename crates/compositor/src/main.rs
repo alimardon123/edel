@@ -10,6 +10,7 @@
 //!                                      screen, until it exits (M4.7b)
 
 mod animate;
+mod clipboard;
 mod decoration;
 mod dmabuf;
 mod drm;

@@ -66,6 +66,8 @@ pub enum Act {
     Overview,
     /// Game mode on or off until the next login (M7.7).
     GameMode,
+    /// shell-ui's clipboard history, open or closed (M7.13).
+    ClipboardHistory,
 }
 
 impl Act {
@@ -86,6 +88,7 @@ impl Act {
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),
             "toggle_game_mode" => Some(Act::GameMode),
+            "clipboard_history" => Some(Act::ClipboardHistory),
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
