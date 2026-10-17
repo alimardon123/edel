@@ -8,7 +8,7 @@
 use crate::i18n::n_;
 use crate::settings::{
     GAME_MODE_DEFAULT, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY_DEFAULT,
-    PAGES, POWER_BUTTON_DEFAULT,
+    PAGES, POWER_BUTTON_DEFAULT, page_of,
 };
 
 /// Who decides a key's value while the settings file does not set it.
@@ -693,7 +693,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "appearance.animation_curve",
         help: n_(
-            "The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little).",
+            "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little).",
         ),
         default: r#""smooth""#,
         from: DecidedBy::Release,
@@ -784,6 +784,16 @@ pub const HELP: &[Help] = &[
             "The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions.",
         ),
         default: "each action's own keys, docs/SHORTCUTS.md",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "clipboard.history",
+        help: n_(
+            "Keeps the last texts and pictures you copied, in memory only, for Super+V; false keeps nothing.",
+        ),
+        default: "true",
         from: DecidedBy::Release,
         belongs: Belongs::Person,
         retired: None,
@@ -1145,7 +1155,7 @@ pub fn settings_markdown() -> String {
         out.push_str(&format!("### `{}`\n\n", page.section));
         let lines: Vec<&Help> = HELP
             .iter()
-            .filter(|line| under(line.key, page.section))
+            .filter(|line| page_of(line.key).map(|p| p.section) == Some(page.section))
             .collect();
         if lines.is_empty() {
             out.push_str("This page has no key in the file.\n\n");
@@ -1155,7 +1165,7 @@ pub fn settings_markdown() -> String {
     }
     let other: Vec<&Help> = HELP
         .iter()
-        .filter(|line| !PAGES.iter().any(|page| under(line.key, page.section)))
+        .filter(|line| page_of(line.key).is_none())
         .collect();
     out.push_str("### Other keys\n\n");
     out.push_str(&table(&other));
@@ -1197,12 +1207,6 @@ pub fn defaults_markdown() -> String {
 /// Text for a table cell: a `|` would end the cell, so it is escaped.
 fn cell(text: &str) -> String {
     text.replace('|', "\\|")
-}
-
-/// Whether `key` lies under `section`: `appearance.radius` under `appearance`.
-fn under(key: &str, section: &str) -> bool {
-    key.strip_prefix(section)
-        .is_some_and(|rest| rest.starts_with('.'))
 }
 
 /// The table of `lines` under its header, with a blank line after it.

@@ -396,6 +396,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     state.start_effects(&crate::tiers::renderer_name(&mut renderer));
     state.start_animations(&renderer);
     state.start_rounded(&mut renderer);
+    state.start_backdrop(&mut renderer);
 
     let mut libinput = Libinput::new_with_udev(LibinputSessionInterface::from(session.clone()));
     if libinput.udev_assign_seat(&seat).is_err() {

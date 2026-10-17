@@ -159,12 +159,13 @@ pub const SLOT_CFG: &str = "slot.cfg";
 /// features' modules, which the initramfs loads before it looks for the
 /// root), `WATCHDOG_ARGS` and `cmdline` added, loading the `microcode`
 /// files (names in `/boot`, from `MICROCODE`) before the initramfs.
-/// `$partuuid` is the slot's, set by `grub.cfg`'s entry.
+/// `$partuuid` is the slot's, set by `grub.cfg`'s entry, and
+/// `$edel_safe` is [`SAFE_ARG`] when no slot had a try left, else empty.
 pub fn slot_cfg(kernel: &str, modules: &str, cmdline: &str, microcode: &[&str]) -> String {
     let cmdline = format!(
         "root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules={modules} {WATCHDOG_ARGS} {cmdline}"
     );
-    let cmdline = cmdline.trim_end();
+    let cmdline = format!("{} $edel_safe", cmdline.trim_end());
     let early: String = microcode.iter().map(|f| format!("/boot/{f} ")).collect();
     format!("linux /boot/vmlinuz-{kernel} {cmdline}\ninitrd {early}/boot/initramfs-{kernel}\n")
 }
@@ -195,6 +196,11 @@ set A_TRY=0
 set B_OK=0
 set B_TRY=0
 load_env -f "$prefix/grubenv" ORDER A_OK A_TRY B_OK B_TRY
+
+# A start with no slot left with a try is a safe one (M7.1): the slot's
+# command line gets edel.safe, and the developer layer stays off.
+set edel_safe=""
+export edel_safe
 
 set slot=""
 for s in $ORDER; do
@@ -234,7 +240,8 @@ if [ -z "$slot" ]; then
 		if [ -z "$slot" ]; then set slot="$s"; fi
 	done
 	if [ -z "$slot" ]; then set slot="A"; fi
-	echo "Edel OS: no slot has tries left; starting slot $slot anyway"
+	set edel_safe="SAFE_ARG"
+	echo "Edel OS: no slot has tries left; starting slot $slot anyway, safely"
 fi
 save_env -f "$prefix/grubenv" A_TRY B_TRY
 echo "Edel OS: starting slot $slot (A ok=$A_OK try=$A_TRY, B ok=$B_OK try=$B_TRY)"
@@ -250,6 +257,7 @@ else
 	if [ "$B_OK" = "1" ]; then set fallback=1; fi
 fi
 "#;
+    let mut cfg = cfg.replace("SAFE_ARG", SAFE_ARG);
     let own = format!("{}/{SLOT_CFG}", places::SLOT_BOOT_DIR);
     let before: String = slot_cfg(kernel, modules, cmdline, microcode)
         .lines()
@@ -272,6 +280,11 @@ menuentry "Edel OS, slot {name}" {{
     }
     cfg
 }
+
+/// The word GRUB adds to the command line when no slot has a try left
+/// (M7.1): `edel boot mount-data` then holds developer mode's layer back.
+/// `grub.cfg` writes it in its own words, which a test holds to this.
+pub const SAFE_ARG: &str = "edel.safe";
 
 /// GRUB's environment block for a new disk: slot A boots, slot B is empty.
 pub fn initial_grubenv() -> String {
@@ -328,6 +341,17 @@ mod tests {
     }
 
     #[test]
+    fn a_start_with_no_try_left_is_safe() {
+        let cfg = grub_cfg("virt", "ext4", "quiet", &[]);
+        assert!(cfg.contains("set edel_safe=\"\"\nexport edel_safe\n"));
+        assert!(cfg.contains(&format!("\tset edel_safe=\"{SAFE_ARG}\"\n")));
+        let own = slot_cfg("virt", "ext4", "quiet", &[]);
+        assert!(own.lines().next().unwrap().ends_with(" quiet $edel_safe"));
+        let bare = slot_cfg("virt", "ext4", "", &[]);
+        assert!(!bare.contains("  $edel_safe"), "{bare}");
+    }
+
+    #[test]
     fn grub_counts_every_try() {
         let cfg = grub_cfg("virt", "ext4,overlay", "console=ttyS0", &[]);
         for (tried, next) in [(0, 1), (1, 2), (2, 3)] {
@@ -358,7 +382,7 @@ mod tests {
             "linux /boot/vmlinuz-virt root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules=ext4,overlay i6300esb."
         ));
         assert!(cfg.contains(
-            " sp5100_tco.heartbeat=15 softlockup_panic=1 nmi_watchdog=panic console=ttyS0\n"
+            " sp5100_tco.heartbeat=15 softlockup_panic=1 nmi_watchdog=panic console=ttyS0 $edel_safe\n"
         ));
         assert!(cfg.contains("initrd /boot/initramfs-virt\n"));
         let laptop = grub_cfg("lts", "ext4", "", MICROCODE);
@@ -382,7 +406,7 @@ mod tests {
         assert_eq!(
             slot,
             format!(
-                "linux /boot/vmlinuz-lts root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules=ext4 {WATCHDOG_ARGS} console=tty0\ninitrd /boot/intel-ucode.img /boot/initramfs-lts\n"
+                "linux /boot/vmlinuz-lts root=PARTUUID=$partuuid rootfstype=ext4 panic=10 modules=ext4 {WATCHDOG_ARGS} console=tty0 $edel_safe\ninitrd /boot/intel-ucode.img /boot/initramfs-lts\n"
             )
         );
         assert!(GRUB_MODULES.contains(&"configfile"), "source needs it");

@@ -32,7 +32,7 @@ if [ -z "${EDEL_LOOK_INSIDE:-}" ]; then
 	# One image per package list, so later runs start at once.
 	tag=edel-look:$(echo "$branch $packages $(sed -n '/apk add/,/x11$/p' ci/look.sh)" | cksum | cut -d' ' -f1)
 	proxy=
-	for v in HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY no_proxy; do
+	for v in HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY no_proxy EDEL_LOOK_WAIT EDEL_LOOK_FLOAT; do
 		eval "[ -n \"\${$v:-}\" ]" && proxy="$proxy -e $v"
 	done
 	ca=

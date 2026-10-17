@@ -129,6 +129,31 @@ The canvas these came from is Alimardon's design artifact (private). The
 pictures here are the copy every session and agent reads, and their
 boards, as HTML to change, are in `docs/mockups/shell/canvas/`; `canvas/player.html` draws `player.jpg`, `canvas/overview.html` `overview.jpg` and `canvas/lock.html` `lock.jpg`, `lock-media.jpg`, `greeter.jpg`, `greeter-sessions.jpg` and `lock-phone.jpg`, and `canvas/lock-media-options.html` the five boards of `lock-media-options.jpg` (put side by side with ImageMagick's `montage`) (`node render.js lock.html` there) (the same Playwright and Chromium, at twice the size, as JPEG).
 
+## Glass (2026-10-17): the lock screen's language everywhere
+
+On 2026-10-17 Alimardon asked for the lock and login screen's design language as the default everywhere: "I liked our current lock/login screen design style. If possible I would to apply its design language in places as default. But still everything should fully customizable and ricable like other disctos." They approved these boards the same day: "No need to change the positions of things too much. Just their design. But I liked your islands panel shape, that can be usefull." So every surface keeps its place (the fifth round's layout) and takes the glass language, and the panel's shape offers Islands as one choice, Full width staying the default. Rolling it out waits until the release is near and everything underneath is stable, with a deep review of the whole UI then (Alimardon, 2026-10-17: "Be rapid development for now"); live blur itself is built now (M8.21 part 21d).
+
+| Picture | What it shows |
+|---|---|
+| [glass/desk-dark.jpg](glass/desk-dark.jpg) | The desktop, dark: the panel, quick settings and a notification as frosted glass over the blurred wallpaper, windows solid with rounded corners |
+| [glass/desk-light.jpg](glass/desk-light.jpg) | The same in the light scheme, light frost |
+| [glass/launcher.jpg](glass/launcher.jpg) | The launcher over the veil: the wallpaper blurred and dimmed as the lock does it, a pill search field, apps on glass |
+| [glass/popups.jpg](glass/popups.jpg) | The desktop's menu and the other pop-ups as glass cards, one blue for what acts |
+| [glass/switcher.jpg](glass/switcher.jpg) | The window switcher over the veil |
+| [glass/settings.jpg](glass/settings.jpg) | Settings, a solid window, with the planned keys: `appearance.glass`, `appearance.blur`, `appearance.glass_colour` and the panel's shape, Full, Floating, Islands or Dock |
+| [glass/rices.jpg](glass/rices.jpg) | The same parts with other settings: Islands with Hive, Zen with no bars, Mac-like with a dock, Lite solid and square |
+
+The rules:
+
+1. **Glass over the wallpaper.** Shell surfaces are frosted glass: the wallpaper blurred behind a light tint, a 1 px light rim and a brighter top edge; dark glass in the dark scheme, light frost in the light one.
+2. **Windows stay solid.** Apps and Settings are opaque, so words stay easy to read, with the rounded corners of M8.21 part 21c.
+3. **Pills and circles.** Fields, chips, buttons and the workspace switcher are pills; icon buttons and quick toggles are circles.
+4. **Light, large type for what you glance at.** Big numbers and page titles light, labels medium, secondary text dimmer.
+5. **One blue for what acts.** The accent marks the one thing that acts or is on.
+6. **The veil for full-screen moments.** The launcher and the window switcher blur and dim the wallpaper exactly as the lock does.
+
+Beyond macOS's glass shell: the glass falls back to tinted or solid by itself on Lite, so old laptops never stutter. Beyond the Quickshell rices (end-4, Caelestia): the same look with no config scripts, a few Settings rows and keys copied to every machine in the settings file. Their boards are `glass/boards.html`: `python3 docs/mockups/glass/build.py` from the repository root inlines the icons and wallpapers into `review.html` (not kept), then `node render.js` there draws one JPEG per board (the same Playwright and Chromium, at twice the size).
+
 ## Settings (2026-10-11): Appearance with themes
 
 | Picture | What it shows |

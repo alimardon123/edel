@@ -15,7 +15,7 @@ use smithay::desktop::{LayerSurface, Window, WindowSurfaceType, layer_map_for_ou
 use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_output::WlOutput;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Scale};
+use smithay::utils::{Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Scale};
 use smithay::wayland::compositor::{send_surface_state, with_states};
 use smithay::wayland::fractional_scale::with_fractional_scale;
 use smithay::wayland::shell::wlr_layer::{
@@ -29,6 +29,7 @@ use toml::{Table, Value};
 use edel_compositor::desks::screen_in;
 
 use crate::animate::Animations;
+use crate::backdrop::blur_rects;
 use crate::render::{Drawn, Element, centre_of, zoomed};
 use crate::state::Edel;
 
@@ -36,6 +37,8 @@ use crate::state::Edel;
 pub const ABOVE: [Layer; 2] = [Layer::Overlay, Layer::Top];
 /// shell-ui's dock's namespace (M5.4d), which may hide (M5.4f).
 pub const DOCK: &str = "edel-dock";
+/// The clipboard history's namespace (M7.13), opened on the pointer's screen.
+const CLIPBOARD: &str = "edel-clipboard";
 /// How near the screen's edge the pointer brings a hidden dock back.
 const EDGE: f64 = 2.0;
 /// The layers drawn under them, the topmost first.
@@ -406,9 +409,53 @@ fn name(layer: Layer) -> &'static str {
     }
 }
 
+/// A surface that asks for a blur behind it (`backdrop.rs`): where it lies
+/// among a frame's elements, the rectangles it blurs and how it is shown.
+pub struct Spot {
+    /// The index, in the frame's elements, just after the surface's own
+    /// parts: the blur goes there, under the surface and over what lies
+    /// behind.
+    pub after: usize,
+    /// The rectangles to blur, in the output's physical pixels.
+    pub rects: Vec<Rectangle<i32, Physical>>,
+    /// The centre the surface zooms about, as its parts have it.
+    pub centre: Point<i32, Physical>,
+    /// The surface's zoom, as its parts have it.
+    pub zoom: f64,
+    /// The surface's alpha, as its parts have it.
+    pub alpha: f32,
+    /// Whether the surface is popping up, so its blur is kept as it is.
+    pub frozen: bool,
+}
+
+/// A surface's blur region (`blur_rects`) in the output's physical pixels:
+/// each rectangle clipped to the surface, moved to its place and rounded at
+/// both corners, so rows one logical pixel high leave no gap at fractional
+/// scales.
+fn blur_places(
+    surface: &WlSurface,
+    place: Rectangle<i32, Logical>,
+    scale: f64,
+) -> Vec<Rectangle<i32, Physical>> {
+    let bounds = Rectangle::from_size(place.size);
+    blur_rects(surface)
+        .into_iter()
+        .filter_map(|rect| {
+            let rect = rect.intersection(bounds)?;
+            let loc = rect.loc + place.loc;
+            let a = loc.to_physical_precise_round(scale);
+            let b = Point::from((loc.x + rect.size.w, loc.y + rect.size.h))
+                .to_physical_precise_round(scale);
+            let rect = Rectangle::from_extremities(a, b);
+            (!rect.is_empty()).then_some(rect)
+        })
+        .collect()
+}
+
 /// `output`'s layer surfaces on `layers`, the topmost first, for drawing,
 /// but for those `hidden`. A popup that popped up (M5.12b4) fades in and
-/// grows about its centre, as a window opens.
+/// grows about its centre, as a window opens. With `spots`, each surface
+/// that asks for a blur behind it is noted there (`Spot`).
 pub fn elements(
     renderer: &mut GlesRenderer,
     output: &Output,
@@ -416,6 +463,7 @@ pub fn elements(
     scale: f64,
     hidden: &[WlSurface],
     animations: &Animations,
+    mut spots: Option<&mut Vec<Spot>>,
 ) -> Vec<Drawn> {
     let map = layer_map_for_output(output);
     let now = animations.now();
@@ -428,9 +476,8 @@ pub fn elements(
             let Some(place) = map.layer_geometry(surface) else {
                 continue;
             };
-            let (alpha, zoom) = animations
-                .popup_look(surface.wl_surface(), now)
-                .unwrap_or((1.0, 1.0));
+            let look = animations.popup_look(surface.wl_surface(), now);
+            let (alpha, zoom) = look.unwrap_or((1.0, 1.0));
             let parts = surface.render_elements::<WaylandSurfaceRenderElement<GlesRenderer>>(
                 renderer,
                 place.loc.to_physical_precise_round(scale),
@@ -443,6 +490,19 @@ pub fn elements(
                     .into_iter()
                     .map(|e| zoomed(Element::Surface(e), centre, zoom)),
             );
+            if let Some(spots) = spots.as_mut() {
+                let rects = blur_places(surface.wl_surface(), place, scale);
+                if !rects.is_empty() {
+                    spots.push(Spot {
+                        after: elements.len(),
+                        rects,
+                        centre,
+                        zoom,
+                        alpha,
+                        frozen: look.is_some(),
+                    });
+                }
+            }
         }
     }
     elements
@@ -471,9 +531,15 @@ impl WlrLayerShellHandler for Edel {
         _layer: Layer,
         namespace: String,
     ) {
+        // The clipboard history opens where the pointer is (M7.13).
+        let here = (namespace == CLIPBOARD)
+            .then(|| self.pointer_screen())
+            .flatten()
+            .and_then(|(name, _)| self.space.outputs().find(|o| o.name() == name).cloned());
         let output = output
             .as_ref()
             .and_then(Output::from_resource)
+            .or(here)
             .or_else(|| self.space.outputs().next().cloned());
         let Some(output) = output else {
             eprintln!("edel-compositor: no screen for layer {namespace}");

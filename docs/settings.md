@@ -137,7 +137,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.icon_size` | a whole number from 75 to 150, in percent of the release's icons; missing is 100. The panel's icons and the apps' icons in the bar and the dock follow it, the panel's height does not change | M5.12b5 |
 | `appearance.animations` | `full`, `reduced` (fades only) or `off`; missing is `full`. The desktop follows it at once | M5.11b |
 | `appearance.animation_speed` | a whole number from 25 to 400: how fast things move, as a percent of the release's speed; 200 halves every length, 50 doubles it; missing is 100. The desktop follows it at once | M5.12b4 |
-| `appearance.animation_curve` | `smooth`, `snappy` (quicker, settles sooner) or `springy` (overshoots a little, then rests); missing is `smooth`. One curve for every animation, windows and popups alike. The desktop follows it at once | M5.12b4 |
+| `appearance.animation_curve` | `smooth`, `snappy` (quicker, settles sooner) or `springy` (overshoots a little, then rests); missing is `smooth`. A feel, each giving every kind its curve: under smooth, pop-ups are snappy; under springy, a workspace switch is snappy, not swinging past its place (M8.21 part 21e). The desktop follows it at once | M5.12b4 |
 | `appearance.switcher_look` | `numbers` or `button`: `numbers` shows round buttons for the workspaces around the shown one, numbered as Super+1 to Super+9 are, the shown one a wider pill, with a workspace's name in its pill (the default); `button` shows the word Workspaces over an underline split into one segment per workspace, the shown one in the accent, and a click on a segment shows its workspace, a scroll the next or previous one. Missing is `numbers`. `edel settings set appearance.switcher_look=button` switches the look at once | M5.2m |
 | `appearance.switcher_shown` | a whole number from 1 to 9: how many numbers the `numbers` look shows at once, the shown workspace and its neighbours; missing is 3. `edel settings set appearance.switcher_shown=10` is refused with "expected a whole number from 1 to 9, not 10" | M5.2m |
 | `appearance.switcher_ends` | `fade`, `arrows` or `counts`: where more workspaces lie than show, an arrow at each end, dark where more lie that way and faint where none do (`arrows`), the next one peeking in, faded (`fade`), or with how many lie beyond it, as `+2` (`counts`); a click on an end shows the view one step towards it. Missing is `arrows`. `edel settings set appearance.switcher_ends=dots` is refused with "unknown value \"dots\"; use fade, arrows or counts" | M5.2m |
@@ -284,7 +284,8 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.icon_size` | How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150. | `100` | release |
 | `appearance.animations` | How much things move: full, reduced (fades only) or off. | `"full"` | release |
 | `appearance.animation_speed` | How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast. | `100` | release |
-| `appearance.animation_curve` | The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little). | `"smooth"` | release |
+| `appearance.animation_curve` | How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little). | `"smooth"` | release |
+| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
 
 ### `layout`
 
@@ -299,6 +300,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `layout.minimize_button` | Whether each title bar shows its minimize button. | `true` | release |
 | `layout.maximize_button` | Whether each title bar shows its maximize button; a hidden button's room goes to the title. | `true` | release |
 | `layout.tiling_style` | How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles). | the preset's | preset |
+| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
 
 ### `panels`
 
@@ -380,6 +382,7 @@ This page has no key in the file.
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
 | `shortcuts.*` | The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions. | each action's own keys, docs/SHORTCUTS.md | release |
+| `clipboard.history` | Keeps the last texts and pictures you copied, in memory only, for Super+V; false keeps nothing. | `true` | release |
 
 ### `region`
 
@@ -468,8 +471,6 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
-| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
 | `install.disk` | The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name. | `"auto"` | release |
 | `install.erase` | Whether an unattended install erases only an empty disk, or any disk after a ten second countdown. | `"empty-only"` | release |
 | `install.then` | What the machine does once a stick has installed itself: power off or restart. | `"poweroff"` | release |

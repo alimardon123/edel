@@ -427,6 +427,12 @@ pub const ROWS: &[Row] = &[
         key: "updates.channel",
         title: n_("Channel"),
     },
+    // The System page's developer mode (M7.1): a switch that changes the
+    // machine's key as root, as the Region page's machine keys do.
+    Row {
+        key: "system.developer_mode",
+        title: n_("Developer mode"),
+    },
     // The Shortcuts page (M5.13b): one row per action of `edel::shortcuts`,
     // so search finds each by its name; the keys are the page's own.
     Row {
@@ -621,6 +627,15 @@ pub const ROWS: &[Row] = &[
         key: "shortcuts.show_tray",
         title: n_("Show tray"),
     },
+    Row {
+        key: "shortcuts.clipboard_history",
+        title: n_("Clipboard history"),
+    },
+    // Whether the clipboard keeps what is copied (M7.13), beside its shortcut.
+    Row {
+        key: edel::settings::CLIPBOARD_HISTORY,
+        title: n_("Keep clipboard history"),
+    },
 ];
 
 /// What the Panels group says under its heading (M5.31d).
@@ -665,11 +680,8 @@ pub fn plain(key: &str) -> String {
 /// The rows on the page for `section`, such as `layout`, which search
 /// looks through as well as the pages' titles.
 pub fn on_page(section: &str) -> impl Iterator<Item = &'static Row> {
-    ROWS.iter().filter(move |r| {
-        r.key
-            .split_once('.')
-            .is_some_and(|(page, _)| page == section)
-    })
+    ROWS.iter()
+        .filter(move |r| edel::settings::page_of(r.key).is_some_and(|page| page.section == section))
 }
 
 /// The values `key` may take, as the key table lists them, so a row's
@@ -811,10 +823,6 @@ mod tests {
         (
             "addons.installed",
             "the Add-ons page, a switch for each add-on, comes with M7.2b, when one chosen there arrives at the next boot; until then edel settings set addons.installed+=NAME, and it arrives with the next update",
-        ),
-        (
-            "system.developer_mode",
-            "the System page gains it with developer mode (M7.1); until then an administrator sets it in the file",
         ),
         (
             "users.*.ssh_keys",

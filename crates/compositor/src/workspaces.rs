@@ -711,7 +711,7 @@ impl Edel {
         if let Some(switch) = self.animations.switches.get_mut(&held.key) {
             switch.hold((held.offset, 0.0).into(), (velocity, 0.0).into());
             if goes {
-                switch.release(now, style.slide, style.curve);
+                switch.release(now, style.slide, style.feel.workspaces);
             }
         }
         if goes {

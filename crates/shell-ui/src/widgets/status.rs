@@ -15,7 +15,7 @@
 //! kind's icon in it, and a click on it opens the in-use card
 //! (`Action::InUse`), a click anywhere else `Action::Quick`.
 //!
-//! What it shows is text, tab-separated, `OPEN NET VOLUME BATTERY IN_USE`,
+//! What it shows is text, tab-separated, `OPEN NET VOLUME BATTERY IN_USE DEVELOPER`,
 //! the parts split by U+001F: `1` while quick settings are open; the network
 //! as `ICON WORDS`, the volume as `ICON PERCENT MUTED`, the battery as
 //! `PERCENT CHARGING`, the kinds in use as their names, `camera`,
@@ -23,6 +23,13 @@
 //! empty. A screen reader hears "Status: Wi-Fi Home 5G, volume 64 percent,
 //! battery 82 percent", and "Camera and microphone in use, Status: ..." while
 //! something uses them.
+//!
+//! While developer mode is in effect this boot (M7.1) its icon, `developer`,
+//! comes first in the pill, drawn as the others are. The flag is read once
+//! from `edel::places::DEVELOPER_NOW` and is the last part, `1` or `0`; a
+//! screen reader hears ", developer mode" at the end.
+
+use std::sync::OnceLock;
 
 use accesskit::Role;
 use edel::app_use::Kind;
@@ -65,6 +72,8 @@ struct Parts {
     battery: Option<(u32, bool)>,
     /// The kinds an app uses now, in `Kind::ALL` order (M6.14b).
     in_use: Vec<Kind>,
+    /// Whether developer mode is in effect this boot (M7.1).
+    developer: bool,
 }
 
 const SEP: char = '\u{1f}';
@@ -147,10 +156,12 @@ fn decode(shown: &str) -> Parts {
         .split(',')
         .filter_map(Kind::named)
         .collect();
+    let developer = fields.next() == Some("1");
     let number = |s: &String| s.parse::<u32>().unwrap_or(0);
     Parts {
         open,
         in_use,
+        developer,
         network: match &network[..] {
             [icon, words] => Some((icon.clone(), words.clone())),
             _ => None,
@@ -166,13 +177,37 @@ fn decode(shown: &str) -> Parts {
     }
 }
 
+/// What it shows: `encode`'s text and, as its last part, `1` while
+/// developer mode is in effect this boot (M7.1).
 fn shows(live: &Live) -> String {
-    encode(&live.status, live.quick, &live.in_use)
+    format!(
+        "{}\t{}",
+        encode(&live.status, live.quick, &live.in_use),
+        u8::from(developer_now())
+    )
+}
+
+/// Developer mode is in effect when the file `edel boot mount-data` writes
+/// says `on` or `held` (M7.1); a missing file, which every other
+/// distribution has, or anything else means it is not.
+pub fn developer_shown(now: Option<&str>) -> bool {
+    matches!(now.map(str::trim), Some("on" | "held"))
+}
+
+/// Whether developer mode is in effect this boot, read once, when the
+/// panel first shows the status area (M7.1).
+fn developer_now() -> bool {
+    static NOW: OnceLock<bool> = OnceLock::new();
+    *NOW.get_or_init(|| {
+        let file = std::fs::read_to_string(edel::places::DEVELOPER_NOW).ok();
+        developer_shown(file.as_deref())
+    })
 }
 
 /// How many icons it holds.
 fn count(parts: &Parts) -> usize {
     [
+        parts.developer,
         parts.network.is_some(),
         parts.volume.is_some(),
         parts.battery.is_some(),
@@ -182,10 +217,24 @@ fn count(parts: &Parts) -> usize {
     .count()
 }
 
-/// What a screen reader hears: the sign's kinds in use, then the status.
+/// What a screen reader hears: the sign's kinds in use, then the status,
+/// then ", developer mode" while it is in effect (M7.1).
 fn label(shown: &str) -> String {
     let parts = decode(shown);
-    let status = status_words(&parts);
+    let said = spoken(&parts);
+    if !parts.developer {
+        return said;
+    }
+    if said.is_empty() {
+        tr("Developer mode").to_string()
+    } else {
+        format!("{said}, {}", tr("developer mode"))
+    }
+}
+
+/// The sign's kinds in use, then the status, as a screen reader says them.
+fn spoken(parts: &Parts) -> String {
+    let status = status_words(parts);
     if parts.in_use.is_empty() {
         return status;
     }
@@ -366,6 +415,10 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     let mut gx = px + (PAD * s).round();
     let step = glyph + (GAP * s).round();
     let ink = tokens.panel_text;
+    if parts.developer {
+        paint::icon(canvas.pixmap, "developer", glyph, gx, gy, ink);
+        gx += step;
+    }
     if let Some((icon, _)) = &parts.network {
         paint::icon(canvas.pixmap, icon, glyph, gx, gy, ink);
         gx += step;
@@ -639,5 +692,44 @@ mod tests {
         assert!(covered(&empty) < covered(&half) && covered(&half) < covered(&full));
         // The bolt over a full battery takes ink out as well as adding it.
         assert_ne!(draw(100, true).data(), full.data());
+    }
+
+    #[test]
+    fn developer_mode_is_shown_only_while_it_is_in_effect() {
+        assert!(developer_shown(Some("on")));
+        assert!(developer_shown(Some("held")));
+        assert!(developer_shown(Some(" on\n")));
+        assert!(!developer_shown(Some("")));
+        assert!(!developer_shown(None));
+        assert!(!developer_shown(Some("off")));
+    }
+
+    #[test]
+    fn developer_mode_is_one_more_icon_in_the_pill() {
+        let tokens = Tokens::built_in();
+        let plain = format!("{}\t0", encode(&full(), false, &[]));
+        let with = format!("{}\t1", encode(&full(), false, &[]));
+        assert!(decode(&with).developer);
+        assert!(!decode(&plain).developer);
+        assert_eq!(
+            logical_width(&tokens, &with) - logical_width(&tokens, &plain),
+            tokens.panel_glyph as f32 + GAP
+        );
+        // Shown with nothing else, its icon is the whole pill.
+        let alone = format!("{}\t1", encode(&Status::default(), false, &[]));
+        assert_eq!(
+            logical_width(&tokens, &alone),
+            2.0 * ROOM + 2.0 * PAD + tokens.panel_glyph as f32
+        );
+        assert_eq!(label(&alone), "Developer mode");
+        // A screen reader hears it at the end of the status.
+        assert_eq!(
+            label(&with),
+            "Status: Wi-Fi Home 5G, volume 64 percent, battery 82 percent, developer mode"
+        );
+        assert_eq!(
+            label(&plain),
+            "Status: Wi-Fi Home 5G, volume 64 percent, battery 82 percent"
+        );
     }
 }

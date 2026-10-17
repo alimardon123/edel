@@ -1,0 +1,410 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+/* The lock screen's language, written once and used on every board:
+   frosted glass over the wallpaper, a hairline rim, pills and circles,
+   light large type, one blue for what acts. */
+:root { font-family: Inter, sans-serif; font-feature-settings: "tnum" 1, "cv11" 1; }
+body { margin: 0; background: #0d1018; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+.board { position: relative; width: 1280px; height: 800px; overflow: hidden; background-size: cover; background-position: center; }
+.i { display: block; flex: none; }
+
+/* Dark glass (the lock's own) and light frost, the scheme's pair. */
+.dark  { --glass: rgba(150,170,230,.16); --glass-strong: rgba(30,36,56,.62); --rim: rgba(255,255,255,.16); --rim-top: rgba(255,255,255,.26);
+         --ink: #f4f6fa; --ink-2: rgba(244,246,250,.66); --ink-3: rgba(244,246,250,.42); --hover: rgba(255,255,255,.10);
+         --win: #1e2026; --bar: #2b2e36; --bar-ink: #eceef1; --line: rgba(255,255,255,.08); --skel: rgba(255,255,255,.07);
+         --accent: #5b8ef5; --accent-2: #3f6fe0; --on-accent: #fff; --shadow: 0 18px 50px rgba(0,0,0,.45); color: var(--ink); }
+.light { --glass: rgba(255,255,255,.52); --glass-strong: rgba(250,251,253,.80); --rim: rgba(255,255,255,.75); --rim-top: rgba(255,255,255,.95);
+         --ink: #1c1e22; --ink-2: rgba(28,30,34,.62); --ink-3: rgba(28,30,34,.40); --hover: rgba(20,24,32,.06);
+         --win: #ffffff; --bar: #f7f8f9; --bar-ink: #1c1e22; --line: rgba(20,24,32,.08); --skel: rgba(20,24,32,.06);
+         --accent: #2d6ae3; --accent-2: #2458c4; --on-accent: #fff; --shadow: 0 18px 50px rgba(30,40,70,.22); color: var(--ink); }
+
+.glass { background: var(--glass); backdrop-filter: blur(28px) saturate(1.5); -webkit-backdrop-filter: blur(28px) saturate(1.5);
+         border: 1px solid var(--rim); box-shadow: inset 0 1px 0 var(--rim-top), var(--shadow); }
+.glass.strong { background: var(--glass-strong); }
+.light .glass { box-shadow: inset 0 1px 0 var(--rim-top), 0 0 0 1px rgba(20,24,32,.06), var(--shadow); }
+.pill { border-radius: 999px; }
+.round { border-radius: 50%; display: grid; place-items: center; }
+.accent { background: linear-gradient(180deg, var(--accent), var(--accent-2)); color: var(--on-accent); box-shadow: 0 4px 14px rgba(60,110,240,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+.muted { color: var(--ink-2); }
+.faint { color: var(--ink-3); }
+
+/* Windows stay solid: words on glass are hard to read for hours. */
+.win { position: absolute; background: var(--win); border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px var(--line), 0 22px 60px rgba(0,0,0,.30), 0 4px 12px rgba(0,0,0,.12); }
+.win.unfocused { box-shadow: 0 0 0 1px var(--line), 0 10px 30px rgba(0,0,0,.18); }
+.titlebar { height: 34px; background: var(--bar); display: flex; align-items: center; padding: 0 8px 0 12px; color: var(--bar-ink); font-size: 13px; font-weight: 500; border-bottom: 1px solid var(--line); }
+.titlebar .t { flex: 1; text-align: center; display: flex; gap: 7px; justify-content: center; align-items: center; }
+.unfocused .titlebar { color: var(--ink-3); }
+.tb { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; color: var(--bar-ink); opacity: .8; }
+.tb.hover { background: var(--hover); opacity: 1; }
+.tb.close.hover { background: #e0443e; color: #fff; }
+.appicon { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 10px; font-weight: 700; color: #fff; }
+.skel { height: 9px; border-radius: 5px; background: var(--skel); margin: 0 0 13px; }
+
+/* The panel: a slab of glass along the bottom, its groups as pills. */
+.panel { position: absolute; left: 0; right: 0; bottom: 0; height: 48px; display: flex; align-items: center; gap: 6px; padding: 0 8px;
+         border-radius: 0; border-width: 1px 0 0 0; }
+.pbtn { height: 36px; min-width: 36px; padding: 0 10px; border-radius: 12px; display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; box-sizing: border-box; }
+.pbtn.on { background: var(--hover); }
+.pbtn.on::after { content: ""; position: absolute; }
+.app { position: relative; }
+.app .dot { position: absolute; bottom: 3px; left: 50%; width: 14px; margin-left: -7px; height: 3px; border-radius: 2px; background: var(--accent); }
+.ws { display: flex; gap: 2px; padding: 3px; border-radius: 999px; background: var(--hover); }
+.ws span { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.ws span.on { width: 40px; border-radius: 999px; }
+.tray { display: flex; gap: 10px; align-items: center; height: 32px; padding: 0 12px; }
+.clock { text-align: right; line-height: 1.15; padding: 0 6px 0 4px; }
+.clock b { font-size: 13px; font-weight: 600; display: block; }
+.clock small { font-size: 11px; color: var(--ink-2); }
+.sep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+
+/* Quick settings, as in the fifth round, now in glass. */
+.qs { position: absolute; width: 340px; border-radius: 26px; padding: 18px; box-sizing: border-box; }
+.big { height: 60px; border-radius: 999px; display: flex; align-items: center; gap: 9px; padding: 0 12px 0 8px; min-width: 0; font-size: 13px; }
+.big .ic { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.18); }
+.big b { display: block; font-weight: 600; white-space: nowrap; } .big small { white-space: nowrap; } .big small { opacity: .8; font-size: 11.5px; }
+.big.off { background: var(--hover); color: var(--ink); } .big.off .ic { background: var(--hover); }
+.tg { display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-2); }
+.tg .c { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; background: var(--hover); color: var(--ink); border: 1px solid var(--rim); box-sizing: border-box; }
+.tg .c.accent { border: 0; background: linear-gradient(180deg, var(--accent), var(--accent-2)); color: #fff; }
+.slider { height: 40px; border-radius: 999px; background: var(--hover); position: relative; overflow: hidden; display: flex; align-items: center; padding: 0 14px; font-size: 12px; }
+.slider .fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255,255,255,.88); border-radius: 999px; }
+.light .slider .fill { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+.slider .i, .slider span { position: relative; }
+.dark .slider .i { color: #1c1e22; }
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px 0; }
+.player { position: absolute; width: 340px; border-radius: 999px; padding: 12px 14px 12px 12px; box-sizing: border-box; display: flex; align-items: center; gap: 14px; }
+.cover { width: 56px; height: 56px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #f4a15c, #8a3f9b 55%, #24204a); }
+
+.caption { position: absolute; left: 24px; top: 20px; font-size: 13px; font-weight: 600; padding: 7px 14px; border-radius: 999px; }
+.note { position: absolute; font-size: 12px; line-height: 1.45; width: 230px; padding: 10px 14px; border-radius: 14px; }
+
+/* Full-screen surfaces: the wallpaper blurred and dimmed, as on the lock. */
+.veil { position: absolute; inset: 0; backdrop-filter: blur(38px) saturate(1.3); -webkit-backdrop-filter: blur(38px) saturate(1.3); background: rgba(14,18,32,.42); }
+.light .veil { background: rgba(236,240,248,.38); }
+.search { width: 560px; height: 52px; border-radius: 999px; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 20px; box-sizing: border-box; font-size: 16px; }
+.chip { height: 32px; padding: 0 14px; border-radius: 999px; display: inline-flex; align-items: center; font-size: 13px; font-weight: 500; background: var(--hover); border: 1px solid transparent; }
+.chip.on { background: var(--glass); border-color: var(--rim); }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 9px; font-size: 12.5px; width: 104px; padding: 12px 0 10px; border-radius: 20px; }
+.tile.sel { background: var(--hover); box-shadow: inset 0 0 0 1px var(--rim); }
+.ico { width: 60px; height: 60px; border-radius: 16px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 22px; box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 6px 16px rgba(0,0,0,.25); }
+.menu { position: absolute; width: 270px; white-space: nowrap; border-radius: 16px; padding: 6px; box-sizing: border-box; font-size: 13.5px; }
+.menu .row { height: 36px; border-radius: 10px; display: flex; align-items: center; gap: 12px; padding: 0 12px; }
+.menu .row.hl { background: var(--hover); box-shadow: inset 0 0 0 1px var(--rim); }
+.menu .row small { margin-left: auto; color: var(--ink-3); font-size: 11.5px; }
+.menu hr { border: 0; height: 1px; background: var(--line); margin: 5px 8px; }
+.card { position: absolute; border-radius: 22px; padding: 16px; box-sizing: border-box; }
+.notif { border-radius: 16px; padding: 12px; display: flex; gap: 12px; background: var(--hover); margin-top: 8px; font-size: 12.5px; line-height: 1.4; }
+.notif .ico { width: 34px; height: 34px; border-radius: 10px; font-size: 14px; flex: none; box-shadow: none; }
+.btn { height: 36px; padding: 0 18px; border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font-size: 13.5px; font-weight: 600; background: var(--hover); box-shadow: inset 0 0 0 1px var(--rim); }
+.btn.accent { background: linear-gradient(180deg, var(--accent), var(--accent-2)); color: #fff; box-shadow: 0 4px 14px rgba(60,110,240,.35), inset 0 1px 0 rgba(255,255,255,.25); }
+.cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px 0; font-size: 12px; text-align: center; }
+.cal span { height: 28px; display: grid; place-items: center; border-radius: 50%; width: 28px; margin: auto; }
+.cal span.today { background: linear-gradient(180deg, var(--accent), var(--accent-2)); color: #fff; font-weight: 600; }
+.thumb { border-radius: 14px; overflow: hidden; background: var(--win); box-shadow: 0 0 0 1px var(--line), 0 8px 20px rgba(0,0,0,.3); }
+.thumb .tb2 { height: 16px; background: var(--bar); border-bottom: 1px solid var(--line); }
+.sw { display: flex; flex-direction: column; align-items: center; gap: 10px; font-size: 13px; padding: 12px; border-radius: 20px; }
+.sw.sel { background: var(--hover); box-shadow: inset 0 0 0 1.5px var(--accent); }
+/* Settings, solid as an app, in the same shapes. */
+.side { width: 236px; background: var(--bar); border-right: 1px solid var(--line); padding: 14px 12px; box-sizing: border-box; font-size: 13.5px; }
+.side .it { height: 34px; border-radius: 10px; display: flex; align-items: center; gap: 11px; padding: 0 11px; }
+.side .it.on { background: rgba(45,106,227,.12); color: #2458c4; font-weight: 600; }
+.side h6 { font-size: 11.5px; color: var(--ink-3); margin: 14px 11px 6px; font-weight: 600; }
+.group { border-radius: 16px; background: #f7f8fa; box-shadow: inset 0 0 0 1px var(--line); }
+.group .r { min-height: 52px; display: flex; align-items: center; padding: 0 16px; gap: 14px; font-size: 13.5px; border-top: 1px solid var(--line); }
+.group .r:first-child { border-top: 0; }
+.seg { display: inline-flex; padding: 3px; border-radius: 999px; background: rgba(20,24,32,.06); font-size: 12.5px; }
+.seg span { padding: 6px 14px; border-radius: 999px; }
+.seg span.on { background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.14); font-weight: 600; }
+.range { position: relative; height: 6px; border-radius: 3px; background: rgba(20,24,32,.10); width: 260px; }
+.range i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--accent); }
+.range b { position: absolute; top: -7px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.25), 0 0 0 1px rgba(0,0,0,.05); }
+.shape { width: 132px; text-align: center; font-size: 12.5px; }
+.shape .pv { height: 74px; border-radius: 12px; position: relative; overflow: hidden; background-size: cover; box-shadow: inset 0 0 0 1px var(--line); margin-bottom: 7px; }
+.shape.on .pv { box-shadow: 0 0 0 2px var(--accent); }
+.shape.on { font-weight: 600; }
+.mini { position: absolute; width: 620px; height: 388px; border-radius: 16px; overflow: hidden; background-size: cover; background-position: center; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.mini .label { position: absolute; left: 12px; bottom: 12px; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; z-index: 5; }
+</style></head><body>
+
+<!-- 1. The desktop, dark: the lock's glass on the panel and quick settings. -->
+<section class="board dark" id="desk-dark" style="background-image:url({{wall:aurora-dark}})">
+  <div class="win unfocused" style="left:70px;top:70px;width:600px;height:400px">
+    <div class="titlebar"><div class="t"><span class="appicon" style="background:#6b7280">F</span>Files</div>
+      <span class="tb">{{icon:minimize:14}}</span><span class="tb">{{icon:maximize:14}}</span><span class="tb close">{{icon:close:14}}</span></div>
+    <div style="padding:22px"><div class="skel" style="width:80%"></div><div class="skel" style="width:66%"></div><div class="skel" style="width:52%"></div><div class="skel" style="width:58%"></div></div>
+  </div>
+  <div class="win" style="left:300px;top:170px;width:560px;height:380px">
+    <div class="titlebar"><div class="t"><span class="appicon" style="background:#e3a033">N</span>Notes</div>
+      <span class="tb">{{icon:minimize:14}}</span><span class="tb hover">{{icon:maximize:14}}</span><span class="tb close">{{icon:close:14}}</span></div>
+    <div style="padding:22px"><div class="skel" style="width:90%"></div><div class="skel" style="width:74%"></div><div class="skel" style="width:61%"></div><div class="skel" style="width:46%"></div><div class="skel" style="width:70%"></div></div>
+  </div>
+
+  <div class="player glass" style="right:16px;top:148px">
+    <div class="cover"></div>
+    <div style="flex:1"><div style="font-weight:600;font-size:14px">Night Drive</div><div class="muted" style="font-size:12px">Lumen</div></div>
+    <span class="faint">{{icon:media-previous:16}}</span><span class="round accent" style="width:40px;height:40px">{{icon:media-pause:16}}</span><span class="faint">{{icon:media-next:16}}</span>
+  </div>
+  <div class="qs glass" style="right:16px;top:240px">
+    <div style="display:flex;gap:10px;margin-bottom:16px">
+      <div class="big accent" style="flex:1"><span class="ic">{{icon:net-wifi-3:18}}</span><div style="flex:1"><b>Wi-Fi</b><small>Home 5G</small></div>{{icon:chevron-right:14}}</div>
+      <div class="big accent" style="flex:1"><span class="ic">{{icon:page-bluetooth:18}}</span><div style="flex:1"><b>Bluetooth</b><small>Headphones</small></div>{{icon:chevron-right:14}}</div>
+    </div>
+    <div class="grid4" style="margin-bottom:16px">
+      <div class="tg"><span class="c">{{icon:airplane:18}}</span>Airplane</div>
+      <div class="tg"><span class="c accent">{{icon:do-not-disturb:18}}</span>Do not disturb</div>
+      <div class="tg"><span class="c accent">{{icon:moon:18}}</span>Dark</div>
+      <div class="tg"><span class="c">{{icon:brightness:18}}</span>Night light</div>
+    </div>
+    <div class="slider" style="margin-bottom:10px"><span class="fill" style="width:70%"></span>{{icon:brightness:16}}<span style="margin-left:auto" class="muted">70</span></div>
+    <div class="slider" style="margin-bottom:16px"><span class="fill" style="width:55%"></span>{{icon:volume-high:16}}<span style="margin-left:auto" class="muted">55</span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="pill" style="background:var(--hover);height:36px;padding:0 14px;display:flex;align-items:center;gap:8px;font-size:12.5px">{{icon:battery:16}}<b>82%</b><span class="muted">4 h 10 min</span></div>
+      <span style="flex:1"></span>
+      <span class="round" style="width:36px;height:36px;background:var(--hover)">{{icon:edit:15}}</span>
+      <span class="round" style="width:36px;height:36px;background:var(--hover)">{{icon:gear:15}}</span>
+      <span class="round" style="width:36px;height:36px;background:var(--hover)">{{icon:power:15}}</span>
+    </div>
+  </div>
+
+  <div class="panel glass">
+    <span class="pbtn">{{icon:menu:18}}</span>
+    <span class="sep"></span>
+    <span class="pbtn app on"><span class="appicon" style="background:#6b7280">F</span>Files</span>
+    <span class="pbtn app on"><span class="appicon" style="background:#e3a033">N</span>Notes<span class="dot"></span></span>
+    <span style="flex:1"></span>
+    <span class="ws"><span>1</span><span class="on accent">2</span><span>3</span></span>
+    <span class="pbtn">{{icon:layout-floating:17}}</span>
+    <span class="sep"></span>
+    <span class="pbtn">{{icon:chevron-up:14}}</span>
+    <span class="tray pill accent">{{icon:net-wifi-3:15}}{{icon:volume-high:15}}{{icon:battery:15}}</span>
+    <span class="clock"><b>14:05</b><small>Sat 3 Oct</small></span>
+  </div>
+</section>
+
+<!-- 2. The same desktop, light: light frost instead of dark glass. -->
+<section class="board light" id="desk-light" style="background-image:url({{wall:aurora-light}})">
+  <div class="win unfocused" style="left:70px;top:70px;width:600px;height:400px">
+    <div class="titlebar"><div class="t"><span class="appicon" style="background:#6b7280">F</span>Files</div>
+      <span class="tb">{{icon:minimize:14}}</span><span class="tb">{{icon:maximize:14}}</span><span class="tb close">{{icon:close:14}}</span></div>
+    <div style="padding:22px"><div class="skel" style="width:80%"></div><div class="skel" style="width:66%"></div><div class="skel" style="width:52%"></div><div class="skel" style="width:58%"></div></div>
+  </div>
+  <div class="win" style="left:300px;top:170px;width:560px;height:380px">
+    <div class="titlebar"><div class="t"><span class="appicon" style="background:#e3a033">N</span>Notes</div>
+      <span class="tb">{{icon:minimize:14}}</span><span class="tb">{{icon:maximize:14}}</span><span class="tb close hover">{{icon:close:14}}</span></div>
+    <div style="padding:22px"><div class="skel" style="width:90%"></div><div class="skel" style="width:74%"></div><div class="skel" style="width:61%"></div><div class="skel" style="width:46%"></div><div class="skel" style="width:70%"></div></div>
+  </div>
+
+  <div class="player glass" style="right:16px;top:148px">
+    <div class="cover"></div>
+    <div style="flex:1"><div style="font-weight:600;font-size:14px">Night Drive</div><div class="muted" style="font-size:12px">Lumen</div></div>
+    <span class="faint">{{icon:media-previous:16}}</span><span class="round accent" style="width:40px;height:40px">{{icon:media-pause:16}}</span><span class="faint">{{icon:media-next:16}}</span>
+  </div>
+  <div class="qs glass" style="right:16px;top:240px">
+    <div style="display:flex;gap:10px;margin-bottom:16px">
+      <div class="big accent" style="flex:1"><span class="ic">{{icon:net-wifi-3:18}}</span><div style="flex:1"><b>Wi-Fi</b><small>Home 5G</small></div>{{icon:chevron-right:14}}</div>
+      <div class="big off" style="flex:1"><span class="ic">{{icon:page-bluetooth:18}}</span><div style="flex:1"><b>Bluetooth</b><small class="muted">Off</small></div>{{icon:chevron-right:14}}</div>
+    </div>
+    <div class="grid4" style="margin-bottom:16px">
+      <div class="tg"><span class="c">{{icon:airplane:18}}</span>Airplane</div>
+      <div class="tg"><span class="c">{{icon:do-not-disturb:18}}</span>Do not disturb</div>
+      <div class="tg"><span class="c">{{icon:moon:18}}</span>Dark</div>
+      <div class="tg"><span class="c accent">{{icon:brightness:18}}</span>Night light</div>
+    </div>
+    <div class="slider" style="margin-bottom:10px"><span class="fill" style="width:70%"></span>{{icon:brightness:16}}<span style="margin-left:auto" class="muted">70</span></div>
+    <div class="slider" style="margin-bottom:16px"><span class="fill" style="width:55%"></span>{{icon:volume-high:16}}<span style="margin-left:auto" class="muted">55</span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <div class="pill" style="background:var(--hover);height:36px;padding:0 14px;display:flex;align-items:center;gap:8px;font-size:12.5px">{{icon:battery:16}}<b>82%</b><span class="muted">4 h 10 min</span></div>
+      <span style="flex:1"></span>
+      <span class="round" style="width:36px;height:36px;background:var(--hover)">{{icon:edit:15}}</span>
+      <span class="round" style="width:36px;height:36px;background:var(--hover)">{{icon:gear:15}}</span>
+      <span class="round" style="width:36px;height:36px;background:var(--hover)">{{icon:power:15}}</span>
+    </div>
+  </div>
+
+  <div class="panel glass">
+    <span class="pbtn">{{icon:menu:18}}</span>
+    <span class="sep"></span>
+    <span class="pbtn app on"><span class="appicon" style="background:#6b7280">F</span>Files</span>
+    <span class="pbtn app on"><span class="appicon" style="background:#e3a033">N</span>Notes<span class="dot"></span></span>
+    <span style="flex:1"></span>
+    <span class="ws"><span>1</span><span class="on accent">2</span><span>3</span></span>
+    <span class="pbtn">{{icon:layout-floating:17}}</span>
+    <span class="sep"></span>
+    <span class="pbtn">{{icon:chevron-up:14}}</span>
+    <span class="tray pill accent">{{icon:net-wifi-3:15}}{{icon:volume-high:15}}{{icon:battery:15}}</span>
+    <span class="clock"><b>14:05</b><small>Sat 3 Oct</small></span>
+  </div>
+</section>
+
+
+<!-- 3. The launcher: the lock's veil, its password field as the search. -->
+<section class="board dark" id="launcher" style="background-image:url({{wall:aurora-dark}})">
+  <div class="veil"></div>
+  <div style="position:absolute;left:0;right:0;top:64px;display:flex;flex-direction:column;align-items:center;gap:18px">
+    <div class="search glass"><span class="muted">{{icon:search:18}}</span><span class="faint" style="flex:1">Search apps, files and settings</span><span class="round accent" style="width:36px;height:36px">{{icon:arrow-right:16}}</span></div>
+    <div style="display:flex;gap:8px"><span class="chip on">All apps</span><span class="chip">Recent</span><span class="chip">Office</span><span class="chip">Internet</span><span class="chip">Games</span><span class="chip">System</span></div>
+  </div>
+  <div style="position:absolute;left:184px;top:220px;display:grid;grid-template-columns:repeat(7,104px);gap:18px 26px">
+    <div class="tile sel"><span class="ico" style="background:linear-gradient(160deg,#4f8cff,#2a5bd7)">{{icon:folder:26}}</span>Files</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#ffb547,#e68a12)">N</span>Notes</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#ff7a59,#e2492f)">W</span>Web</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#34c77b,#1f9a5a)">{{icon:message:26}}</span>Messages</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#a978ff,#7442e0)">{{icon:music:26}}</span>Music</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#ff6fa5,#d93a7a)">{{icon:picture:26}}</span>Photos</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#5ad1d9,#2a9aa6)">{{icon:calendar:26}}</span>Calendar</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#3b3f4a,#1c1f26)">&gt;_</span>Terminal</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#7d8696,#545c6b)">{{icon:gear:26}}</span>Settings</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#ffd84d,#f0a91a)">{{icon:camera:26}}</span>Camera</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#5b8ef5,#7a5cf0)">{{icon:game:26}}</span>Games</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#4cc3c9,#2d8bd6)">{{icon:screenshot:26}}</span>Screenshot</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#f2707a,#c9414d)">{{icon:clock:26}}</span>Clocks</div>
+    <div class="tile"><span class="ico" style="background:linear-gradient(160deg,#6ec26e,#3e9a4e)">{{icon:page-install:26}}</span>Software</div>
+  </div>
+  <div style="position:absolute;left:0;right:0;top:600px;display:flex;justify-content:center;gap:8px"><span style="width:20px;height:6px;border-radius:3px;background:var(--ink)"></span><span style="width:6px;height:6px;border-radius:3px;background:var(--ink-3)"></span></div>
+  <div style="position:absolute;left:24px;bottom:24px;display:flex;align-items:center;gap:10px" class="glass pill" ><span class="round accent" style="width:40px;height:40px;font-weight:700">A</span><span style="font-weight:600;font-size:14px;padding-right:16px">Ali</span></div>
+  <div style="position:absolute;right:24px;bottom:24px;display:flex;gap:10px"><span class="round glass" style="width:44px;height:44px">{{icon:lock:16}}</span><span class="round glass" style="width:44px;height:44px">{{icon:power:16}}</span></div>
+</section>
+
+<!-- 4. Menus, a question, the volume and notifications: one glass. -->
+<section class="board light" id="popups" style="background-image:url({{wall:mist-light}})">
+  <div class="menu glass strong" style="left:90px;top:120px">
+    <div class="row">{{icon:picture:16}}Change wallpaper</div>
+    <div class="row hl">{{icon:layout-tiling:16}}Tile this workspace<small>Super T</small></div>
+    <div class="row">{{icon:page-panels:16}}Edit panel</div>
+    <hr>
+    <div class="row">{{icon:gear:16}}Settings</div>
+  </div>
+  <div class="note glass" style="left:90px;top:330px">Every menu is the lock's power menu: glass, 16 px corners, rows that light up as frosted pills, keys in faint text.</div>
+
+  <div class="card glass strong" style="left:390px;top:250px;width:400px;padding:24px;text-align:center">
+    <span class="round accent" style="width:52px;height:52px;margin:0 auto 14px">{{icon:restart:22}}</span>
+    <div style="font-size:18px;font-weight:600;margin-bottom:6px">Restart to finish the update?</div>
+    <div class="muted" style="font-size:13.5px;line-height:1.5;margin-bottom:20px">Edel OS 27.1 is ready. Your windows open again after the restart.</div>
+    <div style="display:flex;gap:10px;justify-content:center"><span class="btn" style="min-width:120px">Later</span><span class="btn accent" style="min-width:120px">Restart</span></div>
+  </div>
+
+  <div class="glass pill" style="position:absolute;left:465px;bottom:76px;width:250px;height:52px;display:flex;align-items:center;gap:12px;padding:0 18px;box-sizing:border-box">{{icon:volume-high:18}}<div style="flex:1;height:6px;border-radius:3px;background:var(--hover);position:relative"><i style="position:absolute;left:0;top:0;bottom:0;width:62%;border-radius:3px;background:var(--ink)"></i></div><span style="font-size:13px;font-weight:600;width:22px">62</span></div>
+
+  <div class="card glass" style="right:16px;top:96px;width:340px">
+    <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px">Notifications<span style="flex:1"></span><span class="round" style="width:30px;height:30px;background:var(--hover)">{{icon:moon:14}}</span><span class="chip" style="height:30px">Clear all</span></div>
+    <div class="notif"><span class="ico" style="background:linear-gradient(160deg,#34c77b,#1f9a5a)">{{icon:message:16}}</span><div><b>Sara</b> <span class="faint">· 2 min</span><br><span class="muted">Are we still on for lunch tomorrow?</span></div></div>
+    <div class="notif"><span class="ico" style="background:linear-gradient(160deg,#7d8696,#545c6b)">{{icon:status-restart:16}}</span><div><b>Update ready</b> <span class="faint">· 10 min</span><br><span class="muted">Restart when it suits you.</span></div></div>
+  </div>
+  <div class="card glass" style="right:16px;top:368px;width:340px">
+    <div style="display:flex;align-items:center;font-weight:600;font-size:14px;margin-bottom:10px">October 2026<span style="flex:1"></span><span class="faint" style="display:flex;gap:14px">{{icon:chevron-left:14}}{{icon:chevron-right:14}}</span></div>
+    <div class="cal faint"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+    <div class="cal">
+      <span class="faint">28</span><span class="faint">29</span><span class="faint">30</span><span>1</span><span>2</span><span class="today">3</span><span>4</span>
+      <span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span>
+      <span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span>
+      <span>19</span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span><span>25</span>
+    </div>
+  </div>
+
+  <div class="panel glass">
+    <span class="pbtn">{{icon:menu:18}}</span><span class="sep"></span>
+    <span class="pbtn app on"><span class="appicon" style="background:#6b7280">F</span>Files</span>
+    <span style="flex:1"></span>
+    <span class="ws"><span class="on accent">1</span><span>2</span><span>3</span></span>
+    <span class="pbtn">{{icon:layout-floating:17}}</span><span class="sep"></span>
+    <span class="tray pill accent">{{icon:net-wifi-3:15}}{{icon:volume-high:15}}{{icon:battery:15}}</span>
+    <span class="clock pbtn on" style="height:40px;display:block;padding-top:4px"><b>14:05</b><small>Sat 3 Oct</small></span>
+  </div>
+</section>
+
+<!-- 5. The window switcher: the veil, the windows as cards on glass. -->
+<section class="board dark" id="switcher" style="background-image:url({{wall:ridges-dark}})">
+  <div class="veil"></div>
+  <div class="glass" style="position:absolute;left:150px;top:250px;width:980px;height:260px;border-radius:32px;display:flex;align-items:center;justify-content:center;gap:16px">
+    <div class="sw"><div class="thumb" style="width:200px;height:130px"><div class="tb2"></div><div style="padding:12px"><div class="skel" style="width:80%;height:6px;margin-bottom:8px"></div><div class="skel" style="width:60%;height:6px"></div></div></div><span style="display:flex;gap:7px;align-items:center"><span class="appicon" style="background:#6b7280">F</span>Files</span></div>
+    <div class="sw sel"><div class="thumb" style="width:200px;height:130px"><div class="tb2"></div><div style="padding:12px"><div class="skel" style="width:90%;height:6px;margin-bottom:8px"></div><div class="skel" style="width:70%;height:6px;margin-bottom:8px"></div><div class="skel" style="width:50%;height:6px"></div></div></div><span style="display:flex;gap:7px;align-items:center;font-weight:600"><span class="appicon" style="background:#e3a033">N</span>Notes</span></div>
+    <div class="sw"><div class="thumb" style="width:200px;height:130px;background:#16181d"><div class="tb2"></div><div style="padding:10px;font:10px monospace;color:#7fdc96">$ edel update<br><span style="color:#c3c9d4">Downloading 27.1</span></div></div><span style="display:flex;gap:7px;align-items:center"><span class="appicon" style="background:#2a2e37">&gt;</span>Terminal</span></div>
+    <div class="sw"><div class="thumb" style="width:200px;height:130px"><div class="tb2"></div><div style="height:114px;background:linear-gradient(160deg,#ff9a6b,#7b4bc4)"></div></div><span style="display:flex;gap:7px;align-items:center"><span class="appicon" style="background:#d93a7a">P</span>Photos</span></div>
+  </div>
+  <div class="note glass" style="left:150px;top:560px;width:420px">Alt Tab keeps the lock's veil: the wallpaper softens, the windows sit on one sheet of glass, the chosen one ringed in the accent.</div>
+</section>
+
+<!-- 6. Settings: an app, so solid, in the same shapes and one new group. -->
+<section class="board light" id="settings" style="background-image:url({{wall:aurora-light}})">
+  <div class="win" style="left:90px;top:40px;width:1100px;height:720px;display:flex;flex-direction:column">
+    <div class="titlebar"><div class="t">Settings</div><span class="tb">{{icon:minimize:14}}</span><span class="tb">{{icon:maximize:14}}</span><span class="tb close">{{icon:close:14}}</span></div>
+    <div style="display:flex;flex:1;min-height:0">
+      <div class="side">
+        <div class="pill" style="height:36px;background:rgba(20,24,32,.05);display:flex;align-items:center;gap:9px;padding:0 13px;color:var(--ink-3)">{{icon:search:15}}Search</div>
+        <h6>Desktop</h6>
+        <div class="it on">{{icon:page-appearance:16}}Appearance</div>
+        <div class="it">{{icon:page-layout:16}}Layout</div>
+        <div class="it">{{icon:page-panels:16}}Panels</div>
+        <div class="it">{{icon:page-workspaces:16}}Workspaces</div>
+        <div class="it">{{icon:page-lock-screen:16}}Lock screen</div>
+        <h6>Connections</h6>
+        <div class="it">{{icon:page-network:16}}Network</div>
+        <div class="it">{{icon:page-bluetooth:16}}Bluetooth</div>
+        <h6>Devices</h6>
+        <div class="it">{{icon:page-displays:16}}Displays</div>
+        <div class="it">{{icon:page-sound:16}}Sound</div>
+        <div class="it">{{icon:page-power:16}}Power</div>
+      </div>
+      <div style="flex:1;padding:30px 40px;overflow:hidden">
+        <div style="font-size:30px;font-weight:300;letter-spacing:-.3px">Appearance</div>
+        <div class="muted" style="font-size:13.5px;margin:4px 0 22px">Your theme in light and dark, and how everything is drawn.</div>
+        <div style="font-weight:600;font-size:14px;margin-bottom:10px">Glass <span class="faint" style="font-weight:400;float:right;font-size:12px">appearance.glass</span></div>
+        <div class="group" style="margin-bottom:22px">
+          <div class="r">Panels and menus<span style="flex:1"></span><span class="seg"><span class="on">Glass</span><span>Tinted</span><span>Solid</span></span></div>
+          <div class="r">Blur<span style="flex:1"></span><span class="range"><i style="width:60%"></i><b style="left:146px"></b></span><span class="muted" style="width:60px;text-align:right">Strong</span></div>
+          <div class="r">Glass colour<span style="flex:1"></span><span class="seg"><span class="on">From the accent</span><span>Neutral</span><span>From the wallpaper</span></span></div>
+        </div>
+        <div style="font-weight:600;font-size:14px;margin-bottom:10px">Panel shape <span class="faint" style="font-weight:400;float:right;font-size:12px">panels.shape</span></div>
+        <div class="group" style="padding:16px;display:flex;gap:16px">
+          <div class="shape on"><div class="pv" style="background-image:url({{wall:aurora-dark}})"><span style="position:absolute;left:0;right:0;bottom:0;height:12px;background:rgba(150,170,230,.35);border-top:1px solid rgba(255,255,255,.3)"></span></div>Full width</div>
+          <div class="shape"><div class="pv" style="background-image:url({{wall:aurora-dark}})"><span style="position:absolute;left:10px;right:10px;bottom:6px;height:12px;border-radius:6px;background:rgba(150,170,230,.35);border:1px solid rgba(255,255,255,.3)"></span></div>Floating</div>
+          <div class="shape"><div class="pv" style="background-image:url({{wall:aurora-dark}})"><span style="position:absolute;left:8px;width:22px;bottom:6px;height:12px;border-radius:6px;background:rgba(150,170,230,.35);border:1px solid rgba(255,255,255,.3)"></span><span style="position:absolute;left:46px;width:40px;bottom:6px;height:12px;border-radius:6px;background:rgba(150,170,230,.35);border:1px solid rgba(255,255,255,.3)"></span><span style="position:absolute;right:8px;width:30px;bottom:6px;height:12px;border-radius:6px;background:rgba(150,170,230,.35);border:1px solid rgba(255,255,255,.3)"></span></div>Islands</div>
+          <div class="shape"><div class="pv" style="background-image:url({{wall:aurora-dark}})"><span style="position:absolute;left:44px;right:44px;bottom:6px;height:14px;border-radius:7px;background:rgba(150,170,230,.35);border:1px solid rgba(255,255,255,.3)"></span></div>Dock</div>
+          <div style="flex:1;font-size:12.5px;line-height:1.5" class="muted">Each shape is one line of the settings file, and every preset picks its own. Lite, on slower machines, keeps the shape and drops the blur.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7. Rices: the same parts, other settings and presets. -->
+<section class="board dark" id="rices" style="background:#0d1018">
+  <!-- a. Islands, Hive tiling -->
+  <div class="mini dark" style="left:13px;top:8px;background-image:url({{wall:ridges-dark}})">
+    <div style="position:absolute;left:10px;right:10px;top:8px;height:28px;display:flex;justify-content:space-between">
+      <span class="glass pill" style="display:flex;gap:4px;align-items:center;padding:0 6px;box-shadow:none"><span style="width:18px;height:6px;border-radius:3px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:3px;background:var(--ink-3)"></span><span style="width:6px;height:6px;border-radius:3px;background:var(--ink-3)"></span></span>
+      <span class="glass pill" style="padding:0 14px;display:flex;align-items:center;font-size:12px;font-weight:600;box-shadow:none">14:05 · Sat 3 Oct</span>
+      <span class="glass pill" style="padding:0 10px;display:flex;gap:8px;align-items:center;box-shadow:none">{{icon:net-wifi-3:12}}{{icon:volume-high:12}}{{icon:battery:12}}</span>
+    </div>
+    <div class="win" style="left:10px;top:46px;width:296px;height:330px;border-radius:12px"><div class="titlebar" style="height:24px;font-size:11px"><div class="t">Files</div></div><div style="padding:14px"><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div></div>
+    <div class="win" style="left:314px;top:46px;width:296px;height:161px;border-radius:12px;background:#16181d"><div class="titlebar" style="height:24px;font-size:11px"><div class="t">Terminal</div></div><div style="padding:10px;font:10px monospace;color:#7ea9ff">~ $ edel settings set<br>&nbsp;&nbsp;panels.shape islands</div></div>
+    <div class="win unfocused" style="left:314px;top:215px;width:296px;height:161px;border-radius:12px"><div class="titlebar" style="height:24px;font-size:11px"><div class="t">Notes</div></div></div>
+    <span class="label glass">Islands · Hive tiling</span>
+  </div>
+  <!-- b. Zen -->
+  <div class="mini dark" style="left:647px;top:8px;background-image:url({{wall:ocean-dark}})">
+    <div class="win" style="left:14px;top:14px;width:360px;height:360px;border-radius:14px;background:#14161b;box-shadow:0 0 0 1.5px #5b8ef5"><div style="padding:16px;font:11px/1.6 monospace;color:#c3c9d4"><span style="color:#7fdc96">ali@edel</span> ~ $ nvim<br><span style="color:#5c6370">-- no title bars, no panel --</span></div></div>
+    <div class="win unfocused" style="left:384px;top:14px;width:222px;height:175px;border-radius:14px;background:#14161b"></div>
+    <div class="win unfocused" style="left:384px;top:199px;width:222px;height:175px;border-radius:14px;background:#14161b"></div>
+    <span class="glass pill" style="position:absolute;right:24px;bottom:24px;padding:6px 12px;font-size:12px;font-weight:600">14:05</span>
+    <span class="label glass">Zen · tiling, no bars</span>
+  </div>
+  <!-- c. Mac-like -->
+  <div class="mini light" style="left:13px;top:404px;background-image:url({{wall:mist-light}})">
+    <div class="glass" style="position:absolute;left:0;right:0;top:0;height:24px;border-radius:0;border-width:0 0 1px;display:flex;align-items:center;gap:14px;padding:0 12px;font-size:11.5px;box-shadow:none"><b>Notes</b><span>File</span><span>Edit</span><span>View</span><span style="flex:1"></span>{{icon:net-wifi-3:12}}{{icon:battery:12}}<b>Sat 3 Oct 14:05</b></div>
+    <div class="win" style="left:120px;top:56px;width:380px;height:230px"><div class="titlebar" style="height:26px;font-size:11px"><div class="t">Notes</div></div><div style="padding:14px"><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div></div>
+    <div class="glass" style="position:absolute;left:160px;bottom:10px;width:300px;height:54px;border-radius:18px;display:flex;align-items:center;justify-content:center;gap:10px">
+      <span class="ico" style="width:38px;height:38px;border-radius:11px;background:linear-gradient(160deg,#4f8cff,#2a5bd7)">{{icon:folder:18}}</span><span class="ico" style="width:38px;height:38px;border-radius:11px;background:linear-gradient(160deg,#ffb547,#e68a12);font-size:15px">N</span><span class="ico" style="width:38px;height:38px;border-radius:11px;background:linear-gradient(160deg,#ff7a59,#e2492f);font-size:15px">W</span><span class="ico" style="width:38px;height:38px;border-radius:11px;background:linear-gradient(160deg,#a978ff,#7442e0)">{{icon:music:18}}</span><span class="ico" style="width:38px;height:38px;border-radius:11px;background:linear-gradient(160deg,#7d8696,#545c6b)">{{icon:gear:18}}</span>
+    </div>
+    <span class="label glass">Mac-like</span>
+  </div>
+  <!-- d. Lite: solid, square, no blur -->
+  <div class="mini light" style="left:647px;top:404px;background-image:url({{wall:hills-light}})">
+    <div class="win" style="left:40px;top:40px;width:380px;height:240px;border-radius:0;box-shadow:0 0 0 1px rgba(20,24,32,.15)"><div class="titlebar" style="height:26px;font-size:11px"><div class="t">Notes</div></div><div style="padding:14px"><div class="skel" style="width:80%"></div><div class="skel" style="width:60%"></div></div></div>
+    <div style="position:absolute;left:0;right:0;bottom:0;height:34px;background:#f6f7f9;border-top:1px solid rgba(20,24,32,.12);display:flex;align-items:center;gap:8px;padding:0 10px;font-size:11.5px">{{icon:menu:14}}<span style="padding:4px 8px;background:rgba(20,24,32,.06);border-radius:6px">Notes</span><span style="flex:1"></span><span style="padding:3px 8px;border-radius:999px;background:#2d6ae3;color:#fff;font-weight:600">1</span>{{icon:net-wifi-3:12}}{{icon:battery:12}}<b>14:05</b></div>
+    <span class="label" style="background:#fff;box-shadow:0 0 0 1px rgba(20,24,32,.12);bottom:46px">Lite · solid, square, no blur</span>
+  </div>
+</section>
+
+</body></html>

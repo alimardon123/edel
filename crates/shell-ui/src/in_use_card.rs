@@ -113,6 +113,7 @@ impl Shell {
     /// Draws the card if what it shows changed. Its first drawing logs the
     /// places of its buttons, `in use card places`.
     pub(crate) fn draw_in_use(&mut self) {
+        let glass = self.glass();
         let Some(menu) = &mut self.in_use_menu else {
             return;
         };
@@ -134,6 +135,8 @@ impl Shell {
             scale,
         );
         let view = menu.view.clone();
+        menu.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         if menu
             .popup
             .show(view.clone(), &pixmap, &self.tokens, "in use card", &self.qh)

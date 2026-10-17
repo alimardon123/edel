@@ -67,15 +67,17 @@ pub const RESET: Action = Action {
     args: &["settings", "reset"],
 };
 
-/// The Region page's Time zone and Time servers changes, which set one
-/// machine key as root; the key and its value are added after the words.
+/// The Region page's Time zone and Time servers changes, and the System
+/// page's developer mode switch (M7.1), which set one machine key as root;
+/// the key and its value are added after the words.
 pub const SET: Action = Action {
     page: "region",
     args: &["settings", "set"],
 };
 
-/// The Region page's apply, run after a machine key is set so the clock
-/// follows at once (as root, through `doas`, like SET).
+/// The apply that follows a machine key being set, so the Region page's
+/// clock and the System page's developer mode take effect at once (as root,
+/// through `doas`, like SET).
 pub const APPLY: Action = Action {
     page: "region",
     args: &["settings", "apply"],
@@ -99,6 +101,15 @@ pub const FIRST_PERSON: Action = Action {
     args: &["settings", "first-boot"],
 };
 
+/// The System page's Reset developer mode button (M7.1), which deletes the
+/// changes developer mode made under /usr when the computer next starts and
+/// takes its key out of the settings file; the page asks twice first, as
+/// Roll back does. Apply follows it, as it follows SET.
+pub const RESET_DEVELOPER: Action = Action {
+    page: "system",
+    args: &["settings", "reset", "--yes", "system.developer_mode"],
+};
+
 // `edel addon list` joins this table when add-ons and their page come (M7.2):
 // the roadmap's list names it, but the command does not exist yet.
 
@@ -106,7 +117,18 @@ pub const FIRST_PERSON: Action = Action {
 /// tests read the list: they check each action in it.
 #[cfg(test)]
 pub const ACTIONS: &[&Action] = &[
-    &CHECK, &UPDATE, &ROLLBACK, &RESTART, &EXPORT, &DIFF, &IMPORT, &RESET, &SET, &APPLY, &INSTALL,
+    &CHECK,
+    &UPDATE,
+    &ROLLBACK,
+    &RESTART,
+    &EXPORT,
+    &DIFF,
+    &IMPORT,
+    &RESET,
+    &RESET_DEVELOPER,
+    &SET,
+    &APPLY,
+    &INSTALL,
 ];
 
 #[cfg(test)]
@@ -119,7 +141,8 @@ mod tests {
     /// The command reference, written by edel's own test from its command table.
     const REFERENCE: &str = include_str!("../../../docs/guide/commands.md");
 
-    /// The command an action runs: `edel` and its words, options left out.
+    /// The command an action runs: `edel` and its words, with options and
+    /// keys left out, as the reference writes a key as `KEY...` (M7.1).
     fn command(action: &Action) -> String {
         std::iter::once("edel")
             .chain(
@@ -127,7 +150,7 @@ mod tests {
                     .args
                     .iter()
                     .copied()
-                    .filter(|word| !word.starts_with('-')),
+                    .filter(|word| !word.starts_with('-') && !word.contains('.')),
             )
             .collect::<Vec<_>>()
             .join(" ")
