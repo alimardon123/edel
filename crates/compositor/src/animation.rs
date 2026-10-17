@@ -47,8 +47,8 @@ impl Motion {
     }
 }
 
-/// `appearance.animation_curve` (M5.12b4): how an animation eases, one curve
-/// for every kind of animation (windows and popups alike).
+/// How an animation eases (M5.12b4). `appearance.animation_curve` names one,
+/// the feel, and `Feel` gives each kind of animation its own from it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Curve {
     /// Eases out cubically, as windows have always settled.
@@ -103,8 +103,42 @@ pub struct Style {
     /// The share of its size an opening window grows from and a closing
     /// one shrinks to; 1 neither grows nor shrinks.
     pub zoom: f64,
-    /// How each of them eases (M5.12b4).
-    pub curve: Curve,
+    /// How each kind eases (M5.12b4, a curve per kind in M8.21 part 21e).
+    pub feel: Feel,
+}
+
+/// The curve each kind of animation follows for one feel
+/// (`appearance.animation_curve`, M8.21 part 21e): a preset, not three keys.
+/// Pop-ups are small and asked for, so they answer snappily under the smooth
+/// feel; a workspace moves the whole screen, so under the springy feel it
+/// settles snappily rather than swinging past its place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Feel {
+    /// The curve the feel was named by, which the log says.
+    pub name: Curve,
+    /// Windows opening, closing and sliding to a new place.
+    pub windows: Curve,
+    /// A workspace switch, and a swipe let go.
+    pub workspaces: Curve,
+    /// Pop-ups popping up.
+    pub popups: Curve,
+}
+
+impl Feel {
+    /// The curves of the feel `name`.
+    pub fn of(name: Curve) -> Feel {
+        let (windows, workspaces, popups) = match name {
+            Curve::Smooth => (Curve::Smooth, Curve::Smooth, Curve::Snappy),
+            Curve::Snappy => (Curve::Snappy, Curve::Snappy, Curve::Snappy),
+            Curve::Springy => (Curve::Springy, Curve::Snappy, Curve::Springy),
+        };
+        Feel {
+            name,
+            windows,
+            workspaces,
+            popups,
+        }
+    }
 }
 
 /// The style for `tier`, `motion`, `speed` (`appearance.animation_speed`,
@@ -130,21 +164,21 @@ pub fn style(tier: Tier, motion: Motion, speed: u32, curve: Curve) -> Style {
             close: ms(open * 3 / 4),
             slide: ms(slide),
             zoom,
-            curve,
+            feel: Feel::of(curve),
         },
         Motion::Reduced => Style {
             open: ms(open),
             close: ms(open * 3 / 4),
             slide: Duration::ZERO,
             zoom: 1.0,
-            curve,
+            feel: Feel::of(curve),
         },
         Motion::Off => Style {
             open: Duration::ZERO,
             close: Duration::ZERO,
             slide: Duration::ZERO,
             zoom: 1.0,
-            curve,
+            feel: Feel::of(curve),
         },
     }
 }
@@ -622,15 +656,37 @@ mod tests {
             }
             let off = style(tier, Motion::Off, 50, Curve::Snappy);
             assert!(off.open.is_zero() && off.close.is_zero() && off.slide.is_zero());
-            assert_eq!(off.curve, Curve::Snappy);
+            assert_eq!(off.feel, Feel::of(Curve::Snappy));
         }
     }
 
     #[test]
     fn the_curve_is_carried_into_the_style() {
         let springy = style(Tier::Full, Motion::Full, 100, Curve::Springy);
-        assert_eq!(springy.curve, Curve::Springy);
+        assert_eq!(springy.feel, Feel::of(Curve::Springy));
         assert_eq!(springy.open, MS(200));
+    }
+
+    #[test]
+    fn each_feel_gives_each_kind_its_curve() {
+        let smooth = Feel::of(Curve::Smooth);
+        assert_eq!(
+            (smooth.windows, smooth.workspaces, smooth.popups),
+            (Curve::Smooth, Curve::Smooth, Curve::Snappy)
+        );
+        let snappy = Feel::of(Curve::Snappy);
+        assert_eq!(
+            (snappy.windows, snappy.workspaces, snappy.popups),
+            (Curve::Snappy, Curve::Snappy, Curve::Snappy)
+        );
+        let springy = Feel::of(Curve::Springy);
+        assert_eq!(
+            (springy.windows, springy.workspaces, springy.popups),
+            (Curve::Springy, Curve::Snappy, Curve::Springy)
+        );
+        for name in [Curve::Smooth, Curve::Snappy, Curve::Springy] {
+            assert_eq!(Feel::of(name).name, name);
+        }
     }
 
     #[test]
@@ -638,7 +694,7 @@ mod tests {
         let springy = style(Tier::Full, Motion::Full, 100, Curve::Springy);
         let mut grew_past_one = false;
         for i in 0..=100 {
-            let eased = Anim::new(MS(0), MS(200)).eased(MS(i * 2), springy.curve);
+            let eased = Anim::new(MS(0), MS(200)).eased(MS(i * 2), springy.feel.windows);
             let (alpha, zoom) = opening(&springy, eased);
             assert!((0.0..=1.0).contains(&alpha));
             grew_past_one |= zoom > 1.0;

@@ -693,7 +693,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "appearance.animation_curve",
         help: n_(
-            "The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little).",
+            "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little).",
         ),
         default: r#""smooth""#,
         from: DecidedBy::Release,
