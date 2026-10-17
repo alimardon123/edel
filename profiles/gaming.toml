@@ -1,0 +1,13 @@
+# Gaming (M7.6): Steam, and game mode whenever a game is fullscreen, on
+# battery too. A profile is a few lines of the settings file, laid under
+# the machine's own: a value the file sets wins, and a list the file has
+# keeps its items and gains the profile's (edel::profiles). The machine's
+# file names the profile, `[system] profiles = ["gaming"]`, never these
+# lines, so a renewed profile reaches every machine that names it.
+format = 1
+
+[power]
+game_mode = "always"
+
+[apps]
+installed = ["com.valvesoftware.Steam"]

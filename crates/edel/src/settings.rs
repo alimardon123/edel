@@ -288,6 +288,9 @@ pub enum Kind {
     /// A list of add-on names, such as `["fonts-cjk"]`: feature names
     /// ([`crate::features::is_name`], M7.2a)
     Addons,
+    /// A list of profile names, such as `["gaming"]`, each checked against
+    /// the release's profiles by [`crate::profiles::problems`] (M7.6)
+    Profiles,
     /// A list of host names, such as `["pool.ntp.org"]`: dot-separated
     /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
     /// (M1.13)
@@ -396,7 +399,7 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["container", "server", "desktop", "phone"]),
     ),
     now("system.developer_mode", Kind::Flag),
-    later("system.profiles", Kind::Texts),
+    now("system.profiles", Kind::Profiles),
     now("users.*.admin", Kind::Flag),
     now("users.*.ssh_keys", Kind::Texts),
     now("users.*.login_shell", Kind::Shell),
@@ -1558,6 +1561,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     // Across keys: each own preset names a name of its own and a built-in
     // preset to start from, and the preset in use is one of them (M5.17).
     lines.extend(crate::presets::problems(&read.file));
+    // Each profile named is one this release has (M7.6).
+    lines.extend(crate::profiles::problems(&read.file));
     // Across keys: the install disk is auto or a by-id name, and erase = "yes" names one (M7.3).
     lines.extend(install_problems(&read.file));
     Ok(lines)
@@ -1776,6 +1781,11 @@ pub fn choices(key: &str) -> &'static [&'static str] {
         Some(Key {
             kind: Kind::Preset, ..
         }) => crate::presets::NAMES,
+        // The release's profiles (M7.6).
+        Some(Key {
+            kind: Kind::Profiles,
+            ..
+        }) => crate::profiles::NAMES,
         _ => &[],
     }
 }
@@ -1790,13 +1800,14 @@ pub fn value_at(part: &impl Serialize, path: &str) -> Option<Value> {
     Some(value)
 }
 
-/// The file as the desktop applies it (M5.17, M5.12b6a): its own layout
-/// preset in use laid under its keys ([`crate::presets::applied`]), then its
-/// theme ([`crate::themes::themed`]). Every reader of a file's layout or
-/// appearance values calls this on each file it reads, before it reads
-/// (ADR-010); the writers never do, so they write the file as it is.
+/// The file as the desktop applies it (M5.17, M5.12b6a, M7.6): the
+/// profiles it names laid under its keys ([`crate::profiles::applied`]),
+/// then its own layout preset in use ([`crate::presets::applied`]), then
+/// its theme ([`crate::themes::themed`]). Every reader of a file's layout,
+/// appearance or power values calls this on each file it reads, before it
+/// reads (ADR-010); the writers never do, so they write the file as it is.
 pub fn in_use(file: &SettingsFile) -> SettingsFile {
-    crate::themes::themed(&crate::presets::applied(file))
+    crate::themes::themed(&crate::presets::applied(&crate::profiles::applied(file)))
 }
 
 /// `key`'s value as the files say it now: the person's file over the
@@ -2136,6 +2147,13 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             bail!("{}", lines.join("; "));
         }
     }
+    // Each profile named is one this release has (M7.6).
+    if key == "system.profiles" {
+        let lines = crate::profiles::problems(&read(&text)?.file);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
     // A preset is named, and the preset in use is one of them (M5.17).
     if key == "layout.preset" || key.starts_with("presets.") {
         let lines = crate::presets::problems(&read(&text)?.file);
@@ -2198,7 +2216,7 @@ fn present_keys(table: &Table, prefix: &str, out: &mut Vec<String>) {
 fn is_list(kind: Kind) -> bool {
     matches!(
         kind,
-        Kind::Texts | Kind::AppIds | Kind::Addons | Kind::Hosts | Kind::Pictures
+        Kind::Texts | Kind::AppIds | Kind::Addons | Kind::Profiles | Kind::Hosts | Kind::Pictures
     )
 }
 
@@ -2920,6 +2938,14 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::Addons, _) => fail(tr("a list of add-on names, such as [\"fonts-cjk\"]")),
+        (Kind::Profiles, Value::Array(items))
+            if items
+                .iter()
+                .all(|i| i.as_str().is_some_and(crate::features::is_name)) =>
+        {
+            Ok(value.clone())
+        }
+        (Kind::Profiles, _) => fail(tr("a list of profile names, such as [\"gaming\"]")),
         (Kind::Channel, Value::String(s)) if is_channel(s) => Ok(value.clone()),
         (Kind::Channel, Value::String(s)) => Err(trf(
             "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)",
@@ -3272,6 +3298,7 @@ mod tests {
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::AppIds => value_from_arg(r#"["io.mpv.Mpv"]"#),
             Kind::Addons => value_from_arg(r#"["fonts-cjk"]"#),
+            Kind::Profiles => value_from_arg(r#"["gaming"]"#),
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::Wallpaper => Value::String("hills".into()),

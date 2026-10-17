@@ -409,6 +409,14 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
                     },
                 )?)
             }
+            "system.profiles" => {
+                let names = edel::profiles::NAMES.join(", ");
+                answers.profile = Some(ask_until(
+                    &format!("{title} ({}, {names})", edel::install::NO_PROFILE),
+                    Some(edel::install::NO_PROFILE),
+                    edel::install::profile_answer,
+                )?)
+            }
             _ => {}
         }
     }

@@ -91,7 +91,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "system.profiles",
         help: n_(
-            "The hardware profiles applied to this machine, in order; this release does not act on them yet.",
+            "The profiles this machine has, such as [\"gaming\"]: the add-ons, apps and values a kind of work needs; this file's own values win.",
         ),
         default: "[]",
         from: DecidedBy::Release,

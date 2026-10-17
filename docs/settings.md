@@ -462,7 +462,7 @@ This page has no key in the file.
 |---|---|---|---|
 | `system.variant` | What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet. | the image's | image |
 | `system.developer_mode` | Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on. | `false` | release |
-| `system.profiles` | The hardware profiles applied to this machine, in order; this release does not act on them yet. | `[]` | release |
+| `system.profiles` | The profiles this machine has, such as ["gaming"]: the add-ons, apps and values a kind of work needs; this file's own values win. | `[]` | release |
 
 ### Other keys
 

@@ -1212,8 +1212,9 @@ fn deferred(change: &Change, boot: bool) -> Option<String> {
     }
 }
 
-/// The file to apply or diff, read leniently, with its problems and the
-/// keys this release skips printed first; `None` when there is none.
+/// The file to apply or diff, read leniently, with the profiles it names
+/// laid under it and its problems and the keys this release skips printed
+/// first; `None` when there is none.
 fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::Read>> {
     let machine = machine_file();
     let path = file.unwrap_or(&machine);
@@ -1235,7 +1236,10 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
             }
         }
     }
-    let read = settings::read_on_machine(path)?;
+    let mut read = settings::read_on_machine(path)?;
+    // The profiles the file names give what it leaves out (M7.6), so apply
+    // and diff act on them; the file itself still names only the profiles.
+    read.file = edel::profiles::applied(&read.file);
     for problem in &read.problems {
         println!(
             "edel settings: {}",
