@@ -1202,6 +1202,9 @@ msgstr ""
 msgid "Power information is not available"
 msgstr ""
 
+msgid "{brings}; {without}"
+msgstr ""
+
 msgid "What this computer is for"
 msgstr ""
 
@@ -2046,6 +2049,9 @@ msgid "{count} pictures ›"
 msgstr ""
 
 msgid "More for {theme}"
+msgstr ""
+
+msgid "Automatic, {when}"
 msgstr ""
 
 msgid "Pictures in {theme}"

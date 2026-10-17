@@ -69,6 +69,7 @@ pub mod shortcuts;
 pub mod sound;
 #[cfg(feature = "os")]
 pub mod speakers;
+pub mod sun;
 pub mod theme_file;
 pub mod themes;
 pub mod timezones;

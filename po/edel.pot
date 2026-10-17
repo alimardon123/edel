@@ -623,7 +623,7 @@ msgstr ""
 msgid "What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts."
 msgstr ""
 
-msgid "Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one."
+msgid "Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light."
 msgstr ""
 
 msgid "High contrast gives strong edges and plain colours in both schemes; normal is the usual look."
@@ -840,6 +840,9 @@ msgid "Whether an unattended install erases only an empty disk, or any disk afte
 msgstr ""
 
 msgid "What the machine does once a stick has installed itself: power off or restart."
+msgstr ""
+
+msgid "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off."
 msgstr ""
 
 msgid "English (United States)"
@@ -1595,6 +1598,9 @@ msgstr ""
 msgid "there is no profile {name}; the profiles are {all}"
 msgstr ""
 
+msgid "without {items}"
+msgstr ""
+
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
@@ -2039,6 +2045,9 @@ msgstr ""
 msgid "a list of profile names, such as [\"gaming\"]"
 msgstr ""
 
+msgid "a list of the app ids and add-on names the profiles bring, such as [\"com.valvesoftware.Steam\"]"
+msgstr ""
+
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
 msgstr ""
 
@@ -2283,6 +2292,18 @@ msgid "No sound device found. Plug in speakers or a headset, or check that the m
 msgstr ""
 
 msgid "the table is format {format}, and this release reads format {current}"
+msgstr ""
+
+msgid "Dark at {time}"
+msgstr ""
+
+msgid "Light at {time}"
+msgstr ""
+
+msgid "Dark on {date} at {time}"
+msgstr ""
+
+msgid "Light on {date} at {time}"
 msgstr ""
 
 msgid "; the power rules come with the login feature (doas), so check that it is installed"

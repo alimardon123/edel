@@ -394,7 +394,7 @@ impl Ui {
         let inputs = Inputs::of(
             files.chosen("appearance.wallpaper").as_deref(),
             files.chosen("appearance.wallpaper_dark").as_deref(),
-            files.chosen("appearance.mode").as_deref(),
+            files.scheme().0 == edel::tokens::Scheme::Dark,
             &self.theme.tokens(),
         );
         self.quiet.set(true);
