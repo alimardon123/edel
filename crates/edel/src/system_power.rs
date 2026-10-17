@@ -163,6 +163,18 @@ mod tests {
     use super::{Action, command};
 
     #[test]
+    fn the_login_feature_lets_the_seat_set_every_profile() {
+        let rule = include_str!("../../../features/login/etc/doas.d/edel-power.conf");
+        for name in edel::settings::choices(edel::settings::ON_BATTERY) {
+            let line = format!(
+                "permit nopass :seat as root cmd {} args power profile {name}\n",
+                edel::places::EDEL_BIN
+            );
+            assert!(rule.contains(&line), "the power rules name {line}");
+        }
+    }
+
+    #[test]
     fn root_runs_each_program_directly() {
         assert_eq!(command(Action::Restart, true), ["/sbin/reboot"]);
         assert_eq!(command(Action::ShutDown, true), ["/sbin/poweroff"]);

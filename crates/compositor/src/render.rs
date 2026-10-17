@@ -421,7 +421,7 @@ impl Edel {
         // The shadow follows the window's corners (M5.14); square, the 6 it
         // always had.
         let radius = match self.corner_radius(window) {
-            0 => 6.0,
+            0 => glance_look::SQUARE_SHADOW_RADIUS,
             r => r as f32,
         };
         let shows = format!(
