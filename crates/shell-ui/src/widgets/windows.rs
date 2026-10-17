@@ -19,7 +19,7 @@
 //! `size.panel_icon`, `size.panel_text`, `size.radius_control`).
 
 use accesskit::Role;
-use edel::i18n::{n_, trf};
+use edel::i18n::trf;
 use tiny_skia::{FilterQuality, PixmapPaint, Transform};
 
 use edel::tokens::Colour;
@@ -28,8 +28,8 @@ use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{Face, fill, mix};
 
 pub const WIDGET: Widget = Widget {
-    name: "windows",
-    title: n_("Windows"),
+    name: edel::widgets::WINDOWS.name,
+    title: edel::widgets::WINDOWS.title,
     needs: None,
     shows,
     width,

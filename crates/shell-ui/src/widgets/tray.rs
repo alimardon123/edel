@@ -13,7 +13,7 @@
 //! and each icon as a button named by its item's title.
 
 use accesskit::Role;
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::tokens::Tokens;
 use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
@@ -23,8 +23,8 @@ use crate::popup::veil;
 use crate::tray::Item;
 
 pub const WIDGET: Widget = Widget {
-    name: "tray",
-    title: n_("Tray"),
+    name: edel::widgets::TRAY.name,
+    title: edel::widgets::TRAY.title,
     needs: None,
     shows,
     width,

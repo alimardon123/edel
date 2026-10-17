@@ -14,11 +14,10 @@ use jiff::Zoned;
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{Face, fill, mix};
-use edel::i18n::n_;
 
 pub const WIDGET: Widget = Widget {
-    name: "clock",
-    title: n_("Clock"),
+    name: edel::widgets::CLOCK.name,
+    title: edel::widgets::CLOCK.title,
     needs: None,
     shows,
     width,
