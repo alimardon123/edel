@@ -202,6 +202,9 @@ pub struct Edel {
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     /// The surfaces that asked to keep the screen on.
     pub idle_inhibitors: Vec<WlSurface>,
+    /// ext-idle-notify-v1: the clients told when the person is idle
+    /// (`everyday.rs`, M7.8).
+    pub idle_notifier: smithay::wayland::idle_notify::IdleNotifierState<Edel>,
     _pointer_constraints: smithay::wayland::pointer_constraints::PointerConstraintsState,
     _relative_pointer: smithay::wayland::relative_pointer::RelativePointerManagerState,
     _idle_inhibit: smithay::wayland::idle_inhibit::IdleInhibitManagerState,
@@ -220,7 +223,12 @@ pub struct Edel {
 }
 
 impl Edel {
-    pub fn new(display: DisplayHandle, signal: LoopSignal, tokens: Tokens) -> Result<Edel> {
+    pub fn new(
+        display: DisplayHandle,
+        signal: LoopSignal,
+        loop_handle: LoopHandle<'static, Edel>,
+        tokens: Tokens,
+    ) -> Result<Edel> {
         let mut seat_state = SeatState::new();
         let mut seat = seat_state.new_wl_seat(&display, "seat0");
         seat.add_keyboard(Default::default(), 600, 25)?;
@@ -262,6 +270,10 @@ impl Edel {
                 ),
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Edel>(&display),
             idle_inhibitors: Vec::new(),
+            idle_notifier: smithay::wayland::idle_notify::IdleNotifierState::new(
+                &display,
+                loop_handle,
+            ),
             _pointer_constraints:
                 smithay::wayland::pointer_constraints::PointerConstraintsState::new::<Edel>(
                     &display,

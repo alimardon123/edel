@@ -17,8 +17,8 @@ use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GestureSwipeUpdateEvent, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
-    ProximityState, TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent,
-    TabletToolTipEvent, TabletToolTipState,
+    ProximityState, Switch, SwitchState, SwitchToggleEvent, TabletToolButtonEvent, TabletToolEvent,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::desktop::{LayerSurface, Window, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, xkb};
@@ -93,6 +93,8 @@ impl Edel {
     /// to F12 asked for.
     pub fn input<B: InputBackend>(&mut self, event: InputEvent<B>) -> Option<i32> {
         let serial = SERIAL_COUNTER.next_serial();
+        // Any input is activity for the idle notifications (M7.8).
+        self.idle_notifier.notify_activity(&self.seat);
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;
@@ -447,6 +449,16 @@ impl Edel {
                     serial,
                     event.time_msec(),
                 );
+            }
+            // The lid (M7.8): shell-ui decides what closing it does. Other
+            // switches, such as tablet mode, are not used yet.
+            InputEvent::SwitchToggle { event } if event.switch() == Some(Switch::Lid) => {
+                let closed = event.state() == SwitchState::On;
+                eprintln!(
+                    "edel-compositor: lid {}",
+                    if closed { "closed" } else { "opened" }
+                );
+                self.tell_lid(closed);
             }
             _ => {}
         }
