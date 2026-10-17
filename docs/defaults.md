@@ -74,10 +74,10 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `appearance.animations` | `"full"` | release |
 | `appearance.animation_speed` | `100` | release |
 | `appearance.animation_curve` | `"smooth"` | release |
-| `lock_screen.parts` | the look's | release |
+| `lock_screen.widgets` | the look's | release |
 | `lock_screen.look` | `"classic"` | release |
-| `lock_screen.background` | the look's | release |
-| `lock_screen.dim` | 30, or 40 for a sharp background or picture | release |
+| `lock_screen.wallpaper` | the look's | release |
+| `lock_screen.dim` | 30, or 40 for a sharp wallpaper or picture | release |
 | `lock_screen.notifications` | `"count"` | release |
 | `lock_screen.looks` | none | release |
 | `themes.*` | none | release |

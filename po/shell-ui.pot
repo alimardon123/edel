@@ -131,13 +131,13 @@ msgstr ""
 msgid "Drop here to take it away"
 msgstr ""
 
-msgid "Choose a look, which brings its parts and its background"
+msgid "Choose a look, which brings its widgets and its wallpaper"
 msgstr ""
 
-msgid "Choose what lies behind the lock screen's parts"
+msgid "Choose what lies behind the lock screen's widgets"
 msgstr ""
 
-msgid "Drag a part anywhere, from here to add it, or here to take it away"
+msgid "Drag a widget anywhere, from here to add it, or here to take it away"
 msgstr ""
 
 msgid "Edit panels"

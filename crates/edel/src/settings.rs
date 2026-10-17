@@ -108,7 +108,7 @@ pub const PAGES: &[Page] = &[
     Page {
         section: "lock_screen",
         title: n_("Lock screen"),
-        about: n_("its look, parts and background"),
+        about: n_("its look, widgets and wallpaper"),
         group: "desktop",
     },
     Page {
@@ -290,7 +290,7 @@ pub enum Kind {
     /// Panels, as a preset's `[[panels]]` (M5.4e,
     /// [`crate::presets::check_panels`])
     Panels,
-    /// The lock screen's parts, as `[[lock_screen.parts]]` tables
+    /// The lock screen's widgets, as `[[lock_screen.widgets]]` tables
     /// ([`crate::lock_screen::check`], M5.10c5)
     LockParts,
     /// A screen's resolution, `WIDTHxHEIGHT` such as `"1920x1080"`
@@ -336,7 +336,7 @@ pub enum Kind {
     /// own `[lock_screen.looks]`, checked against the file by [`check`] and
     /// [`set`] (M5.10c5c)
     LockLook,
-    /// A lock screen's background, as [`crate::lock_screen::parse_background`]
+    /// A lock screen's wallpaper, as [`crate::lock_screen::parse_background`]
     /// reads it (M5.10c5c)
     LockBackground,
     /// The person's own looks, as `[lock_screen.looks.NAME]` tables
@@ -566,15 +566,15 @@ pub const KEYS: &[Key] = &[
     // is simpler and every kind still follows it.
     now("appearance.animation_speed", Kind::WholeFromTo(25, 400)),
     now("appearance.animation_curve", Kind::OneOf(CURVES)),
-    // The lock and login screens' parts, each placed by an anchor and an
+    // The lock and login screens' widgets, each placed by an anchor and an
     // offset (M5.10c5); absent is the classic arrangement.
-    now("lock_screen.parts", Kind::LockParts),
-    // The look that picks every part and the background at once (M5.10c5c),
-    // the background behind them, whether the count of unread notifications
+    now("lock_screen.widgets", Kind::LockParts),
+    // The look that picks every widget and the wallpaper at once (M5.10c5c),
+    // the wallpaper behind them, whether the count of unread notifications
     // shows, and the person's own looks made by Save as.
     now("lock_screen.look", Kind::LockLook),
-    now("lock_screen.background", Kind::LockBackground),
-    // How much the background is darkened, in percent (M5.10c7g): absent is
+    now("lock_screen.wallpaper", Kind::LockBackground),
+    // How much the wallpaper is darkened, in percent (M5.10c7g): absent is
     // the look's own, else the background's default.
     now(
         "lock_screen.dim",
@@ -1347,24 +1347,24 @@ pub fn shape_changed(old: &Appearance, new: &Appearance) -> bool {
         || old.blur != new.blur
 }
 
-/// The Lock screen page (M5.10c5): the parts the lock and login screens
+/// The Lock screen page (M5.10c5): the widgets the lock and login screens
 /// show and where each stands.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct LockScreen {
-    /// The parts in place of the classic arrangement, each with its anchor
+    /// The widgets in place of the classic arrangement, each with its anchor
     /// and offset ([`crate::lock_screen::check`]); absent is the classic one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "widgets", skip_serializing_if = "Option::is_none")]
     pub parts: Option<Vec<crate::lock_screen::Placed>>,
     /// A look: `classic`, `magazine`, `minimal` or one of `looks` (M5.10c5c);
     /// absent is `classic`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub look: Option<String>,
-    /// What lies behind the parts: `backdrop`, `blurred`, `sharp`, a colour
+    /// What lies behind the widgets: `backdrop`, `blurred`, `sharp`, a colour
     /// `#rrggbb` or a picture's full path ([`crate::lock_screen::parse_background`]);
     /// absent is the look's.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "wallpaper", skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
-    /// How much the background is darkened, in percent, 0 to 80 (M5.10c7g);
+    /// How much the wallpaper is darkened, in percent, 0 to 80 (M5.10c7g);
     /// absent is the look's own, else the background's default
     /// ([`crate::lock_screen::default_dim`]).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1378,15 +1378,16 @@ pub struct LockScreen {
     pub looks: Option<BTreeMap<String, OwnLook>>,
 }
 
-/// One of the person's own looks: the parts it places and what lies behind
+/// One of the person's own looks: the widgets it places and what lies behind
 /// them ([`LockScreen::looks`]). A look is a preset of the lock: choosing it
 /// brings both (Alimardon, 2026-10-11).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OwnLook {
+    #[serde(rename = "widgets")]
     pub parts: Vec<crate::lock_screen::Placed>,
-    /// As `lock_screen.background` takes it; absent is the blurred
+    /// As `lock_screen.wallpaper` takes it; absent is the blurred
     /// wallpaper, as for every look but classic.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, rename = "wallpaper", skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
     /// As `lock_screen.dim` takes it (M5.10c7g); absent is the background's
     /// default.
@@ -2886,7 +2887,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             let parts: Vec<crate::lock_screen::Placed> =
                 value.clone().try_into().map_err(|e: toml::de::Error| {
                     trf(
-                        "expected parts as the lock screen writes them: {why}",
+                        "expected widgets as the lock screen writes them: {why}",
                         &[("why", e.message())],
                     )
                 })?;
@@ -2894,7 +2895,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::LockParts, _) => fail(tr(
-            "a list of parts, such as [{ part = \"person\", at = \"centre\" }]",
+            "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]",
         )),
         (Kind::LockLook, Value::String(s)) if crate::lock_screen::is_look_name(s) => {
             Ok(value.clone())
@@ -2910,11 +2911,11 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::LockBackground, Value::String(s)) => Err(trf(
-            "{value} is not a background; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)",
+            "{value} is not a wallpaper for the lock screen; give backdrop, blurred, sharp, a colour such as \"#1f2b48\", or a picture's full path such as \"/home/you/lock.png\" (to show the look's, run edel settings reset on this key)",
             &[("value", &format!("{s:?}"))],
         )),
         (Kind::LockBackground, _) => fail(tr(
-            "a background in quotes, such as \"blurred\" or \"#1f2b48\"",
+            "a wallpaper in quotes, such as \"blurred\" or \"#1f2b48\"",
         )),
         (Kind::LockLooks, Value::Table(_)) => {
             let looks: BTreeMap<String, OwnLook> =
@@ -2928,7 +2929,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::LockLooks, _) => fail(tr(
-            "looks as tables, such as { home = { parts = [{ part = \"person\", at = \"centre\" }] } }",
+            "looks as tables, such as { home = { widgets = [{ widget = \"person\", at = \"centre\" }] } }",
         )),
         (Kind::Theme, Value::String(s)) if crate::themes::is_name(s) => Ok(value.clone()),
         (Kind::Theme, Value::String(s)) => Err(trf(
@@ -3407,7 +3408,7 @@ mod tests {
             Kind::Shell => Value::String("/bin/sh".into()),
             Kind::Keys => Value::String("Super+X".into()),
             Kind::Panels => value_from_arg(r#"[{ edge = "bottom", end = ["clock"] }]"#),
-            Kind::LockParts => value_from_arg(r#"[{ part = "person", at = "centre" }]"#),
+            Kind::LockParts => value_from_arg(r#"[{ widget = "person", at = "centre" }]"#),
             Kind::Resolution => Value::String("1920x1080".into()),
             Kind::Keyboard => Value::String("us".into()),
             Kind::TimeZone => Value::String("Europe/Berlin".into()),
@@ -3435,7 +3436,7 @@ mod tests {
             Kind::Preset => Value::String("hive".into()),
             Kind::OwnPreset => value_from_arg(r#"{ preset = "hive", window_buttons = "left" }"#),
             Kind::LockLooks => {
-                value_from_arg(r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#)
+                value_from_arg(r#"{ home = { widgets = [{ widget = "person", at = "centre" }] } }"#)
             }
         }
     }
@@ -3628,15 +3629,15 @@ version = "1.2"
     fn lock_parts_are_checked_and_read_as_tables_or_inline() {
         let set_one = set(
             "format = 1\n",
-            "lock_screen.parts",
-            r#"[{ part = "person", at = "centre" }]"#,
+            "lock_screen.widgets",
+            r#"[{ widget = "person", at = "centre" }]"#,
         )
         .unwrap();
         assert_eq!(
             set_one,
-            "format = 1\n\n[lock_screen]\nparts = [{ at = \"centre\", part = \"person\" }]\n"
+            "format = 1\n\n[lock_screen]\nwidgets = [{ at = \"centre\", widget = \"person\" }]\n"
         );
-        let tables = "format = 1\n[[lock_screen.parts]]\npart = \"clock\"\nat = \"top\"\ny = 0.14\n\n[[lock_screen.parts]]\npart = \"person\"\nat = \"centre\"\ny = 0.21\n\n[[lock_screen.parts]]\npart = \"message\"\nat = \"bottom_right\"\ntext = \"Hello\"\n";
+        let tables = "format = 1\n[[lock_screen.widgets]]\nwidget = \"clock\"\nat = \"top\"\ny = 0.14\n\n[[lock_screen.widgets]]\nwidget = \"person\"\nat = \"centre\"\ny = 0.21\n\n[[lock_screen.widgets]]\nwidget = \"message\"\nat = \"bottom_right\"\ntext = \"Hello\"\n";
         assert!(check(tables).unwrap().is_empty());
         let parts = read(tables).unwrap().file.lock_screen.parts.unwrap();
         assert_eq!(parts.len(), 3);
@@ -3647,33 +3648,33 @@ version = "1.2"
         // its message, and left out by a lenient read.
         for (bad, why) in [
             (
-                r#"[{ part = "clock", at = "top" }]"#,
+                r#"[{ widget = "clock", at = "top" }]"#,
                 "the lock screen needs the person",
             ),
             (
-                r#"[{ part = "person", at = "centre" }, { part = "person", at = "bottom" }]"#,
+                r#"[{ widget = "person", at = "centre" }, { widget = "person", at = "bottom" }]"#,
                 "the person stands once; take out the second",
             ),
             (
-                r#"[{ part = "person", at = "centre", x = 2 }]"#,
+                r#"[{ widget = "person", at = "centre", x = 2 }]"#,
                 "the person's offset x is 2",
             ),
             (
-                r#"[{ part = "message", at = "bottom" }, { part = "person", at = "centre" }]"#,
+                r#"[{ widget = "message", at = "bottom" }, { widget = "person", at = "centre" }]"#,
                 "the message needs text",
             ),
             (
-                r#"[{ part = "person", at = "centre" }, { part = "picture", at = "top", path = "lock.png" }]"#,
+                r#"[{ widget = "person", at = "centre" }, { widget = "picture", at = "top", path = "lock.png" }]"#,
                 "\"lock.png\" is not a picture path",
             ),
-            (r#""clock""#, "expected a list of parts"),
+            (r#""clock""#, "expected a list of widgets"),
         ] {
-            let error = set("format = 1\n", "lock_screen.parts", bad).unwrap_err();
+            let error = set("format = 1\n", "lock_screen.widgets", bad).unwrap_err();
             assert!(error.to_string().contains(why), "{bad}: {error}");
-            let file = format!("format = 1\n[lock_screen]\nparts = {bad}\n");
+            let file = format!("format = 1\n[lock_screen]\nwidgets = {bad}\n");
             let read = read(&file).unwrap();
             assert_eq!(read.file.lock_screen.parts, None, "{bad}");
-            assert_eq!(read.problems[0].key, "lock_screen.parts");
+            assert_eq!(read.problems[0].key, "lock_screen.widgets");
         }
     }
 
@@ -3689,11 +3690,11 @@ version = "1.2"
         };
         let look = set_then_read("format = 1\n", "lock_screen.look", "\"minimal\"");
         assert_eq!(look.look.as_deref(), Some("minimal"));
-        let background = set_then_read("format = 1\n", "lock_screen.background", "\"#1f2b48\"");
+        let background = set_then_read("format = 1\n", "lock_screen.wallpaper", "\"#1f2b48\"");
         assert_eq!(background.background.as_deref(), Some("#1f2b48"));
         let picture = set_then_read(
             "format = 1\n",
-            "lock_screen.background",
+            "lock_screen.wallpaper",
             "\"/home/you/lock.jpg\"",
         );
         assert_eq!(picture.background.as_deref(), Some("/home/you/lock.jpg"));
@@ -3704,11 +3705,11 @@ version = "1.2"
         let own = set_then_read(
             "format = 1\n",
             "lock_screen.looks",
-            r#"{ home = { parts = [{ part = "person", at = "centre" }] } }"#,
+            r#"{ home = { widgets = [{ widget = "person", at = "centre" }] } }"#,
         );
         assert_eq!(own.looks.unwrap().len(), 1);
         // A look of the file's own is set, once the file has it.
-        let file = "format = 1\n[lock_screen.looks.home]\nparts = [{ part = \"person\", at = \"centre\" }]\n";
+        let file = "format = 1\n[lock_screen.looks.home]\nwidgets = [{ widget = \"person\", at = \"centre\" }]\n";
         let chosen = set(file, "lock_screen.look", "\"home\"").unwrap();
         assert_eq!(
             read(&chosen).unwrap().file.lock_screen.look.as_deref(),
@@ -3724,14 +3725,14 @@ version = "1.2"
             ),
             ("lock_screen.look", "\"home\"", "\"home\" is not a look"),
             (
-                "lock_screen.background",
+                "lock_screen.wallpaper",
                 "lock.png",
-                "lock.png\" is not a background",
+                "lock.png\" is not a wallpaper",
             ),
             (
-                "lock_screen.background",
+                "lock_screen.wallpaper",
                 "\"navy\"",
-                "\"navy\" is not a background",
+                "\"navy\" is not a wallpaper",
             ),
             (
                 "lock_screen.notifications",
@@ -3740,12 +3741,12 @@ version = "1.2"
             ),
             (
                 "lock_screen.looks",
-                r#"{ home = { parts = [{ part = "clock", at = "top" }] } }"#,
+                r#"{ home = { widgets = [{ widget = "clock", at = "top" }] } }"#,
                 "the lock screen needs the person",
             ),
             (
                 "lock_screen.looks",
-                r#"{ minimal = { parts = [{ part = "person", at = "centre" }] } }"#,
+                r#"{ minimal = { widgets = [{ widget = "person", at = "centre" }] } }"#,
                 "\"minimal\" is a built-in look",
             ),
             ("lock_screen.dim", "81", "a whole number from 0 to 80"),
@@ -3756,15 +3757,15 @@ version = "1.2"
             assert!(error.to_string().contains(why), "{key} {bad}: {error}");
         }
         // A look the file does not have is reported by check, and a lenient
-        // read keeps no bad background.
+        // read keeps no bad wallpaper.
         let lines = check("format = 1\n[lock_screen]\nlook = \"gallery\"\n").unwrap();
         assert_eq!(
             lines,
             ["lock_screen.look: \"gallery\" is not a look; choose classic, magazine or minimal"]
         );
-        let read = read("format = 1\n[lock_screen]\nbackground = \"lock.png\"\n").unwrap();
+        let read = read("format = 1\n[lock_screen]\nwallpaper = \"lock.png\"\n").unwrap();
         assert_eq!(read.file.lock_screen.background, None);
-        assert_eq!(read.problems[0].key, "lock_screen.background");
+        assert_eq!(read.problems[0].key, "lock_screen.wallpaper");
     }
 
     #[test]
