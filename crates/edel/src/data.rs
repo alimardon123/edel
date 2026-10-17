@@ -111,10 +111,6 @@ fn missing_var_entries(slot: &Path, data: &Path) -> Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
-/// Account files a machine copies into its own `/etc` once a person or a
-/// package adds a user.
-const ACCOUNT_FILES: [&str; 3] = ["passwd", "group", "shadow"];
-
 /// Lines of the slot's account file (`slot`) whose name, the first field,
 /// is missing from the machine's copy (`machine`): users and groups a
 /// newer slot adds, which the machine's own copy would otherwise hide.
@@ -193,7 +189,8 @@ fn overlay_etc() -> Result<()> {
     let (upper, work) = (data.join("etc/upper"), data.join("etc/work"));
     fs::create_dir_all(&upper)?;
     fs::create_dir_all(&work)?;
-    for file in ACCOUNT_FILES {
+    for file in crate::addons::ACCOUNT_FILES {
+        let file = file.strip_prefix("etc/").unwrap_or(file);
         let machine_path = upper.join(file);
         // The mounted add-ons' users and groups (M7.2a) join the slot's;
         // a machine without its own copy gets one, from the slot's.

@@ -21,6 +21,7 @@ mod access_card;
 mod app_permissions;
 mod app_windows;
 mod app_windows_card;
+mod apps_colours;
 mod apps_drag;
 mod banner;
 mod calendar;
@@ -471,6 +472,8 @@ fn run() -> Result<()> {
     let (preset, scheme) = from_system_files();
     // foot's theme follows the scheme, and a running foot repaints (M6.13).
     terminal::follow(scheme == Scheme::Dark);
+    // Apps' colours follow ours too (M6.18): their gtk.css is written now.
+    apps_colours::follow();
     let tokens = load_tokens(scheme);
     let connection = Connection::connect_to_env().context(messages::NO_COMPOSITOR)?;
     let (globals, queue) = registry_queue_init(&connection).context(messages::NO_GLOBALS)?;
@@ -525,9 +528,12 @@ fn run() -> Result<()> {
         EventLoop::try_new().context("starting the event loop")?;
     let (status_tx, status_rx) = channel::channel::<status::Msg>();
     let (edits, asks) = channel::channel::<shell_bus::Edit>();
-    let buttons = {
+    let (buttons, high) = {
         let (machine, person) = settings_texts();
-        button_layout(machine.as_deref(), person.as_deref())
+        (
+            button_layout(machine.as_deref(), person.as_deref()),
+            edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref()),
+        )
     };
     // The portal's Location switch (M6.14c): the person's file over the
     // machine's, the way the Do not disturb key is read.
@@ -605,7 +611,7 @@ fn run() -> Result<()> {
         chosen: chosen(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens, &buttons, edits, location_off),
+        _portal: portal::serve(&tokens, &buttons, high, edits, location_off),
         app_permissions: None,
         player_tx: None,
         tokens,

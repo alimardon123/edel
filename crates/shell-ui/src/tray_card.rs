@@ -530,7 +530,8 @@ impl Shell {
         // already open follow.
         if let Some(connection) = &self._portal {
             let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
-            crate::portal::follow(connection, &self.tokens, &buttons);
+            let high = edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref());
+            crate::portal::follow(connection, &self.tokens, &buttons, high);
             let off = !crate::location::enabled(machine.as_deref(), person.as_deref());
             crate::portal::follow_location(connection, off);
         }

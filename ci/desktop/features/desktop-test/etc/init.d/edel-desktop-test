@@ -310,6 +310,18 @@ commands() {
 			;;
 		'headerbar log') say "headerbar_log $(grep 'headerbar layout' /tmp/headerbar.log 2>/dev/null | tail -n 1)" ;;
 		'headerbar off') pkill -x edel-testheader || true ;;
+		# A libadwaita window (M6.18), as ci on the session's bus, drawing with
+		# Cairo; its lines (the contrast libadwaita heard) go to /tmp/adwaita.log.
+		'headerbar adw')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' GSK_RENDERER=cairo edel-testheader --adw" </dev/null >/tmp/adwaita.log 2>&1 &
+			;;
+		'headerbar adw log') say "adwaita_log $(grep 'adwaita contrast' /tmp/adwaita.log 2>/dev/null | tail -n 1)" ;;
+		# A header bar colour of the person's own in each scheme (M6.18),
+		# taken out again with the whole colours table.
+		'title colours') edel settings set 'appearance.colours.light.title_bar=#f0b8cc' 'appearance.colours.dark.title_bar=#4a2a6a' ;;
+		# The Flatpak permission every person has, so apps read gtk.css (M6.18).
+		'flatpak override') say "flatpak_override $(as_ci 'flatpak override --user --show' </dev/null 2>&1 | tr '\n' ' ')" ;;
 		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.

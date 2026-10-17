@@ -48,10 +48,10 @@ type Settings = HashMap<String, HashMap<String, OwnedValue>>;
 
 /// The settings from `tokens`: `color-scheme` prefers dark (1) when the
 /// background is dark, else light (2); `accent-color` is the accent as
-/// three numbers from 0 to 1; `contrast` is normal (0). `layout` is the
-/// header bars' button layout in GNOME's form (M6.16), which apps' own bars
-/// follow.
-pub fn settings(tokens: &Tokens, layout: &str) -> Settings {
+/// three numbers from 0 to 1; `contrast` is high (1) when `appearance.contrast`
+/// is high, else normal (0) (M6.18). `layout` is the header bars' button
+/// layout in GNOME's form (M6.16), which apps' own bars follow.
+pub fn settings(tokens: &Tokens, layout: &str, high: bool) -> Settings {
     let scheme: u32 = if lightness(tokens.background) < 0.5 {
         1
     } else {
@@ -66,7 +66,8 @@ pub fn settings(tokens: &Tokens, layout: &str) -> Settings {
     let mut appearance = HashMap::new();
     put(&mut appearance, "color-scheme", Value::from(scheme));
     put(&mut appearance, "accent-color", Value::from(accent));
-    put(&mut appearance, "contrast", Value::from(0u32));
+    let contrast: u32 = if high { 1 } else { 0 };
+    put(&mut appearance, "contrast", Value::from(contrast));
     // The text (M5.12b5): the fonts with their sizes in points, as GTK reads
     // `font-name`, and the text's scale as the desktop's percent.
     let points = (f64::from(tokens.text_size) * POINTS_PER_PIXEL).round();
@@ -337,11 +338,11 @@ pub fn follow_location(connection: &zbus::blocking::Connection, off: bool) {
 }
 
 /// Says again each setting apps read that changed (M5.5c, M6.16, M6.17):
-/// the colour scheme, the accent and the fonts from `tokens`, and the
-/// header bars' button layout; each changed value is stored and
+/// the colour scheme, the accent, high contrast and the fonts from `tokens`,
+/// and the header bars' button layout; each changed value is stored and
 /// `setting_changed` goes out for it, so apps already open follow. Values
 /// that did not change say nothing.
-pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: &str) {
+pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: &str, high: bool) {
     let backend = match connection.object_server().interface::<_, Backend>(PATH) {
         Ok(backend) => backend,
         Err(e) => {
@@ -352,7 +353,7 @@ pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: 
     let mut changed = Vec::new();
     {
         let mut backend = backend.get_mut();
-        for (namespace, keys) in settings(tokens, layout) {
+        for (namespace, keys) in settings(tokens, layout, high) {
             let stored = backend.settings.entry(namespace.clone()).or_default();
             for (key, value) in keys {
                 if stored.get(&key) == Some(&value) {
@@ -403,11 +404,12 @@ pub fn follow(connection: &zbus::blocking::Connection, tokens: &Tokens, layout: 
 pub fn serve(
     tokens: &Tokens,
     layout: &str,
+    high: bool,
     edits: channel::Sender<Edit>,
     location_off: bool,
 ) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
-        settings: settings(tokens, layout),
+        settings: settings(tokens, layout, high),
     };
     let asking = Asking {
         edits: edits.clone(),
@@ -437,7 +439,7 @@ pub fn serve(
         .and_then(|backend| {
             let emitter = backend.signal_emitter();
             zbus::block_on(async {
-                for (namespace, keys) in settings(tokens, layout) {
+                for (namespace, keys) in settings(tokens, layout, high) {
                     for (key, value) in keys {
                         Backend::setting_changed(emitter, &namespace, &key, value.into()).await?;
                     }
@@ -486,7 +488,7 @@ mod tests {
         use smithay_client_toolkit::reexports::calloop::EventLoop;
         use std::time::Duration;
         let (edits, asks) = channel::channel::<Edit>();
-        let Some(_served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, edits, false) else {
+        let Some(_served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, false) else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -581,7 +583,7 @@ mod tests {
     fn the_lockdown_is_served_and_follows_the_location_switch() {
         let _alone = ON_THE_BUS.lock();
         let (edits, _asks) = channel::channel::<Edit>();
-        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, edits, true) else {
+        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, true) else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -605,7 +607,7 @@ mod tests {
     #[test]
     fn the_tokens_say_dark_and_give_the_accent() {
         let tokens = Tokens::built_in();
-        let all = settings(&tokens, BUTTONS_RIGHT);
+        let all = settings(&tokens, BUTTONS_RIGHT, false);
         let appearance = &all[APPEARANCE];
         assert_eq!(u32::try_from(&appearance["color-scheme"]).unwrap(), 1);
         let (r, g, b) =
@@ -616,13 +618,22 @@ mod tests {
         assert!((b - f64::from(accent.b)).abs() < 1e-6);
         // The light scheme's tokens say light (M5.5c).
         let light = Tokens::built_in_scheme(edel::tokens::Scheme::Light);
-        let all = settings(&light, BUTTONS_RIGHT);
+        let all = settings(&light, BUTTONS_RIGHT, false);
         assert_eq!(u32::try_from(&all[APPEARANCE]["color-scheme"]).unwrap(), 2);
     }
 
     #[test]
+    fn high_contrast_says_one() {
+        let tokens = Tokens::built_in();
+        let high = settings(&tokens, BUTTONS_RIGHT, true);
+        assert_eq!(u32::try_from(&high[APPEARANCE]["contrast"]).unwrap(), 1);
+        let normal = settings(&tokens, BUTTONS_RIGHT, false);
+        assert_eq!(u32::try_from(&normal[APPEARANCE]["contrast"]).unwrap(), 0);
+    }
+
+    #[test]
     fn read_all_gives_the_namespaces_asked_for() {
-        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT);
+        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false);
         let names = |wanted: &[&str]| {
             let wanted: Vec<String> = wanted.iter().map(|w| w.to_string()).collect();
             let mut got: Vec<String> = chosen(&all, &wanted).into_keys().collect();
@@ -644,12 +655,12 @@ mod tests {
     /// and `Edel` as the interface's icon theme.
     #[test]
     fn the_portal_says_the_button_layout_and_the_icon_theme() {
-        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT);
+        let all = settings(&Tokens::built_in(), BUTTONS_RIGHT, false);
         let layout = String::try_from(all[WM][BUTTON_LAYOUT].try_clone().unwrap()).unwrap();
         assert_eq!(layout, ":minimize,maximize,close");
         let theme = String::try_from(all[INTERFACE]["icon-theme"].try_clone().unwrap()).unwrap();
         assert_eq!(theme, "Edel");
-        let left = settings(&Tokens::built_in(), "close,minimize,maximize:");
+        let left = settings(&Tokens::built_in(), "close,minimize,maximize:", false);
         let layout = String::try_from(left[WM][BUTTON_LAYOUT].try_clone().unwrap()).unwrap();
         assert_eq!(layout, "close,minimize,maximize:");
     }
@@ -657,7 +668,7 @@ mod tests {
     #[test]
     fn the_text_gives_the_fonts_in_points_and_the_scale() {
         let tokens = Tokens::built_in();
-        let all = settings(&tokens, BUTTONS_RIGHT);
+        let all = settings(&tokens, BUTTONS_RIGHT, false);
         let interface = &all[INTERFACE];
         let text = |key: &str| String::try_from(interface[key].try_clone().unwrap()).unwrap();
         // The release's 13 px is 9.75 points, which GTK shows as 10.
@@ -668,7 +679,7 @@ mod tests {
         let mut big = tokens.clone();
         big.text_size = 20;
         big.text_percent = 150;
-        let all = settings(&big, BUTTONS_RIGHT);
+        let all = settings(&big, BUTTONS_RIGHT, false);
         let scale = f64::try_from(all[INTERFACE]["text-scaling-factor"].try_clone().unwrap());
         assert!((scale.unwrap() - 1.5).abs() < 1e-9);
         assert_eq!(

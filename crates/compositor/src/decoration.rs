@@ -29,7 +29,7 @@ use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorati
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
 
-use edel_compositor::frame::{Border, Insets, Look, Text, paint};
+use edel_compositor::frame::{Border, Insets, Look, Shown, Text, paint};
 use edel_compositor::tokens::Tokens;
 
 use crate::state::Edel;
@@ -318,6 +318,18 @@ impl Edel {
 
     pub fn is_maximized(&self, window: &Window) -> bool {
         data(window).borrow().restore.is_some()
+    }
+
+    /// The buttons on `window`'s bar: the person's, but on a dialog (a
+    /// window with a parent, such as Settings' questions) only close, as a
+    /// dialog has nothing to minimize or to fill the screen with (M6.18).
+    pub fn shown(&self, window: &Window) -> Shown {
+        let mut shown = self.settings.buttons;
+        if window.toplevel().is_some_and(|t| t.parent().is_some()) {
+            shown.minimize = false;
+            shown.maximize = false;
+        }
+        shown
     }
 
     pub fn toggle_maximized(&mut self, window: &Window) {
