@@ -5326,10 +5326,10 @@ case_clipboard() {
 	mapped=$(count 'edel-compositor: mapped window clip')
 	guest 'clip window'
 	wait_more 'edel-compositor: mapped window clip' "$mapped" || fail "the window clip did not open"
-	kept=$(count 'edel-shell-ui: clipboard kept a text')
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 17 bytes')
 	python3 ci/qmp.py key 1
 	wait_more 'edel-shell-ui: clipboard kept a text of 17 bytes' "$kept" || fail "shell-ui kept nothing of clip's first copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
-	kept=$(count 'edel-shell-ui: clipboard kept a text')
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept')
 	python3 ci/qmp.py key 2
 	wait_more 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept' "$kept" || fail "shell-ui did not keep clip's second copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
 	shown=$(count 'edel-shell-ui: clipboard history shown, 2 items')
