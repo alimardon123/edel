@@ -235,7 +235,7 @@ enum Commands {
         command: PresetCommands,
     },
     /// addon: software beside the system, such as more fonts or printing,
-    /// that arrives with an update and goes as easily; the same as in the
+    /// that comes at the next restart and goes as easily; the same as in the
     /// settings file's addons.installed
     Addon {
         #[command(subcommand)]

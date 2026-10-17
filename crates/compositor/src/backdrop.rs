@@ -85,8 +85,8 @@ struct Seen {
     geometry: Rectangle<i32, Physical>,
     /// Its alpha, as bits, so a fade behind makes the blur again.
     alpha: u32,
-    /// Its source rectangle, formatted, as it is not hashable.
-    src: String,
+    /// Its source rectangle.
+    src: Rectangle<f64, Buffer>,
     /// Its transform.
     transform: Transform,
 }
@@ -302,7 +302,7 @@ fn behind_key(behind: &[Drawn], spots: &[Spot], blur: u32, scale: f64) -> Vec<Se
                 commit: element.current_commit(),
                 geometry,
                 alpha: element.alpha().to_bits(),
-                src: format!("{:?}", element.src()),
+                src: element.src(),
                 transform: element.transform(),
             })
         })

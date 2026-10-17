@@ -91,7 +91,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "system.profiles",
         help: n_(
-            "The hardware profiles applied to this machine, in order; this release does not act on them yet.",
+            "Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's.",
         ),
         default: "[]",
         from: DecidedBy::Release,
@@ -1017,7 +1017,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "addons.installed",
         help: n_(
-            "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list.",
+            "The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list.",
         ),
         default: "[]",
         from: DecidedBy::Release,

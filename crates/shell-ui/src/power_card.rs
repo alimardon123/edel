@@ -238,12 +238,23 @@ impl Shell {
         let spawned = std::thread::Builder::new()
             .name("power-profile".into())
             .spawn(move || {
-                let _ = Command::new(crate::EDEL)
+                // A refusal stays in the log, as `edel` tells it, so a
+                // missing rule is found; the profile is asked again only
+                // when the wanted one changes.
+                match Command::new(crate::EDEL)
                     .args(["power", "profile", &want])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .status();
+                    .stderr(Stdio::piped())
+                    .output()
+                {
+                    Ok(out) if out.status.success() => {}
+                    Ok(out) => eprintln!(
+                        "edel-shell-ui: {}",
+                        messages::profile_not_set(String::from_utf8_lossy(&out.stderr).trim())
+                    ),
+                    Err(e) => eprintln!("edel-shell-ui: {}", messages::profile_not_set(e)),
+                }
             });
         if let Err(e) = spawned {
             self.profile_asked = None;

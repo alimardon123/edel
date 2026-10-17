@@ -435,7 +435,7 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `addons.installed` | The add-ons this machine has, by name; each arrives with the next update and is in edel addon list. | `[]` | release |
+| `addons.installed` | The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list. | `[]` | release |
 
 ### `services`
 
@@ -466,7 +466,7 @@ This page has no key in the file.
 |---|---|---|---|
 | `system.variant` | What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet. | the image's | image |
 | `system.developer_mode` | Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on. | `false` | release |
-| `system.profiles` | The hardware profiles applied to this machine, in order; this release does not act on them yet. | `[]` | release |
+| `system.profiles` | Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's. | `[]` | release |
 
 ### Other keys
 

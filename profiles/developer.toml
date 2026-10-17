@@ -1,0 +1,10 @@
+# Developer (M7.6): Podman for containers and dev containers (the
+# containers add-on, M7.2a) and VSCodium, a code editor that opens dev
+# containers. Laid under the machine's own file as gaming.toml says.
+format = 1
+
+[addons]
+installed = ["containers"]
+
+[apps]
+installed = ["com.vscodium.codium"]

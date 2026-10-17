@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
+use edel::addon_state::{failed_in, names_in};
 use edel::i18n::{tr, trf};
 use edel::places;
 
@@ -442,6 +443,100 @@ pub fn changed_accounts(before: &str, after: &str) -> Vec<String> {
         .collect()
 }
 
+/// The file, beside an add-on's `group` lines, of the members it adds to
+/// groups the image has (M7.2b), `GROUP:USER,USER` a line.
+pub const MEMBERS_FILE: &str = "members";
+
+/// The members of one `group` line, empty when it has none.
+fn members_of(line: &str) -> Vec<&str> {
+    line.split(':')
+        .nth(3)
+        .unwrap_or_default()
+        .split(',')
+        .filter(|m| !m.is_empty())
+        .collect()
+}
+
+/// The members `after` adds to groups `before` has, as `GROUP:USER,USER`
+/// lines (`group` files' text): a package that puts its user into a
+/// group the image has, as QEMU's puts `qemu` into `kvm` (M7.2b). A
+/// group whose name, password or id changed is left out, as is one that
+/// lost a member; [`members_only`] tells them apart.
+pub fn added_members(before: &str, after: &str) -> String {
+    let known: BTreeMap<&str, &str> = before
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| (line.split(':').next().unwrap_or_default(), line))
+        .collect();
+    let mut out = String::new();
+    for line in after.lines().filter(|line| !line.is_empty()) {
+        let name = line.split(':').next().unwrap_or_default();
+        let Some(was) = known.get(name) else {
+            continue;
+        };
+        if !members_only(was, line) {
+            continue;
+        }
+        let had = members_of(was);
+        let new: Vec<&str> = members_of(line)
+            .into_iter()
+            .filter(|m| !had.contains(m))
+            .collect();
+        if !new.is_empty() {
+            out.push_str(&format!("{name}:{}\n", new.join(",")));
+        }
+    }
+    out
+}
+
+/// Whether `now` is the `group` line `was` with members added and none
+/// taken away.
+pub fn members_only(was: &str, now: &str) -> bool {
+    let (a, b): (Vec<&str>, Vec<&str>) = (was.split(':').collect(), now.split(':').collect());
+    a.len() == 4 && b.len() == 4 && a[..3] == b[..3] && {
+        let after = members_of(now);
+        members_of(was).iter().all(|m| after.contains(m))
+    }
+}
+
+/// `group` (a file's text) with the members of `members` (`GROUP:USER,...`
+/// lines) added to the groups it has, each once; `None` when nothing is
+/// added. A group the file lacks is left alone (M7.2b).
+pub fn add_members(group: &str, members: &str) -> Option<String> {
+    let mut wanted: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for line in members.lines() {
+        if let Some((name, users)) = line.split_once(':') {
+            let list = wanted.entry(name).or_default();
+            for user in users.split(',').filter(|u| !u.is_empty()) {
+                if !list.contains(&user) {
+                    list.push(user);
+                }
+            }
+        }
+    }
+    let mut changed = false;
+    let mut out = String::new();
+    for line in group.lines() {
+        let name = line.split(':').next().unwrap_or_default();
+        let fields: Vec<&str> = line.split(':').collect();
+        match wanted.get(name) {
+            Some(users) if fields.len() == 4 => {
+                let mut list = members_of(line);
+                for user in users {
+                    if !list.contains(user) {
+                        list.push(user);
+                        changed = true;
+                    }
+                }
+                out.push_str(&format!("{}:{}", fields[..3].join(":"), list.join(",")));
+            }
+            _ => out.push_str(line),
+        }
+        out.push('\n');
+    }
+    changed.then_some(out)
+}
+
 /// The users, groups, user ids and group ids that two add-ons both add in
 /// different lines. Each input is an add-on's name and its new `passwd` or
 /// `group` lines; a `passwd` line has seven fields, a `group` line four.
@@ -545,12 +640,13 @@ pub fn folded(paths: &[String]) -> String {
 // ---- On a machine (M7.2a): fetching, mounting and linking. ----
 
 /// The add-ons the machine's settings file names (`addons.installed`),
-/// read leniently: none when the file is missing or unreadable.
+/// its profiles' included (M7.6), read leniently: none when the file is
+/// missing or unreadable.
 pub fn wanted_on_machine() -> Vec<String> {
     let path = places::found(&places::machine_settings());
     edel::settings::read_on_machine(&path)
         .ok()
-        .and_then(|read| read.file.addons.installed)
+        .and_then(|read| edel::profiles::applied(&read.file).addons.installed)
         .unwrap_or_default()
 }
 
@@ -614,7 +710,7 @@ pub fn fetch(location: &str, manifest: &Manifest, allow_http: bool, slot: &Path)
         })?;
     }
     for entry in to_fetch {
-        fetch_one(location, entry, allow_http, &dir)?;
+        fetch_one(location, entry, allow_http, &dir, false)?;
     }
     prune(&[&running, &manifest.version]);
     Ok(())
@@ -634,27 +730,39 @@ fn built_into(device: &Path, name: &str) -> bool {
 
 /// Fetches one add-on to `dir/NAME.ext4` through a `.part` file renamed
 /// only once it is checked; one already there with the right sha256 is
-/// kept.
-fn fetch_one(location: &str, entry: &AddonEntry, allow_http: bool, dir: &Path) -> Result<()> {
+/// kept. `apply` says whether `edel settings apply` fetches it (M7.2b),
+/// else `edel update`, which its messages name.
+fn fetch_one(
+    location: &str,
+    entry: &AddonEntry,
+    allow_http: bool,
+    dir: &Path,
+    apply: bool,
+) -> Result<()> {
+    let who = if apply {
+        "edel settings"
+    } else {
+        "edel update"
+    };
     let dest = dir.join(format!("{}.ext4", entry.name));
     let here = fs::File::open(&dest)
         .ok()
         .and_then(|mut file| crate::update::copy_hashing(&mut file, &mut std::io::sink()).ok());
     if here.is_some_and(|(size, sum)| size == entry.size && to_hex(&sum) == entry.sha256) {
         println!(
-            "edel update: {}",
+            "{who}: {}",
             trf("add-on {name} is already here", &[("name", &entry.name)])
         );
         return Ok(());
     }
     let part = dir.join(format!("{}.ext4.part", entry.name));
-    if let Err(err) = fetch_part(location, entry, allow_http, &part, &dest) {
+    if let Err(err) = fetch_part(location, entry, allow_http, &part, &dest, apply) {
         // A failed download, check or rename leaves no part file behind.
         let _ = fs::remove_file(&part);
         return Err(err);
     }
     println!(
-        "edel update: {}",
+        "{who}: {}",
         trf(
             "add-on {name} fetched and checked",
             &[("name", &entry.name)]
@@ -673,12 +781,20 @@ fn fetch_part(
     allow_http: bool,
     part: &Path,
     dest: &Path,
+    apply: bool,
 ) -> Result<()> {
     let failed = || {
-        trf(
-            "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again",
-            &[("name", &entry.name)],
-        )
+        if apply {
+            trf(
+                "could not fetch add-on {name}; nothing changes at the next restart; check the network and run edel settings apply again",
+                &[("name", &entry.name)],
+            )
+        } else {
+            trf(
+                "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again",
+                &[("name", &entry.name)],
+            )
+        }
     };
     let source = crate::release::open_addon(location, entry, allow_http).with_context(failed)?;
     let mut source = source.take(entry.size.saturating_add(1));
@@ -687,6 +803,15 @@ fn fetch_part(
     file.sync_all().with_context(failed)?;
     drop(file);
     if size != entry.size || to_hex(&sum) != entry.sha256 {
+        if apply {
+            bail!(
+                "{}",
+                trf(
+                    "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; nothing of it was kept; run edel settings apply again",
+                    &[("name", &entry.name)],
+                )
+            );
+        }
         bail!(
             "{}",
             trf(
@@ -725,18 +850,454 @@ fn prune(keep: &[&str]) {
     }
 }
 
+// ---- Pending add-ons (M7.2b): fetched by apply, tried at one boot. ----
+
+/// What a boot does with the pending add-ons ([`boot_plan`]).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BootPlan {
+    /// Mounted with the others, once.
+    pub tried: Vec<String>,
+    /// The boot before did not finish with them: they go, and are listed.
+    pub failed: Vec<String>,
+    /// No longer chosen: they go, and nothing is said.
+    pub discard: Vec<String>,
+}
+
+/// What a boot does with the `pending` add-ons: with the one-shot mark
+/// (`marked`), the chosen ones are tried; without it, a boot that tried
+/// them did not finish, so the chosen ones failed. Pending ones no longer
+/// chosen go either way.
+pub fn boot_plan(pending: &[String], wanted: &[String], marked: bool) -> BootPlan {
+    let (chosen, discard): (Vec<String>, Vec<String>) =
+        pending.iter().cloned().partition(|n| wanted.contains(n));
+    if marked {
+        BootPlan {
+            tried: chosen,
+            discard,
+            ..BootPlan::default()
+        }
+    } else {
+        BootPlan {
+            failed: chosen,
+            discard,
+            ..BootPlan::default()
+        }
+    }
+}
+
+/// Of the add-ons this boot tried, those to keep (still chosen) and those
+/// to take away, once the boot is confirmed.
+pub fn promote_plan(tried: &[String], wanted: &[String]) -> (Vec<String>, Vec<String>) {
+    tried.iter().cloned().partition(|n| wanted.contains(n))
+}
+
+/// The failed list after a boot: the names still chosen, then `new`, each
+/// once. A name taken out of `addons.installed` leaves the list, so
+/// choosing it again tries it again.
+pub fn with_failed(failed: &[String], wanted: &[String], new: &[String]) -> Vec<String> {
+    let mut list: Vec<String> = failed
+        .iter()
+        .filter(|n| wanted.contains(n))
+        .cloned()
+        .collect();
+    for name in new {
+        if !list.contains(name) {
+            list.push(name.clone());
+        }
+    }
+    list
+}
+
+/// The chosen add-ons apply fetches: neither here, pending, built into
+/// the slot nor failed at their first boot.
+pub fn missing(
+    wanted: &[String],
+    here: &[String],
+    pending: &[String],
+    built_in: &dyn Fn(&str) -> bool,
+    failed: &[String],
+) -> Vec<String> {
+    wanted
+        .iter()
+        .filter(|n| {
+            !here.contains(n) && !pending.contains(n) && !failed.contains(n) && !built_in(n)
+        })
+        .cloned()
+        .collect()
+}
+
+/// One name a line.
+fn lines(names: &[String]) -> String {
+    names.iter().map(|n| format!("{n}\n")).collect()
+}
+
+/// Where the release list of `version` came from, as `edel update` kept
+/// it in `places::RELEASE_FROM`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReleaseFrom {
+    pub format: u32,
+    pub version: String,
+    pub location: String,
+    #[serde(default)]
+    pub allow_http: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel: Option<String>,
+}
+
+/// Keeps where the release just installed came from, so apply fetches
+/// that version's add-ons from the same list; a local path is kept whole.
+/// A failure is said and changes nothing else.
+pub fn remember_source(location: &str, version: &str, accept: &crate::release::Accept) {
+    let location = if location.contains("://") {
+        location.to_string()
+    } else {
+        fs::canonicalize(location)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| location.to_string())
+    };
+    let from = ReleaseFrom {
+        format: 1,
+        version: version.to_string(),
+        location,
+        allow_http: accept.allow_http,
+        channel: accept.channel.clone(),
+    };
+    let written = toml::to_string(&from)
+        .map_err(anyhow::Error::from)
+        .and_then(|text| Ok(fs::write(places::RELEASE_FROM, text)?));
+    if let Err(err) = written {
+        eprintln!(
+            "warning: {}",
+            trf(
+                "could not keep where the release came from ({why}); edel settings apply fetches add-ons from the channel's list instead",
+                &[("why", &format!("{err:#}"))]
+            )
+        );
+    }
+}
+
+/// The list to fetch `running`'s add-ons from: the one `edel update` took
+/// it from, else the channel's.
+fn source(running: &str) -> Result<(String, crate::release::Accept)> {
+    let from: Option<ReleaseFrom> = fs::read_to_string(places::RELEASE_FROM)
+        .ok()
+        .and_then(|text| toml::from_str(&text).ok());
+    match from {
+        Some(from) if from.version == running => Ok((
+            from.location,
+            crate::release::Accept {
+                allow_downgrade: true,
+                channel: from.channel,
+                allow_http: from.allow_http,
+            },
+        )),
+        _ => {
+            let accept = crate::release::Accept {
+                allow_downgrade: true,
+                ..crate::release::Accept::default()
+            };
+            Ok((crate::release::default_location(&accept)?, accept))
+        }
+    }
+}
+
+/// The network part of `edel settings apply` (M7.2b): fetches the chosen
+/// add-ons this version lacks into its pending folder, checked as an
+/// update's are, and leaves the one-shot mark, so the next boot tries
+/// them. Nothing is fetched when nothing is missing, so apply needs no
+/// network then. A list for another version (the channel moved on) only
+/// says the add-on comes with that update.
+pub fn fetch_chosen() -> Result<()> {
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let dir = version_dir(&running);
+    let pending = dir.join(places::ADDONS_PENDING);
+    let wanted = wanted_on_machine();
+    let failed = failed_in(&dir);
+    let kept = with_failed(&failed, &wanted, &[]);
+    if kept != failed {
+        fs::write(dir.join(places::ADDONS_FAILED), lines(&kept))?;
+    }
+    for name in &kept {
+        println!(
+            "edel settings: {}",
+            trf(
+                "add-on {name} did not start at its first boot, so it is not fetched again; take it out of addons.installed and choose it again to try once more",
+                &[("name", name)]
+            )
+        );
+    }
+    let built_in = |name: &str| {
+        Path::new(edel::features::DIR)
+            .join(format!("{name}.toml"))
+            .exists()
+    };
+    // Pending ones no longer chosen go now; the boot would take them out.
+    for name in names_in(&pending) {
+        if !wanted.contains(&name) {
+            let _ = fs::remove_file(pending.join(format!("{name}.ext4")));
+        }
+    }
+    let missing = missing(
+        &wanted,
+        &names_in(&dir),
+        &names_in(&pending),
+        &built_in,
+        &kept,
+    );
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let (location, accept) = source(&running)?;
+    let manifest = crate::release::verified(&location, &accept)?;
+    if manifest.version != running {
+        for name in &missing {
+            println!(
+                "edel settings: {}",
+                trf(
+                    "add-on {name} comes with the update to {version}, as the release list has moved on from {running}",
+                    &[
+                        ("name", name),
+                        ("version", &manifest.version),
+                        ("running", &running)
+                    ]
+                )
+            );
+        }
+        return Ok(());
+    }
+    let entries = crate::release::addons_for(&manifest, &image);
+    let (to_fetch, notes) = fetch_plan(&missing, &entries, &running, &built_in);
+    for note in notes {
+        println!("edel settings: {note}");
+    }
+    if to_fetch.is_empty() {
+        return Ok(());
+    }
+    fs::create_dir_all(&pending).with_context(|| {
+        trf(
+            "could not make {path}",
+            &[("path", &pending.display().to_string())],
+        )
+    })?;
+    // The mark first: a fetch cut short leaves only checked files, which
+    // the next boot tries, or none.
+    fs::write(pending.join(places::ADDONS_TRY), "")?;
+    for entry in &to_fetch {
+        fetch_one(&location, entry, accept.allow_http, &pending, true)?;
+    }
+    let names: Vec<&str> = to_fetch.iter().map(|e| e.name.as_str()).collect();
+    println!(
+        "edel settings: {}",
+        trf(
+            "add-on {names} starts at the next restart",
+            &[("names", &names.join(", "))]
+        )
+    );
+    Ok(())
+}
+
+/// `edel install` (M7.2b): puts the add-ons the new machine's settings
+/// file (`settings`, its text) chooses into the new data partition, mounted
+/// at `data`, as pending ones with the one-shot mark, so its first boot
+/// tries them as apply's are tried. Each comes from this machine's own
+/// copy of the same version when it has one, else from the release list
+/// this version came from, when it can be reached. Nothing here fails the
+/// install: an add-on not staged is said and comes with apply later.
+pub fn stage_for_install(settings: &str, data: &Path) {
+    let wanted = edel::settings::read(settings)
+        .ok()
+        .and_then(|read| read.file.addons.installed)
+        .unwrap_or_default();
+    if wanted.is_empty() {
+        return;
+    }
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let here = version_dir(&running);
+    let under = |place: &Path| data.join(place.strip_prefix(places::DATA_MOUNT).unwrap_or(place));
+    let pending = under(&here).join(places::ADDONS_PENDING);
+    let built_in = |name: &str| {
+        Path::new(edel::features::DIR)
+            .join(format!("{name}.toml"))
+            .exists()
+            && !edel::addon_state::mounted().iter().any(|m| m == name)
+    };
+    let mut staged = Vec::new();
+    let mut missing = Vec::new();
+    let said = |name: &str, why: String| {
+        eprintln!(
+            "warning: {}",
+            trf(
+                "add-on {name} was not copied ({why}); it comes once the new system runs edel settings apply online",
+                &[("name", name), ("why", &why)]
+            )
+        )
+    };
+    if let Err(err) = fs::create_dir_all(&pending) {
+        said(&wanted.join(", "), err.to_string());
+        return;
+    }
+    for name in wanted.iter().filter(|n| !built_in(n)) {
+        let file = format!("{name}.ext4");
+        if here.join(&file).is_file() {
+            match fs::copy(here.join(&file), pending.join(&file)) {
+                Ok(_) => staged.push(name.clone()),
+                Err(err) => said(name, err.to_string()),
+            }
+        } else {
+            missing.push(name.clone());
+        }
+    }
+    if !missing.is_empty() {
+        let fetched = source(&running).and_then(|(location, accept)| {
+            let manifest = crate::release::verified(&location, &accept)?;
+            if manifest.version != running {
+                bail!(
+                    "{}",
+                    trf(
+                        "the release list has moved on to {version}",
+                        &[("version", &manifest.version)]
+                    )
+                );
+            }
+            let entries = crate::release::addons_for(&manifest, &image);
+            let (to_fetch, notes) = fetch_plan(&missing, &entries, &running, &built_in);
+            for note in notes {
+                println!("edel install: {note}");
+            }
+            let mut got = Vec::new();
+            for entry in to_fetch {
+                fetch_one(&location, entry, accept.allow_http, &pending, true)?;
+                got.push(entry.name.clone());
+            }
+            Ok(got)
+        });
+        match fetched {
+            Ok(got) => staged.extend(got),
+            Err(err) => said(&missing.join(", "), format!("{err:#}")),
+        }
+    }
+    if staged.is_empty() {
+        let _ = fs::remove_dir_all(&pending);
+        return;
+    }
+    if let Err(err) = fs::write(pending.join(places::ADDONS_TRY), "") {
+        said(&staged.join(", "), err.to_string());
+        return;
+    }
+    println!(
+        "edel install: {}",
+        trf(
+            "add-on {names} copied; it starts at the first boot",
+            &[("names", &staged.join(", "))]
+        )
+    );
+}
+
+/// Once the guard confirms this boot (M7.2b): the pending add-ons it
+/// tried and that are still chosen join the others, the rest go. Returns
+/// what happened, one line each; a failure is a warning, as the boot is
+/// fine either way and the next one tries them again.
+pub fn promote() -> Vec<String> {
+    let tried: Vec<String> = fs::read_to_string(places::ADDONS_TRIED)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(String::from)
+        .collect();
+    if tried.is_empty() {
+        return Vec::new();
+    }
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let version = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let dir = version_dir(&version);
+    let pending = dir.join(places::ADDONS_PENDING);
+    let (keep, drop) = promote_plan(&tried, &wanted_on_machine());
+    let mut said = Vec::new();
+    for name in &keep {
+        let file = format!("{name}.ext4");
+        match fs::rename(pending.join(&file), dir.join(&file)) {
+            Ok(()) => said.push(format!(
+                "edel update: {}",
+                trf("add-on {name} started, so it stays", &[("name", name)])
+            )),
+            Err(err) => said.push(format!(
+                "warning: {}",
+                trf(
+                    "add-on {name} started but could not join the others ({why}); the next boot tries it again",
+                    &[("name", name), ("why", &err.to_string())]
+                )
+            )),
+        }
+    }
+    for name in &drop {
+        let _ = fs::remove_file(pending.join(format!("{name}.ext4")));
+    }
+    let _ = fs::remove_file(places::ADDONS_TRIED);
+    if names_in(&pending).is_empty() && !pending.join(places::ADDONS_TRY).exists() {
+        let _ = fs::remove_dir_all(&pending);
+    }
+    said
+}
+
 /// `edel boot mount-data`, first: mounts each add-on the settings file
 /// names that this slot's version has on `/data`, read-only at
 /// `/run/edel/addons/NAME`, and lays their `/usr` over the slot's, so the
 /// rest of the boot sees them. A chosen add-on that is not here is said,
-/// never fatal: it arrives with the next update.
+/// never fatal: `edel settings apply` or the next update fetches it.
+///
+/// The pending ones `edel settings apply` fetched (M7.2b) are tried once:
+/// with the mark there, it is taken away (and written to the disk) before
+/// they mount, so a boot that hangs comes back without them; without it,
+/// they are the ones a boot did not finish with, so they go, are listed as
+/// failed and the failure is recorded for the person.
 pub fn mount_all() -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let version = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let dir = version_dir(&version);
+    let pending = dir.join(places::ADDONS_PENDING);
+    let mark = pending.join(places::ADDONS_TRY);
+    let wanted = wanted_on_machine();
+    let plan = boot_plan(&names_in(&pending), &wanted, mark.exists());
+    if mark.exists() {
+        fs::remove_file(&mark)?;
+        // The mark must be gone from the disk before anything new mounts.
+        fs::File::open(&pending)?.sync_all()?;
+    }
+    for name in plan.failed.iter().chain(&plan.discard) {
+        let _ = fs::remove_file(pending.join(format!("{name}.ext4")));
+    }
+    if !plan.failed.is_empty() {
+        let failed = with_failed(&failed_in(&dir), &wanted, &plan.failed);
+        if let Err(err) = fs::write(dir.join(places::ADDONS_FAILED), lines(&failed)) {
+            eprintln!("warning: edel-data: could not list the failed add-ons: {err}");
+        }
+        let names = plan.failed.join(", ");
+        println!(
+            "edel-data: {}",
+            trf(
+                "add-on {names} did not start at the last boot, so Edel OS started without it; it is not fetched again until it is taken out of addons.installed and chosen again",
+                &[("names", &names)]
+            )
+        );
+        if let Err(err) = crate::update::record_failed_addons(&plan.failed) {
+            eprintln!(
+                "warning: edel-data: the add-on that did not start could not be recorded: {err:#}; Settings will not mention it"
+            );
+        }
+    }
     let mut mounts = Vec::new();
-    for name in wanted_on_machine() {
+    let mut tried = String::new();
+    for name in wanted {
         let file = dir.join(format!("{name}.ext4"));
+        let file = if !file.is_file() && plan.tried.contains(&name) {
+            pending.join(format!("{name}.ext4"))
+        } else {
+            file
+        };
         if !file.is_file() {
             if !Path::new(edel::features::DIR)
                 .join(format!("{name}.toml"))
@@ -745,7 +1306,7 @@ pub fn mount_all() -> Result<()> {
                 println!(
                     "edel-data: {}",
                     trf(
-                        "add-on {name} is chosen but not here yet; it arrives with the next update",
+                        "add-on {name} is chosen but not here yet; edel settings apply fetches it, and it starts at the next restart",
                         &[("name", &name)]
                     )
                 );
@@ -772,7 +1333,14 @@ pub fn mount_all() -> Result<()> {
                 continue;
             }
         }
+        if file.starts_with(&pending) {
+            tried.push_str(&name);
+            tried.push('\n');
+        }
         mounts.push(at);
+    }
+    if !tried.is_empty() {
+        fs::write(places::ADDONS_TRIED, &tried)?;
     }
     if mounts.is_empty() || crate::data::is_mounted("/usr")? {
         return Ok(());
@@ -793,22 +1361,16 @@ pub fn mount_all() -> Result<()> {
         "edel-data: {}",
         trf("add-ons mounted: {names}", &[("names", &names.join(", "))])
     );
+    if !tried.is_empty() {
+        println!(
+            "edel-data: {}",
+            trf(
+                "trying the add-ons fetched since the last boot: {names}; they stay once this boot is confirmed",
+                &[("names", &tried.trim_end().replace('\n', ", "))]
+            )
+        );
+    }
     Ok(())
-}
-
-/// The add-ons mounted now, by name, sorted.
-pub fn mounted() -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(places::ADDONS_RUN)
-        .map(|entries| {
-            entries
-                .flatten()
-                .filter(|e| crate::data::is_mounted(&e.path().to_string_lossy()).unwrap_or(false))
-                .filter_map(|e| e.file_name().into_string().ok())
-                .collect()
-        })
-        .unwrap_or_default();
-    names.sort();
-    names
 }
 
 /// The account lines the mounted add-ons add to `/etc/FILE` (`passwd`,
@@ -824,6 +1386,18 @@ pub fn account_lines(file: &str) -> String {
         .filter_map(|d| fs::read_to_string(d.join(file)).ok())
         .collect();
     first_of_each(&texts)
+}
+
+/// The members the mounted add-ons add to groups the slot has (M7.2b),
+/// every add-on's `GROUP:USER,...` lines in name order.
+pub fn member_lines() -> String {
+    let mut dirs: Vec<PathBuf> = fs::read_dir(places::ADDON_ACCOUNTS_DIR)
+        .map(|entries| entries.flatten().map(|e| e.path()).collect())
+        .unwrap_or_default();
+    dirs.sort();
+    dirs.iter()
+        .filter_map(|d| fs::read_to_string(d.join(MEMBERS_FILE)).ok())
+        .collect()
 }
 
 /// The lines of `texts`, each name (the first field) once, in order: two
@@ -960,30 +1534,16 @@ impl Links {
 pub struct Row {
     pub name: String,
     pub summary: String,
-    /// `installed`, `built in`, `chosen` (it arrives with the next
-    /// update) or empty.
+    /// `edel::addon_state::State::word`: `installed`, `built-in`,
+    /// `pending`, `failed`, `chosen`, `leaving` or empty.
     pub status: String,
 }
 
-/// The rows of `edel addon list`: the release's add-ons for this image
-/// (`offered`, name and summary), then any chosen or mounted one it lacks.
-pub fn rows(
-    offered: &[(String, String)],
-    mounted: &[String],
-    built_in: &BTreeSet<String>,
-    wanted: &[String],
-) -> Vec<Row> {
-    let status = |name: &str| {
-        if mounted.iter().any(|m| m == name) {
-            tr("installed").to_string()
-        } else if built_in.contains(name) {
-            tr("built in").to_string()
-        } else if wanted.iter().any(|w| w == name) {
-            tr("chosen").to_string()
-        } else {
-            String::new()
-        }
-    };
+/// The rows of `edel addon list`: the image's add-ons (`offered`, name and
+/// summary), then any chosen or mounted one it lacks, each with where it
+/// stands by `facts`.
+pub fn rows(offered: &[(String, String)], facts: &edel::addon_state::Facts) -> Vec<Row> {
+    let status = |name: &str| edel::addon_state::state(name, facts).word().to_string();
     let mut rows: Vec<Row> = offered
         .iter()
         .map(|(name, summary)| Row {
@@ -992,7 +1552,7 @@ pub fn rows(
             status: status(name),
         })
         .collect();
-    for name in mounted.iter().chain(wanted) {
+    for name in facts.mounted.iter().chain(&facts.wanted) {
         if !rows.iter().any(|r| &r.name == name) {
             rows.push(Row {
                 name: name.clone(),
@@ -1004,38 +1564,35 @@ pub fn rows(
     rows
 }
 
-/// `edel addon list`: the add-ons of this machine's channel for its image,
-/// each marked installed, built in or chosen. Offline, it says so and
-/// lists what this machine has.
+/// `edel addon list`: the add-ons this image was built with, read without
+/// the network (M7.2b), each with where it stands; an image that names
+/// none lists those of its channel's release for it, which needs the
+/// network, and offline says so and lists what this machine has.
 pub fn list() -> Result<()> {
-    let accept = crate::release::Accept::default();
-    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
-    let offered: Vec<(String, String)> = match crate::release::default_location(&accept)
-        .and_then(|at| crate::release::verified(&at, &accept))
-    {
-        Ok(manifest) => crate::release::addons_for(&manifest, &image)
-            .into_iter()
-            .map(|a| (a.name.clone(), a.summary.clone()))
-            .collect(),
-        Err(err) => {
-            eprintln!(
+    let mut offered = edel::addon_state::offered();
+    if offered.is_empty() {
+        let accept = crate::release::Accept::default();
+        let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+        let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
+        match crate::release::default_location(&accept)
+            .and_then(|at| crate::release::verified(&at, &accept))
+        {
+            Ok(manifest) => {
+                offered = crate::release::addons_for(&manifest, &image)
+                    .into_iter()
+                    .map(|a| (a.name.clone(), a.summary.clone()))
+                    .collect()
+            }
+            Err(err) => eprintln!(
                 "warning: {}",
                 trf(
                     "could not read the release list ({why}), so only this machine's add-ons are shown",
                     &[("why", &format!("{err:#}"))]
                 )
-            );
-            Vec::new()
+            ),
         }
-    };
-    let mounted = mounted();
-    let built_in: BTreeSet<String> = edel::services::installed()
-        .into_iter()
-        .filter(|(name, f)| f.addon && !mounted.contains(name))
-        .map(|(name, _)| name)
-        .collect();
-    let rows = rows(&offered, &mounted, &built_in, &wanted_on_machine());
+    }
+    let rows = rows(&offered, &edel::addon_state::Facts::read());
     if rows.is_empty() {
         println!("{}", tr("no add-ons for this image"));
         return Ok(());
@@ -1046,7 +1603,9 @@ pub fn list() -> Result<()> {
     }
     println!(
         "{}",
-        tr("to add one: edel settings set addons.installed+=NAME; it arrives with the next update")
+        tr(
+            "to add one: edel settings set addons.installed+=NAME, then edel settings apply; it starts at the next restart"
+        )
     );
     Ok(())
 }
@@ -1579,12 +2138,12 @@ mod tests {
     #[test]
     fn lists_the_offered_and_the_chosen_add_ons() {
         let offered = [pair("fonts-cjk", "Fonts"), pair("printing", "Printers")];
-        let rows = rows(
-            &offered,
-            &["printing".to_string()],
-            &BTreeSet::new(),
-            &["printing".to_string(), "ci-gone".to_string()],
-        );
+        let facts = edel::addon_state::Facts {
+            wanted: vec!["printing".to_string(), "ci-gone".to_string()],
+            mounted: vec!["printing".to_string()],
+            ..Default::default()
+        };
+        let rows = rows(&offered, &facts);
         let got: Vec<(&str, &str)> = rows
             .iter()
             .map(|r| (r.name.as_str(), r.status.as_str()))
@@ -1597,5 +2156,73 @@ mod tests {
                 ("ci-gone", "chosen")
             ]
         );
+    }
+
+    fn names(list: &[&str]) -> Vec<String> {
+        list.iter().map(|n| n.to_string()).collect()
+    }
+
+    #[test]
+    fn a_marked_boot_tries_the_pending_ones_and_one_without_the_mark_fails_them() {
+        let pending = names(&["ci-hang", "gone", "virtualization"]);
+        let wanted = names(&["ci-hello", "ci-hang", "virtualization"]);
+        let tried = boot_plan(&pending, &wanted, true);
+        assert_eq!(tried.tried, names(&["ci-hang", "virtualization"]));
+        assert!(tried.failed.is_empty());
+        assert_eq!(tried.discard, names(&["gone"]));
+        // The boot that tried them did not finish: no mark is left.
+        let failed = boot_plan(&pending, &wanted, false);
+        assert!(failed.tried.is_empty());
+        assert_eq!(failed.failed, names(&["ci-hang", "virtualization"]));
+        assert_eq!(failed.discard, names(&["gone"]));
+        assert_eq!(boot_plan(&[], &wanted, true), BootPlan::default());
+    }
+
+    #[test]
+    fn a_confirmed_boot_keeps_the_tried_ones_still_chosen() {
+        let (keep, drop) = promote_plan(&names(&["a", "b"]), &names(&["b", "c"]));
+        assert_eq!(keep, names(&["b"]));
+        assert_eq!(drop, names(&["a"]));
+    }
+
+    #[test]
+    fn a_failed_add_on_is_fetched_again_only_once_chosen_again() {
+        let failed = with_failed(
+            &names(&["a", "b"]),
+            &names(&["b", "c"]),
+            &names(&["c", "b"]),
+        );
+        assert_eq!(failed, names(&["b", "c"]));
+        assert!(with_failed(&names(&["a"]), &[], &[]).is_empty());
+        let built_in = |name: &str| name == "fonts";
+        let wanted = names(&["here", "pending", "fonts", "failed", "new"]);
+        assert_eq!(
+            missing(
+                &wanted,
+                &names(&["here"]),
+                &names(&["pending"]),
+                &built_in,
+                &names(&["failed"])
+            ),
+            names(&["new"])
+        );
+    }
+
+    #[test]
+    fn members_an_add_on_adds_to_a_group_join_it_at_boot() {
+        let image = "root:x:0:root\nkvm:x:34:\naudio:x:18:a\n";
+        let addon = "root:x:0:root\nkvm:x:34:qemu\naudio:x:18:a,b\nqemu:x:100:\n";
+        assert_eq!(added_members(image, addon), "kvm:qemu\naudio:b\n");
+        // Another id, or a member taken away, is no member added.
+        assert_eq!(added_members(image, "kvm:x:35:qemu\naudio:x:18:b\n"), "");
+        assert!(members_only("kvm:x:34:", "kvm:x:34:qemu"));
+        assert!(!members_only("audio:x:18:a", "audio:x:18:b"));
+        let machine = "root:x:0:root\nkvm:x:34:\naudio:x:18:a,b\n";
+        assert_eq!(
+            add_members(machine, "kvm:qemu\naudio:b\nmissing:x\nkvm:qemu,other\n").as_deref(),
+            Some("root:x:0:root\nkvm:x:34:qemu,other\naudio:x:18:a,b\n")
+        );
+        assert_eq!(add_members(machine, "audio:a\n"), None);
+        assert_eq!(add_members(machine, ""), None);
     }
 }

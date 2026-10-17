@@ -89,6 +89,12 @@ msgstr ""
 msgid "There is no session log: neither XDG_STATE_HOME nor HOME is set."
 msgstr ""
 
+msgid "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart."
+msgstr ""
+
+msgid "This version of Edel OS has no add-ons to choose."
+msgstr ""
+
 msgid "What it may use"
 msgstr ""
 
@@ -525,6 +531,9 @@ msgid "no disk to install on"
 msgstr ""
 
 msgid "Who logs in"
+msgstr ""
+
+msgid "Apps and add-ons for one kind of work, if you like. Change it any time in Settings."
 msgstr ""
 
 msgid "Welcome to Edel OS"
@@ -1185,6 +1194,9 @@ msgid "Now"
 msgstr ""
 
 msgid "Power information is not available"
+msgstr ""
+
+msgid "What this computer is for"
 msgstr ""
 
 msgid "Remove {layout}"
@@ -2274,6 +2286,12 @@ msgid "{name} can log in now, but the computer did not restart: {why}. Restart i
 msgstr ""
 
 msgid "the account could not be made; try again"
+msgstr ""
+
+msgid "Add the fonts this language needs"
+msgstr ""
+
+msgid "They download once this computer is online and show after the next restart."
 msgstr ""
 
 msgid "Try it here:"

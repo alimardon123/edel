@@ -368,6 +368,11 @@ pub const ROWS: &[Row] = &[
         key: "location.online",
         title: n_("Look online"),
     },
+    // The System page's profile (M7.6), the machine's.
+    Row {
+        key: "system.profiles",
+        title: n_("Profile"),
+    },
     // The Default apps page (M6.10): the app each role opens, one row each,
     // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
     Row {
@@ -420,6 +425,12 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "apps.files",
         title: n_("Files"),
+    },
+    // The Add-ons page (M7.2b): one switch for each add-on the image was
+    // built with, under the add-on's own name.
+    Row {
+        key: "addons.installed",
+        title: n_("Add-ons"),
     },
     // The Updates page (M5.8c).
     Row {
@@ -819,10 +830,6 @@ mod tests {
     /// false`) needs neither, as no page shows a row that does not work yet,
     /// and a retired key needs neither either.
     const NO_ROW: &[(&str, &str)] = &[
-        (
-            "addons.installed",
-            "the Add-ons page, a switch for each add-on, comes with M7.2b, when one chosen there arrives at the next boot; until then edel settings set addons.installed+=NAME, and it arrives with the next update",
-        ),
         (
             "users.*.ssh_keys",
             "a key is pasted on the command line or written in the file, as a server's administrator does",
