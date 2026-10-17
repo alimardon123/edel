@@ -146,10 +146,6 @@ pub struct Edel {
     /// `[displays]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
     pub screens_changed: bool,
-    /// The lid opened (M7.8), as after a suspend: the screens may have lost
-    /// what they showed, so the backend draws them whole again, into the
-    /// buffers it has (a new buffer then could hang a virtual GPU).
-    pub woke: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
     /// What is opening, closing and sliding (`animate.rs`).
@@ -355,7 +351,6 @@ impl Edel {
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),
             app_icons: crate::decoration::AppIcons::new(),
             screens_changed: false,
-            woke: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
                 edel_compositor::effects::Tier::Lite,

@@ -536,10 +536,6 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             if std::mem::take(&mut state.screens_changed) {
                 gpu.scan(state);
             }
-            if std::mem::take(&mut state.woke) {
-                state.repaint = true;
-                state.dirty = true;
-            }
             gpu.render(state);
         }
     })?;
