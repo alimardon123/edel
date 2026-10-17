@@ -89,6 +89,10 @@ struct Screen {
     dirty: bool,
     /// A frame was queued and its vblank has not come yet.
     pending: bool,
+    /// The queued frame was drawn locked: its vblank confirms the lock
+    /// (M7.8), so a suspend that waits for the lock never sleeps before the
+    /// locked frame is on the screen.
+    locked_frame: bool,
     /// Its first frame was shown and announced.
     ready: bool,
 }
@@ -454,7 +458,9 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             move |event, metadata, state: &mut Edel| match event {
                 DrmEvent::VBlank(crtc) => {
                     let mut gpu = vblank.borrow_mut();
-                    gpu.presented(crtc, metadata.as_ref());
+                    if let Some(name) = gpu.presented(crtc, metadata.as_ref()) {
+                        state.lock_drawn(&name);
+                    }
                     gpu.render(state);
                     // Once the desktop is on screen (M4.7b).
                     if gpu.announced {
@@ -727,6 +733,7 @@ impl Gpu {
                 mode,
                 dirty: true,
                 pending: false,
+                locked_frame: false,
                 ready: false,
             },
         );
@@ -770,7 +777,7 @@ impl Gpu {
             let started = Instant::now();
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
-                state.lock_drawn(&screen.output.name());
+                screen.locked_frame = state.locked.is_some();
                 state.last_frame = Some(Instant::now());
                 state.telemetry.frame(started.elapsed(), true);
                 state.frame_drawn(
@@ -824,13 +831,17 @@ impl Gpu {
     }
 
     /// The frame queued on `crtc` is shown: tell the clients when, and
-    /// announce the screen's first one.
-    fn presented(&mut self, crtc: crtc::Handle, metadata: Option<&DrmEventMetadata>) {
+    /// announce the screen's first one. Gives the screen's name when that
+    /// frame was drawn locked, for the lock's confirmation.
+    fn presented(
+        &mut self,
+        crtc: crtc::Handle,
+        metadata: Option<&DrmEventMetadata>,
+    ) -> Option<String> {
         let now = Duration::from(self.clock.now());
-        let Some(screen) = self.screens.get_mut(&crtc) else {
-            return;
-        };
+        let screen = self.screens.get_mut(&crtc)?;
         screen.pending = false;
+        let locked = std::mem::take(&mut screen.locked_frame).then(|| screen.output.name());
         match screen.compositor.frame_submitted() {
             Ok(Some(Some(mut feedback))) => {
                 let (time, sequence) = match metadata {
@@ -865,6 +876,7 @@ impl Gpu {
             self.announced = true;
             announce(&screen.output, first);
         }
+        locked
     }
 }
 
