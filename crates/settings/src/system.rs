@@ -280,14 +280,14 @@ fn developer(content: &gtk::Box) -> Rc<Developer> {
             return;
         }
         if switch.is_active() {
+            // Off until the person says Turn on, so Cancel, Escape and
+            // closing the prompt all leave it off.
+            dev.set_switch(false);
             let weak = Rc::downgrade(&dev);
-            ask_turn_on(switch.upcast_ref(), move |confirmed| {
+            ask_turn_on(switch.upcast_ref(), move || {
                 let Some(dev) = weak.upgrade() else { return };
-                if confirmed {
-                    dev.run(set_words(true), "true");
-                } else {
-                    dev.set_switch(false);
-                }
+                dev.set_switch(true);
+                dev.run(set_words(true), "true");
             });
         } else {
             dev.run(set_words(false), "false");
@@ -408,23 +408,19 @@ impl Developer {
     }
 }
 
-/// Asks before developer mode is turned on: Cancel is the default, and
-/// `done` gets whether the person chose Turn on.
-fn ask_turn_on(near: &gtk::Widget, done: impl FnOnce(bool) + 'static) {
-    let parent = near.root().and_downcast::<gtk::Window>();
-    let dialog = gtk::AlertDialog::builder()
-        .modal(true)
-        .message(tr("Turn on developer mode?"))
-        .detail(tr(
+/// Asks before developer mode is turned on, in the shared prompt (M6.18):
+/// Cancel is the default, and `done` runs only on Turn on.
+fn ask_turn_on(near: &gtk::Widget, done: impl FnOnce() + 'static) {
+    widgets::confirm(
+        near,
+        tr("Turn on developer mode?"),
+        tr(
             "Developer mode lets you change Edel OS's own files and install packages with apk. If a change stops the computer from starting, Edel OS starts without your changes until you switch developer mode off and on again or reset it.",
-        ))
-        .buttons(vec![tr("Cancel"), tr("Turn on")])
-        .cancel_button(0)
-        .default_button(0)
-        .build();
-    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
-        done(matches!(answer, Ok(1)));
-    });
+        ),
+        tr("Turn on"),
+        false,
+        done,
+    );
 }
 
 /// The words that set developer mode: the Region page's `set` words, then
