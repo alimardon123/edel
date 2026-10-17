@@ -33,7 +33,7 @@ use std::sync::OnceLock;
 
 use accesskit::Role;
 use edel::app_use::Kind;
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::tokens::Tokens;
 
 use super::{Action, Canvas, Input, Live, Widget};
@@ -42,8 +42,8 @@ use crate::paint::{self, fill};
 use crate::status::{Link, Status};
 
 pub const WIDGET: Widget = Widget {
-    name: "status",
-    title: n_("Status"),
+    name: edel::widgets::STATUS.name,
+    title: edel::widgets::STATUS.title,
     needs: None,
     shows,
     width,

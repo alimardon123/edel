@@ -78,3 +78,4 @@ pub mod users;
 pub mod version;
 pub mod wallpapers;
 pub mod web_apps;
+pub mod widgets;

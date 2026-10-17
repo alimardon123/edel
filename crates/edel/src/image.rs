@@ -279,36 +279,46 @@ impl Build<'_> {
 
     /// Writes the installed packages, one `name-version` a line, into the
     /// image (`/usr/share/edel/packages`) and beside it
-    /// (`out/<image>.packages`), so every release says what is inside it.
+    /// (`out/<image>.packages`), so every release says what is inside it,
+    /// and writes the bill of materials beside it
+    /// (`out/<image>.cdx.json`, M8.12). Both come from apk's own record of
+    /// the root, read once.
     fn record_packages(&self, root: &Path) -> Result<()> {
-        let beside = self.out.join(format!("{}.packages", self.def.stem()));
+        let stem = self.def.stem();
+        let beside = self.out.join(format!("{stem}.packages"));
+        let bom = self.out.join(format!("{stem}.cdx.json"));
         self.runner.step(&format!(
-            "record the installed packages in {} and {}",
+            "record the installed packages in {} and {}, and their bill of materials in {}",
             edel::places::PACKAGES_FILE,
-            beside.display()
+            beside.display(),
+            bom.display()
         ));
         if self.runner.dry_run {
             return Ok(());
         }
-        let out = Command::new("apk")
-            .arg("--root")
-            .arg(root)
-            .args(["info", "-v"])
-            .output()
-            .context("starting apk info")?;
-        if !out.status.success() {
-            bail!(
-                "apk info -v failed: {}",
-                String::from_utf8_lossy(&out.stderr)
-            );
-        }
-        let mut packages: Vec<&str> = std::str::from_utf8(&out.stdout)?.lines().collect();
-        packages.sort_unstable();
-        let text: String = packages.iter().map(|p| format!("{p}\n")).collect();
+        let db = root.join(crate::bom::INSTALLED_DB);
+        let text = fs::read_to_string(&db).with_context(|| {
+            format!(
+                "reading apk's record of installed packages {}",
+                db.display()
+            )
+        })?;
+        let packages = crate::bom::parse_installed(&text);
+        let mut lines: Vec<String> = packages
+            .iter()
+            .map(|p| format!("{}-{}", p.name, p.version))
+            .collect();
+        lines.sort_unstable();
+        let list: String = lines.iter().map(|l| format!("{l}\n")).collect();
         let inside = root.join(edel::places::PACKAGES_FILE.trim_start_matches('/'));
         fs::create_dir_all(inside.parent().unwrap_or(root))?;
-        fs::write(&inside, &text)?;
-        fs::write(&beside, &text)?;
+        fs::write(&inside, &list)?;
+        fs::write(&beside, &list)?;
+        let distro = format!("alpine-{}", self.def.alpine.branch.trim_start_matches('v'));
+        let version = self.version.as_deref().unwrap_or("");
+        let document = crate::bom::cyclonedx(&stem, version, &distro, &packages);
+        fs::write(&bom, document)
+            .with_context(|| format!("writing the bill of materials {}", bom.display()))?;
         Ok(())
     }
 

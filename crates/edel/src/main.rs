@@ -5,6 +5,7 @@
 //! learn. The settings file parser is the library half (`edel::settings`).
 
 mod addons;
+mod bom;
 mod boot;
 mod completion;
 mod data;
