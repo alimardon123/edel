@@ -416,6 +416,15 @@ This page has no key in the file.
 | `apps.screenshots` | Which apps may take a screenshot without asking, by Flatpak app id: allow or never. | `{}` | release |
 | `apps.notifications` | Which apps may show notifications, by Flatpak app id: allow or never. | `{}` | release |
 | `apps.files` | Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id. | `{}` | release |
+| `apps.location` | Which apps may know where this computer is, by Flatpak app id: allow, ask every time or never. | `{}` | release |
+
+### `location`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `location.enabled` | Off gives every app nothing, whatever each app may use. | `true` | release |
+| `location.place` | The city apps are told, named by its time zone, such as Asia/Tashkent. | the time zone's city | release |
+| `location.online` | Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses. | `false` | release |
 
 ### `addons`
 

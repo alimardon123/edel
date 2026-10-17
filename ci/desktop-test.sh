@@ -3717,6 +3717,120 @@ case_in_use() {
 	echo "PASS: gst-launch-1.0 watching a fake camera showed the in-use sign in in_use's amber ($sign at $sx,$sy, in-use.png), its card's Stop cut it off and the use was recorded (in-use-card.png); Test A recording in its sandbox was named by its Flatpak id, and set to never it was not shown again ($refused); ci's record: $record; Settings listed Test A's recent use (settings-app-recent.png)"
 }
 
+# location_ask: Test A asks the Location portal from its sandbox and holds
+# the place 8 s; prints its answer line.
+location_ask() {
+	asked=$(count 'DESKTOP-TEST: location_answer ')
+	guest 'location ask'
+	wait_more 'DESKTOP-TEST: location_answer ' "$asked" 60 || fail "Test A did not answer within 60 s of asking for its location"
+	value location_answer
+}
+
+# location_choice CHOICE: sets Test A's apps.location as ci and waits for
+# shell-ui to write VALUES into the permission store.
+location_choice() {
+	stored=$(count "edel-shell-ui: app permission location $2 for org.edel.TestA")
+	asked=$(count 'DESKTOP-TEST: location_choice ')
+	guest "location $1"
+	wait_more 'DESKTOP-TEST: location_choice ' "$asked" || fail "the service did not set Test A's location"
+	[ "$(value location_choice)" = 0 ] || fail "edel settings set as ci refused apps.location $1"
+	wait_more "edel-shell-ui: app permission location $2 for org.edel.TestA" "$stored" 30 ||
+		fail "shell-ui did not write Test A's location as $2 into the permission store within 30 s"
+}
+
+case_location() {
+	# Location (M6.14c): the machine's city, picked once as root, is what
+	# GeoClue's static source tells Test A through the location portal
+	# while apps.location allows it, with the in-use sign up while Test A
+	# holds it (location.png) and no GeoClue socket on the network, as the
+	# online lookup is off; set to never Test A gets nothing; with the
+	# person's Location off it gets nothing though allowed; and quick
+	# settings' Location tile turns the switch off and on.
+	asked=$(count 'DESKTOP-TEST: location_place ')
+	guest 'location place'
+	wait_more 'DESKTOP-TEST: location_place ' "$asked" 30 || fail "the service did not pick the city"
+	place=$(value location_place)
+	case "$place" in '0 '*41.333333\;69.300000\;*) ;; *) fail "edel settings set location.place=Asia/Tashkent and apply did not write Tashkent to /etc/geolocation: $place" ;; esac
+	location_choice allow 'EXACT 0'
+	shown=$(count 'edel-shell-ui: in use: .*org.edel.TestA location')
+	asked=$(count 'DESKTOP-TEST: location_answer ')
+	guest 'location ask'
+	wait_more 'edel-shell-ui: in use: .*org.edel.TestA location' "$shown" 30 ||
+		fail "shell-ui did not show Test A holding the location within 30 s: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: .*location' | tail -n 5)"
+	wait_for 'edel-shell-ui: in use sign [0-9]' 10 || fail "shell-ui did not log where the in-use sign is"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/location.png"
+	place=$(in_use_place sign) || fail "no place for the in-use sign"
+	set -- $place
+	amber=$(token in_use)
+	sign=$(python3 ci/qmp.py pixel "$dir/location.png" $(($1 + 3)) $(($2 + $4 / 2)))
+	near "$sign" "$(printf '%d' "0x$(echo "$amber" | cut -c1-2)")" "$(printf '%d' "0x$(echo "$amber" | cut -c3-4)")" "$(printf '%d' "0x$(echo "$amber" | cut -c5-6)")" ||
+		fail "the in-use sign at $1,$2 is $sign, not the token in_use $amber (location.png)"
+	asked_sockets=$(count 'DESKTOP-TEST: location_sockets ')
+	guest 'location sockets'
+	wait_more 'DESKTOP-TEST: location_sockets ' "$asked_sockets" 40 || fail "the service did not list GeoClue's sockets"
+	sockets=$(value location_sockets)
+	case "$sockets" in '0 '*) ;; *) fail "GeoClue holds network sockets, or does not run, while the lookup is off: $sockets" ;; esac
+	case "$sockets" in *60-edel-online*) fail "the online lookup's file is there while location.online is off: $sockets" ;; esac
+	wait_more 'DESKTOP-TEST: location_answer ' "$asked" 60 || fail "Test A did not answer within 60 s of asking for its location"
+	answer=$(value location_answer)
+	case "$answer" in 'location 41.3333 69.3000 '*) ;; *) fail "Test A was not told Tashkent's place: $answer" ;; esac
+	# The sign follows GeoClue's InUse (with shell-ui as its agent), not
+	# shell-ui's fallback for a GeoClue that never says it is in use.
+	if tr -d '\r' <"$log" | grep -aq 'GeoClue does not say the place is in use\|GeoClue did not take the shell as its agent'; then
+		fail "GeoClue did not count Test A's place as in use: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: GeoClue' | tail -n 2)"
+	fi
+	# Never: the portal gives Test A nothing.
+	location_choice never 'NONE 0'
+	never=$(location_ask)
+	case "$never" in 'location failed '*) ;; *) fail "Test A set to never was answered: $never" ;; esac
+	# Location off: nothing though allowed.
+	location_choice allow 'EXACT 0'
+	told=$(count 'edel-shell-ui: location off told to the portal')
+	asked=$(count 'DESKTOP-TEST: location_off ')
+	guest 'location off'
+	wait_more 'DESKTOP-TEST: location_off ' "$asked" || fail "the service did not turn Location off"
+	wait_more 'edel-shell-ui: location off told to the portal' "$told" 30 || fail "shell-ui did not tell the portal Location is off within 30 s"
+	off=$(location_ask)
+	case "$off" in 'location failed create'*) ;; *) fail "Test A was answered while Location is off: $off" ;; esac
+	# Quick settings' Location tile: on, then off, then on again.
+	set -- $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: panel places' | tail -n 1 | sed -n 's/.*status \([0-9]*\)+\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where its status area lies"
+	pill_x=$(($1 + $2 / 2))
+	shown=$(count 'edel-shell-ui: quick settings shown')
+	python3 ci/qmp.py click "$pill_x" 780
+	wait_more 'edel-shell-ui: quick settings shown' "$shown" || fail "a click on the status area did not open quick settings"
+	i=0
+	until value layers | grep -q 'edel-quick@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no quick settings surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-quick@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-quick@//; s/[,x]/ /g')
+	sx=$1 sy=$2 sw=$3 sh=$4
+	line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: quick places' | tail -n 1)
+	set -- $(echo "$line" | sed -n 's/.*quick places card \([0-9]*\)x\([0-9]*\).*/\1 \2/p')
+	[ -n "${1:-}" ] || fail "shell-ui did not say where the card's parts lie: $line"
+	cx=$((sx + (sw - $1) / 2)) cy=$((sy + (sh - $2) / 2))
+	set -- $(echo "$line" | sed -n 's/.* location \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "${1:-}" ] || fail "quick settings has no Location tile: $line"
+	lx=$(($1 + cx + $3 / 2)) ly=$(($2 + cy + $4 / 2))
+	python3 ci/qmp.py screendump "$dir/location-tile-off.png"
+	for state in on off on; do
+		said=$(count "edel-shell-ui: location $state\$")
+		told=$(count "edel-shell-ui: location $state told to the portal")
+		python3 ci/qmp.py click "$lx" "$ly"
+		wait_more "edel-shell-ui: location $state\$" "$said" 10 || fail "a click on the Location tile at $lx,$ly did not turn Location $state"
+		wait_more "edel-shell-ui: location $state told to the portal" "$told" 30 || fail "shell-ui did not tell the portal Location is $state"
+	done
+	python3 ci/qmp.py screendump "$dir/location-tile-on.png"
+	python3 ci/qmp.py key esc
+	asked=$(count 'DESKTOP-TEST: location_reset ')
+	guest 'location reset'
+	wait_more 'DESKTOP-TEST: location_reset ' "$asked" 30 || fail "the service did not reset the location keys"
+	echo "PASS: Test A was told Tashkent ($answer) with the sign up (location.png) and GeoClue on no network ($sockets); never gave '$never', Location off gave '$off', and the quick settings tile turned it on, off and on (location-tile-off.png, location-tile-on.png)"
+}
+
 case_default_apps() {
 	# The default apps (M6.2): the image build installed the test app
 	# org.edel.TestA from a repository made with no network into the data
@@ -7698,7 +7812,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -109,3 +109,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `notifications.badge` | `"dot"` | release |
 | `notifications.list` | `"button"` | release |
 | `region.input_method` | `"none"` | release |
+| `apps.location` | `{}` | release |
+| `location.enabled` | `true` | release |
+| `location.place` | the time zone's city | release |
+| `location.online` | `false` | release |

@@ -214,6 +214,42 @@ pub fn dnd_not_kept(why: impl Display) -> String {
 pub const DND_NO_HOME: &str = "no home folder to keep do not disturb in; run edel settings set notifications.do_not_disturb=true instead";
 
 /// The tray's apps kept in the panel cannot be written down.
+/// The portal could not be told the Location switch (M6.14c).
+pub fn location_not_told(why: impl Display) -> String {
+    format!(
+        "could not tell the location portal the Location switch: {why}; apps keep what the portal had until the switch changes again"
+    )
+}
+
+/// The Location tile could not be kept in the person's file (M6.14c).
+pub fn location_not_kept(why: impl Display) -> String {
+    format!("could not keep location: {why}; it stays as it was")
+}
+
+/// There is no home folder to keep the Location switch in (M6.14c).
+pub const LOCATION_NO_HOME: &str = "no home folder to keep location in; run edel settings set location.enabled=false to turn it off instead, or location.enabled=true to turn it on";
+
+/// shell-ui cannot follow what apps ask the location portal for (M6.14c).
+pub fn location_not_watched(why: impl Display) -> String {
+    format!(
+        "could not follow what apps ask for their place: {why}; the sign does not show an app that gets it, and apps set to ask are not asked each time"
+    )
+}
+
+/// GeoClue would not take shell-ui as its agent, which it needs before it
+/// answers the portal on Edel OS (M6.14c).
+pub fn location_agent_not_added(why: impl Display) -> String {
+    format!(
+        "GeoClue did not take the shell as its agent: {why}; apps get their place only if another agent runs"
+    )
+}
+
+/// GeoClue does not say the place is in use, so the sign ends the use
+/// after a few seconds (M6.14c).
+pub fn location_not_in_use(why: impl Display) -> String {
+    format!("GeoClue does not say the place is in use: {why}; the sign shows the app for 10 s only")
+}
+
 pub fn tray_not_kept(why: impl Display) -> String {
     format!("could not keep the tray's apps in the panel: {why}; they stay as they were")
 }
@@ -543,6 +579,23 @@ mod tests {
     }
 
     #[test]
+    fn the_location_messages_say_what_stays_and_what_to_do() {
+        assert_eq!(
+            location_not_kept("Permission denied (os error 13)"),
+            "could not keep location: Permission denied (os error 13); it stays as it was"
+        );
+        assert!(LOCATION_NO_HOME.contains("edel settings set location.enabled=false"));
+        assert!(
+            location_agent_not_added("Access denied")
+                .starts_with("GeoClue did not take the shell as its agent: Access denied; apps")
+        );
+        assert_eq!(
+            location_not_in_use("no system bus"),
+            "GeoClue does not say the place is in use: no system bus; the sign shows the app for 10 s only"
+        );
+    }
+
+    #[test]
     fn a_tray_layout_that_is_not_kept_says_what_stays() {
         assert_eq!(
             tray_not_kept("Permission denied (os error 13)"),
@@ -622,6 +675,11 @@ mod tests {
             lock_screen_not_kept("x"),
             LOCK_SCREEN_NO_HOME.to_string(),
             picture_not_read("/a.jpg", "x"),
+            location_not_told("x"),
+            location_not_kept("x"),
+            LOCATION_NO_HOME.to_string(),
+            location_not_watched("x"),
+            location_not_in_use("x"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");

@@ -15,7 +15,8 @@ use gtk::{gdk, gio, glib, graphene};
 use edel::i18n::{tr, trf};
 use edel::tokens::Colour;
 
-use crate::icon;
+use crate::files::Files;
+use crate::{actions, icon, rows};
 
 /// How wide a page's text and cards grow before they stop and centre,
 /// margins included, so lines stay easy to read on a wide screen.
@@ -1569,6 +1570,123 @@ impl Segments {
         }
         *self.buttons.borrow_mut() = buttons;
         self.set_selected(at);
+    }
+}
+
+/// The words of an `edel settings set KEY=VALUE` line for a machine key,
+/// the Settings action's words first.
+pub(crate) fn set_words(key: &str, value: &str) -> Vec<String> {
+    actions::SET
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .chain(std::iter::once(format!("{key}={value}")))
+        .collect()
+}
+
+/// The words of an `edel settings reset KEY` for a machine key.
+pub(crate) fn reset_words(key: &str) -> Vec<String> {
+    actions::RESET
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .chain(std::iter::once(key.to_string()))
+        .collect()
+}
+
+/// The line an administrator types for a machine key: the doas line, as
+/// Copy as command gives it (`AS_ROOT` names the tool, written nowhere else).
+pub(crate) fn root_command(pairs: &[(&str, String)]) -> String {
+    format!("{} {}", edel::places::AS_ROOT, rows::command(pairs))
+}
+
+/// An exit status as the log shows it; `none` when the command did not run.
+pub(crate) fn exit_text(code: Option<i32>) -> String {
+    code.map_or_else(|| "none".to_string(), |code| code.to_string())
+}
+
+/// The settings files a page follows while it is open: the machine's and
+/// the person's, each watched for changes.
+pub(crate) fn monitors(files: &Files) -> Vec<gio::FileMonitor> {
+    std::iter::once(&files.machine)
+        .chain(files.person.as_ref())
+        .filter_map(|path| {
+            gio::File::for_path(path)
+                .monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
+                .ok()
+        })
+        .collect()
+}
+
+/// One row's parts for a page that writes its row through `Line` (M6.11,
+/// shared with the Location page, M6.14c): its row, the key's words and the
+/// note of its value, and the message of a change the machine refused,
+/// which replaces the line until the next change.
+pub(crate) struct Line {
+    pub(crate) row: Row,
+    /// The key's help (`edel::key_help`), marked for translation.
+    pub(crate) help: &'static str,
+    /// A second sentence under the help, or nothing.
+    pub(crate) extra: &'static str,
+    /// Whether the key is the machine's, so its Reset shows when it is set
+    /// anywhere but the release.
+    pub(crate) machine: bool,
+    pub(crate) problem: RefCell<String>,
+}
+
+impl Line {
+    pub(crate) fn new(
+        group: &gtk::Box,
+        key: &str,
+        control: &gtk::Widget,
+        extra: &'static str,
+        machine: bool,
+    ) -> Line {
+        Line {
+            row: row(group, rows::title(key), control),
+            help: edel::key_help::find(key).map_or("", |line| line.help),
+            extra,
+            machine,
+            problem: RefCell::new(String::new()),
+        }
+    }
+
+    /// The line's words: the help, the extra sentence, then where the value
+    /// comes from (`Set by this machine`, `Your choice`, or nothing).
+    fn words(&self, source: &edel::settings::Source) -> String {
+        let mut text = [self.help, self.extra]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .map(tr)
+            .collect::<Vec<&str>>()
+            .join(" ");
+        if let Some(note) = rows::note(source, false) {
+            text = if text.is_empty() {
+                note.to_string()
+            } else {
+                format!("{text} · {note}")
+            };
+        }
+        text
+    }
+
+    /// Shows the line and whether Reset is there: the words, or a refused
+    /// change's message in the problem colour.
+    pub(crate) fn show(&self, source: &edel::settings::Source) {
+        let problem = self.problem.borrow();
+        if problem.is_empty() {
+            self.row.subtitle.remove_css_class("edel-error");
+            self.row.subtitle.set_label(&self.words(source));
+        } else {
+            self.row.subtitle.add_css_class("edel-error");
+            self.row.subtitle.set_label(problem.as_str());
+        }
+        let reset = if self.machine {
+            !matches!(source, edel::settings::Source::Release)
+        } else {
+            rows::resettable(source)
+        };
+        self.row.reset.set_visible(reset);
     }
 }
 

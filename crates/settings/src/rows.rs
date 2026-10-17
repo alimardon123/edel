@@ -346,6 +346,20 @@ pub const ROWS: &[Row] = &[
         key: "region.time_servers",
         title: n_("Time servers"),
     },
+    // The Location page (M6.14c): the person's switch, then the machine's
+    // city and its online lookup.
+    Row {
+        key: "location.enabled",
+        title: n_("Location"),
+    },
+    Row {
+        key: "location.place",
+        title: n_("Place"),
+    },
+    Row {
+        key: "location.online",
+        title: n_("Look online"),
+    },
     // The Default apps page (M6.10): the app each role opens, one row each,
     // in the order `edel::apps::DEFAULT_APP_KEYS` gives them.
     Row {
@@ -382,6 +396,10 @@ pub const ROWS: &[Row] = &[
     Row {
         key: "apps.microphone",
         title: n_("Microphone"),
+    },
+    Row {
+        key: "apps.location",
+        title: n_("Location"),
     },
     Row {
         key: "apps.screenshots",
