@@ -193,6 +193,14 @@ pub fn frame_not_shown(why: impl Display) -> String {
     format!("could not show a frame: {why}; the screen keeps the one before")
 }
 
+/// The rounded corners' shaders cannot be built: windows keep square
+/// corners, and the rest of the desktop works.
+pub fn corners_square(why: impl Display) -> String {
+    format!(
+        "rounded corners are off: the GPU could not build their shader ({why}); windows keep square corners"
+    )
+}
+
 /// A screen refuses variable refresh (M7.7).
 pub fn vrr_refused(screen: &str, why: impl Display) -> String {
     format!(
