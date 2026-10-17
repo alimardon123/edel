@@ -23,6 +23,7 @@ use crate::state::Edel;
 /// Reads the settings now and follows both files from here on.
 pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     state.reload_settings();
+    crate::sun::start(handle, state);
     let inotify = match Inotify::init() {
         Ok(inotify) => inotify,
         Err(e) => {

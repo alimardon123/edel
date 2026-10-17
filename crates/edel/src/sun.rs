@@ -73,11 +73,11 @@ pub fn day(latitude: f64, longitude: f64, day: i64) -> Day {
 /// The equation of time in minutes and the sun's declination in degrees at
 /// `t` seconds since 1970, by NOAA's solar calculator.
 fn sun_at(t: f64) -> (f64, f64) {
-    let julian = t / DAY as f64 + 2_440_587.5;
-    let c = (julian - 2_451_545.0) / 36_525.0;
-    let mean_long = (280.46646 + c * (36_000.76983 + c * 0.000_303_2)).rem_euclid(360.0);
-    let anomaly = 357.52911 + c * (35_999.05029 - 0.000_153_7 * c);
-    let e = 0.016_708_634 - c * (0.000_042_037 + 0.000_000_126_7 * c);
+    let julian = t / DAY as f64 + 2440587.5;
+    let c = (julian - 2451545.0) / 36525.0;
+    let mean_long = (280.46646 + c * (36000.76983 + c * 0.0003032)).rem_euclid(360.0);
+    let anomaly = 357.52911 + c * (35999.05029 - 0.0001537 * c);
+    let e = 0.016708634 - c * (0.000042037 + 0.0000001267 * c);
     let m = anomaly.to_radians();
     let centre = m.sin() * (1.914602 - c * (0.004817 + 0.000014 * c))
         + (2.0 * m).sin() * (0.019993 - 0.000101 * c)
