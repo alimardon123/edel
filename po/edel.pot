@@ -653,6 +653,9 @@ msgstr ""
 msgid "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here."
 msgstr ""
 
+msgid "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out."
+msgstr ""
+
 msgid "Turns one switchable feature, such as ssh or bluetooth, on or off by its name."
 msgstr ""
 
@@ -2055,6 +2058,9 @@ msgid "Lock the screen"
 msgstr ""
 
 msgid "Switch to the next keyboard layout of region.keyboard"
+msgstr ""
+
+msgid "Turn game mode on or off until the next login: a fullscreen game gets variable refresh"
 msgstr ""
 
 msgid "Open or close the tray's apps behind its arrow, with the keyboard on them"

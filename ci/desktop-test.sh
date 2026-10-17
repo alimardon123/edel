@@ -5255,6 +5255,32 @@ case_fullscreen() {
 	wait_for 'DESKTOP-TEST: windows .* full@0,0,1280x800!' || fail "the windows line does not show full at 0,0 1280x800, fullscreen: $(value windows)"
 	shot fullscreen 640 790 33aa66 >/dev/null || fail "640,790, where the panel is, is not full's colour"
 	shot fullscreen 4 4 33aa66 >/dev/null || fail "the top left corner is not full's colour"
+	# Direct scanout (M7.7): full draws in shared memory, so it cannot go
+	# straight to the screen, and the compositor says why.
+	wait_for 'edel-compositor: scanout=unavailable for window full on ' ||
+		fail "the compositor did not say whether full goes straight to the screen"
+	# Game mode (M7.7): the VM has no battery, so power.game_mode's
+	# plugged-in has it on; the virtual screen has no variable refresh,
+	# which the compositor said when it lit it, and the compositor offers
+	# tearing-control-v1. Super+G turns game mode off and on again, each
+	# shown in shell-ui's pop-up over the fullscreen window, the first
+	# kept as game-mode.png; the state file follows.
+	value vrr | grep -q 'edel-compositor: screen [^ ]* has no variable refresh' ||
+		fail "the compositor did not say the screen has no variable refresh: $(value vrr)"
+	case " $(value globals) " in
+	*" wp_tearing_control_manager_v1 "*) ;;
+	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
+	esac
+	game=$(count 'edel-compositor: game mode off \(Super\+G\)')
+	shown=$(count 'edel-shell-ui: osd shown, game mode off')
+	python3 ci/qmp.py key meta_l-g
+	wait_more 'edel-compositor: game mode off \(Super\+G\)' "$game" || fail "Super+G did not turn game mode off"
+	wait_more 'edel-shell-ui: osd shown, game mode off' "$shown" || fail "shell-ui did not show game mode off"
+	shot game-mode 4 4 33aa66 >/dev/null || fail "full did not stay under the game mode pop-up"
+	state_now && grep -q '^game_mode = false' "$dir/state-now.toml" || fail "the state file does not say game_mode = false"
+	game=$(count 'edel-compositor: game mode on \(Super\+G\)')
+	python3 ci/qmp.py key meta_l-g
+	wait_more 'edel-compositor: game mode on \(Super\+G\)' "$game" || fail "Super+G did not turn game mode on again"
 	left=$(count 'edel-compositor: window full not fullscreen')
 	python3 ci/qmp.py key meta_l-f
 	wait_more 'edel-compositor: window full not fullscreen' "$left" || fail "Super+F did not take full out of fullscreen"
@@ -5282,7 +5308,7 @@ case_fullscreen() {
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+F took it out and back; foot went fullscreen and back with Super+F"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
 }
 
 case_portal() {

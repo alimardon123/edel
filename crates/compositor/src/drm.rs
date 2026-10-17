@@ -28,13 +28,16 @@ use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
 use smithay::backend::drm::compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement};
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{
-    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType,
+    DrmDevice, DrmDeviceFd, DrmEvent, DrmEventMetadata, DrmEventTime, DrmNode, NodeType, VrrSupport,
 };
 use smithay::backend::egl::{EGLContext, EGLDisplay};
 use smithay::backend::input::InputEvent;
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
 use smithay::backend::renderer::ImportDma;
-use smithay::backend::renderer::element::default_primary_scanout_output_compare;
+use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
+use smithay::backend::renderer::element::{
+    RenderElementPresentationState, RenderingReason, default_primary_scanout_output_compare,
+};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
@@ -95,6 +98,16 @@ struct Screen {
     locked_frame: bool,
     /// Its first frame was shown and announced.
     ready: bool,
+    /// Whether it changes its refresh with the frames (M7.7), as its
+    /// connector says once lit; only `Supported`, which needs no mode
+    /// change, is used.
+    vrr: VrrSupport,
+    /// What apps are told to draw in for it (M7.7), so a fullscreen window
+    /// can go straight to the screen.
+    feedbacks: Option<crate::dmabuf::Feedbacks>,
+    /// What was last said of the fullscreen window on top (M7.7):
+    /// `scanout=direct` or `scanout=unavailable`, and why.
+    direct: Option<String>,
 }
 
 /// Opens the seat, trying for up to 10 s: at boot greetd may start a
@@ -313,6 +326,9 @@ struct Gpu {
     /// areas a frame says changed, onto one picture of its own
     /// (`draws_whole`).
     whole_frames: bool,
+    /// The GPU buffers offered to apps (M5.19), for each screen's scanout
+    /// feedback (M7.7), and the display device's number.
+    offer: Option<(crate::dmabuf::Offer, u64)>,
 }
 
 /// Whether frames on a screen driven by `driver` must be drawn whole. The
@@ -414,6 +430,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         announced: false,
         started: Instant::now(),
         whole_frames,
+        offer: None,
     }));
     // Apps' GPU buffers (M5.19): the renderer's formats on the GPU's render
     // node, each buffer checked by importing it once.
@@ -425,7 +442,14 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                 _ => node,
             });
     if let Some(device) = device {
-        let formats = gpu.borrow().renderer.dmabuf_formats().into_iter().collect();
+        let formats: Vec<_> = gpu.borrow().renderer.dmabuf_formats().into_iter().collect();
+        if let Ok(display) = DrmNode::from_path(&path) {
+            let offer = crate::dmabuf::Offer {
+                device: device.dev_id(),
+                formats: formats.clone(),
+            };
+            gpu.borrow_mut().offer = Some((offer, display.dev_id()));
+        }
         let importer = Rc::clone(&gpu);
         state.offer_dmabuf(
             device.dev_id(),
@@ -718,6 +742,24 @@ impl Gpu {
             Some(self.gbm.clone()),
         )
         .map_err(|e| anyhow::anyhow!("setting up frames for the screen: {e}"))?;
+        let vrr = compositor
+            .vrr_supported(info.handle())
+            .unwrap_or(VrrSupport::NotSupported);
+        eprintln!(
+            "edel-compositor: {}",
+            match vrr {
+                VrrSupport::Supported => format!("screen {} has variable refresh", output.name()),
+                VrrSupport::RequiresModeset => format!(
+                    "screen {} has variable refresh only with a mode change, so it keeps its own",
+                    output.name()
+                ),
+                VrrSupport::NotSupported =>
+                    format!("screen {} has no variable refresh", output.name()),
+            }
+        );
+        let feedbacks = self.offer.as_ref().and_then(|(offer, display)| {
+            offer.feedbacks(*display, &compositor.surface().plane_info().formats)
+        });
         state.space.map_output(&output, (0, 0));
         self.screens.insert(
             crtc,
@@ -731,6 +773,9 @@ impl Gpu {
                 pending: false,
                 locked_frame: false,
                 ready: false,
+                vrr,
+                feedbacks,
+                direct: None,
             },
         );
         Ok(())
@@ -770,6 +815,7 @@ impl Gpu {
                 continue;
             }
             screen.dirty = false;
+            follow_vrr(screen, state);
             let started = Instant::now();
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
@@ -852,7 +898,12 @@ impl Gpu {
                     .current_mode()
                     .filter(|mode| mode.refresh > 0)
                     .map_or(Refresh::Unknown, |mode| {
-                        Refresh::Fixed(Duration::from_secs_f64(1000.0 / f64::from(mode.refresh)))
+                        let interval = Duration::from_secs_f64(1000.0 / f64::from(mode.refresh));
+                        if screen.compositor.vrr_enabled() {
+                            Refresh::Variable(interval)
+                        } else {
+                            Refresh::Fixed(interval)
+                        }
                     });
                 feedback.presented::<_, Monotonic>(
                     time,
@@ -904,10 +955,86 @@ fn choose_mode(info: &connector::Info, state: &Edel) -> smithay::reexports::drm:
         .unwrap_or(modes[0])
 }
 
+/// Turns variable refresh on for a screen whose fullscreen window runs in
+/// game mode, and off again when that ends (M7.7); a screen that refuses
+/// is not asked again.
+fn follow_vrr(screen: &mut Screen, state: &Edel) {
+    let want = screen.vrr == VrrSupport::Supported && state.wants_vrr(&screen.output);
+    if want == screen.compositor.vrr_enabled() {
+        return;
+    }
+    let name = screen.output.name();
+    match screen.compositor.use_vrr(want) {
+        Ok(()) => eprintln!(
+            "edel-compositor: variable refresh {} on {name}",
+            if want { "on" } else { "off" }
+        ),
+        Err(e) => {
+            eprintln!("edel-compositor: {}", messages::vrr_refused(&name, e));
+            screen.vrr = VrrSupport::NotSupported;
+        }
+    }
+}
+
+/// Tells the windows on a screen the buffers to draw in (M7.7): the
+/// screen's own formats for a window that goes, or could go, straight to
+/// it, else the renderer's; and says, when it changes, whether the
+/// fullscreen window on top goes straight to the screen (`scanout=direct`)
+/// or is drawn by the compositor, and why (`scanout=unavailable`).
+fn send_feedbacks(
+    output: &Output,
+    feedbacks: Option<&crate::dmabuf::Feedbacks>,
+    was: &mut Option<String>,
+    state: &Edel,
+    states: &smithay::backend::renderer::element::RenderElementStates,
+) {
+    if let Some(feedbacks) = feedbacks {
+        for window in state.space.elements() {
+            window.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
+                select_dmabuf_feedback(surface, states, &feedbacks.render, &feedbacks.scanout)
+            });
+        }
+    }
+    let line = state.fullscreen_top(output).map(|window| {
+        let title = crate::decoration::title(window);
+        let shown = window
+            .toplevel()
+            .and_then(|toplevel| states.element_render_state(toplevel.wl_surface()));
+        let why = match shown.map(|shown| shown.presentation_state) {
+            Some(RenderElementPresentationState::ZeroCopy) => None,
+            _ if feedbacks.is_none() => Some("the screen offers apps none of its formats"),
+            Some(RenderElementPresentationState::Rendering {
+                reason: Some(RenderingReason::FormatUnsupported),
+            }) => Some("its buffer is in a format the screen cannot show"),
+            Some(RenderElementPresentationState::Rendering {
+                reason: Some(RenderingReason::ScanoutFailed),
+            }) => Some("the screen refused its buffer"),
+            _ => Some("its buffer is not a GPU buffer the screen can show"),
+        };
+        match why {
+            None => format!("scanout=direct for window {title} on {}", output.name()),
+            Some(why) => format!(
+                "scanout=unavailable for window {title} on {} ({why})",
+                output.name()
+            ),
+        }
+    });
+    if line != *was {
+        if let Some(line) = &line {
+            eprintln!("edel-compositor: {line}");
+        }
+        *was = line;
+    }
+}
+
 /// Draws one screen; returns whether a frame was queued.
 fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut Edel) -> bool {
     let Screen {
-        compositor, output, ..
+        compositor,
+        output,
+        feedbacks,
+        direct,
+        ..
     } = screen;
     let elements = state.elements(renderer, output);
     let frame = match compositor.render_frame(
@@ -936,6 +1063,7 @@ fn render_screen(screen: &mut Screen, renderer: &mut GlesRenderer, state: &mut E
             );
         });
     }
+    send_feedbacks(output, feedbacks.as_ref(), direct, state, &frame.states);
     if frame.is_empty {
         return false;
     }

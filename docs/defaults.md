@@ -92,6 +92,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `power.lock_after_minutes` | `5` | release |
 | `power.power_button` | suspend | release |
 | `power.on_battery` | balanced | release |
+| `power.game_mode` | plugged-in | release |
 | `services.*` | the image's | image |
 | `updates.channel` | the image's | image |
 | `updates.version` | follows the channel | release |

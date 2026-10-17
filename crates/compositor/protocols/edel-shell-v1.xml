@@ -154,5 +154,13 @@
       </description>
       <arg name="closed" type="uint" summary="1 when the lid closed, 0 when it opened"/>
     </event>
+
+    <event name="game_mode">
+      <description summary="game mode went on or off">
+        Game mode went on or off (M7.7), by Super+G or a change of
+        power.game_mode: shell-ui shows it for a moment.
+      </description>
+      <arg name="on" type="uint" summary="1 when game mode is on, 0 when it is off"/>
+    </event>
   </interface>
 </protocol>

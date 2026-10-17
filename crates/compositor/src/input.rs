@@ -512,6 +512,7 @@ impl Edel {
             Act::Tray => self.show_tray(),
             Act::Styles => self.show_styles(),
             Act::Lock => self.ask_lock(),
+            Act::GameMode => self.toggle_game_mode(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
             Act::Overview => self.toggle_overview(),

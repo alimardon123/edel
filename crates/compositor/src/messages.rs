@@ -193,6 +193,13 @@ pub fn frame_not_shown(why: impl Display) -> String {
     format!("could not show a frame: {why}; the screen keeps the one before")
 }
 
+/// A screen refuses variable refresh (M7.7).
+pub fn vrr_refused(screen: &str, why: impl Display) -> String {
+    format!(
+        "screen {screen} refused variable refresh: {why}; it keeps its fixed refresh, and games still run"
+    )
+}
+
 /// The health file cannot be written.
 pub fn ready_not_written(path: &str, why: impl Display) -> String {
     format!(

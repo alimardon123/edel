@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Game mode (M7.7): a game controller. -->
+  <path d="M7.5 7h9a5 5 0 0 1 4.9 6l-.4 2.2a2.5 2.5 0 0 1-4.3 1.2L14.4 15H9.6l-2.3 1.4a2.5 2.5 0 0 1-4.3-1.2L2.6 13A5 5 0 0 1 7.5 7z"/>
+  <path d="M7 10v3M5.5 11.5h3"/>
+  <circle cx="16" cy="10.5" r=".6"/>
+  <circle cx="18.5" cy="13" r=".6"/>
+</svg>

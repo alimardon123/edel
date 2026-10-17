@@ -143,6 +143,15 @@ impl Edel {
         }
     }
 
+    /// Game mode went on or off (M7.7): shell-ui shows it.
+    pub fn tell_game_mode(&self, on: bool) {
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.game_mode(u32::from(on));
+            }
+        }
+    }
+
     /// The launcher's key: shell-ui shows its launcher, or hides it.
     pub fn show_launcher(&self) {
         eprintln!("edel-compositor: launcher");
