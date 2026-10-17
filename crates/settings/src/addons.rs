@@ -33,7 +33,7 @@ const KEY: &str = "addons.installed";
 
 /// The page's line under its title, a sentence of its own.
 const INTRO: &str = n_(
-    "Signed extras to the system, each added or taken away in one switch. A new one downloads at once and starts at the next restart.",
+    "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart.",
 );
 
 /// What the page says when the image has no add-on to offer.
