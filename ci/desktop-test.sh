@@ -716,13 +716,17 @@ case_lid() {
 	locked=$(count 'edel-compositor: screen locked$')
 	opened=$(count 'edel-compositor: lid opened')
 	guest 'lid close'
-	wait_more 'edel-compositor: lid closed' "$closed" || lid_fail "the compositor did not hear the lid close"
-	wait_more 'edel-shell-ui: lid closed: suspend' "$shell" || lid_fail "shell-ui did not take the lid close for suspend"
-	wait_more 'edel-compositor: screen locked$' "$locked" || lid_fail "the screen was not locked before the suspend"
+	# The guest suspends within a second of the lid closing, before its log
+	# lines reach the serial line, so QEMU is asked first and the lines are
+	# read after the wakeup.
 	i=0
 	until [ "$(python3 ci/qmp.py status)" = suspended ]; do
 		i=$((i + 1))
-		[ "$i" -lt 30 ] || lid_fail "QEMU did not report the guest suspended within 30 s of the lid closing"
+		if [ "$i" -ge 30 ]; then
+			wait_more 'edel-compositor: lid closed' "$closed" 1 || lid_fail "the compositor did not hear the lid close"
+			wait_more 'edel-shell-ui: lid closed: suspend' "$shell" 1 || lid_fail "shell-ui did not take the lid close for suspend"
+			lid_fail "QEMU did not report the guest suspended within 30 s of the lid closing"
+		fi
 		sleep 1
 	done
 	sleep 2
@@ -743,6 +747,9 @@ case_lid() {
 		guest 'lid log'
 		sleep 1
 	done
+	wait_more 'edel-compositor: lid closed' "$closed" || lid_fail "the compositor did not hear the lid close"
+	wait_more 'edel-shell-ui: lid closed: suspend' "$shell" || lid_fail "shell-ui did not take the lid close for suspend"
+	wait_more 'edel-compositor: screen locked$' "$locked" || lid_fail "the screen was not locked before the suspend"
 	wait_more 'edel-compositor: lid opened' "$opened" 30 || lid_fail "the compositor did not hear the lid open after the wakeup"
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/lid.png"
