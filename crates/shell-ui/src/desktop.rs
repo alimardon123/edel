@@ -403,13 +403,18 @@ impl Shell {
             return;
         };
         if screen.place != Some(b) {
-            // A new place or size: committed now, drawn once it is configured.
             surface.set_margin(b.y as i32, 0, 0, b.x as i32);
-            surface.set_size(b.w as u32, b.h as u32);
-            surface.commit();
+            let resized = screen.place.is_none_or(|p| p.w != b.w || p.h != b.h);
             screen.place = Some(b);
-            screen.waiting = true;
-            return;
+            if resized {
+                // A new size: committed now, drawn once it is configured.
+                surface.set_size(b.w as u32, b.h as u32);
+                surface.commit();
+                screen.waiting = true;
+                return;
+            }
+            // Only a new place: no configure follows a margin, so the
+            // margin goes with the drawing below, in one commit.
         }
         let scale = screen.scale;
         let (bw, bh) = (b.w as u32, b.h as u32);
