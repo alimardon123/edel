@@ -27,13 +27,15 @@ use edel::places;
 
 use crate::Shell;
 
-/// One app using one or more of the camera, the microphone and the screen.
-/// `client` is the PipeWire client's id (or the stream's, when the stream
-/// has no client), which `pw-cli destroy` takes; `app` the record's id, the
-/// Flatpak app id or the program's name; `name` what people read.
+/// One app using one or more of the camera, the microphone, the screen and
+/// the place (`Kind::Location`, M6.14c). `client` is the PipeWire client's id
+/// (or the stream's, when the stream has no client), which `pw-cli destroy`
+/// takes; none for the place, which no client holds. `app` the record's id,
+/// the Flatpak app id or the program's name; `name` what people read. A row
+/// in both lists keeps PipeWire's client, so its Stop ends only that use.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InUse {
-    pub client: u32,
+    pub client: Option<u32>,
     pub app: String,
     pub name: String,
     pub flatpak: bool,
@@ -269,7 +271,7 @@ impl Graph {
                 };
                 let name = first_of(&[raw_name, binary, app]).unwrap_or("");
                 InUse {
-                    client,
+                    client: Some(client),
                     app: app.to_string(),
                     name: name.to_string(),
                     flatpak,
@@ -336,6 +338,26 @@ pub fn kinds_text(kinds: &[Kind]) -> String {
             &[("first", &rest.join(", ")), ("last", last)],
         ),
     }
+}
+
+/// PipeWire's uses and the place's (M6.14c) as one list: an app in both is one
+/// row, with the kinds of both in `Kind::ALL` order and PipeWire's client, so
+/// its Stop ends its PipeWire use only; the others keep their order, PipeWire's
+/// first.
+pub fn joined(pipewire: &[InUse], location: &[InUse]) -> Vec<InUse> {
+    let mut out = pipewire.to_vec();
+    for used in location {
+        match out.iter_mut().find(|row| row.app == used.app) {
+            Some(row) => {
+                row.kinds = Kind::ALL
+                    .into_iter()
+                    .filter(|kind| row.kinds.contains(kind) || used.kinds.contains(kind))
+                    .collect();
+            }
+            None => out.push(used.clone()),
+        }
+    }
+    out
 }
 
 /// The kinds any of `uses` holds, in `Kind::ALL` order.
@@ -472,11 +494,27 @@ fn now_secs() -> u64 {
 }
 
 impl Shell {
-    /// The uses changed: logs them, writes each use that ended to the
-    /// person's record, and shows the new state on the status area and in
-    /// the card. Logs `in use: ...` (`log_line`), `in use recorded APP KIND
-    /// SECONDS` for each use written, or the error if it was not.
+    /// PipeWire's uses changed (`watch`): they are kept, and the joined list
+    /// is shown (`uses_changed`).
     pub(crate) fn in_use_changed(&mut self, uses: Vec<InUse>) {
+        self.pipewire_uses = uses;
+        self.uses_changed();
+    }
+
+    /// The place's uses changed (`location::watch`, M6.14c): they are kept,
+    /// and the joined list is shown (`uses_changed`).
+    pub(crate) fn location_changed(&mut self, uses: Vec<InUse>) {
+        self.location_uses = uses;
+        self.uses_changed();
+    }
+
+    /// The uses changed, from PipeWire or the place: logs the joined list,
+    /// writes each use that ended to the person's record, and shows the new
+    /// state on the status area and in the card. Logs `in use: ...`
+    /// (`log_line`), `in use recorded APP KIND SECONDS` for each use written,
+    /// or the error if it was not.
+    fn uses_changed(&mut self) {
+        let uses = joined(&self.pipewire_uses, &self.location_uses);
         eprintln!("edel-shell-ui: {}", log_line(&uses));
         let now = now_secs();
         let (started, ended) = changes(&self.in_use_since, &uses);
@@ -557,7 +595,7 @@ mod tests {
         assert_eq!(
             uses,
             vec![InUse {
-                client: 60,
+                client: Some(60),
                 app: "org.gnome.Snapshot".into(),
                 name: "Snapshot".into(),
                 flatpak: true,
@@ -662,7 +700,7 @@ mod tests {
 
     fn used(app: &str, kinds: &[Kind]) -> InUse {
         InUse {
-            client: 1,
+            client: Some(1),
             app: app.into(),
             name: app.into(),
             flatpak: false,
@@ -695,6 +733,31 @@ mod tests {
     }
 
     #[test]
+    fn the_place_joins_the_pipewire_uses_and_keeps_pipewire_s_client() {
+        let mut maps = used("org.gnome.Maps", &[Kind::Location]);
+        maps.client = None;
+        let camera = used("org.gnome.Snapshot", &[Kind::Camera]);
+        let mut place_too = used("org.gnome.Snapshot", &[Kind::Location]);
+        place_too.client = None;
+        // A place alone is a row with no client.
+        assert_eq!(joined(&[], std::slice::from_ref(&maps)), [maps.clone()]);
+        // An app in both is one row: both kinds in Kind::ALL order, and
+        // PipeWire's client, so its Stop ends the PipeWire use only.
+        let both = joined(
+            std::slice::from_ref(&camera),
+            std::slice::from_ref(&place_too),
+        );
+        assert_eq!(both.len(), 1, "{both:?}");
+        assert_eq!(both[0].kinds, [Kind::Camera, Kind::Location]);
+        assert_eq!(both[0].client, Some(1), "PipeWire's client, not none");
+        // PipeWire's rows come first, the place's after.
+        let order = joined(std::slice::from_ref(&camera), std::slice::from_ref(&maps));
+        assert_eq!(order.len(), 2);
+        assert_eq!(order[0].client, Some(1));
+        assert_eq!(order[1].client, None);
+    }
+
+    #[test]
     fn kinds_read_as_a_sentence() {
         assert_eq!(kinds_text(&[]), "");
         assert_eq!(kinds_text(&[Kind::Camera]), "Camera");
@@ -709,6 +772,15 @@ mod tests {
         assert_eq!(
             kinds_of(&[used("a", &[Kind::Screen]), used("b", &[Kind::Camera])]),
             vec![Kind::Camera, Kind::Screen]
+        );
+    }
+
+    #[test]
+    fn the_place_reads_as_location_in_use() {
+        assert_eq!(kinds_text(&[Kind::Location]), "Location");
+        assert_eq!(
+            kinds_text(&[Kind::Camera, Kind::Location]),
+            "Camera and location"
         );
     }
 }

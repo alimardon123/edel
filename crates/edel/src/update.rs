@@ -535,6 +535,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     let disk = Disk::find()?;
     let slot = disk.running.other();
     let target = Path::new("/dev").join(&disk.install_target()?.name);
+    let mut manifest = None;
     let (mut source, expected, size): (Box<dyn Read>, Option<Vec<u8>>, u64) = if unsigned {
         eprintln!(
             "warning: {}",
@@ -544,6 +545,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
         let release = crate::release::open_checked(location, accept)?;
+        manifest = Some(release.manifest);
         (release.reader, Some(release.sha256), release.size)
     };
     let room = size_of(&target)?;
@@ -605,6 +607,11 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         .context(tr("could not start e2fsck"))?;
     if fsck.code() != Some(0) {
         bail!("{}", file_system_errors(slot));
+    }
+    // The add-ons the machine names arrive beside the slot, checked as it
+    // is, before it is switched on (M7.2a).
+    if let Some(manifest) = &manifest {
+        crate::addons::fetch(location, manifest, accept.allow_http, &target)?;
     }
 
     let esp = Esp::mount(&disk)?;
@@ -673,7 +680,7 @@ fn file_system_errors(slot: Slot) -> String {
 }
 
 /// Copies `src` into `dst`, returning the bytes written and their SHA-256.
-fn copy_hashing(src: &mut dyn Read, dst: &mut dyn Write) -> Result<(u64, Vec<u8>)> {
+pub(crate) fn copy_hashing(src: &mut dyn Read, dst: &mut dyn Write) -> Result<(u64, Vec<u8>)> {
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     let mut total = 0u64;

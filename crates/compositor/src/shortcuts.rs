@@ -64,6 +64,8 @@ pub enum Act {
     SwitcherBack,
     /// Show every workspace side by side, or leave that (M5.2j).
     Overview,
+    /// Game mode on or off until the next login (M7.7).
+    GameMode,
 }
 
 impl Act {
@@ -83,6 +85,7 @@ impl Act {
             "switch_windows" => Some(Act::Switcher),
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),
+            "toggle_game_mode" => Some(Act::GameMode),
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),
@@ -204,10 +207,10 @@ pub fn holds_switcher(bindings: &[Binding], modifiers: &ModifiersState) -> bool 
         })
 }
 
-/// The name shell-ui hears for a volume, mute or brightness key
-/// (`edel-shell-v1`'s `media_key`, M5.9c), none for any other key. These
-/// keys mean one thing on every keyboard, so they are no shortcuts to
-/// rebind.
+/// The name shell-ui hears for a volume, mute, brightness or power key
+/// (`edel-shell-v1`'s `media_key`, M5.9c, M7.8 for the power key), none for
+/// any other key. These keys mean one thing on every keyboard, so they are
+/// no shortcuts to rebind.
 pub fn media_key(sym: u32) -> Option<&'static str> {
     use xkb::keysyms as k;
     Some(match sym {
@@ -216,6 +219,7 @@ pub fn media_key(sym: u32) -> Option<&'static str> {
         k::KEY_XF86AudioMute => "mute",
         k::KEY_XF86MonBrightnessUp => "brightness_up",
         k::KEY_XF86MonBrightnessDown => "brightness_down",
+        k::KEY_XF86PowerOff => "power",
         _ => return None,
     })
 }
@@ -294,6 +298,7 @@ mod tests {
             media_key(k::KEY_XF86MonBrightnessDown),
             Some("brightness_down")
         );
+        assert_eq!(media_key(k::KEY_XF86PowerOff), Some("power"));
         assert_eq!(media_key(k::KEY_a), None);
     }
 

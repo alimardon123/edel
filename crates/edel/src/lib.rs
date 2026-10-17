@@ -42,6 +42,7 @@ pub mod keep;
 pub mod key_help;
 pub mod keyboard;
 pub mod languages;
+pub mod location;
 pub mod lock_screen;
 pub mod network;
 pub mod panel_edit;
@@ -51,6 +52,7 @@ pub mod pictures;
 pub mod places;
 pub mod power;
 pub mod presets;
+pub mod profile;
 #[cfg(feature = "os")]
 pub mod scripts;
 #[cfg(feature = "os")]

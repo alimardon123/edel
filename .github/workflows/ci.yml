@@ -56,6 +56,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo clippy -p edel-compositor --all-targets --locked --features winit -- -D warnings
       - run: cargo test --workspace --locked
       - name: Image definitions are valid
         run: for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
@@ -134,7 +135,7 @@ jobs:
           restore-keys: elsewhere-
       - name: Build the compositor, shell-ui and the test client
         if: env.RUN == 'true'
-        run: cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient
+        run: cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient --features edel-compositor/winit
       - name: The desktop runs without Edel OS's folders
         if: env.RUN == 'true'
         run: sh ci/elsewhere-test.sh
@@ -395,7 +396,7 @@ jobs:
             cases: >-
               one-screen scheme terminal accent contrast wallpaper glass completion lock lock-edit lock-looks
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
-              default-apps app-permissions in-use flatpak suspend
+              default-apps app-permissions in-use location flatpak suspend lid
           - part: D
             cases: one-screen language settings-tour theme
     steps:

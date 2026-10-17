@@ -86,6 +86,10 @@ impl Shell {
                 eprintln!("edel-shell-ui: {}: {note}", edel::tokens::PATH);
             }
         }
+        // Any change may change a colour of either scheme, so the apps'
+        // stylesheet is checked here, before the early return below; it is
+        // written only when its text differs (M6.18).
+        crate::apps_colours::follow();
         let tiles = if new.preset != self.chosen.preset {
             let (preset, note) = presets::named(Some(&new.preset));
             if let Some(note) = note {

@@ -1,7 +1,7 @@
 //! `edel-compositor`: windows, floating and tiling, title bars, outputs and
 //! effects (ADR-002). It draws on the GPU through DRM (`drm.rs`), or, when
-//! started inside another desktop for development, in a window there
-//! (`winit.rs`).
+//! started inside another desktop for development (built with the `winit`
+//! feature), in a window there (`winit.rs`).
 //!
 //!     edel-compositor                  run until the window is closed
 //!     edel-compositor --bench          run for 5 s, then print the frame
@@ -17,6 +17,7 @@ mod edelshell;
 mod everyday;
 mod extworkspace;
 mod fullscreen;
+mod games;
 mod glance;
 mod glance_look;
 mod glance_search;
@@ -30,6 +31,7 @@ mod outputs;
 mod pointer;
 mod program;
 mod render;
+mod rounded;
 mod sandbox;
 mod screencopy;
 mod session;
@@ -42,6 +44,7 @@ mod tiers;
 mod toplevels;
 mod wallpaper;
 mod watch;
+#[cfg(feature = "winit")]
 mod winit;
 mod workspaces;
 mod xwayland;
@@ -64,17 +67,27 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    // In a desktop session (development), a window there; else the GPU.
-    let nested = ["WAYLAND_DISPLAY", "DISPLAY"]
+    // Started inside another desktop: a development window there when
+    // built with the `winit` feature (M6.17); else the GPU.
+    let inside = ["WAYLAND_DISPLAY", "DISPLAY"]
         .iter()
         .any(|v| std::env::var_os(v).is_some_and(|s| !s.is_empty()));
-    // A person's session on the screen, not the greeter's or a nested
-    // one, writes to the person's log (M5.28a).
-    let session = !nested && !bench && program.is_none();
+    if inside && !cfg!(feature = "winit") {
+        eprintln!(
+            "edel-compositor: warning: {}",
+            messages::NO_DEVELOPMENT_WINDOW
+        );
+    }
+    // A person's session on the screen, not the greeter's or one
+    // started inside another desktop, writes to the person's log (M5.28a).
+    let session = !inside && !bench && program.is_none();
     if session {
         session_log();
     }
-    let run = if nested { winit::run } else { drm::run };
+    #[cfg(feature = "winit")]
+    let run = if inside { winit::run } else { drm::run };
+    #[cfg(not(feature = "winit"))]
+    let run = drm::run;
     match run(load_tokens(), bench, program) {
         Ok(()) => {
             if session {

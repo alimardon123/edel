@@ -75,6 +75,11 @@ pub fn need(command: &Commands) -> Need {
         Commands::Install { .. } => Need::Password,
         Commands::Status => Need::Anyone,
         Commands::Restart | Commands::Shutdown | Commands::Suspend => Need::Admin,
+        // A profile is how hard the machine works, not what can break or
+        // open it, and the login feature's rule lets the people at the
+        // machine (group seat) set it with no password, so no administrator
+        // is asked for it (M7.8).
+        Commands::Power { .. } => Need::Anyone,
         Commands::Boot { .. } => Need::Admin,
         Commands::Report { esp } => {
             if *esp {
@@ -115,6 +120,8 @@ pub fn need(command: &Commands) -> Need {
             PresetCommands::List => Need::Anyone,
             _ => Need::Admin,
         },
+        // It only reads the signed list and this machine's add-ons.
+        Commands::Addon { .. } => Need::Anyone,
         // A web app is the person's own files, in their own home.
         Commands::WebApp { .. } => Need::Anyone,
     }
@@ -552,6 +559,8 @@ mod tests {
             (&["edel", "theme", "list"], Need::Anyone),
             (&["edel", "theme", "save", "mine"], Need::Admin),
             (&["edel", "theme", "export", "mine"], Need::Admin),
+            (&["edel", "power", "profile"], Need::Anyone),
+            (&["edel", "power", "profile", "balanced"], Need::Anyone),
             (&["edel", "preset", "list"], Need::Anyone),
             (&["edel", "preset", "delete", "mine"], Need::Admin),
             (&["edel", "web-app", "add", "example.org"], Need::Anyone),

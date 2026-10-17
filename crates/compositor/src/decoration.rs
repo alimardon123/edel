@@ -23,13 +23,14 @@ use smithay::reexports::wayland_protocols_misc::server_decoration::server::org_k
 };
 use smithay::reexports::wayland_server::WEnum;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Rectangle, Transform};
+use smithay::utils::{Buffer, Logical, Rectangle, Transform};
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::kde::decoration::{KdeDecorationHandler, KdeDecorationState};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
 
-use edel_compositor::frame::{Border, Insets, Look, Text, paint};
+use edel_compositor::corners;
+use edel_compositor::frame::{Border, Insets, Look, Shown, Text, paint};
 use edel_compositor::tokens::Tokens;
 
 use crate::state::Edel;
@@ -58,6 +59,8 @@ pub struct FrameData {
     pub shape: Option<(smithay::utils::Size<i32, Logical>, bool)>,
     /// Its surfaces as last drawn, for its close animation (M5.11b).
     pub picture: Vec<crate::animate::Part>,
+    /// The border below a rounded title bar, as last drawn (M5.14).
+    pub ring: Option<crate::rounded::Ring>,
 }
 
 impl FrameData {
@@ -77,6 +80,7 @@ impl FrameData {
                 Some((buffer, _)) => buffer,
                 None => MemoryRenderBuffer::new(Fourcc::Argb8888, size, 1, Transform::Normal, None),
             };
+            let opaque = bar_opaque(size, look.radius);
             {
                 let mut context = buffer.render();
                 context.resize(size);
@@ -85,7 +89,7 @@ impl FrameData {
                     Ok(vec![full])
                 });
                 let _ = drawn;
-                context.update_opaque_regions(Some(vec![full]));
+                context.update_opaque_regions(Some(opaque));
             }
             self.bar = Some((buffer, look));
         }
@@ -139,6 +143,21 @@ impl FrameData {
             .as_ref()
             .map(|(buffer, px, border)| (buffer.clone(), *px, *border))
     }
+}
+
+/// The part of a title bar `size` pixels big that is opaque: all of it,
+/// but for the top corners of `radius` pixels, which are see-through, so
+/// what lies under them is drawn (M5.14).
+fn bar_opaque(size: (i32, i32), radius: u32) -> Vec<Rectangle<i32, Buffer>> {
+    let full = Rectangle::from_size(size.into());
+    if radius == 0 {
+        return vec![full];
+    }
+    let r = radius as f32;
+    let squares = corners::corner_squares(size.0, size.1, [r, r, 0.0, 0.0])
+        .into_iter()
+        .map(|(x, y, w, h)| Rectangle::new((x, y).into(), (w, h).into()));
+    Rectangle::subtract_rects_many([full], squares)
 }
 
 /// The frame data of `window`, made when first asked for.
@@ -318,6 +337,18 @@ impl Edel {
 
     pub fn is_maximized(&self, window: &Window) -> bool {
         data(window).borrow().restore.is_some()
+    }
+
+    /// The buttons on `window`'s bar: the person's, but on a dialog (a
+    /// window with a parent, such as Settings' questions) only close, as a
+    /// dialog has nothing to minimize or to fill the screen with (M6.18).
+    pub fn shown(&self, window: &Window) -> Shown {
+        let mut shown = self.settings.buttons;
+        if window.toplevel().is_some_and(|t| t.parent().is_some()) {
+            shown.minimize = false;
+            shown.maximize = false;
+        }
+        shown
     }
 
     pub fn toggle_maximized(&mut self, window: &Window) {

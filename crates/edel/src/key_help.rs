@@ -6,7 +6,10 @@
 //! when a key has no line here or a line names no key.
 
 use crate::i18n::n_;
-use crate::settings::PAGES;
+use crate::settings::{
+    GAME_MODE_DEFAULT, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY_DEFAULT,
+    PAGES, POWER_BUTTON_DEFAULT,
+};
 
 /// Who decides a key's value while the settings file does not set it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -842,19 +845,17 @@ pub const HELP: &[Help] = &[
     Help {
         key: "power.lid_close",
         help: n_(
-            "What closing the lid does: suspend, lock, nothing or power off; this release does not act on it yet.",
+            "What closing the lid does: suspend (locking first), lock, nothing or power off; nothing happens while two or more screens are lit.",
         ),
-        default: "not set yet",
+        default: LID_CLOSE_DEFAULT,
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,
     },
     Help {
         key: "power.lock_after_minutes",
-        help: n_(
-            "How many minutes without input before the screen locks, 0 for never; this release does not act on it yet.",
-        ),
-        default: "not set yet",
+        help: n_("How many minutes without input before the screen locks, 0 for never."),
+        default: LOCK_AFTER_MINUTES_DEFAULT_TEXT,
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,
@@ -862,9 +863,9 @@ pub const HELP: &[Help] = &[
     Help {
         key: "power.power_button",
         help: n_(
-            "What the power button does: suspend, power off, ask or nothing; this release does not act on it yet.",
+            "What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing.",
         ),
-        default: "not set yet",
+        default: POWER_BUTTON_DEFAULT,
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,
@@ -872,9 +873,19 @@ pub const HELP: &[Help] = &[
     Help {
         key: "power.on_battery",
         help: n_(
-            "How hard the machine works on battery: power-saver, balanced or performance; this release does not act on it yet.",
+            "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here.",
         ),
-        default: "not set yet",
+        default: ON_BATTERY_DEFAULT,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "power.game_mode",
+        help: n_(
+            "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out.",
+        ),
+        default: GAME_MODE_DEFAULT,
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,
@@ -985,7 +996,9 @@ pub const HELP: &[Help] = &[
     },
     Help {
         key: "addons.installed",
-        help: n_("The add-ons this machine has, by name; this release does not act on them yet."),
+        help: n_(
+            "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list.",
+        ),
         default: "[]",
         from: DecidedBy::Release,
         belongs: Belongs::Device,
@@ -1037,6 +1050,42 @@ pub const HELP: &[Help] = &[
         default: r#""none""#,
         from: DecidedBy::Release,
         belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "apps.location",
+        help: n_(
+            "Which apps may know where this computer is, by Flatpak app id: allow, ask every time or never.",
+        ),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "location.enabled",
+        help: n_("Off gives every app nothing, whatever each app may use."),
+        default: "true",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "location.place",
+        help: n_("The city apps are told, named by its time zone, such as Asia/Tashkent."),
+        default: "the time zone's city",
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "location.online",
+        help: n_(
+            "Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses.",
+        ),
+        default: "false",
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
         retired: None,
     },
 ];
@@ -1204,6 +1253,24 @@ mod tests {
             Some("layout.preset")
         );
         assert!(find("no.such").is_none());
+    }
+
+    #[test]
+    fn the_power_defaults_are_the_settings_ones() {
+        use crate::settings::LOCK_AFTER_MINUTES_DEFAULT;
+        assert_eq!(
+            LOCK_AFTER_MINUTES_DEFAULT_TEXT.parse::<u32>().ok(),
+            Some(LOCK_AFTER_MINUTES_DEFAULT)
+        );
+        assert_eq!(find("power.lid_close").map(|h| h.default), Some("suspend"));
+        assert_eq!(
+            find("power.power_button").map(|h| h.default),
+            Some("suspend")
+        );
+        assert_eq!(
+            find("power.on_battery").map(|h| h.default),
+            Some("balanced")
+        );
     }
 
     #[test]

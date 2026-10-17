@@ -17,8 +17,8 @@ use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, ButtonState, Device, DeviceCapability, Event,
     GestureBeginEvent, GestureEndEvent, GestureSwipeUpdateEvent, InputBackend, InputEvent,
     KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
-    ProximityState, TabletToolButtonEvent, TabletToolEvent, TabletToolProximityEvent,
-    TabletToolTipEvent, TabletToolTipState,
+    ProximityState, Switch, SwitchState, SwitchToggleEvent, TabletToolButtonEvent, TabletToolEvent,
+    TabletToolProximityEvent, TabletToolTipEvent, TabletToolTipState,
 };
 use smithay::desktop::{LayerSurface, Window, WindowSurfaceType};
 use smithay::input::keyboard::{FilterResult, xkb};
@@ -36,6 +36,7 @@ use edel_compositor::layout::Direction;
 use crate::grabs::{Kind, WindowGrab, nearest_corner};
 use crate::shortcuts::Act;
 use crate::state::Edel;
+use crate::workspaces::Swipe;
 
 /// Linux's codes for the left and right mouse buttons (`BTN_LEFT`,
 /// `BTN_RIGHT`).
@@ -93,6 +94,8 @@ impl Edel {
     /// to F12 asked for.
     pub fn input<B: InputBackend>(&mut self, event: InputEvent<B>) -> Option<i32> {
         let serial = SERIAL_COUNTER.next_serial();
+        // Any input is activity for the idle notifications (M7.8).
+        self.idle_notifier.notify_activity(&self.seat);
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;
@@ -339,28 +342,23 @@ impl Edel {
                 self.tap = None;
                 self.scroll::<B>(event)
             }
-            // Four fingers up on a touchpad open the overview, down leave
-            // it (M5.2j-b4); other swipes are not used yet.
+            // Three fingers across on a touchpad move the workspaces one to
+            // one (M5.14), four up and down open and leave the overview
+            // (M5.2j-b4); the swipe's end decides which it was.
             InputEvent::GestureSwipeBegin { event } => {
                 self.tap = None;
-                self.swipe = Some((event.fingers(), 0.0));
+                self.swipe = Some(Swipe {
+                    fingers: event.fingers(),
+                    dx: 0.0,
+                    dy: 0.0,
+                    held: None,
+                });
             }
             InputEvent::GestureSwipeUpdate { event } => {
-                if let Some((_, dy)) = self.swipe.as_mut() {
-                    *dy += event.delta_y();
-                }
+                self.swipe_moved(event.delta_x(), event.delta_y());
             }
             InputEvent::GestureSwipeEnd { event } => {
-                if let Some((fingers, dy)) = self.swipe.take() {
-                    let open = self.overview.is_some();
-                    if !event.cancelled()
-                        && !self.is_locked()
-                        && edel_compositor::overview::swiped(fingers, dy, open)
-                    {
-                        eprintln!("edel-compositor: overview swipe");
-                        self.toggle_overview();
-                    }
-                }
+                self.swipe_ended(event.cancelled());
             }
             InputEvent::DeviceAdded { device } => {
                 if device.has_capability(DeviceCapability::TabletTool) {
@@ -448,6 +446,16 @@ impl Edel {
                     event.time_msec(),
                 );
             }
+            // The lid (M7.8): shell-ui decides what closing it does. Other
+            // switches, such as tablet mode, are not used yet.
+            InputEvent::SwitchToggle { event } if event.switch() == Some(Switch::Lid) => {
+                let closed = event.state() == SwitchState::On;
+                eprintln!(
+                    "edel-compositor: lid {}",
+                    if closed { "closed" } else { "opened" }
+                );
+                self.tell_lid(closed);
+            }
             _ => {}
         }
         None
@@ -500,6 +508,7 @@ impl Edel {
             Act::Tray => self.show_tray(),
             Act::Styles => self.show_styles(),
             Act::Lock => self.ask_lock(),
+            Act::GameMode => self.toggle_game_mode(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
             Act::Overview => self.toggle_overview(),
@@ -649,14 +658,9 @@ impl Edel {
                 let resizable = !self.is_maximized(window);
                 let at = point - outer.loc.to_f64();
                 let side = self.settings.button_side();
-                if let Some(hit) = frame::hit(
-                    outer.size,
-                    insets,
-                    at,
-                    resizable,
-                    side,
-                    self.settings.buttons,
-                ) {
+                if let Some(hit) =
+                    frame::hit(outer.size, insets, at, resizable, side, self.shown(window))
+                {
                     return Under::Frame(window.clone(), hit);
                 }
             }

@@ -105,6 +105,8 @@ report() {
 	say "tier $(grep 'edel-compositor: tier=' "$session_log" | head -n 1)"
 	# Whether apps may hand over GPU buffers (M5.19), and in how many formats.
 	say "dmabuf $(grep 'GPU buffers' "$session_log" | tail -n 1)"
+	# Whether the screen has variable refresh (M7.7), said when it was lit.
+	say "vrr $(grep 'variable refresh' "$session_log" | head -n 1)"
 	say "tier_now $(grep -o 'tier=[a-z]*' "$session_log" | tail -n 1)"
 	# shell-ui (M5.1b), started by the compositor with the first frame.
 	pid=$(pidof edel-shell-ui)
@@ -310,6 +312,18 @@ commands() {
 			;;
 		'headerbar log') say "headerbar_log $(grep 'headerbar layout' /tmp/headerbar.log 2>/dev/null | tail -n 1)" ;;
 		'headerbar off') pkill -x edel-testheader || true ;;
+		# A libadwaita window (M6.18), as ci on the session's bus, drawing with
+		# Cairo; its lines (the contrast libadwaita heard) go to /tmp/adwaita.log.
+		'headerbar adw')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' GSK_RENDERER=cairo edel-testheader --adw" </dev/null >/tmp/adwaita.log 2>&1 &
+			;;
+		'headerbar adw log') say "adwaita_log $(grep 'adwaita contrast' /tmp/adwaita.log 2>/dev/null | tail -n 1)" ;;
+		# A header bar colour of the person's own in each scheme (M6.18),
+		# taken out again with the whole colours table.
+		'title colours') edel settings set 'appearance.colours.light.title_bar=#f0b8cc' 'appearance.colours.dark.title_bar=#4a2a6a' ;;
+		# The Flatpak permission every person has, so apps read gtk.css (M6.18).
+		'flatpak override') say "flatpak_override $(as_ci 'flatpak override --user --show' </dev/null 2>&1 | tr '\n' ' ')" ;;
 		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.
@@ -901,6 +915,13 @@ commands() {
 			say "suspend_log $(joined /tmp/suspend.log 2>/dev/null)"
 			say "suspend_dmesg $(dmesg | grep -iE 'PM: suspend (entry|exit)|ACPI: PM: (Preparing|Waking)' | tail -4 | joined)"
 			;;
+		# The lid (M7.8): edel-testclient --lid 8, as root, shuts a lid switch
+		# on uinput for 8 s and opens it, its log in /tmp/lid.log. The host
+		# sends `lid close`, then `lid log` once it has the answer it waits for.
+		'lid close')
+			modprobe uinput 2>/dev/null; edel-testclient --lid 8 </dev/null >/tmp/lid.log 2>&1 &
+			;;
+		'lid log') say "lid_log $(joined /tmp/lid.log 2>/dev/null)" ;;
 		# Power and Users (M5.8b): what upower lists as ci (`upower -e` must
 		# exit 0: QEMU has no battery, so it lists the display device and
 		# perhaps a power cable), whether upowerd runs, Settings on each page
@@ -1191,6 +1212,45 @@ commands() {
 			pkill -f 'pw-record --target edel-test-mic'
 			as_ci "pw-cli destroy edel-test-camera; pw-cli destroy edel-test-mic; edel settings reset apps.microphone" </dev/null >/dev/null 2>&1
 			say "in_use_off $?"
+			;;
+		# Location (M6.14c): the machine's city, as root, written for
+		# GeoClue by apply; what Test A may have, as ci; Test A asking
+		# the Location portal from its sandbox, holding the place 8 s;
+		# the person's switch; and GeoClue's sockets, which must hold no
+		# network address while the lookup is off.
+		'location place')
+			edel settings set location.place=Asia/Tashkent </dev/null >/tmp/location-apply.log 2>&1 &&
+				edel settings apply </dev/null >>/tmp/location-apply.log 2>&1
+			say "location_place $? $(tr '\n' ';' </etc/geolocation 2>&1 | cut -c1-300)"
+			;;
+		'location allow' | 'location never')
+			as_ci "edel settings set 'apps.location={ \"org.edel.TestA\" = \"${command#location }\" }'" </dev/null >/dev/null 2>&1
+			say "location_choice $?"
+			;;
+		'location ask')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' flatpak run --command=edel-testclient org.edel.TestA --location 8" </dev/null >/tmp/location.log 2>&1
+			say "location_answer $(tr '\n' ';' </tmp/location.log | cut -c1-300)"
+			;;
+		'location off')
+			as_ci "edel settings set location.enabled=false" </dev/null >/dev/null 2>&1
+			say "location_off $?"
+			;;
+		'location sockets')
+			pid=$(pidof geoclue || pidof geoclue-2.0 || true)
+			found=none
+			if [ -n "$pid" ]; then
+				found=0
+				for inode in $(ls -l /proc/"$pid"/fd 2>/dev/null | sed -n 's/.*socket:\[\([0-9]*\)\].*/\1/p'); do
+					grep -qs " $inode " /proc/net/tcp /proc/net/tcp6 /proc/net/udp /proc/net/udp6 && found=$((found + 1))
+				done
+			fi
+			say "location_sockets $found $(ls /etc/geoclue/conf.d 2>&1 | tr '\n' ' ')"
+			;;
+		'location reset')
+			as_ci "edel settings reset apps.location location.enabled" </dev/null >/dev/null 2>&1
+			edel settings reset location.place </dev/null >/dev/null 2>&1 && edel settings apply </dev/null >/dev/null 2>&1
+			say "location_reset $? $(cat /etc/geolocation 2>&1 | head -n 1)"
 			;;
 		'settings app log') say "settings_app_log $(tr '\n' ';' </tmp/settings-app.log 2>/dev/null)" ;;
 		'app permissions show')

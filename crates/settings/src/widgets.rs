@@ -5,7 +5,7 @@
 //! own, the look is `style.rs`'s from the tokens, and another toolkit
 //! would be these few functions again (ADR-004).
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -15,7 +15,8 @@ use gtk::{gdk, gio, glib, graphene};
 use edel::i18n::{tr, trf};
 use edel::tokens::Colour;
 
-use crate::icon;
+use crate::files::Files;
+use crate::{actions, icon, rows};
 
 /// How wide a page's text and cards grow before they stop and centre,
 /// margins included, so lines stay easy to read on a wide screen.
@@ -911,6 +912,7 @@ pub fn ask_name(
         .modal(true)
         .resizable(false)
         .default_width(360)
+        .css_classes(["edel"])
         .build();
     if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
         window.set_transient_for(Some(&parent));
@@ -971,6 +973,99 @@ pub fn ask_name(
     entry.select_region(0, -1);
 }
 
+/// A yes or no question in our own look: `message` as the heading,
+/// `detail` under it, then Cancel and `act`, in a small modal window over
+/// `near`'s, titled `act`. Cancel is the default (Return) and Escape
+/// closes, so the safe answer is the easy one; `danger` draws `act` in
+/// the problem colour, as a Delete is. `done` runs once, on `act`.
+pub fn confirm(
+    near: &gtk::Widget,
+    message: &str,
+    detail: &str,
+    act: &str,
+    danger: bool,
+    done: impl FnOnce() + 'static,
+) {
+    let window = gtk::Window::builder()
+        .title(act)
+        .modal(true)
+        .resizable(false)
+        .default_width(360)
+        .css_classes(["edel"])
+        .accessible_role(gtk::AccessibleRole::AlertDialog)
+        .build();
+    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    window.update_property(&[gtk::accessible::Property::Label(message)]);
+    let heading = gtk::Label::builder()
+        .label(message)
+        .xalign(0.0)
+        .wrap(true)
+        .css_classes(["edel-prompt-title"])
+        .build();
+    let body = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(6)
+        .margin_top(20)
+        .margin_bottom(20)
+        .margin_start(20)
+        .margin_end(20)
+        .build();
+    body.append(&heading);
+    if !detail.is_empty() {
+        let under = gtk::Label::builder()
+            .label(detail)
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-prompt-detail"])
+            .build();
+        body.append(&under);
+    }
+    let cancel = action(tr("Cancel"), false);
+    let act_button = action(act, !danger);
+    if danger {
+        act_button.add_css_class("edel-danger");
+    }
+    let buttons = gtk::Box::builder()
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .margin_top(14)
+        .build();
+    buttons.append(&cancel);
+    buttons.append(&act_button);
+    body.append(&buttons);
+    window.set_child(Some(&body));
+    window.set_default_widget(Some(&cancel));
+
+    let keys = gtk::EventControllerKey::new();
+    let closing = window.clone();
+    keys.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Escape {
+            closing.close();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    window.add_controller(keys);
+
+    let close = window.clone();
+    cancel.connect_clicked(move |_| close.close());
+    type Once = Box<dyn FnOnce()>;
+    let pending: Rc<RefCell<Option<Once>>> = Rc::new(RefCell::new(Some(Box::new(done))));
+    let (dialog, run) = (window.clone(), pending);
+    act_button.connect_clicked(move |_| {
+        dialog.close();
+        let next = run.borrow_mut().take();
+        if let Some(done) = next {
+            done();
+        }
+    });
+    window.present();
+    cancel.grab_focus();
+}
+
 /// Asks whether to delete `message` (Delete), with Cancel as the default and
 /// the escape key, and runs `delete` on Delete.
 pub fn ask_delete(
@@ -980,20 +1075,7 @@ pub fn ask_delete(
     delete: &str,
     done: impl FnOnce() + 'static,
 ) {
-    let parent = near.root().and_downcast::<gtk::Window>();
-    let dialog = gtk::AlertDialog::builder()
-        .modal(true)
-        .message(message)
-        .detail(detail)
-        .buttons(vec![tr("Cancel"), delete])
-        .cancel_button(0)
-        .default_button(0)
-        .build();
-    dialog.choose(parent.as_ref(), gio::Cancellable::NONE, move |answer| {
-        if matches!(answer, Ok(1)) {
-            done();
-        }
-    });
+    confirm(near, message, detail, delete, true, done);
 }
 
 /// Shows that `button` copied: its icon a check for a moment.
@@ -1488,6 +1570,123 @@ impl Segments {
         }
         *self.buttons.borrow_mut() = buttons;
         self.set_selected(at);
+    }
+}
+
+/// The words of an `edel settings set KEY=VALUE` line for a machine key,
+/// the Settings action's words first.
+pub(crate) fn set_words(key: &str, value: &str) -> Vec<String> {
+    actions::SET
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .chain(std::iter::once(format!("{key}={value}")))
+        .collect()
+}
+
+/// The words of an `edel settings reset KEY` for a machine key.
+pub(crate) fn reset_words(key: &str) -> Vec<String> {
+    actions::RESET
+        .args
+        .iter()
+        .map(|word| word.to_string())
+        .chain(std::iter::once(key.to_string()))
+        .collect()
+}
+
+/// The line an administrator types for a machine key: the doas line, as
+/// Copy as command gives it (`AS_ROOT` names the tool, written nowhere else).
+pub(crate) fn root_command(pairs: &[(&str, String)]) -> String {
+    format!("{} {}", edel::places::AS_ROOT, rows::command(pairs))
+}
+
+/// An exit status as the log shows it; `none` when the command did not run.
+pub(crate) fn exit_text(code: Option<i32>) -> String {
+    code.map_or_else(|| "none".to_string(), |code| code.to_string())
+}
+
+/// The settings files a page follows while it is open: the machine's and
+/// the person's, each watched for changes.
+pub(crate) fn monitors(files: &Files) -> Vec<gio::FileMonitor> {
+    std::iter::once(&files.machine)
+        .chain(files.person.as_ref())
+        .filter_map(|path| {
+            gio::File::for_path(path)
+                .monitor_file(gio::FileMonitorFlags::WATCH_MOVES, gio::Cancellable::NONE)
+                .ok()
+        })
+        .collect()
+}
+
+/// One row's parts for a page that writes its row through `Line` (M6.11,
+/// shared with the Location page, M6.14c): its row, the key's words and the
+/// note of its value, and the message of a change the machine refused,
+/// which replaces the line until the next change.
+pub(crate) struct Line {
+    pub(crate) row: Row,
+    /// The key's help (`edel::key_help`), marked for translation.
+    pub(crate) help: &'static str,
+    /// A second sentence under the help, or nothing.
+    pub(crate) extra: &'static str,
+    /// Whether the key is the machine's, so its Reset shows when it is set
+    /// anywhere but the release.
+    pub(crate) machine: bool,
+    pub(crate) problem: RefCell<String>,
+}
+
+impl Line {
+    pub(crate) fn new(
+        group: &gtk::Box,
+        key: &str,
+        control: &gtk::Widget,
+        extra: &'static str,
+        machine: bool,
+    ) -> Line {
+        Line {
+            row: row(group, rows::title(key), control),
+            help: edel::key_help::find(key).map_or("", |line| line.help),
+            extra,
+            machine,
+            problem: RefCell::new(String::new()),
+        }
+    }
+
+    /// The line's words: the help, the extra sentence, then where the value
+    /// comes from (`Set by this machine`, `Your choice`, or nothing).
+    fn words(&self, source: &edel::settings::Source) -> String {
+        let mut text = [self.help, self.extra]
+            .into_iter()
+            .filter(|part| !part.is_empty())
+            .map(tr)
+            .collect::<Vec<&str>>()
+            .join(" ");
+        if let Some(note) = rows::note(source, false) {
+            text = if text.is_empty() {
+                note.to_string()
+            } else {
+                format!("{text} · {note}")
+            };
+        }
+        text
+    }
+
+    /// Shows the line and whether Reset is there: the words, or a refused
+    /// change's message in the problem colour.
+    pub(crate) fn show(&self, source: &edel::settings::Source) {
+        let problem = self.problem.borrow();
+        if problem.is_empty() {
+            self.row.subtitle.remove_css_class("edel-error");
+            self.row.subtitle.set_label(&self.words(source));
+        } else {
+            self.row.subtitle.add_css_class("edel-error");
+            self.row.subtitle.set_label(problem.as_str());
+        }
+        let reset = if self.machine {
+            !matches!(source, edel::settings::Source::Release)
+        } else {
+            rows::resettable(source)
+        };
+        self.row.reset.set_visible(reset);
     }
 }
 

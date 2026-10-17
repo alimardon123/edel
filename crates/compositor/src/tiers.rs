@@ -35,7 +35,7 @@ pub fn renderer_name(renderer: &mut GlesRenderer) -> String {
 }
 
 /// Whether the machine runs on a battery that is discharging.
-fn on_battery() -> bool {
+pub fn on_battery() -> bool {
     let Ok(supplies) = fs::read_dir("/sys/class/power_supply") else {
         return false;
     };

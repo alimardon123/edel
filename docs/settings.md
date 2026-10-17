@@ -360,10 +360,11 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `power.lid_close` | What closing the lid does: suspend, lock, nothing or power off; this release does not act on it yet. | not set yet | release |
-| `power.lock_after_minutes` | How many minutes without input before the screen locks, 0 for never; this release does not act on it yet. | not set yet | release |
-| `power.power_button` | What the power button does: suspend, power off, ask or nothing; this release does not act on it yet. | not set yet | release |
-| `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; this release does not act on it yet. | not set yet | release |
+| `power.lid_close` | What closing the lid does: suspend (locking first), lock, nothing or power off; nothing happens while two or more screens are lit. | suspend | release |
+| `power.lock_after_minutes` | How many minutes without input before the screen locks, 0 for never. | `5` | release |
+| `power.power_button` | What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing. | suspend | release |
+| `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here. | balanced | release |
+| `power.game_mode` | When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out. | plugged-in | release |
 
 ### `notifications`
 
@@ -416,12 +417,21 @@ This page has no key in the file.
 | `apps.screenshots` | Which apps may take a screenshot without asking, by Flatpak app id: allow or never. | `{}` | release |
 | `apps.notifications` | Which apps may show notifications, by Flatpak app id: allow or never. | `{}` | release |
 | `apps.files` | Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id. | `{}` | release |
+| `apps.location` | Which apps may know where this computer is, by Flatpak app id: allow, ask every time or never. | `{}` | release |
+
+### `location`
+
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `location.enabled` | Off gives every app nothing, whatever each app may use. | `true` | release |
+| `location.place` | The city apps are told, named by its time zone, such as Asia/Tashkent. | the time zone's city | release |
+| `location.online` | Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses. | `false` | release |
 
 ### `addons`
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `addons.installed` | The add-ons this machine has, by name; this release does not act on them yet. | `[]` | release |
+| `addons.installed` | The add-ons this machine has, by name; each arrives with the next update and is in edel addon list. | `[]` | release |
 
 ### `services`
 

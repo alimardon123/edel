@@ -4,6 +4,7 @@
 //! files. Add-ons (ADR-007) will live here too, so there is one tool to
 //! learn. The settings file parser is the library half (`edel::settings`).
 
+mod addons;
 mod boot;
 mod completion;
 mod data;
@@ -28,7 +29,7 @@ mod speaker_boot;
 mod system_power;
 mod update;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{FromArgMatches, Parser, Subcommand};
@@ -145,6 +146,12 @@ enum Commands {
     Shutdown,
     /// Suspend this machine to memory now; a key or the power button wakes it
     Suspend,
+    /// power: how hard the machine works, its power profile; shell-ui sets it
+    /// on battery and on the charger, as power.on_battery says
+    Power {
+        #[command(subcommand)]
+        command: PowerCommands,
+    },
     /// Steps the boot services run
     #[command(hide = true)]
     Boot {
@@ -222,12 +229,26 @@ enum Commands {
         #[command(subcommand)]
         command: PresetCommands,
     },
+    /// addon: software beside the system, such as more fonts or printing,
+    /// that arrives with an update and goes as easily; the same as in the
+    /// settings file's addons.installed
+    Addon {
+        #[command(subcommand)]
+        command: AddonCommands,
+    },
     /// web-app: a website made an app, with its own window, name and icon in
     /// the launcher; it runs in Firefox with a profile of its own
     WebApp {
         #[command(subcommand)]
         command: WebAppCommands,
     },
+}
+
+#[derive(Subcommand)]
+enum AddonCommands {
+    /// List the add-ons of this machine's channel, marked installed, built
+    /// in or chosen
+    List,
 }
 
 #[derive(Subcommand)]
@@ -286,6 +307,17 @@ enum ThemeCommands {
         /// The .edeltheme file to read; a file that does not check is refused
         #[arg(value_name = "FILE")]
         file: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum PowerCommands {
+    /// Show the power profile the kernel uses and the ones it offers, or set
+    /// it: power-saver, balanced or performance
+    Profile {
+        /// The profile to set, as power.on_battery names them
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
     },
 }
 
@@ -427,6 +459,9 @@ enum ReleaseCommands {
         /// Write release.toml here instead of beside the images
         #[arg(long, value_name = "DIR")]
         out: Option<PathBuf>,
+        /// An add-on, IMAGE.NAME.ext4.gz beside the images, with its feature file IMAGE.NAME.toml beside it; can be given more than once
+        #[arg(long = "addon", value_name = "FILE")]
+        addons: Vec<PathBuf>,
         /// The update images, all in one directory
         #[arg(required = true)]
         images: Vec<PathBuf>,
@@ -472,6 +507,18 @@ struct BuildArgs {
     /// own files; for test images. Can be given more than once.
     #[arg(long = "files", value_name = "DIR")]
     extra_files: Vec<PathBuf>,
+    /// An add-on to build from this image's root, beside the definition's
+    /// own; for test images. Can be given more than once.
+    #[arg(long = "addon", value_name = "NAME")]
+    addons: Vec<String>,
+    /// Another directory of feature files to find add-ons in; for test
+    /// images.
+    #[arg(long = "features", value_name = "DIR")]
+    feature_dirs: Vec<PathBuf>,
+    /// Build none of the definition's own add-ons, only those --addon
+    /// names; for test images, which need no released add-on.
+    #[arg(long)]
+    no_addons: bool,
     /// Seconds the boot guard waits for health before the watchdog
     /// restarts the machine, instead of the definition's; for test images
     #[arg(long, value_name = "SECS")]
@@ -572,14 +619,53 @@ impl Commands {
             Commands::Restart => "restart",
             Commands::Shutdown => "shutdown",
             Commands::Suspend => "suspend",
+            Commands::Power { .. } => "power",
             Commands::Install { .. } => "install",
             Commands::Report { .. } => "report",
             Commands::Settings { .. } => "settings",
             Commands::Theme { .. } => "theme",
             Commands::Preset { .. } => "preset",
             Commands::WebApp { .. } => "web-app",
+            Commands::Addon { .. } => "addon",
         }
     }
+}
+
+/// The add-ons `edel image build --addon` names (M7.2a), found beside the
+/// definition and in the `--features` directories, each checked by the
+/// rules the definition's own add-ons meet.
+fn resolve_addons(
+    definition: &Path,
+    image: &ImageDef,
+    names: &[String],
+    dirs: &[PathBuf],
+) -> Result<Vec<def::Listed>> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let def_dir = definition
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut all = def::feature_dirs(def_dir)?;
+    all.extend(dirs.iter().cloned());
+    let mut found = def::find_features(&all)?;
+    let known: Vec<String> = found.keys().cloned().collect();
+    let mut listed: Vec<def::Listed> = Vec::new();
+    for name in names {
+        if image.addons.iter().chain(&listed).any(|l| &l.name == name) {
+            bail!("add-on {name} is listed twice");
+        }
+        let Some(addon) = found.remove(name) else {
+            bail!(
+                "unknown feature {name}; the features are {}",
+                known.join(", ")
+            );
+        };
+        def::check_addon(image, &addon)?;
+        listed.push(addon);
+    }
+    Ok(listed)
 }
 
 fn run(command: Commands) -> Result<()> {
@@ -603,6 +689,9 @@ fn run(command: Commands) -> Result<()> {
                     dropped_apps,
                     no_compress,
                     plan,
+                    addons,
+                    feature_dirs,
+                    no_addons,
                 } = *args;
                 if let Some(id) = apps
                     .iter()
@@ -626,7 +715,11 @@ fn run(command: Commands) -> Result<()> {
                         )
                     );
                 }
-                let def = ImageDef::load(&definition)?;
+                let mut def = ImageDef::load(&definition)?;
+                if no_addons {
+                    def.addons.clear();
+                }
+                let extra_addons = resolve_addons(&definition, &def, &addons, &feature_dirs)?;
                 let def_dir = definition.parent().map(PathBuf::from).unwrap_or_default();
                 // apk and mount get absolute paths, so nothing depends on
                 // which directory a tool happens to run in.
@@ -648,6 +741,7 @@ fn run(command: Commands) -> Result<()> {
                     def: &def,
                     def_dir,
                     extra_files,
+                    extra_addons,
                     health_timeout,
                     slot_mib,
                     extra_keys: public_keys,
@@ -698,6 +792,7 @@ fn run(command: Commands) -> Result<()> {
                 channel,
                 base_url,
                 out,
+                addons,
                 images,
             } => release::make(
                 &version,
@@ -705,6 +800,7 @@ fn run(command: Commands) -> Result<()> {
                 base_url.as_deref(),
                 out.as_deref(),
                 &images,
+                &addons,
             )
             .map(|_| ()),
             ReleaseCommands::Sign {
@@ -761,6 +857,9 @@ fn run(command: Commands) -> Result<()> {
         Commands::Restart => system_power::run(system_power::Action::Restart),
         Commands::Shutdown => system_power::run(system_power::Action::ShutDown),
         Commands::Suspend => system_power::run(system_power::Action::Suspend),
+        Commands::Power { command } => match command {
+            PowerCommands::Profile { name } => system_power::profile(name.as_deref()),
+        },
         Commands::Install { list: true, .. } => installer::list(),
         Commands::Install {
             find_settings: true,
@@ -815,6 +914,9 @@ fn run(command: Commands) -> Result<()> {
                 ..
             }) => first_boot::first_person(&user, &assignments),
             Some(SettingsCommands::FirstBoot { .. }) => first_boot::console(),
+        },
+        Commands::Addon { command } => match command {
+            AddonCommands::List => addons::list(),
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => machine::theme_list(),

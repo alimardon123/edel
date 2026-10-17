@@ -14,8 +14,8 @@ use edel::tokens::Tokens;
 use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
-use crate::paint::{Text, fill, outline};
-use crate::popup::{self, Card, Rect, icon_in, raised, veil};
+use crate::paint::{Face, Text, fill, outline};
+use crate::popup::{self, Card, Rect, dim, icon_in, raised, veil};
 use crate::quick;
 
 /// The slider's length, logical pixels.
@@ -25,11 +25,16 @@ pub const GAP: f32 = 10.0;
 /// How long the pop-up stays after the last key, milliseconds.
 pub const MS: u64 = 1500;
 
-/// What the pop-up sets: the sound's volume or the screen's brightness.
+/// What the pop-up sets: the sound's volume or the screen's brightness, or
+/// game mode, on or off (M7.7): Super+G or `power.game_mode`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Volume,
     Brightness,
+    /// Game mode, on or off (M7.7): Super+G or `power.game_mode`.
+    Game {
+        on: bool,
+    },
 }
 
 /// What the pop-up shows and where the pointer is.
@@ -115,16 +120,18 @@ pub fn places(l: &Layout) -> String {
 }
 
 /// The quick settings page the pop-up's button opens: Sound for the
-/// volume, Displays for the brightness.
+/// volume, Displays for the brightness, Power for game mode (M7.7).
 pub fn page(kind: Kind) -> &'static str {
     match kind {
         Kind::Volume => quick::SOUND_PAGE,
         Kind::Brightness => quick::DISPLAYS_PAGE,
+        Kind::Game { .. } => quick::POWER_PAGE,
     }
 }
 
 /// What a screen reader finds: the slider with its value and the button
-/// that opens its page.
+/// that opens its page, or for game mode the label that says it is on or
+/// off and the button to Power settings.
 pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
     let at = |r: Rect| {
         accesskit::Rect::new(
@@ -134,9 +141,20 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
             f64::from(r.y + r.h),
         )
     };
-    let (slider, button) = match view.kind {
-        Kind::Volume => (tr("Volume"), tr("Sound settings")),
-        Kind::Brightness => (tr("Brightness"), tr("Display settings")),
+    let (role, first, value, button) = match view.kind {
+        Kind::Volume => (
+            Role::Slider,
+            tr("Volume"),
+            Some((f64::from(view.percent), 0.0, 100.0)),
+            tr("Sound settings"),
+        ),
+        Kind::Brightness => (
+            Role::Slider,
+            tr("Brightness"),
+            Some((f64::from(view.percent), 0.0, 100.0)),
+            tr("Display settings"),
+        ),
+        Kind::Game { on } => (Role::Label, game_words(on), None, tr("Power settings")),
     };
     let item = |role, label: &str, bounds, value| Item {
         role,
@@ -148,33 +166,68 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
         value_text: None,
     };
     vec![
-        item(
-            Role::Slider,
-            slider,
-            at(l.track),
-            Some((f64::from(view.percent), 0.0, 100.0)),
-        ),
+        item(role, first, at(l.track), value),
         item(Role::Button, button, at(l.more), None),
     ]
 }
 
+/// The words of game mode's pill: "Game mode on" or "Game mode off" (M7.7).
+fn game_words(on: bool) -> &'static str {
+    if on {
+        tr("Game mode on")
+    } else {
+        tr("Game mode off")
+    }
+}
+
+/// Draws game mode's pill (M7.7): the empty track, the game icon lit in the
+/// accent when on and dim when off, and the words after it, set as quick
+/// settings' slider sets its icon and its number. No level fill.
+fn game_pill(
+    pixmap: &mut Pixmap,
+    track: Rect,
+    on: bool,
+    text: Option<&mut Text>,
+    tokens: &Tokens,
+    s: f32,
+) {
+    quick::bar_empty(pixmap, track, tokens, s);
+    let ink = if on { tokens.accent } else { dim(tokens) };
+    icon_in(pixmap, "game", 16.0, quick::bar_icon(track), s, ink);
+    if let Some(text) = text {
+        let size = quick::BAR_TEXT * s;
+        // The words start 10 px after the icon and end 14 px in from the right.
+        let left = quick::bar_icon(track).right() + 10.0;
+        let room = (track.right() - 14.0 - left) * s;
+        let mut line = text.fit_in(game_words(on), size, room, Face::SEMIBOLD);
+        let top = quick::bar_text_top(track, s, size);
+        text.draw(pixmap, &mut line, left * s, top, tokens.panel_text);
+    }
+}
+
 /// Draws `view` at `s` into `pixmap`, which is the pop-up's size times it:
-/// the two cards, the slider on the first with the level, and the button on
-/// the second with its chevron. Without `text`, everything but the words.
+/// the two cards, the slider on the first with the level (game mode's pill
+/// on the first instead), and the button on the second with its chevron.
+/// Without `text`, everything but the words.
 pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: Option<&mut Text>, s: f32) {
     let l = layout(view);
     popup::cards(pixmap, tokens, s, &cards(&l));
-    let icon = match view.kind {
-        Kind::Volume => quick::volume_icon(view.percent, view.muted),
-        Kind::Brightness => "brightness",
-    };
-    let bar = quick::Bar {
-        percent: view.percent,
-        muted: view.muted,
-        icon,
-        focused: false,
-    };
-    quick::slider(pixmap, l.track, bar, text, tokens, s);
+    match view.kind {
+        Kind::Game { on } => game_pill(pixmap, l.track, on, text, tokens, s),
+        Kind::Volume | Kind::Brightness => {
+            let icon = match view.kind {
+                Kind::Brightness => "brightness",
+                _ => quick::volume_icon(view.percent, view.muted),
+            };
+            let bar = quick::Bar {
+                percent: view.percent,
+                muted: view.muted,
+                icon,
+                focused: false,
+            };
+            quick::slider(pixmap, l.track, bar, text, tokens, s);
+        }
+    }
     // The round button: raised, edged, lit a little under the pointer.
     let (x, y, w, h) = l.more.device(s);
     let hair = (0.5 * s).max(1.0);
@@ -255,6 +308,51 @@ mod tests {
     fn each_kind_opens_its_own_page() {
         assert_eq!(page(Kind::Volume), "sound");
         assert_eq!(page(Kind::Brightness), "displays");
+        assert_eq!(page(Kind::Game { on: true }), "power");
+        assert_eq!(page(Kind::Game { on: false }), "power");
+    }
+
+    #[test]
+    fn game_mode_says_on_or_off_and_its_button_opens_power_settings() {
+        for (on, words) in [(true, "Game mode on"), (false, "Game mode off")] {
+            let v = view(Kind::Game { on }, 0, false);
+            let heard = nodes(&v, &layout(&v));
+            assert_eq!(heard.len(), 2);
+            assert_eq!(heard[0].role, Role::Label);
+            assert_eq!(heard[0].label, words);
+            assert_eq!(heard[0].value, None);
+            assert_eq!(heard[1].role, Role::Button);
+            assert_eq!(heard[1].label, "Power settings");
+        }
+    }
+
+    #[test]
+    fn game_mode_paints_its_icon_lit_when_on_and_dim_when_off() {
+        let tokens = Tokens::built_in();
+        for s in [1.0_f32, 2.0] {
+            let icon = |on: bool| {
+                let v = view(Kind::Game { on }, 0, false);
+                let l = layout(&v);
+                let mut pixmap =
+                    Pixmap::new((l.size.0 as f32 * s) as u32, (l.size.1 as f32 * s) as u32)
+                        .unwrap();
+                paint(&mut pixmap, &v, &tokens, None, s);
+                let (x, y, w, h) = quick::bar_icon(l.track).device(s);
+                let stride = pixmap.width() as usize * 4;
+                let mut out = Vec::new();
+                for row in y as usize..(y + h) as usize {
+                    let start = row * stride + x as usize * 4;
+                    out.extend_from_slice(&pixmap.data()[start..start + w as usize * 4]);
+                }
+                out
+            };
+            // Both paint at scale 1; the icon's pixels are compared at
+            // scale 2, where the icon has pixels to tell apart.
+            let (on, off) = (icon(true), icon(false));
+            if s == 2.0 {
+                assert_ne!(on, off, "on and off look alike");
+            }
+        }
     }
 
     #[test]

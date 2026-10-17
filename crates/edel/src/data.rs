@@ -111,10 +111,6 @@ fn missing_var_entries(slot: &Path, data: &Path) -> Result<Vec<PathBuf>> {
     Ok(missing)
 }
 
-/// Account files a machine copies into its own `/etc` once a person or a
-/// package adds a user.
-const ACCOUNT_FILES: [&str; 3] = ["passwd", "group", "shadow"];
-
 /// Lines of the slot's account file (`slot`) whose name, the first field,
 /// is missing from the machine's copy (`machine`): users and groups a
 /// newer slot adds, which the machine's own copy would otherwise hide.
@@ -193,12 +189,22 @@ fn overlay_etc() -> Result<()> {
     let (upper, work) = (data.join("etc/upper"), data.join("etc/work"));
     fs::create_dir_all(&upper)?;
     fs::create_dir_all(&work)?;
-    for file in ACCOUNT_FILES {
+    for file in crate::addons::ACCOUNT_FILES {
+        let file = file.strip_prefix("etc/").unwrap_or(file);
         let machine_path = upper.join(file);
+        // The mounted add-ons' users and groups (M7.2a) join the slot's;
+        // a machine without its own copy gets one, from the slot's.
+        let addons = crate::addons::account_lines(file);
+        if !addons.is_empty() && !machine_path.exists() {
+            run(Command::new("cp")
+                .arg("-a")
+                .arg(Path::new("/etc").join(file))
+                .arg(&machine_path))?;
+        }
         let Ok(machine) = fs::read_to_string(&machine_path) else {
             continue;
         };
-        let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default();
+        let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default() + &addons;
         if let Some(merged) = merge_accounts(&slot, &machine) {
             replace_keeping_mode(&machine_path, &merged)?;
             println!("edel-data: added the slot's new entries to /etc/{file}");
@@ -215,6 +221,17 @@ fn overlay_etc() -> Result<()> {
         .arg("/etc"))
     .context("cannot mount the /etc overlay")?;
     println!("edel-data: /etc changes are kept on {MOUNT_POINT}");
+    // OpenRC read the services before this layer was there, so a service
+    // whose script the layer links in, an add-on's (M7.2a), would never
+    // start without this. It costs a moment, only at a boot with such an
+    // add-on.
+    if crate::addons::has_services() {
+        if let Err(err) = run(&mut base::reread_services()) {
+            eprintln!(
+                "warning: edel-data: OpenRC could not read the add-ons' services again, so they may not start: {err:#}"
+            );
+        }
+    }
     Ok(())
 }
 
@@ -257,6 +274,14 @@ fn bind_home_and_var() -> Result<()> {
                 .arg("-a")
                 .arg(Path::new("/var").join(&rel))
                 .arg(dest.parent().unwrap_or(data)))?;
+        }
+        // What the mounted add-ons keep in /var (M7.2a), wherever this
+        // machine lacks it; nothing of the machine's is replaced.
+        for dir in crate::addons::var_dirs() {
+            run(Command::new("cp")
+                .args(["-a", "-n"])
+                .arg(format!("{}/.", dir.display()))
+                .arg(data.join("var")))?;
         }
         // Flatpak hands apps the first fonts' cache folder that exists, and
         // this one would be stale after an update, so the slot's cache
@@ -375,6 +400,7 @@ pub fn mount_data() -> Result<()> {
     // must not also leave /home, /var and /tmp off /data.
     let mut first_error = None;
     for (step, result) in [
+        ("add-ons", crate::addons::mount_all()),
         ("/etc", overlay_etc()),
         ("/home, /var and /root", bind_home_and_var()),
         ("/tmp", tmp_on_tmpfs()),

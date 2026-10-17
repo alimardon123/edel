@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 77] = [
+pub const BUILT_IN: [(&str, &str); 79] = [
     ("menu", include_str!("../../../design/icons/menu.svg")),
     ("more", include_str!("../../../design/icons/more.svg")),
     // Customize, a look's edit (M5.10c7b).
@@ -223,11 +223,17 @@ pub const BUILT_IN: [(&str, &str); 77] = [
         include_str!("../../../design/icons/chevron-up.svg"),
     ),
     ("gear", include_str!("../../../design/icons/gear.svg")),
+    // The game mode pop-up's pill (M7.7).
+    ("game", include_str!("../../../design/icons/game.svg")),
     // The notification centre's and the Do not disturb tile's (M5.9b).
     ("bell", include_str!("../../../design/icons/bell.svg")),
     // What an app may use (M6.14a), each permission's own; the bell is
     // the notifications'.
     ("camera", include_str!("../../../design/icons/camera.svg")),
+    (
+        "location",
+        include_str!("../../../design/icons/location.svg"),
+    ),
     (
         "microphone",
         include_str!("../../../design/icons/microphone.svg"),

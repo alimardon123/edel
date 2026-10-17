@@ -1,6 +1,7 @@
 //! `edel image build`: turns an image definition into a container tarball or
 //! a bootable A/B VM disk, using Alpine's own `apk` to install packages.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::Read;
 
@@ -11,8 +12,9 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use edel::features;
 
+use crate::addons;
 use crate::boot::{self, Layout};
-use crate::def::{ImageDef, Variant};
+use crate::def::{ImageDef, Listed, Variant};
 use crate::run::{Runner, ensure_nothing_mounted_under};
 
 const MIB: u64 = 1024 * 1024;
@@ -30,6 +32,9 @@ pub struct Build<'a> {
     /// for test images. Not part of the definition, so a release image can
     /// never pick them up by accident.
     pub extra_files: Vec<PathBuf>,
+    /// More add-ons to build, by name, beside the definition's; for test
+    /// images (M7.2a).
+    pub extra_addons: Vec<Listed>,
     /// Another health timeout in seconds, for test images (M1.5).
     pub health_timeout: Option<u64>,
     /// Another slot size in MiB, for test images.
@@ -122,10 +127,12 @@ impl Build<'_> {
         self.enable_services(&root)?;
         self.configure(&root)?;
 
-        match def.variant {
+        let packed = match def.variant {
             Variant::Container => self.pack_container(&root),
             Variant::Vm => self.pack_vm(&work, &root),
-        }
+        };
+        packed?;
+        self.build_addons(&work, &root)
     }
 
     fn prepare_root(&self, work: &Path, root: &Path) -> Result<()> {
@@ -328,16 +335,22 @@ impl Build<'_> {
     fn copy_files(&self, root: &Path) -> Result<()> {
         let dirs = self.def.features.iter().filter_map(|f| f.files.clone());
         for src in dirs.chain(self.extra_files.iter().cloned()) {
-            if !self.runner.dry_run && !src.is_dir() {
-                bail!("files directory {} does not exist", src.display());
-            }
-            // "src/." copies the directory's contents, including dotfiles.
-            // Plain -R (not -a) so copies are owned by root, not by whoever
-            // checked out the repository; modes such as +x are kept.
-            self.runner
-                .run(Command::new("cp").arg("-R").arg(src.join(".")).arg(root))?;
+            self.copy_tree(&src, root)?;
         }
         Ok(())
+    }
+
+    /// Copies the files of one folder (a feature's `features/NAME/`, or a
+    /// test's `--files`) over `root`.
+    fn copy_tree(&self, src: &Path, root: &Path) -> Result<()> {
+        if !self.runner.dry_run && !src.is_dir() {
+            bail!("files directory {} does not exist", src.display());
+        }
+        // "src/." copies the directory's contents, including dotfiles.
+        // Plain -R (not -a) so copies are owned by root, not by whoever
+        // checked out the repository; modes such as +x are kept.
+        self.runner
+            .run(Command::new("cp").arg("-R").arg(src.join(".")).arg(root))
     }
 
     /// Copies the running `edel` into the image as `/usr/bin/edel`, the
@@ -360,7 +373,7 @@ impl Build<'_> {
         // The data partition's mount point; / may be read-only at boot.
         fs::create_dir_all(root.join("data"))?;
         let exe = std::env::current_exe().context("finding the running edel binary")?;
-        let dest = root.join("usr/bin/edel");
+        let dest = root.join(edel::places::EDEL_BIN.trim_start_matches('/'));
         fs::create_dir_all(root.join("usr/bin"))?;
         fs::copy(&exe, &dest).with_context(|| format!("copying {}", exe.display()))?;
         fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
@@ -790,7 +803,7 @@ impl Build<'_> {
 
         let loader = work.join("esp");
         self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
-        self.make_slot(root, &update, slot_mib)?;
+        self.make_slot(root, &update, slot_mib, "edel")?;
         self.shrink(&update)?;
         // Slot A is the update image itself, byte for byte, as every slot
         // stays what was signed (M1.12): GRUB finds a slot by its
@@ -860,7 +873,9 @@ impl Build<'_> {
             .run(Command::new("pigz").args(["-k", "-f", "-n"]).arg(file))
     }
 
-    fn make_slot(&self, root: &Path, image: &Path, size_mib: u64) -> Result<()> {
+    /// Makes the file system `image` of `root`'s files, labelled `label`:
+    /// the slot's is `edel`, an add-on's its name (M7.2a).
+    fn make_slot(&self, root: &Path, image: &Path, size_mib: u64, label: &str) -> Result<()> {
         self.runner.step(&format!(
             "create a sparse {size_mib} MiB slot image {}",
             image.display()
@@ -874,7 +889,9 @@ impl Build<'_> {
         // left a booted slot 6 bytes off its signed image (M1.12).
         self.runner.run(
             Command::new("mkfs.ext4")
-                .args(["-q", "-F", "-O", "^has_journal", "-L", "edel", "-d"])
+                .args(["-q", "-F", "-O", "^has_journal", "-L"])
+                .arg(label)
+                .arg("-d")
                 .arg(root)
                 .arg(image),
         )
@@ -1028,6 +1045,370 @@ impl Build<'_> {
                 .arg(on_esp(&format!("{}/", boot::GRUB_PREFIX))),
         )
     }
+
+    /// Builds the image's add-ons (M7.2a) once the image is packed. Each
+    /// starts as a copy of the root and gets its packages and files; what
+    /// it adds becomes its own tree, packed as `OUT/IMAGE.NAME.ext4` with
+    /// its feature file beside it. Packages come from the image's own
+    /// package index, so an add-on matches the image exactly.
+    fn build_addons(&self, work: &Path, root: &Path) -> Result<()> {
+        let list: Vec<&Listed> = self.def.addons.iter().chain(&self.extra_addons).collect();
+        if list.is_empty() {
+            return Ok(());
+        }
+        // A plan has no cache yet, so it names a placeholder for it.
+        let cache = match &self.apk_cache {
+            Some(cache) if self.runner.dry_run || has_index(cache) => cache.clone(),
+            None if self.runner.dry_run => PathBuf::from("APK_CACHE"),
+            _ => bail!(
+                "building add-ons needs --apk-cache with the image's package index, so they match the image exactly"
+            ),
+        };
+        let before = if self.runner.dry_run {
+            BTreeMap::new()
+        } else {
+            addons::scan(root)?
+        };
+        let (mut trees, mut sets) = (Vec::new(), Vec::new());
+        for addon in list {
+            let (files, accounts) = self.build_addon(work, root, addon, &before, &cache)?;
+            trees.push((addon.name.clone(), files));
+            sets.push((addon.name.clone(), accounts));
+        }
+        let clashes = addons::account_clashes(&sets);
+        if !clashes.is_empty() {
+            bail!(
+                "add-ons clash in the account database: {}",
+                clashes.join("; ")
+            );
+        }
+        let tree_of = |name: &str| work.join("addons").join(name).join("tree");
+        let same = |path: &str, a: &str, b: &str| {
+            same_entry(&tree_of(a).join(path), &tree_of(b).join(path))
+        };
+        let collisions = addons::collisions(&trees, &same);
+        if !collisions.is_empty() {
+            let cache = collisions.iter().any(|line| {
+                line.split_once(" is shipped by ")
+                    .is_some_and(|(path, _)| addons::is_merged_cache(path))
+            });
+            let second = if cache {
+                "; a cache two add-ons both change goes with its packages into one add-on"
+            } else {
+                ""
+            };
+            bail!(
+                "add-ons ship the same files: {}{second}",
+                collisions.join("; ")
+            );
+        }
+        Ok(())
+    }
+
+    /// Builds one add-on (see [`Build::build_addons`]). Returns the files
+    /// its tree ships and its new account lines, for the checks that span
+    /// the add-ons.
+    fn build_addon(
+        &self,
+        work: &Path,
+        root: &Path,
+        addon: &Listed,
+        before: &BTreeMap<String, addons::Stamp>,
+        cache: &Path,
+    ) -> Result<(Vec<String>, String)> {
+        let name = addon.name.as_str();
+        let dir = work.join("addons").join(name);
+        let a_root = dir.join("rootfs");
+        let tree = dir.join("tree");
+
+        self.runner.step(&format!(
+            "start add-on {name} from a copy of the image's root in {}",
+            a_root.display()
+        ));
+        if !self.runner.dry_run {
+            if dir.exists() {
+                ensure_nothing_mounted_under(&dir)?;
+                fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))?;
+            }
+            fs::create_dir_all(&dir)?;
+        }
+        self.runner.run(
+            Command::new("cp")
+                .arg("-a")
+                .arg(root.join("."))
+                .arg(&a_root),
+        )?;
+        if addon.feature.packages.is_empty() {
+            self.runner
+                .step(&format!("add-on {name} installs no packages"));
+        } else {
+            // The package scripts run inside the copy, so it needs proc, sys
+            // and dev too; the mounts end with this block.
+            let _mounts = self.runner.mount_kernel_fs(&a_root)?;
+            let mut apk = Command::new("apk");
+            apk.arg("--root")
+                .arg(&a_root)
+                .args(["--arch", &self.def.arch, "--no-progress"]);
+            self.runner.run(
+                apk.arg("--cache-dir")
+                    .arg(cache)
+                    .arg("add")
+                    .args(&addon.feature.packages),
+            )?;
+        }
+        if let Some(files) = &addon.files {
+            self.copy_tree(files, &a_root)?;
+        }
+        self.runner.step(&format!(
+            "write the feature file of {name} to {}",
+            features::DIR
+        ));
+        if !self.runner.dry_run {
+            let features_dir = a_root.join(features::DIR.trim_start_matches('/'));
+            fs::create_dir_all(&features_dir)?;
+            fs::write(features_dir.join(format!("{name}.toml")), &addon.text)?;
+        }
+
+        let (files, accounts) =
+            self.make_addon_tree(name, root, &a_root, &tree, before, &addon.feature.keep)?;
+        self.pack_addon(name, &tree, &addon.text)?;
+        Ok((files, accounts))
+    }
+
+    /// Makes an add-on's tree (M7.2a): what its copy of the root adds, less
+    /// what its `[[keep]]` lists leave out, sorted by `addons::plan_tree`
+    /// into the slot's layout. Returns the files it ships and its new
+    /// account lines, then takes its copy of the root away.
+    fn make_addon_tree(
+        &self,
+        name: &str,
+        root: &Path,
+        a_root: &Path,
+        tree: &Path,
+        before: &BTreeMap<String, addons::Stamp>,
+        keeps: &[edel::keep::Keep],
+    ) -> Result<(Vec<String>, String)> {
+        self.runner.step(&format!(
+            "make the tree of add-on {name} at {}, with only the files it adds",
+            tree.display()
+        ));
+        if self.runner.dry_run {
+            return Ok((Vec::new(), String::new()));
+        }
+        let after = addons::scan(a_root)?;
+        let mut diff = addons::diff(before, &after);
+        keep_addon(name, keeps, &mut diff, &after)?;
+        let plan = addons::plan_tree(&diff, &after, name)?;
+        let is_dir = |path: &str| after.get(path).is_some_and(|s| s.dir);
+
+        fs::create_dir_all(tree)?;
+        let mut shipped = Vec::new();
+        let mut merged = Vec::new();
+        for copy in &plan.copies {
+            if !is_dir(&copy.from) {
+                // A merged cache is in the image by design, so only any other
+                // path the image already has is refused.
+                let is_merged = plan.merged.contains(&copy.to);
+                if !is_merged && root.join(&copy.to).symlink_metadata().is_ok() {
+                    bail!(
+                        "{} is already in the image; add-on {name} cannot ship it",
+                        copy.to
+                    );
+                }
+                // The packages rewrite the MIME database though nothing in it
+                // changed; the image's copy shows through the overlay instead.
+                if is_merged && same_entry(&root.join(&copy.to), &a_root.join(&copy.to)) {
+                    continue;
+                }
+                if is_merged {
+                    merged.push(copy.to.clone());
+                }
+                shipped.push(copy.to.clone());
+            }
+            copy_into_tree(a_root, tree, copy)?;
+        }
+        // One line per add-on in the build's log: what it ships, the caches
+        // it carries a merged copy of, those left out, and the base's small
+        // tools it keeps where a package brought its own.
+        let mut line = format!("add-on {name}: {} files", shipped.len());
+        for (what, list) in [
+            ("keeps the merged caches", addons::folded(&merged)),
+            ("left out the system caches", addons::folded(&plan.caches)),
+            (
+                "keeps the base's small tools at",
+                diff.kept_applets.join(", "),
+            ),
+        ] {
+            if !list.is_empty() {
+                line.push_str(&format!(", {what}: {list}"));
+            }
+        }
+        println!("{line}");
+        let mut accounts = String::new();
+        for path in &plan.accounts {
+            let read = |base: &Path| {
+                fs::read_to_string(base.join(path)).with_context(|| format!("reading {path}"))
+            };
+            let (image, addon) = (read(root)?, read(a_root)?);
+            let changed = addons::changed_accounts(&image, &addon);
+            if !changed.is_empty() {
+                let names = changed.join(", ");
+                eprintln!(
+                    "warning: add-on {name} changes the image's {path} line of {names}; the image's line stays, so put what it needs into the feature's files"
+                );
+            }
+            let new = addons::new_accounts(&image, &addon);
+            if new.is_empty() {
+                continue;
+            }
+            let file = path.rsplit('/').next().unwrap_or(path);
+            let dir = tree.join(addons::accounts_dir(name));
+            fs::create_dir_all(&dir)?;
+            fs::write(dir.join(file), &new)?;
+            let mode = if file == "shadow" { 0o640 } else { 0o644 };
+            fs::set_permissions(dir.join(file), fs::Permissions::from_mode(mode))?;
+            accounts.push_str(&new);
+        }
+
+        ensure_nothing_mounted_under(a_root)?;
+        fs::remove_dir_all(a_root).with_context(|| format!("removing {}", a_root.display()))?;
+        Ok((shipped, accounts))
+    }
+
+    /// Packs an add-on's tree as `OUT/IMAGE.NAME.ext4`, a file system the
+    /// tree's size plus a fifth and 8 MiB, shrunk and gzipped as a slot is,
+    /// with its feature file beside it as `OUT/IMAGE.NAME.toml` (M7.2a).
+    fn pack_addon(&self, name: &str, tree: &Path, text: &str) -> Result<()> {
+        let stem = self.def.stem();
+        let image = self.out.join(format!("{stem}.{name}.ext4"));
+        // A plan has no tree to measure, so it shows the smallest size.
+        let size_mib = if self.runner.dry_run {
+            8
+        } else {
+            let mib = tree_bytes(tree)?.div_ceil(MIB);
+            mib + mib.div_ceil(5) + 8
+        };
+        // ext4 labels are at most 16 bytes; names are a-z, 0-9 and '-'.
+        let label = &name[..name.len().min(16)];
+        self.make_slot(tree, &image, size_mib, label)?;
+        self.shrink(&image)?;
+        self.gzip(&image)?;
+        let feature = self.out.join(format!("{stem}.{name}.toml"));
+        self.runner.step(&format!(
+            "write the feature file of {name} to {}",
+            feature.display()
+        ));
+        if !self.runner.dry_run {
+            fs::write(&feature, text)?;
+        }
+        Ok(())
+    }
+}
+
+/// Takes out of an add-on's new files what its `[[keep]]` lists do not keep
+/// (M7.2a), as the image's own `[[keep]]` does for its packages: under each
+/// folder, the new files a listed pattern matches stay. A pattern that
+/// matches no new file is a mistake, as in the image. The image's own files
+/// are never touched: only `diff.new` changes.
+fn keep_addon(
+    name: &str,
+    keeps: &[edel::keep::Keep],
+    diff: &mut addons::Diff,
+    after: &BTreeMap<String, addons::Stamp>,
+) -> Result<()> {
+    for keep in keeps {
+        let under = keep.under.trim_matches('/');
+        let prefix = format!("{under}/");
+        // Whether a new file below the folder is one the list keeps.
+        let keeps_it = |path: &str| {
+            keep.files
+                .iter()
+                .any(|pattern| edel::keep::matches(pattern, &path[prefix.len()..]))
+        };
+        let files: Vec<&str> = diff
+            .new
+            .iter()
+            .map(String::as_str)
+            .filter(|p| p.starts_with(&prefix) && after.get(*p).is_some_and(|s| !s.dir))
+            .collect();
+        for pattern in &keep.files {
+            if !files
+                .iter()
+                .any(|p| edel::keep::matches(pattern, &p[prefix.len()..]))
+            {
+                bail!(
+                    "add-on {name}: keep pattern {pattern:?} under /{under} matches no new file; fix the list in the feature"
+                );
+            }
+        }
+        let total = files.len();
+        let taken: BTreeSet<String> = files
+            .iter()
+            .copied()
+            .filter(|path| !keeps_it(path))
+            .map(str::to_string)
+            .collect();
+        let kept = total - taken.len();
+        diff.new.retain(|p| !taken.contains(p));
+        println!(
+            "add-on {name}: kept {kept} files under /{under}, took out {}",
+            taken.len()
+        );
+    }
+    Ok(())
+}
+
+/// Whether two add-ons' trees hold the same entry at `a` and `b`: links
+/// to one target, or files with the same mode and bytes (M7.2a).
+fn same_entry(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    let (Ok(ma), Ok(mb)) = (fs::symlink_metadata(a), fs::symlink_metadata(b)) else {
+        return false;
+    };
+    if ma.file_type().is_symlink() || mb.file_type().is_symlink() {
+        return fs::read_link(a)
+            .ok()
+            .is_some_and(|t| fs::read_link(b).ok() == Some(t));
+    }
+    ma.mode() == mb.mode()
+        && ma.len() == mb.len()
+        && fs::read(a)
+            .ok()
+            .is_some_and(|bytes| fs::read(b).ok() == Some(bytes))
+}
+
+/// Copies one path of an add-on's root into its tree (M7.2a): a folder or
+/// a file with its mode and owner, a link with its target. Parents the plan
+/// does not name are made as root's folders.
+fn copy_into_tree(a_root: &Path, tree: &Path, copy: &addons::Copy) -> Result<()> {
+    use std::os::unix::fs::MetadataExt;
+
+    let src = a_root.join(&copy.from);
+    let dst = tree.join(&copy.to);
+    let meta = fs::symlink_metadata(&src).with_context(|| format!("reading {}", src.display()))?;
+    if let Some(parent) = dst.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let link = meta.file_type().is_symlink();
+    if link {
+        let target = match &copy.link {
+            Some(target) => PathBuf::from(target),
+            None => fs::read_link(&src)?,
+        };
+        std::os::unix::fs::symlink(&target, &dst)
+            .with_context(|| format!("linking {}", dst.display()))?;
+    } else if meta.is_dir() {
+        fs::create_dir_all(&dst)?;
+    } else {
+        fs::copy(&src, &dst).with_context(|| format!("copying {}", src.display()))?;
+    }
+    if !link {
+        fs::set_permissions(&dst, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
+    }
+    std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
+        .with_context(|| format!("setting the owner of {}", dst.display()))?;
+    Ok(())
 }
 
 /// The data partition's size in MiB (M6.2): the definition's, or more
@@ -1654,6 +2035,62 @@ mod tests {
         let missing = gl_missing(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
         assert!(missing.is_empty(), "{missing:?}");
+    }
+
+    /// M7.2a: an add-on's `[[keep]]` takes out only its new files that no
+    /// pattern keeps, and never a file the image already had.
+    #[test]
+    fn an_add_on_keeps_only_the_new_files_its_keep_lists() {
+        let stamp = |dir: bool| addons::Stamp {
+            dir,
+            size: 1,
+            mtime: 0,
+            mode: 0o644,
+            link: None,
+        };
+        let after: BTreeMap<String, addons::Stamp> = [
+            ("usr", true),
+            ("usr/share", true),
+            ("usr/share/fonts", true),
+            ("usr/share/fonts/NotoSansCJK-Regular.ttf", false),
+            ("usr/share/fonts/DejaVu.ttf", false),
+        ]
+        .into_iter()
+        .map(|(path, dir)| (path.to_string(), stamp(dir)))
+        .collect();
+        let keep = edel::keep::Keep {
+            under: "usr/share/fonts".into(),
+            files: vec!["NotoSansCJK-*".into()],
+            newest: Vec::new(),
+            newest_by: None,
+        };
+        let mut diff = addons::Diff {
+            new: after.keys().cloned().collect(),
+            ..Default::default()
+        };
+        keep_addon("fonts-cjk", &[keep], &mut diff, &after).unwrap();
+        assert_eq!(
+            diff.new,
+            [
+                "usr",
+                "usr/share",
+                "usr/share/fonts",
+                "usr/share/fonts/NotoSansCJK-Regular.ttf"
+            ]
+        );
+
+        let missing = edel::keep::Keep {
+            under: "usr/share/fonts".into(),
+            files: vec!["Hack-*".into()],
+            newest: Vec::new(),
+            newest_by: None,
+        };
+        let mut diff = addons::Diff {
+            new: after.keys().cloned().collect(),
+            ..Default::default()
+        };
+        let err = keep_addon("fonts-hack", &[missing], &mut diff, &after).unwrap_err();
+        assert!(err.to_string().contains("matches no new file"), "{err}");
     }
 
     #[test]

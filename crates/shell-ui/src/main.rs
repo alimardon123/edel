@@ -21,6 +21,7 @@ mod access_card;
 mod app_permissions;
 mod app_windows;
 mod app_windows_card;
+mod apps_colours;
 mod apps_drag;
 mod banner;
 mod calendar;
@@ -39,6 +40,7 @@ mod in_use_card;
 mod in_use_menu;
 mod launcher;
 mod link;
+mod location;
 mod lock;
 mod lock_card;
 mod lock_editor;
@@ -62,6 +64,8 @@ mod player;
 mod popup;
 mod portal;
 mod power;
+mod power_card;
+mod power_rules;
 mod quick;
 mod quick_card;
 mod sessions;
@@ -96,6 +100,9 @@ use smithay_client_toolkit::reexports::client::protocol::{
     wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface,
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
+use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::{
+    ext_idle_notification_v1::ExtIdleNotificationV1, ext_idle_notifier_v1::ExtIdleNotifierV1,
+};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
@@ -114,6 +121,8 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
@@ -130,6 +139,7 @@ use crate::notify_card::{BannerCard, CentreCard};
 use crate::osd_card::OsdCard;
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
+use crate::power_rules::Rules;
 use crate::quick_card::QuickCard;
 use crate::tray_card::TrayCard;
 use crate::widgets::{Action, Input, Live};
@@ -286,8 +296,14 @@ struct Shell {
     /// The apps using the camera, the microphone or the screen now, as
     /// `in_use.rs` reads them, and when each (app, kind) use began, seconds
     /// since 1970, for the record of use (M6.14b). `in_use_sign` is the sign's
-    /// place as last logged.
+    /// place as last logged. `in_use` is the sign's list: PipeWire's uses
+    /// (`pipewire_uses`) and the place's (`location_uses`, M6.14c) joined.
     in_use: Vec<in_use::InUse>,
+    pipewire_uses: Vec<in_use::InUse>,
+    location_uses: Vec<in_use::InUse>,
+    /// The apps set to ask for the place every time, as `app_permissions`
+    /// reads them, which `location.rs` deletes the entries of (M6.14c).
+    location_asked: Arc<Mutex<Vec<String>>>,
     in_use_since: HashMap<(String, edel::app_use::Kind), u64>,
     in_use_sign: String,
     /// Scrolling over a panel not yet a whole step.
@@ -323,6 +339,23 @@ struct Shell {
     session_lock: smithay_client_toolkit::session_lock::SessionLockState,
     lock: Option<lock_card::LockCard>,
     lock_tx: channel::Sender<lock::Checked>,
+    /// The power rules the settings files give (M7.8: the lid, the power
+    /// button, the idle lock and the profile), read at start and at each
+    /// change; `power_card.rs` acts on them.
+    rules: Rules,
+    /// A suspend asked while the screen was not locked yet: it runs once the
+    /// lock is drawn (M7.8).
+    suspend_after_lock: bool,
+    /// Whether a suspend or a shut down is under way, shared with its thread
+    /// for the guard after it (M7.8).
+    suspending: Arc<AtomicBool>,
+    /// The compositor's idle notifier, and the notification that locks the
+    /// screen after the lock time (M7.8).
+    idle_notifier: Option<ExtIdleNotifierV1>,
+    idle_notification: Option<ExtIdleNotificationV1>,
+    /// The power profile last asked of `edel`, until the kernel shows it
+    /// (M7.8).
+    profile_asked: Option<String>,
     exit: bool,
 }
 
@@ -463,6 +496,8 @@ fn run() -> Result<()> {
     let (preset, scheme) = from_system_files();
     // foot's theme follows the scheme, and a running foot repaints (M6.13).
     terminal::follow(scheme == Scheme::Dark);
+    // Apps' colours follow ours too (M6.18): their gtk.css is written now.
+    apps_colours::follow();
     let tokens = load_tokens(scheme);
     let connection = Connection::connect_to_env().context(messages::NO_COMPOSITOR)?;
     let (globals, queue) = registry_queue_init(&connection).context(messages::NO_GLOBALS)?;
@@ -517,11 +552,30 @@ fn run() -> Result<()> {
         EventLoop::try_new().context("starting the event loop")?;
     let (status_tx, status_rx) = channel::channel::<status::Msg>();
     let (edits, asks) = channel::channel::<shell_bus::Edit>();
-    let buttons = {
+    let (buttons, high) = {
         let (machine, person) = settings_texts();
-        button_layout(machine.as_deref(), person.as_deref())
+        (
+            button_layout(machine.as_deref(), person.as_deref()),
+            edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref()),
+        )
+    };
+    let rules = {
+        let (machine, person) = settings_texts();
+        Rules::read(machine.as_deref(), person.as_deref())
+    };
+    // The portal's Location switch (M6.14c): the person's file over the
+    // machine's, the way the Do not disturb key is read.
+    let location_off = {
+        let (machine, person) = settings_texts();
+        !location::enabled(machine.as_deref(), person.as_deref())
     };
     let mut shell = Shell {
+        rules,
+        suspend_after_lock: false,
+        suspending: Arc::new(AtomicBool::new(false)),
+        idle_notifier: power_card::bind_idle(&globals, &qh),
+        idle_notification: None,
+        profile_asked: None,
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -578,6 +632,9 @@ fn run() -> Result<()> {
         status_again: None,
         status_tx,
         in_use: Vec::new(),
+        pipewire_uses: Vec::new(),
+        location_uses: Vec::new(),
+        location_asked: Arc::default(),
         in_use_since: HashMap::new(),
         in_use_sign: String::new(),
         flip: None,
@@ -588,7 +645,7 @@ fn run() -> Result<()> {
         chosen: chosen(),
         text: Text::load(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens, &buttons, edits),
+        _portal: portal::serve(&tokens, &buttons, high, edits, location_off),
         app_permissions: None,
         player_tx: None,
         tokens,
@@ -603,12 +660,28 @@ fn run() -> Result<()> {
     // What each app may use (M6.14a): laid on at start, then at each change
     // of the settings files (`settings_changed`).
     let (machine, person) = settings_texts();
-    app_permissions::follow(
+    let asked = app_permissions::follow(
         shell._portal.as_ref(),
         &mut shell.app_permissions,
         machine.as_deref(),
         person.as_deref(),
     );
+    location::set_asked(&shell.location_asked, asked);
+    // The place (M6.14c): followed on the portal's connection, where the
+    // location feature is installed and the portal is served. Its uses join
+    // the sign's (`location_changed`).
+    if let (true, Some(connection)) = (location::feature_there(features), shell._portal.clone()) {
+        let (place_tx, place) = channel::channel::<Vec<in_use::InUse>>();
+        event_loop
+            .handle()
+            .insert_source(place, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(uses) = event {
+                    shell.location_changed(uses);
+                }
+            })
+            .map_err(|e| anyhow::anyhow!("watching the place: {e}"))?;
+        location::watch(connection, shell.location_asked.clone(), place_tx);
+    }
     // The portal and the tray share the session's bus and zbus's thread
     // for it; the tray's news reaches the loop over a channel (M5.2e), but
     // only when a panel holds the widget. Served once the panel's fonts
@@ -676,6 +749,7 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching what plays: {e}"))?;
         shell.player_tx = Some(events);
     }
+    shell.follow_idle();
     shell.watch_status()?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
@@ -1426,10 +1500,13 @@ impl Shell {
     /// PipeWire's graph read on a thread of its own. At start, and after a
     /// change of the panels brings the widget (M6.17).
     fn watch_status(&mut self) -> Result<()> {
-        let wanted = self
-            .panels
-            .iter()
-            .any(|p| p.row.all().any(|w| w.name == "status"));
+        // Read also where no panel shows the status, when the charger's
+        // profile is kept (M7.8).
+        let wanted = power_card::profile_wanted()
+            || self
+                .panels
+                .iter()
+                .any(|p| p.row.all().any(|w| w.name == "status"));
         if !wanted || self.status_wanted {
             return Ok(());
         }
@@ -2570,7 +2647,9 @@ impl SeatHandler for Shell {
         &mut self.seat
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {
+        self.follow_idle();
+    }
 
     /// A pointer, for clicks and scrolls on the widgets; the keyboard is
     /// asked for only while the launcher is open.

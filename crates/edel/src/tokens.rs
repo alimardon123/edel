@@ -154,6 +154,19 @@ pub fn load_from_files(
     person: Option<&str>,
     from_wallpaper: Option<Colour>,
 ) -> (Tokens, Vec<String>) {
+    load_from_files_as(scheme, machine, person, from_wallpaper, None)
+}
+
+/// [`load_from_files`], with high contrast given as `high` where it is
+/// `Some` (M6.18: the apps' stylesheet writes both contrasts of each
+/// scheme), else read from the files.
+fn load_from_files_as(
+    scheme: Scheme,
+    machine: Option<&str>,
+    person: Option<&str>,
+    from_wallpaper: Option<Colour>,
+    high: Option<bool>,
+) -> (Tokens, Vec<String>) {
     let ((machine, mut notes), (person, more)) = (read_file(machine), read_file(person));
     notes.extend(more);
     let accent = accent_between(machine.as_ref(), person.as_ref());
@@ -165,7 +178,7 @@ pub fn load_from_files(
     notes.extend(more);
     // High contrast (M6.9) comes after the person's accent and colours, so it
     // always wins over them.
-    let high = high_contrast_between(machine.as_ref(), person.as_ref());
+    let high = high.unwrap_or_else(|| high_contrast_between(machine.as_ref(), person.as_ref()));
     let tokens = tokens.with_contrast(high, scheme);
     let shape = Shape::between(machine.as_ref(), person.as_ref());
     let (tokens, more) = tokens.with_shape(&shape);
@@ -219,6 +232,36 @@ pub fn high_contrast_between(
         .or_else(|| machine.and_then(|file| file.appearance.contrast.clone()))
         .as_deref()
         == Some("high")
+}
+
+/// Whether high contrast is on (M6.9) in two settings files' texts, the
+/// person's over the machine's; a file that does not read counts as
+/// absent. The settings portal tells apps this as `contrast` (M6.18).
+pub fn high_contrast_in(machine: Option<&str>, person: Option<&str>) -> bool {
+    let ((machine, _), (person, _)) = (read_file(machine), read_file(person));
+    high_contrast_between(machine.as_ref(), person.as_ref())
+}
+
+/// The apps' stylesheet (M6.18) from two settings files' texts: the
+/// tokens of each scheme with the person's colours, at normal and at high
+/// contrast, through [`Tokens::gtk_css`]. The accent is the portal's, so
+/// a wallpaper's accent is not read here.
+pub fn apps_css_from_files(machine: Option<&str>, person: Option<&str>) -> String {
+    let tokens = |scheme, high| load_from_files_as(scheme, machine, person, None, Some(high)).0;
+    Tokens::gtk_css(
+        &tokens(Scheme::Dark, false),
+        &tokens(Scheme::Light, false),
+        &tokens(Scheme::Dark, true),
+        &tokens(Scheme::Light, true),
+    )
+}
+
+/// [`apps_css_from_files`] of this machine's settings files, found as
+/// [`on_this_machine`] finds them.
+pub fn apps_css_on_this_machine() -> String {
+    let machine = text_at(&crate::places::machine_settings());
+    let person = crate::places::person_settings().and_then(|path| text_at(&path));
+    apps_css_from_files(machine.as_deref(), person.as_deref())
 }
 
 /// The accent the person's file names, else the machine's (M5.12b1).
@@ -534,9 +577,10 @@ fn text_on(accent: Colour) -> Colour {
     .unwrap_or(BLACK)
 }
 
-/// Where images keep GTK's colours from the tokens (M5.5b), which each
-/// person's `~/.config/gtk-4.0/gtk.css` imports.
-pub const GTK_CSS: &str = crate::places::GTK_CSS;
+/// The first line's start of the apps' stylesheet (M6.18): shell-ui knows
+/// the file is ours, and may write it again, by this text at its start. A
+/// person's own file does not start with it.
+pub const GTK_CSS_MARK: &str = "/* Edel OS: apps' colours";
 
 /// The tokens the compositor and shell-ui use.
 #[derive(Debug, Clone, PartialEq)]
@@ -936,25 +980,59 @@ fn check_accents(accents: &Table, notes: &mut Vec<String>) {
 }
 
 impl Tokens {
-    /// GTK's named colours from the tokens (M5.5b), as `@define-color`
-    /// lines GTK4 and libadwaita apps read from `gtk.css`: `dark`'s, then
-    /// `light`'s inside `@media (prefers-color-scheme: light)` (M5.5c),
-    /// which GTK matches when the settings portal says light.
-    pub fn gtk_css(dark: &Tokens, light: &Tokens) -> String {
-        let mut css = String::from(
-            "/* Edel OS: GTK's named colours from design/tokens.toml (M5.5b),\n   \
-             written by edel::tokens::Tokens::gtk_css; a cargo test keeps\n   \
-             this file equal to it. GTK picks the light ones when the\n   \
-             settings portal says light (M5.5c). */\n",
+    /// The apps' stylesheet (M6.18), written from the tokens for each person:
+    /// `dark`'s named colours at the top, then a `:root` block of libadwaita's
+    /// own variables per scheme and contrast, each in its `@media` query.
+    /// `dark`, `light`, `dark_high` and `light_high` are the tokens of each
+    /// scheme at normal and at high contrast (`with_contrast`). Dark's
+    /// `:root` sits in its media query, so GTK older than 4.22 (which skips
+    /// every `@media`) keeps libadwaita's own variables. The named colours
+    /// are for libadwaita 1.6 and later's variables (the accent comes
+    /// through the settings portal, live, so no line of it is here), for
+    /// the apps on older libadwaita, and for the plain header bars. GTK 4.22,
+    /// which the image carries, picks light and high contrast by its media
+    /// queries, and open apps follow a change of either. `GTK_CSS_MARK`
+    /// starts the file, which shell-ui uses to know the file is its own.
+    pub fn gtk_css(
+        dark: &Tokens,
+        light: &Tokens,
+        dark_high: &Tokens,
+        light_high: &Tokens,
+    ) -> String {
+        let mut css = format!(
+            "{GTK_CSS_MARK}, from the design tokens and your settings (M6.18).\n   \
+             edel-shell-ui writes this file again whenever they change, and each app\n   \
+             reads it when it starts. To keep a file of your own instead, change the\n   \
+             first line's words (so it no longer starts \"/* Edel OS: apps' colours\");\n   \
+             shell-ui then leaves the file alone. */\n"
         );
-        for (name, value) in dark.gtk_colours() {
-            css.push_str(&format!("@define-color {name} {value};\n"));
-        }
-        css.push_str("\n@media (prefers-color-scheme: light) {\n");
-        for (name, value) in light.gtk_colours() {
-            css.push_str(&format!("  @define-color {name} {value};\n"));
-        }
+        let dark_colours = dark.gtk_colours();
+        colour_lines(&mut css, &dark_colours, "");
+        css.push_str("\n@media (prefers-color-scheme: dark) {\n");
+        root_block(&mut css, &dark_colours, "  ");
         css.push_str("}\n");
+        for (query, tokens) in [
+            ("(prefers-color-scheme: light)", light),
+            (
+                "(prefers-color-scheme: dark) and (prefers-contrast: more)",
+                dark_high,
+            ),
+            (
+                "(prefers-color-scheme: light) and (prefers-contrast: more)",
+                light_high,
+            ),
+        ] {
+            let colours = tokens.gtk_colours();
+            css.push_str(&format!("\n@media {query} {{\n"));
+            colour_lines(&mut css, &colours, "  ");
+            root_block(&mut css, &colours, "  ");
+            css.push_str("}\n");
+        }
+        css.push_str(
+            "\n/* Plain GTK 4 header bars, which name no colours of their own. */\n\
+             headerbar.titlebar:not(.flat) { background-color: @headerbar_bg_color; color: @headerbar_fg_color; }\n\
+             headerbar.titlebar:not(.flat):backdrop { background-color: @headerbar_backdrop_color; }\n",
+        );
         css
     }
 
@@ -1013,7 +1091,8 @@ impl Tokens {
         css
     }
 
-    /// The site's colour roles, the same as GTK's in [`Tokens::gtk_css`]:
+    /// The site's colour roles, the same roles as GTK's named colours in
+    /// [`Tokens::gtk_css`] (M6.18):
     /// the page as a view (the panel's colour), the sidebar as a window
     /// (the background), code and tables as header bars (the title bar).
     fn site_colours(&self) -> [(&'static str, String); 9] {
@@ -1032,14 +1111,12 @@ impl Tokens {
 
     /// GTK's named colours from these tokens: the windows' page and
     /// text, lists, cards, popovers and dialogs as raised cards, the
-    /// header bars as our title bars, sidebars as the panel, and the
-    /// accent.
-    fn gtk_colours(&self) -> [(&'static str, String); 18] {
+    /// header bars as our title bars, and sidebars as the panel. The accent
+    /// is not one of them: the settings portal tells apps it live, and a
+    /// line of it here would hold an open app to the old accent (M6.18).
+    fn gtk_colours(&self) -> [(&'static str, String); 15] {
         let text = self.title_text.hex();
         [
-            ("accent_color", self.accent.hex()),
-            ("accent_bg_color", self.accent.hex()),
-            ("accent_fg_color", self.accent_text.hex()),
             ("window_bg_color", self.window.hex()),
             ("window_fg_color", text.clone()),
             ("view_bg_color", self.card.hex()),
@@ -1813,6 +1890,26 @@ fn foot_section(name: &str, terminal: &Terminal) -> String {
     section
 }
 
+/// Writes `colours` as `@define-color` lines at `indent` (M6.18), the
+/// names GTK's own CSS uses (`window_bg_color`).
+fn colour_lines(css: &mut String, colours: &[(&str, String)], indent: &str) {
+    for (name, value) in colours {
+        css.push_str(&format!("{indent}@define-color {name} {value};\n"));
+    }
+}
+
+/// Writes `colours` as one `:root` block at `indent` (M6.18), the same
+/// colours as libadwaita's variables, `--window-bg-color` for
+/// `window_bg_color`, which libadwaita 1.6 and later read.
+fn root_block(css: &mut String, colours: &[(&str, String)], indent: &str) {
+    css.push_str(&format!("{indent}:root {{\n"));
+    for (name, value) in colours {
+        let variable = name.replace('_', "-");
+        css.push_str(&format!("{indent}  --{variable}: {value};\n"));
+    }
+    css.push_str(&format!("{indent}}}\n"));
+}
+
 const BLACK: Colour = Colour {
     r: 0.0,
     g: 0.0,
@@ -1824,57 +1921,81 @@ const BLACK: Colour = Colour {
 mod tests {
     use super::*;
 
-    /// The shell feature's `gtk.css`, which images carry as [`GTK_CSS`].
-    const GTK_CSS_FILE: &str = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../features/shell/usr/share/edel/gtk.css"
-    );
-
-    /// Every new person's `~/.config/gtk-4.0/gtk.css` imports [`GTK_CSS`]
-    /// by its place in `edel::places` (M5.27); with EDEL_WRITE_GTK_CSS set,
-    /// the test writes it.
+    /// The apps' stylesheet holds both schemes at both contrasts, each in
+    /// its media query, with no accent line and the two header bar rules
+    /// last (M6.18).
     #[test]
-    fn a_person_imports_the_shipped_gtk_css() {
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../features/shell/etc/skel/.config/gtk-4.0/gtk.css"
-        );
-        let want = format!(
-            "/* GTK4 and libadwaita apps read this file. It takes Edel OS's colours\n   \
-             from the design tokens (M5.5b); add your own rules below it. */\n\
-             @import url(\"file://{GTK_CSS}\");\n"
-        );
-        if std::env::var_os("EDEL_WRITE_GTK_CSS").is_some() {
-            std::fs::write(path, &want).unwrap();
+    fn the_apps_css_holds_each_scheme_and_contrast() {
+        let dark = Tokens::built_in_scheme(Scheme::Dark);
+        let light = Tokens::built_in_scheme(Scheme::Light);
+        let dark_high = dark.clone().with_contrast(true, Scheme::Dark);
+        let light_high = light.clone().with_contrast(true, Scheme::Light);
+        let css = Tokens::gtk_css(&dark, &light, &dark_high, &light_high);
+        assert!(css.starts_with(GTK_CSS_MARK), "{css}");
+        assert!(css.contains(&format!(
+            "\n@define-color window_bg_color {};\n",
+            dark.window.hex()
+        )));
+        // Each heading once, in this order; each block holds its own title bar.
+        let headings = [
+            "@media (prefers-color-scheme: dark) {\n",
+            "@media (prefers-color-scheme: light) {\n",
+            "@media (prefers-color-scheme: dark) and (prefers-contrast: more) {\n",
+            "@media (prefers-color-scheme: light) and (prefers-contrast: more) {\n",
+        ];
+        let starts: Vec<usize> = headings
+            .iter()
+            .map(|heading| {
+                assert_eq!(css.matches(heading).count(), 1, "{heading}");
+                css.find(heading).unwrap()
+            })
+            .collect();
+        let sets = [&dark, &light, &dark_high, &light_high];
+        for (i, set) in sets.iter().enumerate() {
+            let end = starts.get(i + 1).copied().unwrap_or(css.len());
+            let block = &css[starts[i]..end];
+            let bar = format!("--headerbar-bg-color: {};", set.title_bar.hex());
+            assert!(block.contains(&bar), "{headings:?}[{i}] lacks {bar}");
         }
-        assert_eq!(std::fs::read_to_string(path).unwrap_or_default(), want);
+        assert!(!css.contains("accent"), "{css}");
+        assert!(css.ends_with(
+            "headerbar.titlebar:not(.flat):backdrop { background-color: @headerbar_backdrop_color; }\n"
+        ));
+        assert!(css.contains(
+            "headerbar.titlebar:not(.flat) { background-color: @headerbar_bg_color; color: @headerbar_fg_color; }\n"
+        ));
     }
 
+    /// A person's colours reach the apps' stylesheet in their scheme, and
+    /// high contrast still lies over them (M6.18).
     #[test]
-    fn the_shipped_gtk_css_is_the_tokens() {
-        // With EDEL_WRITE_GTK_CSS set, the test writes the file instead,
-        // after a token changed.
-        let light = Tokens::built_in_scheme(Scheme::Light);
-        let css = Tokens::gtk_css(&Tokens::built_in(), &light);
-        if std::env::var_os("EDEL_WRITE_GTK_CSS").is_some() {
-            std::fs::write(GTK_CSS_FILE, &css).unwrap();
-        }
-        let shipped = std::fs::read_to_string(GTK_CSS_FILE).unwrap_or_default();
-        assert!(
-            shipped == css,
-            "features/shell/usr/share/edel/gtk.css differs from the tokens; run EDEL_WRITE_GTK_CSS=1 cargo test -p edel gtk_css"
-        );
-        assert!(css.contains("@define-color accent_bg_color #5b8ef5;"));
-        // Apps' windows are the window token's colour in each scheme.
-        let window = |t: &Tokens| format!("@define-color window_bg_color {};", t.window.hex());
-        assert!(css.contains(&format!("\n{}", window(&Tokens::built_in()))));
-        assert!(css.contains(&format!("  {}", window(&light))));
-        // A changed token changes the file.
-        let mut tokens = Tokens::built_in();
-        tokens.accent = Colour::parse("#e5484d").unwrap();
-        assert!(
-            Tokens::gtk_css(&tokens, &light).contains("@define-color accent_bg_color #e5484d;")
-        );
+    fn a_persons_colours_reach_the_apps_css() {
+        let person = "format = 1\n[appearance.colours.light]\ntitle_bar = \"#f0b8cc\"\n";
+        let css = apps_css_from_files(None, Some(person));
+        let light = css
+            .find("@media (prefers-color-scheme: light) {\n")
+            .unwrap();
+        let light_high = css
+            .find("@media (prefers-color-scheme: light) and (prefers-contrast: more) {\n")
+            .unwrap();
+        assert!(css[light..light_high].contains("--headerbar-bg-color: #f0b8cc;"));
+        let contrast = Tokens::built_in_scheme(Scheme::Light)
+            .with_contrast(true, Scheme::Light)
+            .title_bar
+            .hex();
+        assert!(css[light_high..].contains(&format!("--headerbar-bg-color: {contrast};")));
+    }
+
+    /// High contrast is read from the person's file, else the machine's, as
+    /// `appearance.contrast` is everywhere (M6.18).
+    #[test]
+    fn high_contrast_is_read_from_either_file() {
+        let high = "format = 1\n[appearance]\ncontrast = \"high\"\n";
+        let normal = "format = 1\n[appearance]\ncontrast = \"normal\"\n";
+        assert!(high_contrast_in(Some(high), None));
+        assert!(high_contrast_in(None, Some(high)));
+        assert!(!high_contrast_in(Some(high), Some(normal)));
+        assert!(!high_contrast_in(None, None));
     }
 
     /// The shipped foot config, which images carry at [`crate::places::FOOT_INI`]

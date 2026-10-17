@@ -14,12 +14,14 @@
 | `edel restart` | Restart this machine now: the system's own reboot, through doas when you are not root |
 | `edel shutdown` | Shut this machine down now: the system's own poweroff, through doas when you are not root |
 | `edel suspend` | Suspend this machine to memory now; a key or the power button wakes it |
+| `edel power` | power: how hard the machine works, its power profile; shell-ui sets it on battery and on the charger, as power.on_battery says |
 | `edel install` | Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings |
 | `edel report` | Print what an issue about this machine needs, as TOML: the release, kernel, boot time, memory in use, PCI devices, the kernel log, and the last lines of the system log and of the desktop sessions' logs |
 | `edel settings` | settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages |
 | `edel image` | Build and inspect Edel OS images |
 | `edel theme` | theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones |
 | `edel preset` | preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones |
+| `edel addon` | addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed |
 | `edel web-app` | web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own |
 
 ## `edel update [RELEASE] [OPTIONS]`
@@ -54,6 +56,18 @@ Shut this machine down now: the system's own poweroff, through doas when you are
 ## `edel suspend`
 
 Suspend this machine to memory now; a key or the power button wakes it.
+
+## `edel power`
+
+power: how hard the machine works, its power profile; shell-ui sets it on battery and on the charger, as power.on_battery says.
+
+### `edel power profile [NAME]`
+
+Show the power profile the kernel uses and the ones it offers, or set it: power-saver, balanced or performance.
+
+| | What it does |
+|---|---|
+| `NAME` | The profile to set, as power.on_battery names them |
 
 ## `edel install [DISK] [OPTIONS]`
 
@@ -151,6 +165,9 @@ Build an image from its definition file (run as root on Alpine).
 | `DEFINITION` | Image definition, for example images/vm.toml |
 | `--out OUT` | Directory for the finished images and the work area |
 | `--files DIR` | Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once |
+| `--addon NAME` | An add-on to build from this image's root, beside the definition's own; for test images. Can be given more than once |
+| `--features DIR` | Another directory of feature files to find add-ons in; for test images |
+| `--no-addons` | Build none of the definition's own add-ons, only those --addon names; for test images, which need no released add-on |
 | `--health-timeout SECS` | Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images |
 | `--slot-mib MIB` | Size of each slot in MiB, instead of the definition's; for test images, such as the install test's live disk, which has the desktop stick's small slots |
 | `--public-key FILE` | Another public key that may sign updates, after the definition's own; for test images. Can be given more than once |
@@ -241,6 +258,14 @@ Delete one of your presets; the preset in use cannot be deleted.
 | | What it does |
 |---|---|
 | `NAME` | The preset's name, as preset list shows it |
+
+## `edel addon`
+
+addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed.
+
+### `edel addon list`
+
+List the add-ons of this machine's channel, marked installed, built in or chosen.
 
 ## `edel web-app`
 
