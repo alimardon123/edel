@@ -2648,6 +2648,51 @@ msgstr ""
 msgid "could not make a name from {url}; give one with --name NAME"
 msgstr ""
 
+msgid "Menu"
+msgstr ""
+
+msgid "Floating or tiling"
+msgstr ""
+
+msgid "Keyboard layout"
+msgstr ""
+
+msgid "Tray"
+msgstr ""
+
+msgid "Clock"
+msgstr ""
+
+msgid "Window title"
+msgstr ""
+
+msgid "Search"
+msgstr ""
+
+msgid "Separator"
+msgstr ""
+
+msgid "Status"
+msgstr ""
+
+msgid "Date"
+msgstr ""
+
+msgid "Notification count"
+msgstr ""
+
+msgid "Music player"
+msgstr ""
+
+msgid "Sign in"
+msgstr ""
+
+msgid "Message"
+msgstr ""
+
+msgid "Picture"
+msgstr ""
+
 msgid "The Edel OS system tool"
 msgstr ""
 

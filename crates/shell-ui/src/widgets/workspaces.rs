@@ -21,7 +21,7 @@
 //! separator. A button finds its workspace by its place, never by its name.
 
 use accesskit::Role;
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::presets::MOST_WORKSPACES;
 use edel::settings::{SWITCHER_ENDS, SWITCHER_LOOK, SWITCHER_SHOWN};
 use edel::tokens::{Colour, Tokens};
@@ -31,8 +31,8 @@ use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{Face, Text, fill, mix, paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
-    name: "workspaces",
-    title: n_("Workspaces"),
+    name: edel::widgets::WORKSPACES.name,
+    title: edel::widgets::WORKSPACES.title,
     needs: None,
     shows,
     width,

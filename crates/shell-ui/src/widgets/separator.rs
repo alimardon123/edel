@@ -9,12 +9,11 @@ use accesskit::Role;
 
 use super::{Canvas, Live, Widget, no_input};
 use crate::paint::fill;
-use edel::i18n::n_;
 use edel::tokens::Colour;
 
 pub const WIDGET: Widget = Widget {
-    name: "separator",
-    title: n_("Separator"),
+    name: edel::widgets::SEPARATOR.name,
+    title: edel::widgets::SEPARATOR.title,
     needs: None,
     shows,
     width,

@@ -56,8 +56,8 @@ pub struct Canvas<'a> {
 
 pub struct Widget {
     pub name: &'static str,
-    /// What Settings, the editor's drawer and a screen reader call it,
-    /// marked with `n_` (M5.31b): "Menu", "Window title".
+    /// What Settings, the editor's drawer and a screen reader call it, from
+    /// its entry in `edel::widgets` (M5.33b): "Menu", "Window title".
     pub title: &'static str,
     /// The OS feature it talks to, if any.
     pub needs: Option<&'static str>,
@@ -380,6 +380,42 @@ mod tests {
                     file.display()
                 );
             }
+        }
+    }
+
+    #[test]
+    fn every_widget_in_the_catalogue_has_a_drawing_module_on_each_surface_it_fits() {
+        use edel::widgets::{CATALOGUE, Surface};
+        for entry in CATALOGUE {
+            for surface in [Surface::Panel, Surface::LockScreen, Surface::Desktop] {
+                if !entry.fits(surface) {
+                    continue;
+                }
+                match surface {
+                    Surface::Panel => assert!(
+                        find(entry.name).is_some(),
+                        "the catalogue's {} fits a panel, and TABLE has no line for it",
+                        entry.name
+                    ),
+                    // lock.rs place_all matches every Part, so a Part is drawn.
+                    Surface::LockScreen => assert!(
+                        edel::lock_screen::Part::named(entry.name).is_some(),
+                        "the catalogue's {} fits the lock screen, and no Part is named so",
+                        entry.name
+                    ),
+                    Surface::Desktop => panic!(
+                        "the catalogue's {} fits the desktop, which has no drawing module until M5.33c",
+                        entry.name
+                    ),
+                }
+            }
+        }
+        for widget in TABLE {
+            assert!(
+                edel::widgets::named(widget.name).is_some_and(|e| e.fits(Surface::Panel)),
+                "TABLE's {} is no catalogue entry that fits a panel",
+                widget.name
+            );
         }
     }
 

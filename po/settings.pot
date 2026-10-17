@@ -266,9 +266,6 @@ msgstr ""
 msgid "Nearby devices"
 msgstr ""
 
-msgid "Search"
-msgstr ""
-
 msgid "Search for devices"
 msgstr ""
 
@@ -1253,9 +1250,6 @@ msgstr ""
 msgid "Close button"
 msgstr ""
 
-msgid "Tray"
-msgstr ""
-
 msgid "Number of workspaces"
 msgstr ""
 
@@ -1470,9 +1464,6 @@ msgid "Fullscreen"
 msgstr ""
 
 msgid "Switch windows"
-msgstr ""
-
-msgid "Floating or tiling"
 msgstr ""
 
 msgid "Tiling styles menu"

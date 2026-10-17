@@ -110,9 +110,6 @@ msgstr ""
 msgid "Turn it on in Settings, Shortcuts"
 msgstr ""
 
-msgid "Picture"
-msgstr ""
-
 msgid "Remove"
 msgstr ""
 
@@ -240,24 +237,6 @@ msgid "Who is logging in?"
 msgstr ""
 
 msgid "User name"
-msgstr ""
-
-msgid "Clock"
-msgstr ""
-
-msgid "Date"
-msgstr ""
-
-msgid "Notification count"
-msgstr ""
-
-msgid "Music player"
-msgstr ""
-
-msgid "Sign in"
-msgstr ""
-
-msgid "Message"
 msgstr ""
 
 msgid "Blurred"
@@ -677,13 +656,7 @@ msgstr ""
 msgid "Notifications, {count} unread"
 msgstr ""
 
-msgid "Keyboard layout"
-msgstr ""
-
 msgid "Keyboard layout: {name}, click for the next"
-msgstr ""
-
-msgid "Floating or tiling"
 msgstr ""
 
 msgid "Layout: tiling"
@@ -693,18 +666,6 @@ msgid "Layout: floating"
 msgstr ""
 
 msgid "Layout: {policy}"
-msgstr ""
-
-msgid "Menu"
-msgstr ""
-
-msgid "Search"
-msgstr ""
-
-msgid "Separator"
-msgstr ""
-
-msgid "Status"
 msgstr ""
 
 msgid "wired"
@@ -746,13 +707,7 @@ msgstr ""
 msgid "Status: {parts}"
 msgstr ""
 
-msgid "Window title"
-msgstr ""
-
 msgid "Focused window: {title}"
-msgstr ""
-
-msgid "Tray"
 msgstr ""
 
 msgid "Hidden icons ({count})"

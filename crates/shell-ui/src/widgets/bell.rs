@@ -8,15 +8,15 @@
 //! open the tile is lit as the menu button's is.
 
 use accesskit::Role;
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::tokens::{Colour, Tokens};
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{self, Face, fill};
 
 pub const WIDGET: Widget = Widget {
-    name: "notifications",
-    title: n_("Notifications"),
+    name: edel::widgets::NOTIFICATIONS.name,
+    title: edel::widgets::NOTIFICATIONS.title,
     needs: None,
     shows,
     width,

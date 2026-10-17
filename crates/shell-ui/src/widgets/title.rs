@@ -5,13 +5,13 @@
 //! title changes.
 
 use accesskit::Role;
-use edel::i18n::{n_, trf};
+use edel::i18n::trf;
 
 use super::{Canvas, Live, Widget, no_input};
 
 pub const WIDGET: Widget = Widget {
-    name: "title",
-    title: n_("Window title"),
+    name: edel::widgets::TITLE.name,
+    title: edel::widgets::TITLE.title,
     needs: None,
     shows,
     width,
