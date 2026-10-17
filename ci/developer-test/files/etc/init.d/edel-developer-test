@@ -101,7 +101,8 @@ start() {
 		;;
 	3)
 		check "/usr/bin/hello kept" sh -c '[ "$(/usr/bin/hello)" = "hello from developer mode" ]' || return 0
-		check "tree kept" sh -c 'command -v tree >/dev/null' || return 0
+		# By the package, not the PATH: busybox has a tree applet of its own.
+		check "tree kept" sh -c 'apk info -e tree >/dev/null' || return 0
 		check "export to count the changes" sh -c '/usr/bin/edel settings export | grep -q "^# Developer mode changed [0-9]* files under /usr"' || return 0
 		# A developer's own service lives in the layer, in OpenRC's
 		# /usr/local/etc/init.d, so a safe start leaves it out too.
@@ -136,7 +137,7 @@ start() {
 		check "the layer deleted" sh -c '[ ! -e /data/developer/usr ]' || return 0
 		check "no overlay on /usr" sh -c '! awk "\$2 == \"/usr\" && \$3 == \"overlay\" { f = 1 } END { exit !f }" /proc/mounts' || return 0
 		check "hello gone" sh -c '[ ! -e /usr/bin/hello ]' || return 0
-		check "tree gone" sh -c '! command -v tree >/dev/null' || return 0
+		check "tree gone" sh -c '! apk info -e tree >/dev/null' || return 0
 		check "/usr read-only" read_only_usr || return 0
 		check "apk add to fail" apk_fails || return 0
 		check "no developer mode line" sh -c '! /usr/bin/edel status | grep -q "^developer mode:"' || return 0
