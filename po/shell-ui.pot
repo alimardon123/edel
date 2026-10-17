@@ -95,6 +95,27 @@ msgstr ""
 msgid "Next month"
 msgstr ""
 
+msgid "Clipboard"
+msgstr ""
+
+msgid "Nothing copied yet"
+msgstr ""
+
+msgid "Clipboard history is off"
+msgstr ""
+
+msgid "Turn it on in Settings, Shortcuts"
+msgstr ""
+
+msgid "Clipboard history"
+msgstr ""
+
+msgid "Picture"
+msgstr ""
+
+msgid "Remove"
+msgstr ""
+
 msgid "Update waiting"
 msgstr ""
 
@@ -237,9 +258,6 @@ msgid "Sign in"
 msgstr ""
 
 msgid "Message"
-msgstr ""
-
-msgid "Picture"
 msgstr ""
 
 msgid "Blurred"
@@ -507,9 +525,6 @@ msgid "Choose in Settings"
 msgstr ""
 
 msgid "No picture"
-msgstr ""
-
-msgid "Remove"
 msgstr ""
 
 msgid "Words: {words}"

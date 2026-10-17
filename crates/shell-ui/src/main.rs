@@ -26,6 +26,8 @@ mod apps_drag;
 mod banner;
 mod calendar;
 mod centre;
+mod clipboard;
+mod clipboard_list;
 mod clock_face;
 mod corner;
 mod edit_kit;
