@@ -127,3 +127,23 @@ flatpak_cold_ms = 500
 flatpak_warm_ms = 300
 flatpak_app_pss_mib = 6
 portal_readall_ms = 50
+
+# The walks a newcomer takes (M8.15a, docs/REVIEW-experience.md): for
+# each, the seconds the machine makes a person wait, timed by the machine
+# itself (a boot's `Started in`, or the guest's clock across a restart),
+# and the steps a person takes (each key, typed word or click). No CI run
+# has measured them yet: these are first values, set from the first CI
+# measurement before the step merges. A walk that must grow changes its
+# budget in a reviewed change that says why.
+walk_try_seconds = 30
+walk_install_page_steps = 9
+walk_install_seconds = 40
+walk_install_steps = 1
+walk_first_setup_seconds = 30
+walk_first_setup_steps = 12
+walk_update_seconds = 90
+walk_update_steps = 2
+walk_rollback_seconds = 60
+walk_rollback_steps = 2
+walk_broken_update_seconds = 150
+walk_broken_update_steps = 1
