@@ -23,7 +23,9 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::utils::{Logical, Point, Rectangle, Size, Transform};
 use smithay::wayland::compositor::{TraversalAction, with_surface_tree_downward};
 
-use edel_compositor::animation::{Anim, Curve, Motion, Slide, Style, closing, opening, style};
+use edel_compositor::animation::{
+    Anim, Curve, Motion, Slide, Spring, Style, closing, opening, style,
+};
 use edel_compositor::effects::Tier;
 
 use crate::decoration::data;
@@ -55,6 +57,8 @@ pub struct Animations {
 /// A closed window's last picture, fading out, or a window's picture
 /// sliding away with the workspace it is on.
 pub struct Closing {
+    /// It times the fade of a closed window; a leaving picture uses its
+    /// spring instead.
     pub anim: Anim,
     /// How many windows were above it: it fades out at that depth.
     pub above: usize,
@@ -70,8 +74,30 @@ pub struct Closing {
     pub borders: Vec<(SolidColorBuffer, Rectangle<i32, Logical>)>,
     /// The bottom strip of a gradient border, its last pixels and place.
     pub strip: Option<Bar>,
-    /// How far it slides when its workspace is left; none when it closed.
-    pub leave: Option<Point<i32, Logical>>,
+    /// How far it slides when its workspace is left, and its spring; none
+    /// when it closed.
+    pub leave: Option<Leaving>,
+}
+
+/// A window's picture sliding off with the workspace being left: `by` is
+/// how far it goes, and its spring, from `-by` to nothing, is the same as
+/// the incoming windows' slides, so both move as one (M5.14).
+pub struct Leaving {
+    /// How far the picture goes: a screen's width, away from the workspace
+    /// coming in.
+    pub by: Point<i32, Logical>,
+    /// The spring carrying it there.
+    pub spring: Spring,
+}
+
+impl Closing {
+    /// Whether it has ended by `now`.
+    pub fn done(&self, now: Duration) -> bool {
+        match &self.leave {
+            Some(l) => l.spring.done(now),
+            None => self.anim.done(now),
+        }
+    }
 }
 
 /// A closed window's title bar: its last pixels, their size and the bar's
@@ -131,8 +157,8 @@ impl Animations {
     /// Forgets what ended by `now`; called before each frame is drawn.
     pub fn prune(&mut self, now: Duration) {
         self.opening.retain(|_, anim| !anim.done(now));
-        self.slides.retain(|_, slide| !slide.anim.done(now));
-        self.closing.retain(|c| !c.anim.done(now));
+        self.slides.retain(|_, slide| !slide.done(now));
+        self.closing.retain(|c| !c.done(now));
         self.drawn = now;
     }
 
@@ -212,14 +238,15 @@ impl Animations {
 
     /// How a closed or leaving window is drawn at `now`.
     pub fn closing_look(&self, closed: &Closing, now: Duration) -> Look {
-        let progress = closed.anim.eased(now, self.style.curve);
-        if let Some(by) = closed.leave {
+        if let Some(leaving) = &closed.leave {
+            let at = leaving.by.to_f64() + leaving.spring.offset_at(now);
             return Look {
                 alpha: 1.0,
                 zoom: 1.0,
-                offset: (f64::from(by.x) * progress, f64::from(by.y) * progress).into(),
+                offset: at,
             };
         }
+        let progress = closed.anim.eased(now, self.style.curve);
         let (alpha, zoom) = closing(&self.style, progress);
         Look {
             alpha,
@@ -351,8 +378,9 @@ impl Edel {
     }
 
     /// `window`'s workspace is being left: its picture slides `by` off
-    /// the screen, at the tier's slide length. The window keeps its
-    /// picture, for when its workspace is shown again.
+    /// the screen on a spring that settles over the tier's slide length,
+    /// from where it is drawn. The window keeps its picture, for when its
+    /// workspace is shown again.
     pub fn snapshot_leaving(&mut self, window: &Window, by: Point<i32, Logical>) {
         self.snapshot(window, Some(by));
     }
@@ -424,8 +452,21 @@ impl Edel {
             .rev()
             .position(|w| w == window)
             .unwrap_or(0);
+        let now = self.animations.now();
+        // A picture still sliding carries its place and speed onto the spring,
+        // so it does not jump; the slide is still here, as `hide` comes after.
+        let leave = leave.map(|by| {
+            let (carried, speed) = self.animations.slides.get(window).map_or_else(
+                || (Point::default(), Point::default()),
+                |slide| (slide.offset_at(now), slide.velocity_at(now)),
+            );
+            Leaving {
+                by,
+                spring: Spring::new(now, carried - by.to_f64(), speed, style.slide, style.curve),
+            }
+        });
         self.animations.closing.push(Closing {
-            anim: Anim::new(self.animations.now(), length),
+            anim: Anim::new(now, length),
             above,
             frame,
             parts,
