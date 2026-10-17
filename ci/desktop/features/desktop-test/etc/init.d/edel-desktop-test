@@ -286,6 +286,50 @@ commands() {
 				say "busy_frames $frames_before $frames_after"
 			) &
 			;;
+		# The desktop's wakeups while idle (M7.16a): every wakeup takes the
+		# processor out of its deepest rest, so an idle desktop should almost
+		# never wake it. A voluntary context switch is a thread giving up the
+		# processor to wait, a close proxy for a wakeup; a nonvoluntary one
+		# is the processor taken away, which is not counted. Over 60 s, in the
+		# background, as `desktop cpu` is; the total comes last.
+		'wakeups')
+			(
+				comp=$(sed -n 's/^pid = //p' "$state_file")
+				shell=$(pidof edel-shell-ui | cut -d' ' -f1)
+				switches() {
+					cat /proc/"$1"/task/*/status 2>/dev/null | awk '/^voluntary_ctxt_switches:/ { n += $2 } END { print n + 0 }'
+				}
+				comp_before=$(switches "$comp")
+				shell_before=$(switches "$shell")
+				sleep 60
+				comp_after=$(switches "$comp")
+				shell_after=$(switches "$shell")
+				comp_rate=$(awk -v t="$((comp_after - comp_before))" 'BEGIN { printf "%.2f", t / 60 }')
+				shell_rate=$(awk -v t="$((shell_after - shell_before))" 'BEGIN { printf "%.2f", t / 60 }')
+				say "wakeups_compositor $comp_rate"
+				say "wakeups_shell_ui $shell_rate"
+				say "desktop_wakeups_per_second $(awk -v a="$comp_rate" -v b="$shell_rate" 'BEGIN { printf "%.2f", a + b }')"
+			) &
+			;;
+		# The devices' power saving (M7.16d), read from /sys and /proc and the
+		# Wi-Fi setting NetworkManager has: PCI devices that may sleep (graphics
+		# and the management engine left to their drivers), the SATA link
+		# policies (none when the VM has no SATA host), the sound chip's
+		# power_save, the NMI watchdog, and Wi-Fi's power save.
+		'device power')
+			pci_auto=0 pci_all=0
+			for d in /sys/bus/pci/devices/*; do
+				class=$(cat "$d/class" 2>/dev/null) || continue
+				case "$class" in 0x03* | 0x0780*) continue ;; esac
+				pci_all=$((pci_all + 1))
+				if [ "$(cat "$d/power/control" 2>/dev/null)" = auto ]; then
+					pci_auto=$((pci_auto + 1))
+				fi
+			done
+			sata=$(cat /sys/class/scsi_host/host*/link_power_management_policy 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
+			say "device_power pci=$pci_auto/$pci_all sata=${sata:-none} hda=$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo none) nmi=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)"
+			say "wifi_power $(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi.powersave=//p' | tail -n 1)"
+			;;
 		# An update that waits for a game (M7.7c): it has no release file, so
 		# once it may go on it fails at once, and its log says both.
 		'update during game')

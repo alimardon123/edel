@@ -623,6 +623,7 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
     now(GAME_MODE, Kind::OneOf(&["plugged-in", "always", "off"])),
+    now(BATTERY_CARE, Kind::Flag),
     now("services.*", Kind::Flag),
     // The release lists `edel update` takes (M3.8); absent, the image's.
     now("updates.channel", Kind::Channel),
@@ -1493,6 +1494,10 @@ pub struct Power {
     /// When a fullscreen game gets variable refresh (M7.7)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<String>,
+    /// Stop charging at 80 percent where the laptop offers a limit (M7.16e);
+    /// absent is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_care: Option<bool>,
 }
 
 /// The clipboard history (M7.13), shown on the Shortcuts page beside its
@@ -2024,6 +2029,20 @@ pub const GAME_MODE: &str = "power.game_mode";
 /// When game mode is on when the file does not say (M7.7): while the
 /// machine is plugged in, or has no battery.
 pub const GAME_MODE_DEFAULT: &str = "plugged-in";
+
+/// The key battery care is kept under (M7.16e): on stops charging at 80
+/// percent where the firmware offers a limit (`battery_care`).
+pub const BATTERY_CARE: &str = "power.battery_care";
+
+/// Battery care when the file does not say (M7.16e): off, so the battery
+/// charges to 100 percent as it always has.
+pub const BATTERY_CARE_DEFAULT: bool = false;
+
+/// Whether battery care is on: the file's choice, else
+/// [`BATTERY_CARE_DEFAULT`] (M7.16e).
+pub fn battery_care_on(file: &SettingsFile) -> bool {
+    file.power.battery_care.unwrap_or(BATTERY_CARE_DEFAULT)
+}
 
 /// Whether shell-ui keeps the last texts and pictures copied, in memory
 /// only, for Super+V (M7.13); absent is on.

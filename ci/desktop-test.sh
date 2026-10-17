@@ -708,6 +708,13 @@ case_suspend() {
 	guest 'suspend log'
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
+	# Battery care (M7.16e): zzz runs the resume hook edel-battery-care,
+	# which runs edel boot battery-care and prints its line. zzz inherits
+	# edel suspend's output, which is /tmp/suspend.log that `suspend log`
+	# prints, so the line shows the hook ran; the VM has no battery, so the
+	# line says this computer offers no charge limit.
+	value suspend_log | grep -q 'edel boot battery-care: this computer offers no charge limit' ||
+		fail "the resume hook did not run edel boot battery-care after the wakeup: $(value suspend_log)"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
 }
 
@@ -5394,6 +5401,58 @@ case_fullscreen() {
 	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game"
 }
 
+case_wakeups() {
+	# Idle wakeups (M7.16a): with the desktop idle, the compositor and
+	# shell-ui together wake the processor at most desktop_idle_wakeups_per_second
+	# times a second, counted as voluntary context switches over 60 s (a close
+	# proxy: every wakeup takes the processor out of its deepest rest). Runs
+	# right after one-screen, with no window open. The service answers
+	# each part's number and the total last.
+	n=$(count 'DESKTOP-TEST: desktop_wakeups_per_second ')
+	guest 'wakeups'
+	wait_more 'DESKTOP-TEST: desktop_wakeups_per_second ' "$n" 90 || fail "wakeups did not answer within 90 s"
+	comp=$(value wakeups_compositor)
+	shell=$(value wakeups_shell_ui)
+	total=$(value desktop_wakeups_per_second)
+	limit=$(budget desktop_idle_wakeups_per_second)
+	awk -v p="$total" -v b="$limit" 'BEGIN { exit !(p != "" && p <= b) }' ||
+		fail "the desktop woke the processor $total times a second while idle (compositor ${comp:-?}, shell-ui ${shell:-?}), over the budget of $limit"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Idle wakeups (M7.16a): the compositor woke the processor $comp times a second and shell-ui $shell, $total together, over 60 s with the desktop idle (budget $limit)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: with the desktop idle for 60 s the compositor woke the processor $comp times a second and shell-ui $shell, $total together, within the budget of $limit a second"
+}
+
+case_device_power() {
+	# Devices save power (M7.16d): PCI devices may sleep (graphics and the
+	# management engine are left to their drivers), the SATA links rest
+	# between commands (none in the VM, which has no SATA host), the sound
+	# chip sleeps after 10 s of silence, the NMI watchdog is off, and
+	# Wi-Fi rests between packets (power save 3). The service reads them
+	# from /sys, /proc and NetworkManager's config and prints them, so a
+	# change to features/power or features/network that drops one shows here.
+	n=$(count 'DESKTOP-TEST: device_power ')
+	m=$(count 'DESKTOP-TEST: wifi_power ')
+	guest 'device power'
+	wait_more 'DESKTOP-TEST: device_power ' "$n" 20 || fail "the service did not read the devices' power settings"
+	wait_more 'DESKTOP-TEST: wifi_power ' "$m" 20 || fail "the service did not read Wi-Fi's power save"
+	power=$(value device_power)
+	wifi=$(value wifi_power)
+	set -- $power
+	pci=${1#pci=} sata=${2#sata=} hda=${3#hda=} nmi=${4#nmi=}
+	auto=${pci%%/*} all=${pci#*/}
+	[ "$auto" = "$all" ] && [ "$all" -gt 0 ] ||
+		fail "not every PCI device may sleep: $auto of $all have power/control auto ($power)"
+	case "$sata" in
+	none | med_power_with_dipm) ;;
+	*) fail "a SATA link has the policy $sata, not med_power_with_dipm ($power)" ;;
+	esac
+	[ "$hda" = 10 ] || fail "the sound chip's power_save is $hda, not 10 s ($power)"
+	[ "$nmi" = 0 ] || fail "the NMI watchdog is on ($power)"
+	[ "$wifi" = 3 ] || fail "Wi-Fi's power save is ${wifi:-none}, not 3"
+	echo "PASS: $auto of $all PCI devices may sleep (power/control auto), SATA links $sata, the sound chip sleeps after $hda s, the NMI watchdog is off, Wi-Fi's power save is $wifi"
+}
+
 case_clipboard() {
 	# Clipboard history (M7.13): the test client clip copies a text on the
 	# key 1 and another on 2, which shell-ui keeps in memory; Super+V opens
@@ -8211,7 +8270,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
