@@ -2114,6 +2114,12 @@ msgstr ""
 msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
 msgstr ""
 
+msgid "a game is playing, so this waits until it ends"
+msgstr ""
+
+msgid "the game ended; going on"
+msgstr ""
+
 msgid "Windows"
 msgstr ""
 
