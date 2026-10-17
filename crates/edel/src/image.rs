@@ -30,7 +30,7 @@ pub struct Build<'a> {
     /// for test images. Not part of the definition, so a release image can
     /// never pick them up by accident.
     pub extra_files: Vec<PathBuf>,
-    /// The merged settings file baked in as `places::slot_settings()`
+    /// The merged settings file baked in as the slot's own
     /// (M7.3), checked already; none leaves the slot's own, if any.
     pub settings: Option<String>,
     /// Another health timeout in seconds, for test images (M1.5).
@@ -351,11 +351,9 @@ impl Build<'_> {
         let Some(text) = &self.settings else {
             return Ok(());
         };
-        let slot = edel::places::slot_settings();
-        self.runner.step(&format!(
-            "write the fleet's settings file to {}",
-            slot.display()
-        ));
+        // The path is edel::settings's to name, as it writes the file.
+        self.runner
+            .step("write the fleet's settings file as the image's own, with edel::settings");
         if self.runner.dry_run {
             return Ok(());
         }
