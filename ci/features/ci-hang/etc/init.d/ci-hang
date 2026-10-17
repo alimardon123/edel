@@ -1,0 +1,11 @@
+#!/sbin/openrc-run
+# The A/B test's broken add-on service (M7.2b): its start never returns,
+# so the default runlevel is never reached and the guard lets the
+# watchdog restart the machine.
+description="Hangs the boot, for CI's A/B test"
+
+start() {
+	while :; do
+		sleep 60
+	done
+}

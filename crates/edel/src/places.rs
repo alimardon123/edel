@@ -337,6 +337,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
+        ("addons_dir", ADDONS_DIR.to_string()),
         ("first_passwords", FIRST_PASSWORDS.to_string()),
         ("installed_mark", INSTALLED.to_string()),
         ("greeter_dir", GREETER_DIR.to_string()),

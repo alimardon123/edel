@@ -1,0 +1,4 @@
+#!/bin/sh
+# The A/B test's broken add-on's program (M7.2b): only its presence is
+# checked, as a boot without the add-on must not have it.
+echo "ci-hang is here"
