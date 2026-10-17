@@ -68,6 +68,15 @@ msgstr ""
 msgid "add-on {names} starts at the next restart"
 msgstr ""
 
+msgid "add-on {name} was not copied ({why}); it comes once the new system runs edel settings apply online"
+msgstr ""
+
+msgid "the release list has moved on to {version}"
+msgstr ""
+
+msgid "add-on {names} copied; it starts at the first boot"
+msgstr ""
+
 msgid "add-on {name} started, so it stays"
 msgstr ""
 

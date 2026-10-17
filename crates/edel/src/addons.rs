@@ -1097,6 +1097,105 @@ pub fn fetch_chosen() -> Result<()> {
     Ok(())
 }
 
+/// `edel install` (M7.2b): puts the add-ons the new machine's settings
+/// file (`settings`, its text) chooses into the new data partition, mounted
+/// at `data`, as pending ones with the one-shot mark, so its first boot
+/// tries them as apply's are tried. Each comes from this machine's own
+/// copy of the same version when it has one, else from the release list
+/// this version came from, when it can be reached. Nothing here fails the
+/// install: an add-on not staged is said and comes with apply later.
+pub fn stage_for_install(settings: &str, data: &Path) {
+    let wanted = edel::settings::read(settings)
+        .ok()
+        .and_then(|read| read.file.addons.installed)
+        .unwrap_or_default();
+    if wanted.is_empty() {
+        return;
+    }
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    let here = version_dir(&running);
+    let under = |place: &Path| data.join(place.strip_prefix(places::DATA_MOUNT).unwrap_or(place));
+    let pending = under(&here).join(places::ADDONS_PENDING);
+    let built_in = |name: &str| {
+        Path::new(edel::features::DIR)
+            .join(format!("{name}.toml"))
+            .exists()
+            && !edel::addon_state::mounted().iter().any(|m| m == name)
+    };
+    let mut staged = Vec::new();
+    let mut missing = Vec::new();
+    let said = |name: &str, why: String| {
+        eprintln!(
+            "warning: {}",
+            trf(
+                "add-on {name} was not copied ({why}); it comes once the new system runs edel settings apply online",
+                &[("name", name), ("why", &why)]
+            )
+        )
+    };
+    if let Err(err) = fs::create_dir_all(&pending) {
+        said(&wanted.join(", "), err.to_string());
+        return;
+    }
+    for name in wanted.iter().filter(|n| !built_in(n)) {
+        let file = format!("{name}.ext4");
+        if here.join(&file).is_file() {
+            match fs::copy(here.join(&file), pending.join(&file)) {
+                Ok(_) => staged.push(name.clone()),
+                Err(err) => said(name, err.to_string()),
+            }
+        } else {
+            missing.push(name.clone());
+        }
+    }
+    if !missing.is_empty() {
+        let fetched = source(&running).and_then(|(location, accept)| {
+            let manifest = crate::release::verified(&location, &accept)?;
+            if manifest.version != running {
+                bail!(
+                    "{}",
+                    trf(
+                        "the release list has moved on to {version}",
+                        &[("version", &manifest.version)]
+                    )
+                );
+            }
+            let entries = crate::release::addons_for(&manifest, &image);
+            let (to_fetch, notes) = fetch_plan(&missing, &entries, &running, &built_in);
+            for note in notes {
+                println!("edel install: {note}");
+            }
+            let mut got = Vec::new();
+            for entry in to_fetch {
+                fetch_one(&location, entry, accept.allow_http, &pending, true)?;
+                got.push(entry.name.clone());
+            }
+            Ok(got)
+        });
+        match fetched {
+            Ok(got) => staged.extend(got),
+            Err(err) => said(&missing.join(", "), format!("{err:#}")),
+        }
+    }
+    if staged.is_empty() {
+        let _ = fs::remove_dir_all(&pending);
+        return;
+    }
+    if let Err(err) = fs::write(pending.join(places::ADDONS_TRY), "") {
+        said(&staged.join(", "), err.to_string());
+        return;
+    }
+    println!(
+        "edel install: {}",
+        trf(
+            "add-on {names} copied; it starts at the first boot",
+            &[("names", &staged.join(", "))]
+        )
+    );
+}
+
 /// Once the guard confirms this boot (M7.2b): the pending add-ons it
 /// tried and that are still chosen join the others, the rest go. Returns
 /// what happened, one line each; a failure is a warning, as the boot is
