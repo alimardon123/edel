@@ -758,6 +758,11 @@ fn run() -> Result<()> {
         shell.player_tx = Some(events);
     }
     shell.follow_idle();
+    // A seat known at start is no new seat to sctk, so the clipboard
+    // listens to it here.
+    if let Some(seat) = shell.seat.seats().next() {
+        shell.clipboard.listen(&seat, &qh);
+    }
     shell.watch_status()?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
