@@ -1727,10 +1727,11 @@ fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String
 
 /// Whether the desktop follows `key` at once, reading the person's own
 /// file over the machine's, as it does the layout, screen, look and
-/// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the apps the apps widget pins
-/// (M5.31d), notifications (M5.9b), default and startup apps (M6.10), the
-/// language, keyboard and input method (M5.24a, M5.21a), and own themes and
-/// presets; `edel settings apply` applies the rest, from the machine's file.
+/// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the clipboard history (M7.13),
+/// the apps the apps widget pins (M5.31d), notifications (M5.9b), default and
+/// startup apps (M6.10), the language, keyboard and input method (M5.24a,
+/// M5.21a), and own themes and presets; `edel settings apply` applies the
+/// rest, from the machine's file.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
         || edel::app_permissions::find(key).is_some()
@@ -1749,6 +1750,7 @@ fn desktop_follows(key: &str) -> bool {
             "appearance.",
             "lock_screen.",
             "shortcuts.",
+            "clipboard.",
             "notifications.",
             "default_apps.",
             "startup.",
@@ -2177,7 +2179,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     for page in settings::PAGES {
         let mut mine: Vec<&Row> = rows
             .iter()
-            .filter(|row| row.key.split('.').next() == Some(page.section))
+            .filter(|row| settings::page_of(&row.key).map(|p| p.section) == Some(page.section))
             .collect();
         if mine.is_empty() {
             // A page asked for by name that holds nothing in the file, such

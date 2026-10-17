@@ -238,6 +238,25 @@ pub fn page(section: &str) -> Option<&'static Page> {
     PAGES.iter().find(|p| p.section == section)
 }
 
+/// Sections with no page of their own, each shown on another section's
+/// page (`themes` on Appearance, `clipboard` on Shortcuts).
+pub const SHOWN_ON: &[(&str, &str)] = &[
+    ("themes", "appearance"),
+    ("presets", "layout"),
+    ("clipboard", "shortcuts"),
+];
+
+/// The page a settings key is shown on: its section's page, or the page
+/// its section is shown on ([`SHOWN_ON`]).
+pub fn page_of(key: &str) -> Option<&'static Page> {
+    let section = key.split('.').next()?;
+    let section = SHOWN_ON
+        .iter()
+        .find(|(from, _)| *from == section)
+        .map_or(section, |(_, page)| page);
+    page(section)
+}
+
 /// What a key's value must be.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
@@ -563,6 +582,7 @@ pub const KEYS: &[Key] = &[
     // and the built-in preset it starts from.
     now("presets.*", Kind::OwnPreset),
     now("shortcuts.*", Kind::Keys),
+    now(CLIPBOARD_HISTORY, Kind::Flag),
     now("default_apps.browser", Kind::Text),
     now("default_apps.files", Kind::Text),
     now("default_apps.editor", Kind::Text),
@@ -690,6 +710,9 @@ pub struct SettingsFile {
     /// Action name to keys, such as `close_window = "Super+Q"`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
+    /// The clipboard history (M7.13), whether shell-ui keeps what was copied
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub clipboard: Clipboard,
     #[serde(default, skip_serializing_if = "is_default")]
     pub region: Region,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -736,6 +759,7 @@ impl Default for SettingsFile {
             themes: BTreeMap::new(),
             presets: BTreeMap::new(),
             shortcuts: BTreeMap::new(),
+            clipboard: Clipboard::default(),
             region: Region::default(),
             users: BTreeMap::new(),
             network: Network::default(),
@@ -1353,6 +1377,14 @@ pub struct Power {
     pub game_mode: Option<String>,
 }
 
+/// The clipboard history (M7.13), shown on the Shortcuts page beside its
+/// shortcut.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Clipboard {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history: Option<bool>,
+}
+
 /// The Notifications page (M5.9b).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Notifications {
@@ -1866,6 +1898,10 @@ pub const GAME_MODE: &str = "power.game_mode";
 /// When game mode is on when the file does not say (M7.7): while the
 /// machine is plugged in, or has no battery.
 pub const GAME_MODE_DEFAULT: &str = "plugged-in";
+
+/// Whether shell-ui keeps the last texts and pictures copied, in memory
+/// only, for Super+V (M7.13); absent is on.
+pub const CLIPBOARD_HISTORY: &str = "clipboard.history";
 
 /// The key banners and sounds are kept away with (M5.9b), the one name
 /// shell-ui, Settings and `edel settings` share.
@@ -3857,16 +3893,13 @@ version = "1.2"
         assert_eq!(nearest_key("network.hostname"), None);
         // Every section is one page of the Settings app, and back.
         for key in KEYS {
-            // Themes have no page of their own: they are the Appearance
-            // page's, as the roadmap's M5.12b6 says (M5.12b6a).
-            // Presets are the Layout page's, as themes are the Appearance page's.
-            let section = match key.path.split('.').next().unwrap_or_default() {
-                "themes" => "appearance",
-                "presets" => "layout",
-                "install" => continue, // an instruction to a stick, no page (docs/FLEET.md)
-                section => section,
-            };
-            assert!(page(section).is_some(), "{section} is on no page");
+            // Themes and presets have no page of their own: they are the
+            // Appearance and Layout pages' (M5.12b6a, M5.17), and the
+            // clipboard's its Shortcuts page's (M7.13), `SHOWN_ON`.
+            if key.path.split('.').next() == Some("install") {
+                continue; // an instruction to a stick, no page (docs/FLEET.md)
+            }
+            assert!(page_of(key.path).is_some(), "{} is on no page", key.path);
         }
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
@@ -4353,6 +4386,23 @@ version = "1.2"
         );
         assert_eq!(page("notifications").unwrap().title, "Notifications");
         assert!(!no_keys("notifications"));
+    }
+
+    #[test]
+    fn the_clipboard_history_key_is_on_the_shortcuts_page() {
+        // Its section has no page of its own: the Shortcuts page shows it (M7.13).
+        assert_eq!(page("clipboard"), None);
+        assert_eq!(page_of(CLIPBOARD_HISTORY).unwrap().section, "shortcuts");
+        assert_eq!(page_of("themes.mine").unwrap().section, "appearance");
+        assert_eq!(page_of("install.disk").map(|p| p.section), None);
+        // On when the file does not say, and writing on is taken out by the
+        // caller, so `set` itself writes what it is given.
+        assert_eq!(flag(CLIPBOARD_HISTORY, None, None), None);
+        let off = set("format = 1\n", CLIPBOARD_HISTORY, "false").unwrap();
+        assert!(off.contains("[clipboard]\nhistory = false"), "{off}");
+        assert_eq!(flag(CLIPBOARD_HISTORY, None, Some(&off)), Some(false));
+        let refused = set("format = 1\n", CLIPBOARD_HISTORY, "maybe").unwrap_err();
+        assert!(format!("{refused:#}").contains("expected true or false"));
     }
 
     #[test]

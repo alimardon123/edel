@@ -117,3 +117,4 @@ location.online
 install.disk
 install.erase
 install.then
+clipboard.history
