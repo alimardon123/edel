@@ -527,7 +527,8 @@ impl Shell {
         // button layout (M6.16): apps already open follow.
         if let Some(connection) = &self._portal {
             let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
-            crate::portal::follow(connection, &self.tokens, &buttons);
+            let high = edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref());
+            crate::portal::follow(connection, &self.tokens, &buttons, high);
         }
         let wanted = edel::panel_edit::applying(machine.as_deref(), person.as_deref());
         if wanted != self.panel_specs {

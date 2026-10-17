@@ -136,6 +136,13 @@ pub fn terminal_theme_not_written(why: impl Display) -> String {
     )
 }
 
+/// The apps' stylesheet cannot be written (M6.18).
+pub fn apps_colours_not_written(why: impl Display) -> String {
+    format!(
+        "could not write the apps' colours to gtk.css: {why}; apps keep the colours they had until it can be written"
+    )
+}
+
 /// The tray cannot be served.
 pub fn tray_not_served(why: impl Display) -> String {
     format!(
@@ -404,6 +411,14 @@ mod tests {
         assert_eq!(
             terminal_theme_not_written("Permission denied (os error 13)"),
             "could not write the terminal's theme file: Permission denied (os error 13); new terminals start in foot's own scheme until it can be written"
+        );
+    }
+
+    #[test]
+    fn an_apps_colours_not_written_says_what_still_works() {
+        assert_eq!(
+            apps_colours_not_written("Permission denied (os error 13)"),
+            "could not write the apps' colours to gtk.css: Permission denied (os error 13); apps keep the colours they had until it can be written"
         );
     }
 
