@@ -5,5 +5,5 @@
 #   [[releases]]
 #   version = "2026.10.1"
 #   platform_level = 0
-#   vm_image = "https://github.com/alimardon123/edel/releases/download/v2026.10.1/edel-vm-x86_64.img.gz"
+#   vm_image = "https://github.com/alimardon123/edel/releases/download/v2026.10.1/edel-x86_64.img.gz"
 format = 1
