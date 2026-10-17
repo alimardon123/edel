@@ -475,6 +475,21 @@ pub(crate) fn boot_env() -> Result<Env> {
     Esp::mount(&disk)?.load()
 }
 
+/// `edel platform status`: this system's platform level and what it gives
+/// apps (M8.8), read from os-release, the packages file and the kernel.
+pub fn platform_status() -> Result<()> {
+    let level = fs::read_to_string("/usr/lib/os-release")
+        .ok()
+        .and_then(|text| os_release_value(&text, edel::platform::OS_RELEASE_KEY))
+        .and_then(|value| value.parse::<u32>().ok());
+    let packages = fs::read_to_string(edel::places::PACKAGES_FILE).unwrap_or_default();
+    let kernel = fs::read_to_string("/proc/sys/kernel/osrelease").ok();
+    for line in edel::platform::status(level, &packages, kernel.as_deref().map(str::trim)) {
+        println!("{line}");
+    }
+    Ok(())
+}
+
 /// Prints both slots and which one is running.
 pub fn status() -> Result<()> {
     let disk = Disk::find()?;

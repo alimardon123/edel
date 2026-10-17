@@ -21,6 +21,7 @@
 - [Design principles](DESIGN-PRINCIPLES.md)
 - [Features and images](FEATURES.md)
 - [File formats](FORMATS.md)
+- [Platform levels](platform-levels.md)
 - [Releases](RELEASE.md)
 - [Messages and logs](MESSAGES.md)
 - [Layout guide for apps](layout-guide.md)
