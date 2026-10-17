@@ -310,6 +310,10 @@ pub enum Kind {
     /// A list of profile names, such as `["gaming"]`, each checked against
     /// the release's profiles by [`crate::profiles::problems`] (M7.6)
     Profiles,
+    /// What the profiles named should not bring, such as
+    /// `["com.valvesoftware.Steam"]`: each a Flatpak app id or an add-on
+    /// name ([`crate::profiles::applied`], M7.6c)
+    Without,
     /// A list of host names, such as `["pool.ntp.org"]`: dot-separated
     /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
     /// (M1.13)
@@ -691,6 +695,9 @@ pub const KEYS: &[Key] = &[
     now("install.disk", Kind::Text),
     now("install.erase", Kind::OneOf(&["empty-only", "yes"])),
     now("install.then", Kind::OneOf(&["poweroff", "reboot"])),
+    // What the profiles named leave out (M7.6c): written by `-=` and `+=`
+    // on a list a profile adds to, never by hand.
+    now("system.profiles_without", Kind::Without),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -802,6 +809,9 @@ pub struct System {
     pub developer_mode: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profiles: Option<Vec<String>>,
+    /// What the profiles named should not bring (M7.6c)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profiles_without: Option<Vec<String>>,
 }
 
 /// One person on the Users page.
@@ -2259,11 +2269,24 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
             bail!("{}", lines.join("; "));
         }
     }
-    // Each profile named is one this release has (M7.6).
+    // Each profile named is one this release has (M7.6), and what they
+    // leave out keeps only the items they still bring (M7.6c).
     if key == "system.profiles" {
-        let lines = crate::profiles::problems(&read(&text)?.file);
+        let file = read(&text)?.file;
+        let lines = crate::profiles::problems(&file);
         if !lines.is_empty() {
             bail!("{}", lines.join("; "));
+        }
+        let without = file.system.profiles_without.as_deref().unwrap_or_default();
+        let kept = crate::profiles::left_out(&file);
+        if kept.len() < without.len() {
+            return match kept.is_empty() {
+                true => unset(&text, WITHOUT),
+                false => {
+                    let array = Value::Array(kept.into_iter().map(Value::String).collect());
+                    set(&text, WITHOUT, &array.to_string())
+                }
+            };
         }
     }
     // A preset is named, and the preset in use is one of them (M5.17).
@@ -2328,7 +2351,13 @@ fn present_keys(table: &Table, prefix: &str, out: &mut Vec<String>) {
 fn is_list(kind: Kind) -> bool {
     matches!(
         kind,
-        Kind::Texts | Kind::AppIds | Kind::Addons | Kind::Profiles | Kind::Hosts | Kind::Pictures
+        Kind::Texts
+            | Kind::AppIds
+            | Kind::Addons
+            | Kind::Profiles
+            | Kind::Without
+            | Kind::Hosts
+            | Kind::Pictures
     )
 }
 
@@ -2348,7 +2377,55 @@ fn list_value_at<'a>(table: &'a Table, path: &[&str]) -> Option<&'a Value> {
 /// whole new list is written through [`set`], so it is checked as
 /// `KEY=[...]` would be, and an empty list removes the key, as [`unset`]
 /// does.
+///
+/// On a list the file's profiles add to (M7.6c), taking out an item a
+/// profile brings also writes it to [`WITHOUT`], so the profile no longer
+/// brings it, and adding it again takes it off there; the file's own list
+/// gains it only when no profile brings it.
 pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String> {
+    let item = list_item(value);
+    let file = (key != WITHOUT)
+        .then(|| read(text).ok())
+        .flatten()
+        .map(|read| read.file)
+        .filter(|file| crate::profiles::brings(file, key, &item));
+    let Some(file) = file else {
+        return edit_own_list(text, key, value, add);
+    };
+    let quoted = format!("{item:?}");
+    let without = file.system.profiles_without.unwrap_or_default();
+    if add {
+        return match without.contains(&item) {
+            true => edit_own_list(text, WITHOUT, &quoted, false),
+            false => Ok(text.to_string()),
+        };
+    }
+    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
+    let path: Vec<&str> = key.split('.').collect();
+    let own = list_value_at(&table, &path)
+        .and_then(Value::as_array)
+        .is_some_and(|items| items.iter().any(|v| v.as_str() == Some(item.as_str())));
+    let text = match own {
+        true => edit_own_list(text, key, &quoted, false)?,
+        false => text.to_string(),
+    };
+    edit_own_list(&text, WITHOUT, &quoted, true)
+}
+
+/// The key that names what the profiles leave out (M7.6c).
+pub const WITHOUT: &str = "system.profiles_without";
+
+/// A list item as the arguments of `set` read it: a quoted text and a bare
+/// word both give the text.
+fn list_item(value: &str) -> String {
+    match value_from_arg(value) {
+        Value::String(text) => text,
+        _ => value.to_string(),
+    }
+}
+
+/// [`edit_list`] on the file's own list alone.
+fn edit_own_list(text: &str, key: &str, value: &str, add: bool) -> Result<String> {
     let path: Vec<&str> = key.split('.').collect();
     let entry = known_key(key, &path)?;
     if !is_list(entry.kind) {
@@ -2360,12 +2437,7 @@ pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String
             )
         );
     }
-    // A list item reads as the arguments of `set` do, so a quoted text and a
-    // bare word both give the text.
-    let item = match value_from_arg(value) {
-        Value::String(text) => text,
-        _ => value.to_string(),
-    };
+    let item = list_item(value);
     let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
     let mut list: Vec<String> = match list_value_at(&table, &path) {
         None => Vec::new(),
@@ -2423,6 +2495,10 @@ pub fn unset_all(text: &str, keys: &[&str]) -> Result<String> {
     let mut removed = false;
     for key in keys {
         removed |= remove_key(&mut doc, key)?;
+    }
+    // With no profile named, none leaves anything out (M7.6c).
+    if keys.contains(&"system.profiles") {
+        remove_key(&mut doc, WITHOUT)?;
     }
     if !removed {
         match keys {
@@ -3058,6 +3134,17 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::Profiles, _) => fail(tr("a list of profile names, such as [\"gaming\"]")),
+        (Kind::Without, Value::Array(items))
+            if items.iter().all(|i| {
+                i.as_str()
+                    .is_some_and(|i| crate::apps::is_flatpak_id(i) || crate::features::is_name(i))
+            }) =>
+        {
+            Ok(value.clone())
+        }
+        (Kind::Without, _) => fail(tr(
+            "a list of the app ids and add-on names the profiles bring, such as [\"com.valvesoftware.Steam\"]",
+        )),
         (Kind::Channel, Value::String(s)) if is_channel(s) => Ok(value.clone()),
         (Kind::Channel, Value::String(s)) => Err(trf(
             "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)",
@@ -3416,6 +3503,7 @@ mod tests {
             Kind::AppIds => value_from_arg(r#"["io.mpv.Mpv"]"#),
             Kind::Addons => value_from_arg(r#"["fonts-cjk"]"#),
             Kind::Profiles => value_from_arg(r#"["gaming"]"#),
+            Kind::Without => value_from_arg(r#"["com.valvesoftware.Steam"]"#),
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::IconTheme => Value::String(ICON_THEME_DEFAULT.into()),
@@ -3891,6 +3979,53 @@ version = "1.2"
             error,
             "startup.apps: \"org.example.Mail\" is not in the list"
         );
+    }
+
+    #[test]
+    fn taking_out_a_profiles_item_leaves_it_out_and_adding_it_takes_that_off() {
+        const GAMING: &str = "format = 1\n[system]\nprofiles = [\"gaming\"]\n";
+        const STEAM: &str = "com.valvesoftware.Steam";
+        let out = edit_list(GAMING, "apps.installed", STEAM, false).unwrap();
+        let file = read(&out).unwrap().file;
+        assert_eq!(file.system.profiles_without.unwrap(), [STEAM]);
+        assert_eq!(file.apps.installed, None, "the file's own list is not made");
+        // Again changes nothing, and adding it back takes the key out.
+        assert_eq!(
+            edit_list(&out, "apps.installed", STEAM, false).unwrap(),
+            out
+        );
+        let back = edit_list(&out, "apps.installed", STEAM, true).unwrap();
+        assert_eq!(back, GAMING);
+        // Listed in the file too, it goes from both.
+        let own = edit_list(GAMING, "apps.installed", STEAM, true).unwrap();
+        assert_eq!(own, GAMING, "the profile brings it already");
+        let both = format!("{GAMING}[apps]\ninstalled = [\"{STEAM}\", \"io.mpv.Mpv\"]\n");
+        let file = read(&edit_list(&both, "apps.installed", STEAM, false).unwrap())
+            .unwrap()
+            .file;
+        assert_eq!(file.apps.installed.unwrap(), ["io.mpv.Mpv"]);
+        assert_eq!(file.system.profiles_without.unwrap(), [STEAM]);
+        // Another list holding the same id is the file's own.
+        assert!(edit_list(GAMING, "startup.apps", STEAM, false).is_err());
+    }
+
+    #[test]
+    fn a_new_profile_keeps_only_what_it_still_brings_left_out() {
+        let text = "format = 1\n[system]\nprofiles = [\"office\"]\n\
+                    profiles_without = [\"printing\", \"org.libreoffice.LibreOffice\"]\n";
+        let developer = set(text, "system.profiles", r#"["developer", "office"]"#).unwrap();
+        let file = read(&developer).unwrap().file;
+        assert_eq!(
+            file.system.profiles_without.unwrap(),
+            ["printing", "org.libreoffice.LibreOffice"]
+        );
+        let gaming = read(&set(text, "system.profiles", r#"["gaming"]"#).unwrap())
+            .unwrap()
+            .file;
+        assert_eq!(gaming.system.profiles_without, None);
+        let reset = read(&unset(text, "system.profiles").unwrap()).unwrap().file;
+        assert_eq!(reset.system, System::default());
+        assert!(set(text, WITHOUT, r#"["not an id!"]"#).is_err());
     }
 
     const EDITED: &str = "format = 1\nfuture.key = 1 # kept\n\n[network]\nhostname = \"ci-seeded\"  # mine\n\n# The person who runs CI\n[users.ci]\nadmin = true\n";

@@ -839,6 +839,9 @@ msgstr ""
 msgid "What the machine does once a stick has installed itself: power off or restart."
 msgstr ""
 
+msgid "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off."
+msgstr ""
+
 msgid "English (United States)"
 msgstr ""
 
@@ -1583,6 +1586,9 @@ msgstr ""
 msgid "there is no profile {name}; the profiles are {all}"
 msgstr ""
 
+msgid "without {items}"
+msgstr ""
+
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
@@ -2019,6 +2025,9 @@ msgid "a list of add-on names, such as [\"fonts-cjk\"]"
 msgstr ""
 
 msgid "a list of profile names, such as [\"gaming\"]"
+msgstr ""
+
+msgid "a list of the app ids and add-on names the profiles bring, such as [\"com.valvesoftware.Steam\"]"
 msgstr ""
 
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"

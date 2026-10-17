@@ -15,7 +15,7 @@ use gtk::gio;
 use gtk::glib;
 use gtk::prelude::*;
 
-use edel::i18n::tr;
+use edel::i18n::{tr, trf};
 
 use crate::files::Files;
 use crate::widgets::{Line, exit_text, monitors, reset_words, set_words};
@@ -89,7 +89,21 @@ fn update(ui: &Rc<Ui>) {
     ui.choice.set_selected(at);
     ui.quiet.set(false);
     ui.line.show(&files.source(KEY));
-    let brings = chosen.as_deref().map(edel::profiles::about);
+    // What the profile brings, then what the file leaves out of it (M7.6c):
+    // "Steam, and game mode for every fullscreen game; without Steam".
+    let without = edel::settings::read(&files.machine_text())
+        .ok()
+        .and_then(|read| edel::profiles::without_words(&read.file));
+    let brings = chosen.as_deref().map(|name| match &without {
+        Some(without) => trf(
+            "{brings}; {without}",
+            &[
+                ("brings", &edel::profiles::about(name)),
+                ("without", without),
+            ],
+        ),
+        None => edel::profiles::about(name),
+    });
     ui.brings.set_visible(brings.is_some());
     ui.brings.set_label(&brings.unwrap_or_default());
     ui.choice.widget().set_sensitive(!ui.busy.get());
