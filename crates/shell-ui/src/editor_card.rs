@@ -87,6 +87,9 @@ pub enum Over {
 pub enum Undo {
     Panels(Vec<presets::Panel>),
     LockScreen(LockBefore),
+    /// The person's `appearance.widgets` line before the desktop widgets'
+    /// editor wrote it (M8.21 part 21j2): `None` took it out, so Undo does too.
+    Desktop(Option<String>),
 }
 
 /// The lines of the person's lock screen settings before Done wrote them
@@ -107,6 +110,7 @@ fn undo_words(undo: &Undo) -> &'static str {
     match undo {
         Undo::Panels(_) => tr("Panels changed"),
         Undo::LockScreen(_) => tr("Lock screen changed"),
+        Undo::Desktop(_) => tr("Desktop changed"),
     }
 }
 
@@ -239,7 +243,9 @@ impl Shell {
     /// exclusive, and every panel showing its widgets as tiles. The Undo
     /// bar of an earlier Done goes.
     pub fn open_editor(&mut self) {
-        if self.editor.is_some() {
+        // The panels stay clickable around the desktop's editor (M8.21 part
+        // 21j2), so the panel editor does not open over it.
+        if self.editor.is_some() || self.lock_editor.is_some() {
             return;
         }
         self.close_popups();
@@ -930,7 +936,7 @@ impl Shell {
             text: words.to_string(),
             style: editor::style(match undo {
                 Undo::Panels(_) => Kind::Panels,
-                Undo::LockScreen(_) => Kind::LockScreen,
+                Undo::LockScreen(_) | Undo::Desktop(_) => Kind::LockScreen,
             }),
         };
         let layout = undo_bar::layout(&view);
@@ -1045,6 +1051,11 @@ impl Shell {
             Undo::LockScreen(before) => {
                 if let Some(what) = self.save_lock_lines(&before) {
                     eprintln!("edel-shell-ui: lock screen undone, {what}");
+                }
+            }
+            Undo::Desktop(before) => {
+                if let Some(what) = self.save_desktop_line(before.as_deref()) {
+                    eprintln!("edel-shell-ui: desktop undone, {what}");
                 }
             }
         }

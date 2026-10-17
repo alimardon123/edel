@@ -6015,9 +6015,12 @@ case_lock() {
 # one that ends with Done's place; a line still being written when the
 # log is read ends early, so the read is tried again for up to 3 s.
 editor_places() {
+	# The last places line of the edit mode: the lock's by default, or the
+	# desktop's with `desktop` (M8.21 part 21j2).
+	who=${1:-lock}
 	i=0
 	while :; do
-		line=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock editor places ' | tail -n 1)
+		line=$(tr -d '\r' <"$log" | grep -a "edel-shell-ui: $who editor places " | tail -n 1)
 		case "$line" in
 		*", done "*x[0-9]*) echo "$line"; return ;;
 		esac
@@ -6720,8 +6723,9 @@ case_desktop_widgets() {
 	# clock shows until it is on. Once it is, shell-ui logs where the clock
 	# stands (`clock X+Y+WxH`), and the text colour shows in that box. A person
 	# is refused by edel settings set with its message, and reset takes the
-	# clock away again. Kept as desktop-off.png, desktop-clock.png and
-	# desktop-gone.png.
+	# clock away again. The desktop's widgets' editor (M8.21 part 21j2) moves
+	# the clock to the top left, and Done writes it. Kept as desktop-off.png,
+	# desktop-clock.png, desktop-editor.png and desktop-gone.png.
 	colour=$(count 'edel-compositor: wallpaper colour #336699')
 	guest 'wallpaper colour'
 	wait_more 'edel-compositor: wallpaper colour #336699' "$colour" ||
@@ -6751,6 +6755,50 @@ case_desktop_widgets() {
 			fail "the desktop clock at $1,$2 ${3}x$4 has ${drawn:-0} pixels of the text colour #$ink (desktop-clock.png)"
 		sleep 1
 	done
+	# The desktop's widgets editor (M8.21 part 21j2): ci's bus call, the one
+	# Settings' Edit makes, opens the lock screen's edit mode over the usable
+	# area the panels leave, its strip the clock and the date. The clock is
+	# dragged to the top left, Done writes appearance.widgets into ci's file,
+	# and shell-ui draws the clock there, left of 640. Kept as
+	# desktop-editor.png.
+	on_before=$(count 'edel-shell-ui: desktop widgets on Virtual-1 ')
+	editor_shown=$(count 'edel-shell-ui: desktop editor shown')
+	guest 'desktop editor'
+	wait_for 'edel-shell-ui: desktop editor shown' ||
+		fail "the desktop's edit mode did not open: $(tr -d '\r' <"$log" | grep -a 'desktop editor' | tail -n 3)"
+	places=$(editor_places desktop)
+	height=$(echo "$places" | sed -n 's/^screen 1280x\([0-9]*\),.*/\1/p')
+	[ "${height:-800}" -lt 800 ] ||
+		fail "the desktop's edit mode covers the whole screen, not the usable area: $places"
+	clock=$(echo "$places" | sed -n 's/.*, part[0-9]* clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "the desktop's edit mode did not say where the clock lies: $places"
+	set -- $clock
+	python3 ci/qmp.py drag $(($1 + $3 / 2)) $(($2 + $4 / 2)) $((24 + $3 / 2)) $((24 + $4 / 2))
+	wait_for 'edel-shell-ui: desktop editor moved clock to top_left' ||
+		fail "the clock did not move to the top left: $(tr -d '\r' <"$log" | grep -a 'desktop editor' | tail -n 3)"
+	python3 ci/qmp.py screendump "$dir/desktop-editor.png"
+	places=$(editor_places desktop)
+	done_at=$(echo "$places" | sed -n 's/.*, done \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$done_at" ] || fail "the desktop's edit mode did not say where Done lies: $places"
+	set -- $done_at
+	python3 ci/qmp.py click $(($1 + $3 / 2)) $(($2 + $4 / 2))
+	wait_for 'edel-shell-ui: desktop editor done, appearance.widgets written' ||
+		fail "Done did not write appearance.widgets: $(tr -d '\r' <"$log" | grep -a 'desktop editor' | tail -n 3)"
+	wait_more 'edel-shell-ui: desktop widgets on Virtual-1 ' "$on_before" ||
+		fail "shell-ui did not draw the clock where Done put it"
+	guest 'settings file'
+	value settings_file | grep -q 'at = "top_left".*widget = "clock"' ||
+		fail "ci's settings file does not hold the clock at the top left: $(value settings_file)"
+	line=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: desktop widgets on Virtual-1 ' | tail -n 1)
+	x=$(echo "$line" | sed -n 's/.*clock \([0-9]*\)+.*/\1/p')
+	[ -n "$x" ] && [ "$x" -lt 640 ] ||
+		fail "the desktop's clock is not left of 640 after Done: $line"
+	# The line the editor wrote comes out again, as the lock case takes its
+	# lines out: shell-ui takes the clock away, and the reset below checks it.
+	widgets_off=$(count 'edel-shell-ui: desktop widgets off')
+	guest 'desktop mine default'
+	wait_more 'edel-shell-ui: desktop widgets off' "$widgets_off" ||
+		fail "the editor's line did not come out of ci's file (desktop widgets off)"
 	guest 'desktop bad'
 	wait_for 'DESKTOP-TEST: desktop_bad ' || fail "desktop bad did not run in the VM"
 	bad=$(value desktop_bad)
@@ -6758,17 +6806,14 @@ case_desktop_widgets() {
 	*'does not stand on the desktop'*) ;;
 	*) fail "a person was not refused on the desktop: $bad" ;;
 	esac
-	widgets_off=$(count 'edel-shell-ui: desktop widgets off')
 	guest 'desktop default'
-	wait_more 'edel-shell-ui: desktop widgets off' "$widgets_off" ||
-		fail "shell-ui did not take the desktop's widgets away (desktop widgets off)"
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/desktop-gone.png"
 	gone=$(python3 ci/qmp.py where "$dir/desktop-gone.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
 	[ "${gone:-0}" -lt 20 ] ||
 		fail "after reset, ${gone} pixels of the text colour #$ink still show where the clock was (desktop-gone.png)"
 	guest 'wallpaper default'
-	echo "PASS: appearance.widgets set to the clock drew it at $1,$2 ${3}x$4 with $drawn pixels of the text colour #$ink (desktop-clock.png), a person was refused with its message, and reset took the clock away (desktop-gone.png)"
+	echo "PASS: appearance.widgets set to the clock drew it at $1,$2 ${3}x$4 with $drawn pixels of the text colour #$ink (desktop-clock.png), the editor moved it to the top left and Done wrote it (desktop-editor.png), a person was refused with its message, and reset took the clock away (desktop-gone.png)"
 }
 
 case_buttons() {

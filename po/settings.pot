@@ -491,6 +491,15 @@ msgstr ""
 msgid "your own arrangement"
 msgstr ""
 
+msgid "Edit"
+msgstr ""
+
+msgid "the call to the desktop stopped"
+msgstr ""
+
+msgid "The desktop is not running, so its widgets cannot be edited now:\n{why}"
+msgstr ""
+
 msgid "Each screen's size, scale and place."
 msgstr ""
 
@@ -867,9 +876,6 @@ msgid "On every look"
 msgstr ""
 
 msgid "Unread notifications count"
-msgstr ""
-
-msgid "the call to the desktop stopped"
 msgstr ""
 
 msgid "The desktop's lock screen is not running, so it cannot be edited now:\n{why}"

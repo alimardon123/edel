@@ -289,6 +289,17 @@ pub fn lock_screen_not_kept(why: impl Display) -> String {
 /// There is no home folder to keep the lock screen's widgets in (M5.10c6).
 pub const LOCK_SCREEN_NO_HOME: &str = "no home folder to keep the lock screen in; run edel settings set 'lock_screen.widgets=[...]' with the widgets as TOML instead";
 
+/// The desktop's widgets' editor cannot write its line down: the edit stays
+/// open, so Done can be tried again (M8.21 part 21j2).
+pub fn desktop_not_kept(why: impl Display) -> String {
+    format!(
+        "could not keep the desktop's widgets: {why}; the edit stays open, so Done can be tried again"
+    )
+}
+
+/// There is no home folder to keep the desktop's widgets in (M8.21 part 21j2).
+pub const DESKTOP_NO_HOME: &str = "no home folder to keep the desktop's widgets in; run edel settings set 'appearance.widgets=[...]' as the person";
+
 /// There is no home folder to keep the panels in.
 pub const PANELS_NO_HOME: &str = "no home folder to keep the panels in; run edel settings set panels.list='[...]' with the panels as TOML instead";
 
@@ -688,6 +699,8 @@ mod tests {
             PINS_NO_HOME.to_string(),
             lock_screen_not_kept("x"),
             LOCK_SCREEN_NO_HOME.to_string(),
+            desktop_not_kept("x"),
+            DESKTOP_NO_HOME.to_string(),
             picture_not_read("/a.jpg", "x"),
             location_not_told("x"),
             location_not_kept("x"),
