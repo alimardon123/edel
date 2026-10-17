@@ -864,6 +864,14 @@ pub struct Links {
     pub theirs: BTreeSet<String>,
 }
 
+/// Whether a mounted add-on brings a service: its init script is in
+/// `places::ADDON_INIT_DIR`, from where apply links it into `/etc/init.d`.
+pub fn has_services() -> bool {
+    fs::read_dir(places::ADDON_INIT_DIR)
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+}
+
 impl Links {
     /// Reads what the mounted add-ons provide and what `/etc` has now.
     pub fn read() -> Links {
