@@ -6843,11 +6843,16 @@ case_desktop_widgets() {
 	[ -n "$x" ] && [ "$x" -lt 640 ] ||
 		fail "the desktop's clock is not left of 640 after Done: $line"
 	# The line the editor wrote comes out again, as the lock case takes its
-	# lines out: shell-ui takes the clock away, and the reset below checks it.
-	widgets_off=$(count 'edel-shell-ui: desktop widgets off')
+	# lines out: the machine's clock at the top right stands again, and the
+	# reset below takes it away.
+	on_before=$(count 'edel-shell-ui: desktop widgets on Virtual-1 ')
 	guest 'desktop mine default'
-	wait_more 'edel-shell-ui: desktop widgets off' "$widgets_off" ||
-		fail "the editor's line did not come out of ci's file (desktop widgets off)"
+	wait_more 'edel-shell-ui: desktop widgets on Virtual-1 ' "$on_before" ||
+		fail "the editor's line did not come out of ci's file"
+	line=$(tr -d '\r' <"$log" | grep 'edel-shell-ui: desktop widgets on Virtual-1 ' | tail -n 1)
+	x=$(echo "$line" | sed -n 's/.*clock \([0-9]*\)+.*/\1/p')
+	[ -n "$x" ] && [ "$x" -ge 640 ] ||
+		fail "the machine's clock is not back at the right once the editor's line came out: $line"
 	guest 'desktop bad'
 	wait_for 'DESKTOP-TEST: desktop_bad ' || fail "desktop bad did not run in the VM"
 	bad=$(value desktop_bad)
@@ -6857,6 +6862,8 @@ case_desktop_widgets() {
 	esac
 	guest 'desktop default'
 	sleep 1
+	# Where the machine's clock stood, as the first desktop line gave it.
+	set -- $rect
 	python3 ci/qmp.py screendump "$dir/desktop-gone.png"
 	gone=$(python3 ci/qmp.py where "$dir/desktop-gone.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
 	[ "${gone:-0}" -lt 20 ] ||
