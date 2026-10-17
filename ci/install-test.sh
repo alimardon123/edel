@@ -52,7 +52,7 @@ trap 'kill "$server" 2>/dev/null || :' EXIT
 python3 ci/serial.py "$tty_sock" \
 	'yes or no [no]: =yes' 'Language [en_US.UTF-8]: =de_DE.UTF-8' 'Keyboard [de]: =' \
 	'Your username: =ali' 'Your password: =edel-ci-tty' 'The same password again: =edel-ci-tty' \
-	'Time zone [Europe/Berlin]: =' 'Computer name [ali-vm]: =' 'Layout (=mac-like' 'such as sda: =vdc' 'Type vdc to erase it=vdc' \
+	'Time zone [Europe/Berlin]: =' 'Computer name [ali-vm]: =' 'Layout (=mac-like' 'Profile (=developer' 'such as sda: =vdc' 'Type vdc to erase it=vdc' \
 	>out/install-tty.log 2>&1 &
 typist=$!
 run_vm "$log" 'INSTALL-TEST: (installed|FAIL)' "${INSTALL_TEST_TIMEOUT:-600}" -no-reboot \
@@ -86,7 +86,7 @@ value() {
 }
 [ "$(value 'tty exit')" = 0 ] || tty_fail "edel install with no arguments did not install on vdc (exit $(value 'tty exit'))"
 answers=$(value 'tty settings')
-for line in '[users.ali]' 'admin = true' 'hostname = "ali-vm"' 'language = "de_DE.UTF-8"' 'keyboard = "de"' 'preset = "mac-like"'; do
+for line in '[users.ali]' 'admin = true' 'hostname = "ali-vm"' 'language = "de_DE.UTF-8"' 'keyboard = "de"' 'preset = "mac-like"' 'profiles = ["developer"]'; do
 	case $answers in
 	*"$line"*) ;;
 	*) tty_fail "the installed settings file lacks $line: $answers" ;;
@@ -107,4 +107,4 @@ fi
 tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1 >out/install-live-key
 [ -s out/install-live-key ] || fail "$log" "the live image printed no ssh host key"
 cat "$log"
-echo "PASS: install refused its settings file over plain http, took it over https from a server its own authority vouched for, showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only (${waited}s)"
+echo "PASS: install refused its settings file over plain http, took it over https from a server its own authority vouched for, showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only, the profile picked among them (${waited}s)"
