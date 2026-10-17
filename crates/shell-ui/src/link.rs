@@ -117,6 +117,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::Settings => shell.settings_changed(),
             edel_shell_v1::Event::Lock => shell.lock_screen(),
             edel_shell_v1::Event::Lid { closed } => shell.lid(closed != 0),
+            edel_shell_v1::Event::GameMode { on } => shell.game_mode(on != 0),
         }
     }
 }

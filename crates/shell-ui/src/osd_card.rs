@@ -38,6 +38,13 @@ pub struct OsdCard {
 impl Shell {
     // ---- What the keys do ----
 
+    /// Game mode went on or off (M7.7, Super+G or `power.game_mode`): the
+    /// pop-up shows it. Quick settings' sliders never show game mode, so
+    /// this logs nothing itself.
+    pub fn game_mode(&mut self, on: bool) {
+        self.show_osd(Kind::Game { on });
+    }
+
     /// A volume or brightness key the compositor sent: `key` is one of
     /// `volume_up`, `volume_down`, `mute`, `brightness_up` or
     /// `brightness_down`. The level moves one step, is shown and sent.
@@ -129,6 +136,7 @@ impl Shell {
                 .as_ref()
                 .map_or((0, false), |v| (v.percent, v.muted)),
             Kind::Brightness => (self.live.status.brightness.unwrap_or(0), false),
+            Kind::Game { .. } => (0, false),
         };
         osd::View {
             kind,
@@ -254,6 +262,7 @@ impl Shell {
             let what = match card.view.kind {
                 Kind::Volume => format!("volume {}", card.view.percent),
                 Kind::Brightness => format!("brightness {}", card.view.percent),
+                Kind::Game { on } => format!("game mode {}", if on { "on" } else { "off" }),
             };
             let muted = if card.view.muted { ", muted" } else { "" };
             eprintln!("edel-shell-ui: osd shown, {what}{muted}");
@@ -306,6 +315,8 @@ impl Shell {
                 Some(Part::Track) => match kind {
                     Kind::Volume => self.set_volume(osd::level_at(&layout, x)),
                     Kind::Brightness => self.set_brightness(osd::level_at(&layout, x)),
+                    // Game mode has no level to set.
+                    Kind::Game { .. } => {}
                 },
                 Some(Part::More) => {
                     let argv = [
