@@ -83,6 +83,9 @@ pub struct Status {
     pub bluetooth: Option<bool>,
     /// The screen's backlight in percent, none without one (M5.9c).
     pub brightness: Option<u32>,
+    /// Whether the machine runs on its battery, none while UPower does not
+    /// say (M7.8: the power profile follows it).
+    pub on_battery: Option<bool>,
 }
 
 impl Status {
@@ -204,7 +207,10 @@ pub fn read(features: &Path, bluetooth: bool) -> Status {
         }
     }
     if has("power") {
-        status.battery = power::read().ok().and_then(|s| from_power(&s));
+        if let Ok(snapshot) = power::read() {
+            status.battery = from_power(&snapshot);
+            status.on_battery = snapshot.on_battery;
+        }
     }
     if bluetooth && has("bluetooth") {
         status.bluetooth = bluetooth::adapter().ok().flatten().map(|a| a.powered);

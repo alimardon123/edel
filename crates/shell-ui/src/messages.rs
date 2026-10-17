@@ -355,6 +355,12 @@ pub fn power_failed_logind(what: &str, why: impl Display) -> String {
     )
 }
 
+/// The power profile could not be asked for (M7.8): the computer keeps the
+/// profile it has, and the next status read asks again.
+pub fn profile_not_set(why: impl Display) -> String {
+    format!("could not set the power profile: {why}; the computer keeps the profile it has")
+}
+
 /// The Access dialog cannot be drawn (M6.3): the question is answered no,
 /// so the app that asked takes no picture.
 pub const ACCESS_NOT_SHOWN: &str = "could not draw the dialog asking whether an app may take a screenshot; the request was cancelled, so no picture is taken";

@@ -1654,6 +1654,7 @@ mod tests {
             }),
             bluetooth: Some(false),
             brightness: None,
+            on_battery: Some(true),
         }
     }
 

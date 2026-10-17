@@ -63,6 +63,8 @@ mod player;
 mod popup;
 mod portal;
 mod power;
+mod power_card;
+mod power_rules;
 mod quick;
 mod quick_card;
 mod sessions;
@@ -97,6 +99,9 @@ use smithay_client_toolkit::reexports::client::protocol::{
     wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface,
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
+use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::{
+    ext_idle_notification_v1::ExtIdleNotificationV1, ext_idle_notifier_v1::ExtIdleNotifierV1,
+};
 use smithay_client_toolkit::registry::{ProvidesRegistryState, RegistryState};
 use smithay_client_toolkit::seat::keyboard::{
     KeyEvent, KeyboardHandler, Keysym, Modifiers, RawModifiers,
@@ -115,6 +120,8 @@ use smithay_client_toolkit::shm::{Shm, ShmHandler};
 use smithay_client_toolkit::{delegate_registry, registry_handlers};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
@@ -131,6 +138,7 @@ use crate::notify_card::{BannerCard, CentreCard};
 use crate::osd_card::OsdCard;
 use crate::paint::{Look, Row, Text};
 use crate::popup::Popup;
+use crate::power_rules::Rules;
 use crate::quick_card::QuickCard;
 use crate::tray_card::TrayCard;
 use crate::widgets::{Action, Input, Live};
@@ -324,6 +332,23 @@ struct Shell {
     session_lock: smithay_client_toolkit::session_lock::SessionLockState,
     lock: Option<lock_card::LockCard>,
     lock_tx: channel::Sender<lock::Checked>,
+    /// The power rules the settings files give (M7.8: the lid, the power
+    /// button, the idle lock and the profile), read at start and at each
+    /// change; `power_card.rs` acts on them.
+    rules: Rules,
+    /// A suspend asked while the screen was not locked yet: it runs once the
+    /// lock is drawn (M7.8).
+    suspend_after_lock: bool,
+    /// Whether a suspend or a shut down is under way, shared with its thread
+    /// for the guard after it (M7.8).
+    suspending: Arc<AtomicBool>,
+    /// The compositor's idle notifier, and the notification that locks the
+    /// screen after the lock time (M7.8).
+    idle_notifier: Option<ExtIdleNotifierV1>,
+    idle_notification: Option<ExtIdleNotificationV1>,
+    /// The power profile last asked of `edel`, until the kernel shows it
+    /// (M7.8).
+    profile_asked: Option<String>,
     exit: bool,
 }
 
@@ -527,7 +552,17 @@ fn run() -> Result<()> {
             edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref()),
         )
     };
+    let rules = {
+        let (machine, person) = settings_texts();
+        Rules::read(machine.as_deref(), person.as_deref())
+    };
     let mut shell = Shell {
+        rules,
+        suspend_after_lock: false,
+        suspending: Arc::new(AtomicBool::new(false)),
+        idle_notifier: power_card::bind_idle(&globals, &qh),
+        idle_notification: None,
+        profile_asked: None,
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -682,6 +717,7 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching what plays: {e}"))?;
         shell.player_tx = Some(events);
     }
+    shell.follow_idle();
     shell.watch_status()?;
     WaylandSource::new(connection, queue)
         .insert(event_loop.handle())
@@ -1432,10 +1468,13 @@ impl Shell {
     /// PipeWire's graph read on a thread of its own. At start, and after a
     /// change of the panels brings the widget (M6.17).
     fn watch_status(&mut self) -> Result<()> {
-        let wanted = self
-            .panels
-            .iter()
-            .any(|p| p.row.all().any(|w| w.name == "status"));
+        // Read also where no panel shows the status, when the charger's
+        // profile is kept (M7.8).
+        let wanted = power_card::profile_wanted()
+            || self
+                .panels
+                .iter()
+                .any(|p| p.row.all().any(|w| w.name == "status"));
         if !wanted || self.status_wanted {
             return Ok(());
         }
@@ -2576,7 +2615,9 @@ impl SeatHandler for Shell {
         &mut self.seat
     }
 
-    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
+    fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {
+        self.follow_idle();
+    }
 
     /// A pointer, for clicks and scrolls on the widgets; the keyboard is
     /// asked for only while the launcher is open.

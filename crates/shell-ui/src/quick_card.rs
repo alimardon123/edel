@@ -163,6 +163,8 @@ impl Shell {
         let status = (*status).merged(&self.live.status, bluetooth);
         let changed = status != self.live.status;
         self.live.status = status;
+        // The charger may have changed the profile the machine should use (M7.8).
+        self.follow_profile();
         if let Some(card) = &mut self.quick {
             // What a person chose has been confirmed or refused by now: the
             // machine's word shows again, unless a drag is still going.
