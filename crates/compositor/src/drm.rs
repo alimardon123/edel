@@ -329,7 +329,12 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
-    let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
+    let mut state = Edel::new(
+        display.handle(),
+        event_loop.get_signal(),
+        event_loop.handle(),
+        tokens,
+    )?;
     let handle = event_loop.handle();
     let name = listen(&handle, &mut state, display)?;
     state.socket = name.clone();
@@ -524,6 +529,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     event_loop.run(None, &mut state, |state| {
         state.space.refresh();
         state.popups.cleanup();
+        state.sync_idle_inhibit();
         let _ = state.display.flush_clients();
         if let Ok(mut gpu) = gpu.try_borrow_mut() {
             if std::mem::take(&mut state.screens_changed) {
