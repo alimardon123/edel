@@ -210,6 +210,7 @@ impl Shell {
     /// Draws the grid if what it shows changed. Where its parts lie is
     /// logged first, then the first showing, so CI reads both in order.
     pub fn draw_tray_grid(&mut self) {
+        let glass = self.glass();
         let Some(card) = &mut self.tray_grid else {
             return;
         };
@@ -241,6 +242,8 @@ impl Shell {
             eprintln!("edel-shell-ui: tray grid places {places}");
             card.logged = places;
         }
+        card.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = card.popup.show(
             card.view.clone(),
             &pixmap,

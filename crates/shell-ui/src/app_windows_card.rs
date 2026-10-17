@@ -112,6 +112,7 @@ impl Shell {
 
     /// Draws the app windows menu if what it shows changed.
     pub(crate) fn draw_app_windows(&mut self) {
+        let glass = self.glass();
         let Some(menu) = &mut self.app_windows else {
             return;
         };
@@ -131,6 +132,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        menu.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         if menu.popup.show(
             view.clone(),
             &pixmap,

@@ -277,17 +277,23 @@ impl Edel {
             .collect();
         // A locked session shows its lock screen alone (M5.10).
         if self.is_locked() {
+            self.drop_backdrop(output);
             elements.extend(self.lock_elements(renderer, output, scale));
             return elements;
         }
         // The overview covers the screen while it is open (M5.2j).
         if self.overview.is_some() {
+            self.drop_backdrop(output);
             elements.extend(self.overview_elements(renderer, output, scale));
             return elements;
         }
         // Panels over the windows, backgrounds under them (M5.1a); a dock
         // a window covers is not drawn (M5.4f).
         let hidden = self.hidden_layers();
+        // The blur behind the popups among them (`backdrop.rs`) lies under
+        // each popup, so their places are noted as the parts are made.
+        let base = elements.len();
+        let mut spots = Vec::new();
         elements.extend(crate::layers::elements(
             renderer,
             output,
@@ -295,7 +301,11 @@ impl Edel {
             scale,
             &hidden,
             &self.animations,
+            Some(&mut spots),
         ));
+        for spot in &mut spots {
+            spot.after += base;
+        }
         // Closed windows fading out where they were in the stack (M5.11b).
         let mut pictures: Vec<(usize, Vec<Drawn>)> = self
             .animations
@@ -380,9 +390,11 @@ impl Edel {
             scale,
             &hidden,
             &self.animations,
+            None,
         ));
         // The wallpaper lies under everything, so it comes last (M5.10c4b).
         elements.extend(self.wallpaper_elements(renderer, output, screen.size, scale));
+        self.add_backdrops(renderer, output, &mut elements, spots);
         elements
     }
 
