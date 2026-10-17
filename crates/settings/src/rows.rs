@@ -609,6 +609,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Next keyboard layout"),
     },
     Row {
+        key: "shortcuts.toggle_game_mode",
+        title: n_("Game mode on or off"),
+    },
+    Row {
         key: "shortcuts.show_tray",
         title: n_("Show tray"),
     },

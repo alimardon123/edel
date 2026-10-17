@@ -1574,6 +1574,9 @@ msgstr ""
 msgid "Next keyboard layout"
 msgstr ""
 
+msgid "Game mode on or off"
+msgstr ""
+
 msgid "Show tray"
 msgstr ""
 
