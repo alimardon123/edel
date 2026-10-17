@@ -72,6 +72,20 @@ pub const VAR_FONT_CACHE: &str = "/var/cache/fontconfig";
 pub const FONT_CACHE_CONF: &str = "/etc/fonts/conf.d/05-edel-font-cache.conf";
 /// Developer mode is on while this file exists (ADR-007).
 pub const DEVELOPER_FLAG: &str = data!("/edel/developer");
+/// Developer mode's layer over `/usr` (M7.1): the overlay's upper
+/// directory, exactly what this machine changed there, and its work
+/// directory beside it on the same file system.
+pub const DEVELOPER_LAYER: &str = data!("/developer/usr");
+pub const DEVELOPER_WORK: &str = data!("/developer/work");
+/// The layer is held back while this mark exists: a start found no slot
+/// with a try left (M7.1), and only a reset or switching off ends it.
+pub const DEVELOPER_HELD: &str = data!("/developer/held");
+/// A reset waits here for the next start, which deletes the layer before
+/// mounting anything (M7.1).
+pub const DEVELOPER_RESET: &str = data!("/developer/reset");
+/// What developer mode is in this boot, written by `edel boot
+/// mount-data`: `on` or `held`; absent is off (M7.1).
+pub const DEVELOPER_NOW: &str = run!("/developer");
 /// The last fallback from a slot that did not start, for shell-ui to show
 /// once (M1.1, M5.9).
 pub const LAST_FALLBACK: &str = data!("/edel/last-fallback.toml");

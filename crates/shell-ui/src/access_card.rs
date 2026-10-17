@@ -136,6 +136,7 @@ impl Shell {
     /// Draws the dialog if it may draw and what it shows changed. Its first
     /// drawing logs where its parts lie, which CI reads.
     pub fn draw_access(&mut self) {
+        let glass = self.glass();
         let Some(card) = &mut self.access else {
             return;
         };
@@ -152,6 +153,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        card.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         card.popup
             .show(view.clone(), &pixmap, &self.tokens, "dialog", &self.qh);
         let room = layout.room as f32;

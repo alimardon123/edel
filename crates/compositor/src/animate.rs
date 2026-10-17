@@ -378,6 +378,7 @@ impl Edel {
             );
         }
         self.animations.style = new;
+        self.tell_blur();
     }
 
     /// An overlay surface, such as a popup, shows a picture for the first

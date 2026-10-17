@@ -23,6 +23,7 @@ mod app_windows;
 mod app_windows_card;
 mod apps_colours;
 mod apps_drag;
+mod backdrop;
 mod banner;
 mod calendar;
 mod centre;
@@ -103,6 +104,7 @@ use smithay_client_toolkit::reexports::client::protocol::{
     wl_keyboard, wl_output, wl_pointer, wl_seat, wl_shm, wl_surface,
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
+use smithay_client_toolkit::reexports::protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::{
     ext_idle_notification_v1::ExtIdleNotificationV1, ext_idle_notifier_v1::ExtIdleNotifierV1,
 };
@@ -360,6 +362,11 @@ struct Shell {
     /// screen after the lock time (M7.8).
     idle_notifier: Option<ExtIdleNotifierV1>,
     idle_notification: Option<ExtIdleNotificationV1>,
+    /// The compositor's background-effect manager, when it has one, and
+    /// whether it blurs now (its `capabilities` event): the popups' glass
+    /// needs both (M8.21 21d).
+    backdrops: Option<ExtBackgroundEffectManagerV1>,
+    live_blur: bool,
     /// The power profile last asked of `edel`, until the kernel shows it
     /// (M7.8).
     profile_asked: Option<String>,
@@ -581,6 +588,8 @@ fn run() -> Result<()> {
         suspend_after_lock: false,
         suspending: Arc::new(AtomicBool::new(false)),
         idle_notifier: power_card::bind_idle(&globals, &qh),
+        backdrops: backdrop::bind(&globals, &qh),
+        live_blur: false,
         idle_notification: None,
         profile_asked: None,
         registry: RegistryState::new(&globals),
@@ -1599,6 +1608,18 @@ impl Shell {
         self.draw_all();
     }
 
+    /// Whether the popups' cards are glass now: the compositor blurs, and the
+    /// panels are see-through, so the cards are too (M8.21 21d).
+    fn glass(&self) -> bool {
+        self.live_blur && self.tokens.panel_opacity < 100
+    }
+
+    /// The compositor's blur changed (`backdrop.rs`): the popups shown are
+    /// drawn again in the new look by closing them, as a change of look does.
+    pub fn glass_changed(&mut self) {
+        self.close_popups();
+    }
+
     /// Closes every popup that hangs on a panel or shows over the desktop,
     /// each its own way, so none is left pointing at a panel that goes.
     fn close_popups(&mut self) {
@@ -1842,6 +1863,7 @@ impl Shell {
 
     /// Draws the launcher if what it shows changed.
     fn draw_launcher(&mut self) {
+        let glass = self.glass();
         let Some(menu) = &mut self.menu else {
             return;
         };
@@ -1861,6 +1883,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        menu.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         if menu
             .popup
             .show(view, &pixmap, &self.tokens, "launcher", &self.qh)
@@ -2038,6 +2062,7 @@ impl Shell {
 
     /// Draws the styles' menu if what it shows changed.
     fn draw_styles(&mut self) {
+        let glass = self.glass();
         let Some(menu) = &mut self.styles else {
             return;
         };
@@ -2057,6 +2082,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        menu.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         if menu
             .popup
             .show(view, &pixmap, &self.tokens, "styles menu", &self.qh)
@@ -2158,6 +2185,7 @@ impl Shell {
 
     /// Draws the switcher if what it shows changed.
     fn draw_switcher(&mut self) {
+        let glass = self.glass();
         let Some(flip) = &mut self.flip else {
             return;
         };
@@ -2172,6 +2200,7 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        flip.set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         if flip.show(
             self.flipped.clone(),
             &pixmap,

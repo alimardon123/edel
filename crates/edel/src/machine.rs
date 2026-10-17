@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
-use std::io::{Read as _, Write as _};
+use std::io::{self, BufRead as _, IsTerminal as _, Read as _, Write as _};
 use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt, chown};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
@@ -1642,6 +1642,44 @@ pub fn set(assignments: &[String]) -> Result<()> {
     }
 }
 
+/// The key whose reset also deletes developer mode's layer (M7.1).
+const DEVELOPER_KEY: &str = "system.developer_mode";
+
+/// Asks before a reset deletes developer mode's changes, unless `yes`;
+/// with neither a terminal nor `yes` it refuses, changing nothing.
+fn confirm_developer_reset(yes: bool) -> Result<()> {
+    if yes {
+        return Ok(());
+    }
+    let count = developer_changes().to_string();
+    if !io::stdin().is_terminal() {
+        bail!(
+            "{}",
+            trf(
+                "resetting system.developer_mode deletes the {count} files developer mode changed under /usr; add --yes to go on",
+                &[("count", &count)]
+            )
+        );
+    }
+    print!(
+        "{}",
+        trf(
+            "This deletes the {count} files developer mode changed under /usr when the computer next starts. Type yes to go on: ",
+            &[("count", &count)]
+        )
+    );
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin().lock().read_line(&mut answer)?;
+    if answer.trim() != "yes" {
+        bail!(
+            "{}",
+            tr("stopped, because yes was not typed; nothing was changed")
+        );
+    }
+    Ok(())
+}
+
 /// What one assignment of `edel settings set` does to its key (M6.11).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Assign {
@@ -1763,15 +1801,31 @@ fn desktop_follows(key: &str) -> bool {
 
 /// `edel settings reset KEY...`: removes each key the file holds, so the
 /// release decides it again; refused only when none is there.
-pub fn reset(keys: &[String]) -> Result<()> {
+pub fn reset(keys: &[String], yes: bool) -> Result<()> {
     let keys: Vec<&str> = keys.iter().map(String::as_str).collect();
+    let layer = keys.contains(&DEVELOPER_KEY) && developer_changes() > 0;
+    if layer {
+        confirm_developer_reset(yes)?;
+    }
     let what = trf("reset {keys}", &[("keys", &keys.join(", "))]);
     let typed = format!("reset {}", keys.join(" "));
     let change = |text: &str| settings::unset_all(text, &keys);
     match target_for(is_root(), &keys, &typed)? {
-        Target::Machine => edit(&what, &keys, change),
-        Target::Person => edit_person(&what, &keys, change),
+        Target::Machine => edit(&what, &keys, change)?,
+        Target::Person => edit_person(&what, &keys, change)?,
     }
+    if layer {
+        // Deleted by the next start, before anything is mounted over the
+        // layer (M7.1): a live overlay's upper is not changed under it.
+        let mark = Path::new(places::DEVELOPER_RESET);
+        fs::create_dir_all(mark.parent().unwrap_or(Path::new("/")))?;
+        fs::write(mark, "")?;
+        println!(
+            "{}",
+            tr("Developer mode's changes under /usr are deleted when the computer next starts.")
+        );
+    }
+    Ok(())
 }
 
 /// The machine's settings file as it is, or the release's empty one, for
@@ -2429,12 +2483,29 @@ pub fn export() -> Result<()> {
             println!("#   {line}");
         }
     }
+    // Developer mode's changes stay on this machine (M7.1): add-ons are
+    // the way to carry software to others.
+    let developer = developer_changes();
+    if developer > 0 {
+        println!(
+            "\n# {}",
+            trf(
+                "Developer mode changed {count} files under /usr; they are not carried, as add-ons are the way to bring software to other machines.",
+                &[("count", &developer.to_string())]
+            )
+        );
+    }
     Ok(())
+}
+
+/// How many files developer mode's layer changed under `/usr` (M7.1).
+fn developer_changes() -> usize {
+    changed_files(Path::new(places::DEVELOPER_LAYER), Path::new("/usr")).len()
 }
 
 /// The files under the overlay's upper directory `dir`, named as they
 /// appear under `shown`; a whiteout is a file this machine removed.
-fn changed_files(dir: &Path, shown: &Path) -> Vec<String> {
+pub(crate) fn changed_files(dir: &Path, shown: &Path) -> Vec<String> {
     let Ok(entries) = fs::read_dir(dir) else {
         return Vec::new();
     };

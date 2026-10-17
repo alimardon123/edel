@@ -5,3 +5,4 @@ __pycache__/
 # Signing secrets never enter the repository (docs/RELEASE.md).
 *.key
 /keys/
+docs/mockups/glass/review.html

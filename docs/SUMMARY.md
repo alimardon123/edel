@@ -12,6 +12,7 @@
 - [Defaults](defaults.md)
 - [Keyboard shortcuts](SHORTCUTS.md)
 - [Commands](guide/commands.md)
+- [Developer mode](guide/developer-mode.md)
 
 # Build Edel OS
 

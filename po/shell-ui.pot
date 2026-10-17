@@ -713,6 +713,12 @@ msgstr ""
 msgid "offline"
 msgstr ""
 
+msgid "Developer mode"
+msgstr ""
+
+msgid "developer mode"
+msgstr ""
+
 msgid "{what} in use"
 msgstr ""
 

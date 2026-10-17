@@ -344,6 +344,7 @@ impl Shell {
     /// Draws the drawer if what it shows changed. Its first drawing logs
     /// that it is shown, with the number of widgets in it.
     pub fn draw_editor(&mut self) {
+        let glass = self.glass();
         let Some(editor) = &mut self.editor else {
             return;
         };
@@ -367,6 +368,9 @@ impl Shell {
             eprintln!("edel-shell-ui: panel editor places {places}");
             editor.logged = places;
         }
+        editor
+            .popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = editor.popup.show(
             view.clone(),
             &pixmap,
@@ -988,6 +992,7 @@ impl Shell {
     /// Draws the Undo bar if what it shows changed. Its first drawing logs
     /// that it is shown, and where Undo lies, which CI reads.
     pub fn draw_undo_bar(&mut self) {
+        let glass = self.glass();
         let Some(bar) = &mut self.undo_bar else {
             return;
         };
@@ -1004,6 +1009,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        bar.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = bar
             .popup
             .show(view.clone(), &pixmap, &self.tokens, "undo bar", &self.qh);

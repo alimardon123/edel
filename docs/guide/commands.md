@@ -113,13 +113,14 @@ Change settings, keeping everything else in the file as it was; the desktop foll
 |---|---|
 | `KEY=VALUE` | KEY=VALUE, one or more, such as network.hostname=lab-1 |
 
-### `edel settings reset KEY...`
+### `edel settings reset KEY... [OPTIONS]`
 
 Give settings back to the release, as the Settings app's Reset does.
 
 | | What it does |
 |---|---|
 | `KEY` | The keys, such as network.hostname |
+| `--yes` | Delete developer mode's changes with system.developer_mode without asking |
 
 ### `edel settings diff [FILE]`
 

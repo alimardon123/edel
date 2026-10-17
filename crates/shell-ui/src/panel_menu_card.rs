@@ -125,6 +125,7 @@ impl Shell {
     /// Draws the panel menu if what it shows changed. Its first drawing logs
     /// that it is shown and where its parts lie, which CI reads.
     pub fn draw_panel_menu(&mut self) {
+        let glass = self.glass();
         let Some(menu) = &mut self.panel_menu else {
             return;
         };
@@ -143,6 +144,8 @@ impl Shell {
             scale,
         );
         let places = panel_menu::places(&view, &self.tokens);
+        menu.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         if menu
             .popup
             .show(view.clone(), &pixmap, &self.tokens, "panel menu", &self.qh)

@@ -5,6 +5,7 @@
 //! The binary (`main.rs`) adds the Wayland state and the backends.
 
 pub mod animation;
+pub mod blur;
 pub mod corners;
 pub mod cursor;
 pub mod desks;

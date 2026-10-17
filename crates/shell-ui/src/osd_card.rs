@@ -240,6 +240,7 @@ impl Shell {
 
     /// Draws the pop-up if what it shows changed.
     pub fn draw_osd(&mut self) {
+        let glass = self.glass();
         let Some(card) = &mut self.osd else {
             return;
         };
@@ -254,6 +255,8 @@ impl Shell {
             Some(&mut self.text),
             scale,
         );
+        card.popup
+            .set_blur(&self.compositor, glass, self.tokens.radius_menu as f32);
         let first = card
             .popup
             .show(card.view.clone(), &pixmap, &self.tokens, "pop-up", &self.qh);

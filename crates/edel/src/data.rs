@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use edel::base;
+use edel::{base, places};
 
 use crate::boot::DATA_PARTITION;
 use crate::update::{Disk, run};
@@ -222,17 +222,125 @@ fn overlay_etc() -> Result<()> {
     .context("cannot mount the /etc overlay")?;
     println!("edel-data: /etc changes are kept on {MOUNT_POINT}");
     // OpenRC read the services before this layer was there, so a service
-    // whose script the layer links in, an add-on's (M7.2a), would never
-    // start without this. It costs a moment, only at a boot with such an
-    // add-on.
-    if crate::addons::has_services() {
+    // whose script the layer links in, an add-on's (M7.2a), or one added
+    // in developer mode's layer (M7.1, which mounts before this), would
+    // never start without this. It costs a moment, only at a boot with
+    // such an add-on or with developer mode on.
+    let developer_on =
+        fs::read_to_string(places::DEVELOPER_NOW).is_ok_and(|now| now.trim() == "on");
+    if crate::addons::has_services() || developer_on {
         if let Err(err) = run(&mut base::reread_services()) {
             eprintln!(
-                "warning: edel-data: OpenRC could not read the add-ons' services again, so they may not start: {err:#}"
+                "warning: edel-data: OpenRC could not read the services of the add-ons and developer mode again, so they may not start: {err:#}"
             );
         }
     }
     Ok(())
+}
+
+/// Developer mode's layer over `/usr` (ADR-007 level 3, M7.1): this
+/// machine's changes above the slot's `/usr`, kept on `/data`, so OS files
+/// can be edited and `apk add` works (the images are `/usr`-merged). A
+/// reset asked for is done first, while nothing is mounted over the layer
+/// or `/etc`. A start with no slot left with a try (`boot::SAFE_ARG` on
+/// the command line) holds the layer back, and so does every start after
+/// it until developer mode is reset or switched off, so a change that
+/// stops the machine starting is never mounted again by itself. Seam
+/// (ADR-007, M7.2a): add-ons become more lower directories of this one
+/// mount, held back the same way.
+fn developer_layer() -> Result<()> {
+    let (layer, work) = (
+        Path::new(places::DEVELOPER_LAYER),
+        Path::new(places::DEVELOPER_WORK),
+    );
+    let held = Path::new(places::DEVELOPER_HELD);
+    let reset = Path::new(places::DEVELOPER_RESET);
+    if reset.exists() {
+        for dir in [layer, work] {
+            if dir.exists() {
+                fs::remove_dir_all(dir)
+                    .with_context(|| format!("cannot delete {}", dir.display()))?;
+            }
+        }
+        // apk's list of wanted packages, so it is the slot's again.
+        let world = Path::new(places::ETC_UPPER).join("apk/world");
+        for mark in [held, &world, reset] {
+            if mark.exists() {
+                fs::remove_file(mark)?;
+            }
+        }
+        println!("edel-data: deleted developer mode's changes under /usr, as reset asked");
+    }
+    if !Path::new(places::DEVELOPER_FLAG).exists() {
+        // Switching off ends a hold.
+        if held.exists() {
+            fs::remove_file(held)?;
+        }
+        return Ok(());
+    }
+    let now = Path::new(places::DEVELOPER_NOW);
+    fs::create_dir_all(places::RUN_DIR)?;
+    let safe = is_safe_start(&fs::read_to_string("/proc/cmdline").unwrap_or_default());
+    if safe || held.exists() {
+        fs::create_dir_all(held.parent().unwrap_or(Path::new(MOUNT_POINT)))?;
+        fs::write(held, "")?;
+        fs::write(now, "held\n")?;
+        let why = if safe {
+            "this start is a safe one, as no slot had a try left"
+        } else {
+            "a start found no slot with a try left"
+        };
+        println!(
+            "edel-data: developer mode's layer over /usr is held back, as {why}; switch developer mode off and on again, or reset it, to end this"
+        );
+        return Ok(());
+    }
+    // Mounted once a start: `/run` is new each start, and an add-ons'
+    // overlay may already be on /usr below the layer.
+    if fs::read_to_string(now).unwrap_or_default().trim() != "on" {
+        fs::create_dir_all(layer)?;
+        fs::create_dir_all(work)?;
+        let _ = Command::new("modprobe").arg("overlay").status();
+        run(Command::new("mount")
+            .args(["-t", "overlay", "overlay", "-o"])
+            .arg(format!(
+                "lowerdir=/usr,upperdir={},workdir={}",
+                layer.display(),
+                work.display()
+            ))
+            .arg("/usr"))
+        .context("cannot mount developer mode's layer over /usr")?;
+    }
+    fs::write(now, "on\n")?;
+    println!(
+        "edel-data: developer mode is on: /usr is writable, its changes kept on {MOUNT_POINT}"
+    );
+    Ok(())
+}
+
+/// Whether the kernel's command line marks a safe start (M7.1).
+fn is_safe_start(cmdline: &str) -> bool {
+    cmdline
+        .split_whitespace()
+        .any(|word| word == crate::boot::SAFE_ARG)
+}
+
+/// What `edel status` says of developer mode, from whether the flag is
+/// there now and what this boot's `places::DEVELOPER_NOW` says; nothing
+/// while it is off and stays off (M7.1).
+pub fn developer_state(flag: bool, now: Option<&str>, reset: bool) -> Option<&'static str> {
+    if reset {
+        return Some("its changes under /usr are deleted when the computer next starts");
+    }
+    match (flag, now.map(str::trim)) {
+        (true, Some("on")) => Some("on"),
+        (true, Some("held")) => Some(
+            "on, but its layer over /usr is held back since a start found no slot with a try left; switch it off and on again to keep its changes, or reset it with edel settings reset system.developer_mode",
+        ),
+        (true, _) => Some("on after a restart"),
+        (false, Some(_)) => Some("off after a restart"),
+        (false, None) => None,
+    }
 }
 
 /// `/tmp` in memory: the root is read-only, and Alpine does not do this by
@@ -401,6 +509,8 @@ pub fn mount_data() -> Result<()> {
     let mut first_error = None;
     for (step, result) in [
         ("add-ons", crate::addons::mount_all()),
+        // After the add-ons, so the layer goes over their overlay too.
+        ("developer mode", developer_layer()),
         ("/etc", overlay_etc()),
         ("/home, /var and /root", bind_home_and_var()),
         ("/tmp", tmp_on_tmpfs()),
@@ -455,6 +565,29 @@ mod tests {
         let merged = merge_accounts(slot, machine).unwrap();
         assert_eq!(merged, format!("{machine}\nnew:x:90:90::/:/sbin/nologin\n"));
         assert_eq!(merge_accounts(slot, &merged), None);
+    }
+
+    #[test]
+    fn only_the_word_edel_safe_marks_a_safe_start() {
+        assert!(is_safe_start("root=PARTUUID=x quiet edel.safe\n"));
+        assert!(!is_safe_start("root=PARTUUID=x quiet edel.safer"));
+        assert!(!is_safe_start("edel.tag=edel.safe"));
+    }
+
+    #[test]
+    fn status_names_developer_mode_only_when_it_is_or_will_be_on() {
+        assert_eq!(developer_state(false, None, false), None);
+        assert_eq!(developer_state(true, Some("on\n"), false), Some("on"));
+        let held = developer_state(true, Some("held"), false).unwrap();
+        assert!(held.starts_with("on, but"), "{held}");
+        assert_eq!(
+            developer_state(true, None, false),
+            Some("on after a restart")
+        );
+        let off = developer_state(false, Some("on"), false);
+        assert_eq!(off, Some("off after a restart"));
+        let reset = developer_state(false, None, true).unwrap();
+        assert!(reset.contains("deleted"), "{reset}");
     }
 
     #[test]

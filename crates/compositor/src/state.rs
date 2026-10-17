@@ -141,6 +141,8 @@ pub struct Edel {
     /// The rounded corners' programs, once the renderer made them; none
     /// keeps the corners square (M5.14).
     pub rounded: Option<crate::rounded::Rounded>,
+    /// The live blur behind popups, its programs and pictures (M5.14, `backdrop.rs`).
+    pub backdrops: crate::backdrop::Backdrops,
     pub window_shadows: std::collections::HashMap<Window, (crate::glance::Painted, i32)>,
     /// What the settings file says (`watch.rs`).
     pub settings: Settings,
@@ -245,6 +247,7 @@ impl Edel {
         crate::edelshell::create_global(&display);
         crate::screencopy::create_global(&display);
         crate::games::create_global(&display);
+        crate::backdrop::create_global(&display);
         let primary_selection =
             smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Edel>(
                 &display,
@@ -364,6 +367,7 @@ impl Edel {
             overview: None,
             overview_kept: Default::default(),
             rounded: None,
+            backdrops: Default::default(),
             window_shadows: std::collections::HashMap::new(),
             settings: Settings::default(),
             wallpaper: crate::wallpaper::Shown::new(edel::wallpapers::on_this_machine(None, false)),

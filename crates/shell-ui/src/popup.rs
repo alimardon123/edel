@@ -9,6 +9,7 @@
 use smithay_client_toolkit::compositor::{CompositorState, FrameCallbackData, Region};
 use smithay_client_toolkit::reexports::client::QueueHandle;
 use smithay_client_toolkit::reexports::client::protocol::{wl_shm, wl_surface};
+use smithay_client_toolkit::reexports::protocols::ext::background_effect::v1::client::ext_background_effect_surface_v1::ExtBackgroundEffectSurfaceV1;
 use smithay_client_toolkit::shell::WaylandSurface;
 use smithay_client_toolkit::shell::wlr_layer::{Layer, LayerSurface};
 use smithay_client_toolkit::shm::slot::SlotPool;
@@ -17,6 +18,7 @@ use tiny_skia::{Pixmap, PixmapPaint, Stroke, Transform};
 use edel::tokens::{Colour, Tokens};
 
 use crate::Shell;
+use crate::backdrop;
 use crate::paint::{self, Text, fill, lit, mix, outline, paint_of};
 
 /// The room round a card's rows, and text's from a row's left, in logical
@@ -31,13 +33,25 @@ pub fn tab_step(shift: bool) -> i32 {
 }
 
 /// A drawn shadow and what it was drawn for: the card's size and scale in
-/// device pixels, and the cards.
-type Shadow = ((u32, u32, u32), Vec<Card>, Pixmap);
+/// device pixels, whether its cards are glass, and the cards.
+type Shadow = ((u32, u32, u32, bool), Vec<Card>, Pixmap);
+
+/// What `set_blur` last sent: whether the cards are glass, the card's size,
+/// its cards, the scale and the corners' radius.
+type Blur = (bool, (u32, u32), Vec<Card>, u32, f32);
 
 /// A popup's surface, its own buffers and what it last drew, `V`.
 pub struct Popup<V> {
     pub surface: LayerSurface,
     pool: SlotPool,
+    /// The background effect that asks the compositor to blur behind the
+    /// cards, when the compositor offers it (M8.21 21d).
+    effect: Option<ExtBackgroundEffectSurfaceV1>,
+    /// Whether the cards are glass in the next drawing, as `set_blur` says:
+    /// see-through, their fill at the panels' opacity.
+    glass: bool,
+    /// What `set_blur` last sent, so a region is sent only when it changed.
+    blur: Option<Blur>,
     /// Its card's size in logical pixels, and its screen's scale.
     size: (u32, u32),
     scale: u32,
@@ -83,6 +97,10 @@ impl<V: Clone + PartialEq> Popup<V> {
             .inspect_err(|e| eprintln!("edel-shell-ui: no memory for the {name}: {e}"))
             .ok()?;
         let surface = shell.compositor.create_surface(&shell.qh);
+        let effect = shell
+            .backdrops
+            .as_ref()
+            .map(|manager| manager.get_background_effect(&surface, &shell.qh, ()));
         let surface =
             shell
                 .layers
@@ -90,6 +108,9 @@ impl<V: Clone + PartialEq> Popup<V> {
         let popup = Popup {
             surface,
             pool,
+            effect,
+            glass: false,
+            blur: None,
             size,
             scale,
             room,
@@ -180,6 +201,71 @@ impl<V: Clone + PartialEq> Popup<V> {
         self.set_size(compositor);
     }
 
+    /// Asks the compositor to blur behind the cards when `glass` (M8.21
+    /// 21d): the blur region is each card's rounded shape, or the whole card
+    /// with `radius` corners when it holds none, inset to whole pixels. The
+    /// next `show` draws the cards as glass. A passive popup takes none, and
+    /// nothing is sent when the compositor offers no effect, or when the
+    /// region is what it was. The region takes effect with that `show`'s
+    /// commit.
+    pub fn set_blur(&mut self, compositor: &CompositorState, glass: bool, radius: f32) {
+        let glass = glass && !self.passive && self.effect.is_some();
+        self.glass = glass;
+        let Some(effect) = &self.effect else {
+            return;
+        };
+        let key = (glass, self.size, self.cards.clone(), self.scale, radius);
+        if self.blur.as_ref() == Some(&key) {
+            return;
+        }
+        let region = if glass {
+            Region::new(compositor).ok()
+        } else {
+            None
+        };
+        if let Some(region) = &region {
+            let room = self.room as i32;
+            if self.cards.is_empty() {
+                for (x, y, w, h) in backdrop::rows(self.size.0 as i32, self.size.1 as i32, radius) {
+                    region.add(room + x, room + y, w, h);
+                }
+            } else {
+                for c in &self.cards {
+                    let (x, y) = (c.rect.x.ceil(), c.rect.y.ceil());
+                    let (w, h) = (
+                        c.rect.right().floor() - x,
+                        (c.rect.y + c.rect.h).floor() - y,
+                    );
+                    if w <= 0.0 || h <= 0.0 {
+                        continue;
+                    }
+                    for (rx, ry, rw, rh) in backdrop::rows(w as i32, h as i32, c.radius) {
+                        region.add(room + x as i32 + rx, room + y as i32 + ry, rw, rh);
+                    }
+                }
+            }
+        }
+        effect.set_blur_region(region.as_ref().map(|r| r.wl_region()));
+        self.blur = Some(key);
+    }
+
+    /// The cards as `(x, y, w, h, radius)` in device pixels from the
+    /// drawing's top left corner, at scale `s`: each card, or the whole
+    /// drawing of `w` by `h` with the menus' corners when there are none.
+    fn shapes(&self, w: u32, h: u32, tokens: &Tokens) -> Vec<(f32, f32, f32, f32, f32)> {
+        let s = self.scale as f32;
+        if self.cards.is_empty() {
+            return vec![(0.0, 0.0, w as f32, h as f32, tokens.radius_menu as f32 * s)];
+        }
+        self.cards
+            .iter()
+            .map(|c| {
+                let (x, y, w, h) = c.rect.device(s);
+                (x, y, w, h, c.radius * s)
+            })
+            .collect()
+    }
+
     /// The card's size now, logical pixels: what [`Popup::resize`] last
     /// asked for.
     pub fn size(&self) -> (u32, u32) {
@@ -234,14 +320,15 @@ impl<V: Clone + PartialEq> Popup<V> {
             return None;
         }
         let s = self.scale;
-        let key = (pixmap.width(), pixmap.height(), s);
+        let glass = self.glass;
+        let key = (pixmap.width(), pixmap.height(), s, glass);
         if self
             .shadow
             .as_ref()
             .is_none_or(|(k, c, _)| *k != key || *c != self.cards)
         {
             let room = self.room * s;
-            let shadow = if self.cards.is_empty() {
+            let mut shadow = if self.cards.is_empty() {
                 let r = tokens.radius_menu as f32 * s as f32;
                 paint::shadow(key.0, key.1, room, r, tokens, s as f32)?
             } else {
@@ -269,6 +356,17 @@ impl<V: Clone + PartialEq> Popup<V> {
                 }
                 all
             };
+            if glass {
+                // A glass card is see-through: its shadow must not show
+                // through it (M8.21 21d).
+                let at = room as f32;
+                let cut: Vec<_> = self
+                    .shapes(key.0, key.1, tokens)
+                    .into_iter()
+                    .map(|(x, y, w, h, r)| (x + at, y + at, w, h, r))
+                    .collect();
+                backdrop::cut(&mut shadow, &cut);
+            }
             self.shadow = Some((key, self.cards.clone(), shadow));
         }
         let (_, _, shadow) = self.shadow.as_ref()?;
@@ -289,6 +387,16 @@ impl<V: Clone + PartialEq> Popup<V> {
         name: &str,
         qh: &QueueHandle<Shell>,
     ) -> bool {
+        // Glass first: the card's fill at the panels' opacity, so the shadow
+        // and the frame see the same picture (M8.21 21d).
+        let glassed = self.glass.then(|| {
+            let mut copy = pixmap.clone();
+            let shapes = self.shapes(copy.width(), copy.height(), tokens);
+            let opacity = tokens.panel_opacity as f32 / 100.0;
+            backdrop::glass(&mut copy, tokens.panel, opacity, &shapes);
+            copy
+        });
+        let pixmap = glassed.as_ref().unwrap_or(pixmap);
         let framed = self.framed_card(pixmap, tokens);
         let pixmap = framed.as_ref().unwrap_or(pixmap);
         let (w, h) = (pixmap.width() as i32, pixmap.height() as i32);
@@ -316,6 +424,16 @@ impl<V: Clone + PartialEq> Popup<V> {
         let first = self.drawn.is_none();
         self.drawn = Some((view, self.scale));
         first
+    }
+}
+
+impl<V> Drop for Popup<V> {
+    /// Lets the compositor's background effect go with the popup: wayland-client
+    /// sends no destroy when a proxy is dropped (M8.21 21d).
+    fn drop(&mut self) {
+        if let Some(effect) = self.effect.take() {
+            effect.destroy();
+        }
     }
 }
 
