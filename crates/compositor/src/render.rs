@@ -484,6 +484,7 @@ impl Edel {
             shown: self.shown(window),
             scheme: self.settings.color_scheme,
             border,
+            radius: 0,
         };
         let mut frame = data(window).borrow_mut();
         let icon = icon_name.and_then(|name| self.app_icons.picture(&name, icon_px));

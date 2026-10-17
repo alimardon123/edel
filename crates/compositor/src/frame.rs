@@ -308,6 +308,10 @@ pub struct Look {
     /// The window's border (M5.12b2b): its edge along the bar's top and
     /// sides, drawn in the colours it names.
     pub border: Border,
+    /// The radius of the bar's top corners in its own pixels (M5.14): what
+    /// lies outside them is transparent, and the border follows the curve;
+    /// 0 is square.
+    pub radius: u32,
 }
 
 /// Draws the bar `look` describes into `pixels`, `look.width` by
@@ -368,9 +372,14 @@ pub fn paint(
     for col in 0..w {
         canvas.blend(col as i64, h as i64 - 1, line, line.a);
     }
-    let edge = (tokens.border as f32 * scale).round() as usize;
-    if !look.maximized && edge > 0 {
-        let edge = edge.min(w / 2).min(h);
+    let edge = if look.maximized {
+        0
+    } else {
+        ((tokens.border as f32 * scale).round() as usize)
+            .min(w / 2)
+            .min(h)
+    };
+    if edge > 0 {
         for col in 0..w {
             let colour = look.border.at(col, w);
             let opaque = Colour { a: 1.0, ..colour };
@@ -388,38 +397,84 @@ pub fn paint(
             }
         }
     }
-    let Some(text) = text else {
-        return;
-    };
-    // The title is centred on the bar, moved aside if it would reach the
-    // buttons, and cut short with an ellipsis if it is still too long.
-    let pad = (size / 2) as f32;
-    let used = (set.len() * size) as f32;
-    let (left, right) = match look.side {
-        Side::Right => (pad, w as f32 - used - pad),
-        Side::Left => (used + pad, w as f32 - pad),
-    };
-    let room = right - left;
-    if room <= 0.0 || look.title.is_empty() {
+    // The title is drawn in a block so that each early exit still reaches
+    // the corners below.
+    'title: {
+        let Some(text) = text else {
+            break 'title;
+        };
+        // The title is centred on the bar, moved aside if it would reach
+        // the buttons, and cut short with an ellipsis if it is still too
+        // long.
+        let pad = (size / 2) as f32;
+        let used = (set.len() * size) as f32;
+        let (left, right) = match look.side {
+            Side::Right => (pad, w as f32 - used - pad),
+            Side::Left => (used + pad, w as f32 - pad),
+        };
+        let room = right - left;
+        if room <= 0.0 || look.title.is_empty() {
+            break 'title;
+        }
+        text.set_size(tokens.title_text_size as f32 * scale);
+        // The app's icon, when it has one, sits left of the title, and the
+        // two are centred together (M5.6a).
+        let icon = icon.filter(|p| p.height() as f32 <= band as f32);
+        let (icon_w, gap) = match icon {
+            Some(p) => (p.width() as f32, (7.0 * scale).round()),
+            None => (0.0, 0.0),
+        };
+        let title = text.fit(&look.title, (room - icon_w - gap).max(0.0));
+        let width = text.width(&title) + icon_w + gap;
+        let x = ((w as f32 - width) / 2.0).min(right - width).max(left);
+        if let Some(picture) = icon {
+            let at = top as f32 + (band as f32 - picture.height() as f32) / 2.0;
+            canvas.picture(picture, x.round() as i64, at.round() as i64);
+        }
+        let baseline = (top as f32 + (band as f32 + text.ascent + text.descent) / 2.0).round();
+        text.draw(&mut canvas, &title, x + icon_w + gap, baseline, ink, right);
+    }
+    round_top(&mut canvas, look, edge);
+}
+
+/// Rounds the bar's top corners to `look.radius` pixels (M5.14). Each
+/// corner's square lies outside a circle of that radius, and what lies
+/// outside the circle is made transparent. With a border of `edge` pixels
+/// the border follows the curve: its colour is blended in along the
+/// circle's inner band, the one the border loop would draw there.
+fn round_top(canvas: &mut Canvas, look: &Look, edge: usize) {
+    if look.radius == 0 {
         return;
     }
-    text.set_size(tokens.title_text_size as f32 * scale);
-    // The app's icon, when it has one, sits left of the title, and the
-    // two are centred together (M5.6a).
-    let icon = icon.filter(|p| p.height() as f32 <= band as f32);
-    let (icon_w, gap) = match icon {
-        Some(p) => (p.width() as f32, (7.0 * scale).round()),
-        None => (0.0, 0.0),
-    };
-    let title = text.fit(&look.title, (room - icon_w - gap).max(0.0));
-    let width = text.width(&title) + icon_w + gap;
-    let x = ((w as f32 - width) / 2.0).min(right - width).max(left);
-    if let Some(picture) = icon {
-        let at = top as f32 + (band as f32 - picture.height() as f32) / 2.0;
-        canvas.picture(picture, x.round() as i64, at.round() as i64);
+    let (w, h) = (canvas.width, canvas.pixels.len() / 4 / canvas.width);
+    let r = (look.radius as f32).min(w as f32 / 2.0).min(h as f32);
+    let side = r.ceil() as usize;
+    let e = edge as f32;
+    let corners = [(true, r), (false, w as f32 - r)];
+    for (left, cx) in corners {
+        let xs = if left { 0..side } else { w - side..w };
+        for y in 0..side {
+            for x in xs.clone() {
+                let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
+                let across = if left { px < cx } else { px > cx };
+                if !(across && py < r) {
+                    continue;
+                }
+                let d = ((px - cx).powi(2) + (py - r).powi(2)).sqrt();
+                if edge > 0 && d > r - e - 0.5 {
+                    let colour = look.border.at(x, w);
+                    let cover = (d - (r - e) + 0.5).clamp(0.0, 1.0);
+                    canvas.blend(
+                        x as i64,
+                        y as i64,
+                        Colour { a: 1.0, ..colour },
+                        cover * colour.a,
+                    );
+                }
+                canvas.fade(x, y, (r - d + 0.5).clamp(0.0, 1.0));
+            }
+        }
     }
-    let baseline = (top as f32 + (band as f32 + text.ascent + text.descent) / 2.0).round();
-    text.draw(&mut canvas, &title, x + icon_w + gap, baseline, ink, right);
 }
 
 struct Canvas<'a> {
@@ -436,6 +491,15 @@ impl Canvas<'_> {
                 let i = (row * self.width + col) * 4;
                 self.pixels[i..i + 4].copy_from_slice(&[b, g, r, a]);
             }
+        }
+    }
+
+    /// Multiplies the four bytes of one premultiplied pixel by `factor`, 0
+    /// to 1, so it fades towards transparent at 0.
+    fn fade(&mut self, x: usize, y: usize, factor: f32) {
+        let i = (y * self.width + x) * 4;
+        for byte in &mut self.pixels[i..i + 4] {
+            *byte = (f32::from(*byte) * factor).round() as u8;
         }
     }
 
@@ -980,6 +1044,7 @@ mod tests {
             icon: None,
             scheme: crate::tokens::Scheme::Dark,
             border: Border::of(&tokens(), focused),
+            radius: 0,
         }
     }
 
@@ -1228,5 +1293,45 @@ mod tests {
         assert_eq!(strip.len(), 4 * 2 * 4);
         assert_eq!(&strip[0..4], &[0, 0, 255, 255]);
         assert_eq!(&strip[12..16], &[255, 0, 0, 255]);
+    }
+
+    fn alpha(pixels: &[u8], width: i32, x: i32, y: i32) -> u8 {
+        pixels[((y * width + x) * 4 + 3) as usize]
+    }
+
+    #[test]
+    fn a_bar_at_radius_ten_has_rounded_top_corners_and_the_rest_unchanged() {
+        let t = tokens();
+        let (w, h) = (200, 28);
+        let mut square = vec![0; (w * h * 4) as usize];
+        paint(&mut square, &look(w, true), &t, None, None);
+        assert!(
+            square.chunks_exact(4).all(|p| p[3] == 0xff),
+            "square is opaque"
+        );
+        let mut round_look = look(w, true);
+        round_look.radius = 10;
+        let mut round = vec![0; (w * h * 4) as usize];
+        paint(&mut round, &round_look, &t, None, None);
+        assert_eq!(alpha(&round, w, 0, 0), 0, "the top left corner is cut away");
+        assert_eq!(
+            alpha(&round, w, w - 1, 0),
+            0,
+            "the top right corner is cut away"
+        );
+        assert_eq!(pixel(&round, w, 100, 0), pixel(&square, w, 100, 0));
+        assert_eq!(pixel(&round, w, 100, 20), pixel(&square, w, 100, 20));
+        assert_eq!(pixel(&round, w, 3, 20), pixel(&square, w, 3, 20));
+        assert_ne!(alpha(&round, w, 3, 3), 0, "the border follows the curve");
+    }
+
+    #[test]
+    fn a_bar_at_radius_zero_is_square() {
+        let t = tokens();
+        let mut pixels = vec![0; 200 * 28 * 4];
+        let mut square = look(200, true);
+        square.radius = 0;
+        paint(&mut pixels, &square, &t, None, None);
+        assert!(pixels.chunks_exact(4).all(|p| p[3] == 0xff));
     }
 }
