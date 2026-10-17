@@ -497,12 +497,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                     if let Err(e) = gpu.drm.activate(false) {
                         eprintln!("edel-compositor: {}", messages::screens_lost(e));
                     }
-                    for screen in gpu.screens.values_mut() {
-                        if let Err(e) = screen.compositor.reset_state() {
-                            eprintln!("edel-compositor: resetting a screen failed: {e}");
-                        }
-                        screen.pending = false;
-                    }
+                    gpu.reset_screens();
                     gpu.active = true;
                     state.dirty = true;
                     // Screens may have changed while another terminal had them.
@@ -534,6 +529,10 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         if let Ok(mut gpu) = gpu.try_borrow_mut() {
             if std::mem::take(&mut state.screens_changed) {
                 gpu.scan(state);
+            }
+            if std::mem::take(&mut state.woke) {
+                gpu.reset_screens();
+                state.dirty = true;
             }
             gpu.render(state);
         }
@@ -732,6 +731,18 @@ impl Gpu {
             },
         );
         Ok(())
+    }
+
+    /// Forgets what each screen showed, so the next frame sets it up and
+    /// draws it whole: after another terminal had the screens, or after the
+    /// lid opened from a suspend that reset the GPU (M7.8).
+    fn reset_screens(&mut self) {
+        for screen in self.screens.values_mut() {
+            if let Err(e) = screen.compositor.reset_state() {
+                eprintln!("edel-compositor: resetting a screen failed: {e}");
+            }
+            screen.pending = false;
+        }
     }
 
     /// Draws a frame on every screen where something changed, the seat is

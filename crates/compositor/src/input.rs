@@ -459,6 +459,7 @@ impl Edel {
                     if closed { "closed" } else { "opened" }
                 );
                 self.tell_lid(closed);
+                self.woke |= !closed;
             }
             _ => {}
         }
