@@ -310,9 +310,15 @@ fn behind_key(behind: &[Drawn], spots: &[Spot], blur: u32, scale: f64) -> Vec<Se
 }
 
 impl Edel {
-    /// Compiles the blur's programs once the renderer exists. On failure the
-    /// popups keep their colour, and the log says why.
+    /// Compiles the blur's programs once the renderer exists, only when the
+    /// session starts on the Full tier: the tier never rises again, so on
+    /// Balanced and Lite they would only cost memory. On failure the popups
+    /// keep their colour, and the log says why.
     pub fn start_backdrop(&mut self, renderer: &mut GlesRenderer) {
+        if self.deadline.tier() != Tier::Full {
+            self.tell_blur();
+            return;
+        }
         match Programs::compile(renderer) {
             Ok(programs) => {
                 self.backdrops.programs = Some(programs);
