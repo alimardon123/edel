@@ -582,6 +582,7 @@ pub const KEYS: &[Key] = &[
         ON_BATTERY,
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
+    now(GAME_MODE, Kind::OneOf(&["plugged-in", "always", "off"])),
     now("services.*", Kind::Flag),
     // The release lists `edel update` takes (M3.8); absent, the image's.
     now("updates.channel", Kind::Channel),
@@ -1339,6 +1340,9 @@ pub struct Power {
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_battery: Option<String>,
+    /// When a fullscreen game gets variable refresh (M7.7)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub game_mode: Option<String>,
 }
 
 /// The Notifications page (M5.9b).
@@ -1778,6 +1782,17 @@ pub const LOCK_AFTER_MINUTES_DEFAULT_TEXT: &str = "5";
 /// How hard the machine works on battery when the file does not say (M7.8):
 /// balanced.
 pub const ON_BATTERY_DEFAULT: &str = "balanced";
+
+/// The key when game mode is on is kept under (M7.7): `plugged-in`,
+/// `always` or `off`; its values are [`choices`]'. In game mode a fullscreen
+/// window gets variable refresh where the screen offers it; Super+G turns
+/// it on or off over the key until the next login, and the gaming profile
+/// (M7.6) sets it to `always`.
+pub const GAME_MODE: &str = "power.game_mode";
+
+/// When game mode is on when the file does not say (M7.7): while the
+/// machine is plugged in, or has no battery.
+pub const GAME_MODE_DEFAULT: &str = "plugged-in";
 
 /// The key banners and sounds are kept away with (M5.9b), the one name
 /// shell-ui, Settings and `edel settings` share.

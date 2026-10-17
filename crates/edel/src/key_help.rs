@@ -7,8 +7,8 @@
 
 use crate::i18n::n_;
 use crate::settings::{
-    LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY_DEFAULT, PAGES,
-    POWER_BUTTON_DEFAULT,
+    GAME_MODE_DEFAULT, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY_DEFAULT,
+    PAGES, POWER_BUTTON_DEFAULT,
 };
 
 /// Who decides a key's value while the settings file does not set it.
@@ -876,6 +876,16 @@ pub const HELP: &[Help] = &[
             "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here.",
         ),
         default: ON_BATTERY_DEFAULT,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "power.game_mode",
+        help: n_(
+            "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out.",
+        ),
+        default: GAME_MODE_DEFAULT,
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,

@@ -1160,6 +1160,9 @@ msgstr ""
 msgid "Plugged in, it runs at Balanced, or Performance when chosen here"
 msgstr ""
 
+msgid "A fullscreen game gets variable refresh; Super+G turns it on or off"
+msgstr ""
+
 msgid "Other batteries"
 msgstr ""
 
@@ -1386,6 +1389,9 @@ msgid "Power button"
 msgstr ""
 
 msgid "Lock the screen after"
+msgstr ""
+
+msgid "Game mode"
 msgstr ""
 
 msgid "Do not disturb"
@@ -1632,6 +1638,9 @@ msgid "Ask"
 msgstr ""
 
 msgid "Power saver"
+msgstr ""
+
+msgid "When plugged in"
 msgstr ""
 
 msgid "From the preset"

@@ -36,8 +36,9 @@ use gtk::prelude::*;
 use edel::i18n::{n_, tr, trf};
 use edel::power::{self, Bar, Device, Sample, Snapshot, State};
 use edel::settings::{
-    LID_CLOSE, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY,
-    ON_BATTERY_DEFAULT, POWER_BUTTON, POWER_BUTTON_DEFAULT,
+    GAME_MODE, GAME_MODE_DEFAULT, LID_CLOSE, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES,
+    LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY, ON_BATTERY_DEFAULT, POWER_BUTTON,
+    POWER_BUTTON_DEFAULT,
 };
 
 use crate::choice_row::{self, ChoiceRow};
@@ -298,6 +299,12 @@ impl Lid {
                 ON_BATTERY,
                 n_("Plugged in, it runs at Balanced, or Performance when chosen here"),
                 ON_BATTERY_DEFAULT,
+            ),
+            ChoiceRow::new(
+                &self.group,
+                GAME_MODE,
+                n_("A fullscreen game gets variable refresh; Super+G turns it on or off"),
+                GAME_MODE_DEFAULT,
             ),
         ];
         let rows: Vec<Rc<ChoiceRow>> = specs
@@ -892,6 +899,8 @@ mod tests {
         assert_eq!(rows::title(POWER_BUTTON), "Power button");
         assert_eq!(rows::title(LOCK_AFTER_MINUTES), "Lock the screen after");
         assert_eq!(rows::title(ON_BATTERY), "On battery");
+        assert_eq!(rows::title(GAME_MODE), "Game mode");
+        assert_eq!(rows::label("plugged-in"), "When plugged in");
         assert_eq!(rows::label("poweroff"), "Shut down");
         assert_eq!(rows::label("nothing"), "Do nothing");
         assert_eq!(rows::label("ask"), "Ask");
@@ -902,6 +911,7 @@ mod tests {
             (LID_CLOSE, LID_CLOSE_DEFAULT),
             (POWER_BUTTON, POWER_BUTTON_DEFAULT),
             (ON_BATTERY, ON_BATTERY_DEFAULT),
+            (GAME_MODE, GAME_MODE_DEFAULT),
         ] {
             assert!(rows::values(key).contains(&release), "{key}: {release}");
         }

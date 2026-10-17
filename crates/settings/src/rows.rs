@@ -303,6 +303,10 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::ON_BATTERY,
         title: n_("On battery"),
     },
+    Row {
+        key: edel::settings::GAME_MODE,
+        title: n_("Game mode"),
+    },
     // The Notifications page (M5.9b).
     Row {
         key: edel::settings::DO_NOT_DISTURB,
@@ -695,6 +699,7 @@ pub fn label(value: &str) -> String {
         "ask" => n_("Ask"),
         "lock" => n_("Lock the screen"),
         "power-saver" => n_("Power saver"),
+        "plugged-in" => n_("When plugged in"),
         _ => return crate::files::title(&value.replace('-', " ")),
     };
     tr(word).to_string()
