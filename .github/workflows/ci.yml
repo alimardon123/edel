@@ -12,11 +12,14 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its older run. Every push to main
-# or of a tag keeps its own run, even when main and a tag point at the same
-# commit, so no publish is ever cancelled halfway.
+# A new push to a pull request cancels its older run. Pushes to main take
+# turns: one run at a time, and a newer merge replaces an older one still
+# waiting, so a burst of merges costs two full runs, not one each (faster
+# PRs, 2026-10-17); a run that started is never cancelled, so no publish
+# stops halfway, and the newest run tests every merge before it. Every tag
+# keeps its own run, even when main and a tag point at the same commit.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.ref, github.sha) }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref == 'refs/heads/main' && 'main' || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
