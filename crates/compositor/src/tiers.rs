@@ -8,6 +8,7 @@
 use std::ffi::CStr;
 use std::fs;
 use std::os::raw::c_char;
+use std::path::Path;
 use std::time::Duration;
 
 use smithay::backend::renderer::gles::{GlesRenderer, ffi};
@@ -36,13 +37,11 @@ pub fn renderer_name(renderer: &mut GlesRenderer) -> String {
 
 /// Whether the machine runs on a battery that is discharging.
 pub fn on_battery() -> bool {
-    let Ok(supplies) = fs::read_dir("/sys/class/power_supply") else {
-        return false;
-    };
-    supplies.flatten().any(|supply| {
-        let read = |name: &str| fs::read_to_string(supply.path().join(name)).unwrap_or_default();
-        read("type").trim() == "Battery" && read("status").trim() == "Discharging"
-    })
+    edel::battery_care::batteries(Path::new(edel::battery_care::POWER_SUPPLY))
+        .iter()
+        .any(|battery| {
+            fs::read_to_string(battery.join("status")).is_ok_and(|s| s.trim() == "Discharging")
+        })
 }
 
 /// The time between two frames on `output`, 60 Hz when it has no mode.

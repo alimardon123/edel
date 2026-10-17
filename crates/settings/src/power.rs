@@ -43,7 +43,7 @@ use edel::settings::{
 
 use crate::choice_row::{self, ChoiceRow};
 use crate::files::Files;
-use crate::{card, widgets};
+use crate::{battery_care, card, widgets};
 
 const INTRO: &str = n_("The battery, the lid and the power button.");
 
@@ -186,6 +186,9 @@ struct Card {
     sub: gtk::Label,
     health: gtk::Box,
     health_value: gtk::Label,
+    /// How many times it has been charged through, under its health,
+    /// when the battery says (M7.16e)
+    health_cycles: gtk::Label,
     chart: gtk::Box,
     bars: gtk::Box,
 }
@@ -343,6 +346,8 @@ impl Lid {
 /// The page's widgets and what it needs to change them.
 struct Ui {
     card: Card,
+    /// Battery care's group under the card (M7.16e).
+    care: Rc<battery_care::Care>,
     problem: gtk::Label,
     others_head: gtk::Box,
     others: gtk::Box,
@@ -363,6 +368,7 @@ struct Ui {
 pub fn page() -> gtk::Widget {
     let (page, content, problem) = widgets::page(tr("Power"), tr(INTRO));
     let card = battery_card(&content);
+    let care = battery_care::group(&content);
 
     let others_head = widgets::heading(&content, tr("Other batteries"));
     let others = widgets::group(&content);
@@ -382,6 +388,7 @@ pub fn page() -> gtk::Widget {
 
     let ui = Rc::new(Ui {
         card,
+        care,
         problem,
         others_head,
         others,
@@ -454,6 +461,11 @@ fn battery_card(content: &gtk::Box) -> Card {
         .xalign(1.0)
         .css_classes(["edel-power-health"])
         .build();
+    let health_cycles = gtk::Label::builder()
+        .xalign(1.0)
+        .visible(false)
+        .css_classes(["edel-power-dim"])
+        .build();
     let health = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .halign(gtk::Align::End)
@@ -461,6 +473,7 @@ fn battery_card(content: &gtk::Box) -> Card {
         .build();
     health.append(&health_title);
     health.append(&health_value);
+    health.append(&health_cycles);
 
     let top = gtk::Box::builder().spacing(18).build();
     top.append(&drawing);
@@ -477,7 +490,11 @@ fn battery_card(content: &gtk::Box) -> Card {
     // A narrow card puts the health under the charge, not at its end; the
     // card's own width decides, as the window's does for the sidebar.
     let (narrow_top, narrow_words, narrow_health) = (top.clone(), words.clone(), health.clone());
-    let labels = (health_title.clone(), health_value.clone());
+    let labels = (
+        health_title.clone(),
+        health_value.clone(),
+        health_cycles.clone(),
+    );
     let folded = widgets::folding(&root, move |narrow| {
         narrow_health.unparent();
         // Right-aligned at the card's end, left-aligned under the words.
@@ -489,6 +506,7 @@ fn battery_card(content: &gtk::Box) -> Card {
         narrow_health.set_halign(align);
         labels.0.set_xalign(justify);
         labels.1.set_xalign(justify);
+        labels.2.set_xalign(justify);
         if narrow {
             narrow_words.append(&narrow_health);
         } else {
@@ -538,6 +556,7 @@ fn battery_card(content: &gtk::Box) -> Card {
         sub,
         health,
         health_value,
+        health_cycles,
         chart,
         bars,
     }
@@ -545,10 +564,17 @@ fn battery_card(content: &gtk::Box) -> Card {
 
 impl Card {
     /// Shows the headline, the battery (when there is one), its health
-    /// (when it is known) and what the chart holds: none without a
-    /// battery. A screen reader hears the headline and the line as one
-    /// sentence.
-    fn show(&self, line: &Headline, battery: Option<&Device>, plugged: bool, health: Option<u32>) {
+    /// and charge cycles (when they are known) and what the chart holds:
+    /// none without a battery. A screen reader hears the headline and the
+    /// line as one sentence.
+    fn show(
+        &self,
+        line: &Headline,
+        battery: Option<&Device>,
+        plugged: bool,
+        health: Option<u32>,
+        cycles: Option<u32>,
+    ) {
         self.title.set_label(&line.title);
         self.sub.set_label(&line.sub);
         self.sub.set_visible(!line.sub.is_empty());
@@ -573,6 +599,12 @@ impl Card {
         if let Some(health) = health {
             self.health_value
                 .set_label(&trf("{percent}%", &[("percent", &health.to_string())]));
+        }
+        let cycles = cycles.filter(|_| health.is_some());
+        self.health_cycles.set_visible(cycles.is_some());
+        if let Some(cycles) = cycles {
+            self.health_cycles
+                .set_label(&trf("{count} cycles", &[("count", &cycles.to_string())]));
         }
         if battery.is_none() {
             self.chart.set_visible(false);
@@ -664,6 +696,7 @@ fn refresh(ui: &Rc<Ui>) {
                     None,
                     false,
                     None,
+                    None,
                 );
                 ui.show_chart(&[]);
                 ui.others_head.set_visible(false);
@@ -679,12 +712,14 @@ fn refresh(ui: &Rc<Ui>) {
 
 impl Ui {
     fn show(&self, snapshot: &Snapshot) {
+        self.care.update();
         let line = headline(snapshot);
         self.card.show(
             &line,
             snapshot.battery(),
             snapshot.plugged_in(),
             snapshot.health(),
+            snapshot.cycles(),
         );
         if !self.announced.replace(true) {
             // CI reads this line to know what the page showed.
@@ -900,6 +935,7 @@ mod tests {
         assert_eq!(rows::title(LOCK_AFTER_MINUTES), "Lock the screen after");
         assert_eq!(rows::title(ON_BATTERY), "On battery");
         assert_eq!(rows::title(GAME_MODE), "Game mode");
+        assert_eq!(rows::title(edel::settings::BATTERY_CARE), "Battery care");
         assert_eq!(rows::label("plugged-in"), "When plugged in");
         assert_eq!(rows::label("poweroff"), "Shut down");
         assert_eq!(rows::label("nothing"), "Do nothing");

@@ -1,21 +1,27 @@
 //! `edel restart`, `edel shutdown` and `edel suspend` (M5.10c): the power
 //! menu's three actions, one way for the lock screen, Settings and people
 //! at a terminal. Each runs the base's own program (`edel::base`). Also
-//! `edel power profile` (M7.8), the kernel's power profile.
+//! `edel power profile` (M7.8), the kernel's power profile, and battery care
+//! (M7.16e): `edel power charge-full` for a trip, and `edel boot
+//! battery-care`, which zzz runs after every resume.
 //!
 //! Root runs the program directly. Anyone else runs it through `doas -n`,
 //! which the login feature's rule file lets group `seat` run with no
 //! password and no arguments (`etc/doas.d/edel-power.conf`). The names
 //! are the Settings app's, so the command line reads the same (ADR-008).
 
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use edel::base::{POWEROFF, REBOOT, SUSPEND};
 use edel::i18n::{tr, trf};
 use edel::settings::{self, ON_BATTERY};
-use edel::{places, profile, users};
+use edel::{battery_care, places, profile, users};
+
+use crate::machine;
 
 /// One of the three power actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -158,6 +164,115 @@ pub fn profile(name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// `edel power charge-full` (M7.16e): charges to 100 percent once, for a
+/// trip. The mark it leaves stops battery care's limit until the computer is
+/// unplugged after a sleep, or the next start. Setting the limit needs root:
+/// anyone else runs the same command as root through doas, which the login
+/// feature's rule lets the people at the machine run with no password.
+pub fn charge_full() -> Result<()> {
+    let dir = Path::new(battery_care::POWER_SUPPLY);
+    if !battery_care::offered(dir) {
+        println!(
+            "{}",
+            tr("this laptop offers no charge limit, so it always charges to 100 percent")
+        );
+        return Ok(());
+    }
+    if users::current() != Some(0) {
+        let argv = [
+            places::AS_ROOT,
+            "-n",
+            places::EDEL_BIN,
+            "power",
+            "charge-full",
+        ];
+        let hint = tr(
+            "; the power rules come with the login feature (doas), so check that it is installed",
+        );
+        let status = match Command::new(argv[0]).args(&argv[1..]).status() {
+            Ok(status) => status,
+            Err(err) => {
+                let why = err.to_string();
+                let message = trf("could not charge fully: {why}", &[("why", &why)]);
+                bail!("{message}{hint}");
+            }
+        };
+        if !status.success() {
+            let exit = status.to_string();
+            let message = trf(
+                "could not charge fully: edel exited with {status}",
+                &[("status", &exit)],
+            );
+            bail!("{message}{hint}");
+        }
+        return Ok(());
+    }
+    let mark = Path::new(places::CHARGE_FULL_ONCE);
+    if let Some(folder) = mark.parent() {
+        fs::create_dir_all(folder).with_context(|| {
+            trf(
+                "could not make {path}; run as root",
+                &[("path", &folder.display().to_string())],
+            )
+        })?;
+    }
+    fs::write(mark, "").with_context(|| {
+        trf(
+            "could not write {path}; run as root",
+            &[("path", &mark.display().to_string())],
+        )
+    })?;
+    battery_care::set(dir, 100).map_err(anyhow::Error::msg)?;
+    println!(
+        "{}",
+        tr(
+            "charging to 100 percent once; the charge limit comes back after a sleep once unplugged, or at the next start"
+        )
+    );
+    Ok(())
+}
+
+/// `edel boot battery-care` (M7.16e): sets the charge limit the settings
+/// want, as zzz runs it after every resume (some laptops forget the limit
+/// when they sleep) and at boot. Once the computer is unplugged, a trip's
+/// full charge is over, so its mark goes. Always one line: the limit it set,
+/// or that this computer offers none.
+pub fn battery_care() -> Result<()> {
+    let dir = Path::new(battery_care::POWER_SUPPLY);
+    let mark = Path::new(places::CHARGE_FULL_ONCE);
+    if mark.exists() && !battery_care::plugged_in(dir) {
+        match fs::remove_file(mark) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).with_context(|| {
+                    trf(
+                        "could not remove {path}; run as root",
+                        &[("path", &mark.display().to_string())],
+                    )
+                });
+            }
+        }
+    }
+    if !battery_care::offered(dir) {
+        println!(
+            "{}",
+            tr("edel boot battery-care: this computer offers no charge limit")
+        );
+        return Ok(());
+    }
+    let percent = battery_care::wanted(machine::battery_care_on(), mark.exists());
+    battery_care::set(dir, percent).map_err(anyhow::Error::msg)?;
+    println!(
+        "{}",
+        trf(
+            "edel boot battery-care: charge limit {percent} percent",
+            &[("percent", &percent.to_string())]
+        )
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Action, command};
@@ -172,6 +287,12 @@ mod tests {
             );
             assert!(rule.contains(&line), "the power rules name {line}");
         }
+        // M7.16e: Settings' Charge fully once button runs this for the seat.
+        let charge = format!(
+            "permit nopass :seat as root cmd {} args power charge-full\n",
+            edel::places::EDEL_BIN
+        );
+        assert!(rule.contains(&charge), "the power rules name {charge}");
     }
 
     #[test]
