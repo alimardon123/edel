@@ -5322,6 +5322,10 @@ case_fullscreen() {
 	# desktop's CPU over 30 s and the busy window's frames show it.
 	wait_for 'edel-compositor: a game is playing; the desktop steps aside' || fail "the compositor did not say a game plays"
 	wait_for 'edel-shell-ui: a game is playing; the timers stop' || fail "shell-ui did not stop its timers for the game"
+	# Full power for the game (M7.7b): the VM counts as plugged in and its
+	# kernel offers no power profiles, so shell-ui says it asks for none.
+	wait_for 'edel-shell-ui: a game is playing on the charger, but this computer has no power profiles' ||
+		fail "shell-ui did not say the VM has no power profile for the game"
 	state_now && grep -q '^playing = true' "$dir/state-now.toml" || fail "the state file does not say playing = true"
 	n=$(count 'DESKTOP-TEST: busy_frames ')
 	guest 'desktop cpu'

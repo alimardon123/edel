@@ -136,6 +136,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::Lid { closed } => shell.lid(closed != 0),
             edel_shell_v1::Event::GameMode { on } => shell.game_mode(on != 0),
             edel_shell_v1::Event::Playing { on } => shell.playing_changed(on != 0),
+            edel_shell_v1::Event::Game { on } => shell.game_changed(on != 0),
             edel_shell_v1::Event::Clipboard => shell.clipboard_key_pressed(),
         }
     }
