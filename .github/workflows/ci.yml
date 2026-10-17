@@ -215,6 +215,15 @@ jobs:
       - name: The container image builds the same twice
         run: sh ci/repro-check.sh
 
+      - name: Every image has a valid bill of materials
+        # M8.12: out/IMAGE.cdx.json, CycloneDX, beside each package list.
+        run: sh ci/bom.sh validate >> "$GITHUB_STEP_SUMMARY"
+
+      - name: No image lacks a security fix Alpine ships
+        # M8.12: in the build container, as apk compares the versions;
+        # the self-test first, so the check is proven where it runs.
+        run: docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'sh ci/bom.sh --self-test && sh ci/bom.sh advisories' | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

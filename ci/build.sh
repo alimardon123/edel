@@ -218,8 +218,9 @@ ln out/apps-test-update/edel-apps-test-x86_64.ext4.gz "$update/"
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update
 # images and their release.toml, the disks, the container image, the
-# package lists and the bills of materials, M8.12), and out/channel/release.toml names the same update images
-# by their URL under the tag's release, for the stable channel. They are
+# package lists and the bills of materials, M8.12), and
+# out/channel/release.toml names the same update images by their URL
+# under the tag's release, for the stable channel. They are
 # signed by ci/sign.sh in the workflow's sign job, on a runner of its own
 # (M3.7), so the release key never reaches cargo, apk or this build.
 tag=${EDEL_TAG:-v$version}
