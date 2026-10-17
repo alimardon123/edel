@@ -163,8 +163,6 @@ pub const KEYS_DIR: &str = share!("/keys");
 pub const PACKAGES_FILE: &str = share!("/packages");
 /// The design tokens a slot may carry in place of the built-in ones.
 pub const TOKENS_FILE: &str = share!("/design/tokens.toml");
-/// GTK's colours from the tokens (M5.5b).
-pub const GTK_CSS: &str = share!("/gtk.css");
 /// foot's font and colours from the tokens (M6.13), which every person's
 /// foot config includes.
 pub const FOOT_INI: &str = share!("/foot.ini");
@@ -313,15 +311,29 @@ pub fn etc_settings() -> PathBuf {
 /// A person's own directory for Edel OS: `$XDG_CONFIG_HOME/edel`, else
 /// `~/.config/edel`; none without either variable.
 pub fn person_dir() -> Option<PathBuf> {
-    let config = std::env::var_os("XDG_CONFIG_HOME")
+    config_home().map(|config| config.join("edel"))
+}
+
+/// A person's configuration folder: `$XDG_CONFIG_HOME`, else `~/.config`;
+/// none without either variable.
+fn config_home() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
         .filter(|v| !v.is_empty())
         .map(PathBuf::from)
         .or_else(|| {
             std::env::var_os("HOME")
                 .filter(|v| !v.is_empty())
                 .map(|home| PathBuf::from(home).join(".config"))
-        })?;
-    Some(config.join("edel"))
+        })
+}
+
+/// A person's GTK 4 stylesheet, `$XDG_CONFIG_HOME/gtk-4.0/gtk.css`, else
+/// `~/.config/gtk-4.0/gtk.css`, which every GTK 4 and libadwaita app reads
+/// at its start and shell-ui writes from the tokens (M6.18); a Flatpak app
+/// reads it through the shell feature's read-only override of that folder.
+/// None without either variable.
+pub fn person_gtk_css() -> Option<PathBuf> {
+    config_home().map(|config| config.join("gtk-4.0").join("gtk.css"))
 }
 
 /// A person's state directory for Edel OS: `$XDG_STATE_HOME/edel`, else
