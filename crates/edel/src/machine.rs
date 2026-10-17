@@ -1149,7 +1149,9 @@ pub(crate) fn install_apps(account: &Account, ids: &[String]) -> Result<()> {
 
 /// Takes out the links in `/etc` of add-ons that went, each service out of
 /// its runlevels first (stopped, unless at boot), then links the mounted
-/// add-ons' files in (M7.2a). A machine's own file is never touched.
+/// add-ons' files in (M7.2a), and has OpenRC read the services again when a
+/// service's script or `conf.d` file came or went. A machine's own file is
+/// never touched.
 fn link_addons(make: &[(String, String)], remove: &[String], boot: bool) -> Result<()> {
     let etc = Path::new("/etc");
     for rest in remove {
@@ -1177,7 +1179,24 @@ fn link_addons(make: &[(String, String)], remove: &[String], boot: bool) -> Resu
         }
         std::os::unix::fs::symlink(target, &link).with_context(|| could_not_write(&link))?;
     }
+    // OpenRC starts a runlevel from its cache of the services, remade on
+    // its own only when /etc/init.d or /etc/conf.d is newer than the cache,
+    // to the second. At boot the cache was made moments before this runs,
+    // so a script linked now could be missed and its service never started.
+    if service_files_changed(make, remove) {
+        run(&mut base::reread_services())?;
+    }
     Ok(())
+}
+
+/// Whether the links `make` and `remove` change what OpenRC reads a
+/// service from: `/etc/init.d/NAME`, or `/etc/conf.d/NAME`, which may set
+/// its dependencies.
+fn service_files_changed(make: &[(String, String)], remove: &[String]) -> bool {
+    make.iter()
+        .map(|(rest, _)| rest.as_str())
+        .chain(remove.iter().map(String::as_str))
+        .any(|rest| rest.starts_with("init.d/") || rest.starts_with("conf.d/"))
 }
 
 /// What apply says in place of `change` when it runs at boot (M6.1): the
@@ -3022,6 +3041,24 @@ mod tests {
         );
         assert_eq!(deferred(&change, false), None);
         assert_eq!(deferred(&Change::AdminGroup, true), None);
+    }
+
+    #[test]
+    fn the_services_are_read_again_only_when_a_service_file_came_or_went() {
+        let make = |rest: &str| {
+            vec![(
+                rest.to_string(),
+                "/usr/lib/edel/init.d/ci-hello".to_string(),
+            )]
+        };
+        assert!(service_files_changed(&make("init.d/ci-hello"), &[]));
+        assert!(service_files_changed(&make("conf.d/ci-hello"), &[]));
+        assert!(service_files_changed(&[], &["init.d/ci-hello".to_string()]));
+        assert!(!service_files_changed(
+            &make("ci-hello.conf"),
+            &["ssh/sshd_config.d/x".to_string()]
+        ));
+        assert!(!service_files_changed(&[], &[]));
     }
 
     #[test]
