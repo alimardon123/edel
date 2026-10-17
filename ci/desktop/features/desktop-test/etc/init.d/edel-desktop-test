@@ -414,6 +414,16 @@ commands() {
 		# appearance.mode (M5.5c), light and back to the default.
 		'scheme dark') edel settings set appearance.mode=dark ;;
 		'scheme default') edel settings reset appearance.mode ;;
+		# Auto by the sun (M7.14): a place, the clock moved, and back.
+		'sun place') edel settings set location.place=Asia/Tashkent ;;
+		'sun day') date -u -s '2026-10-17 08:00:00' >/dev/null ;;
+		'sun night') date -u -s '2026-10-17 18:00:00' >/dev/null ;;
+		'sun get') say "sun_get $(edel settings get appearance.mode 2>&1 | tr '\n' ' ')" ;;
+		'sun reset')
+			edel settings reset location.place
+			# QEMU's hardware clock runs on UTC and date -s does not change it.
+			if hwclock -s -u; then say "sun_clock $(date -u +%Y-%m-%dT%H:%M)"; else say 'sun_clock hwclock failed'; fi
+			;;
 		# foot in our look (M6.13): 16 colour blocks, 8 normal then 8 bright,
 		# on two lines, kept until `terminal off`; foot's window is titled colours.
 		'terminal colours')
