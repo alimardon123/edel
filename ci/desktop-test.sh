@@ -6911,8 +6911,10 @@ case_desktop_widgets() {
 	esac
 	guest 'desktop default'
 	sleep 1
-	# Where the machine's clock stood, as the first desktop line gave it.
+	# Where the machine's clock stood, as the first desktop line gave it,
+	# with the pointer that clicked Done moved out of that box.
 	set -- $rect
+	python3 ci/qmp.py move 640 600
 	python3 ci/qmp.py screendump "$dir/desktop-gone.png"
 	gone=$(python3 ci/qmp.py where "$dir/desktop-gone.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
 	[ "${gone:-0}" -lt 20 ] ||
