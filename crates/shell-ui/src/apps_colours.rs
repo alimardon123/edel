@@ -19,7 +19,14 @@ use crate::messages;
 /// The file every person got before M6.18, which imported the shipped
 /// stylesheet. Left as it was, it is ours too, so it is rewritten; with
 /// rules the person added below it, as it invited, it is theirs.
-const FORMER: &str = "/* GTK4 and libadwaita apps read this file. It takes Edel OS's colours\n   from the design tokens (M5.5b); add your own rules below it. */\n@import url(\"file:///usr/share/edel/gtk.css\");\n";
+fn former() -> String {
+    format!(
+        "/* GTK4 and libadwaita apps read this file. It takes Edel OS's colours\n   \
+         from the design tokens (M5.5b); add your own rules below it. */\n\
+         @import url(\"file://{}/gtk.css\");\n",
+        places::SHARE_DIR
+    )
+}
 
 /// What writing the stylesheet did.
 #[derive(Debug, PartialEq, Eq)]
@@ -34,12 +41,12 @@ pub enum Written {
 
 /// Writes `text` to `path` through `PATH.new` renamed over it, only when the
 /// file is absent or ours (its text starts with [`GTK_CSS_MARK`] or
-/// is [`FORMER`]) and differs; a file of the person's own is left alone.
+/// is [`former`]) and differs; a file of the person's own is left alone.
 /// Creates the folder.
 pub fn write_css(path: &Path, text: &str) -> std::io::Result<Written> {
     match std::fs::read_to_string(path) {
         Ok(have) if have == text => return Ok(Written::Same),
-        Ok(have) if !(have.starts_with(GTK_CSS_MARK) || have == FORMER) => {
+        Ok(have) if !(have.starts_with(GTK_CSS_MARK) || have == former()) => {
             return Ok(Written::Theirs);
         }
         Ok(_) => {}
@@ -138,12 +145,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("gtk.css");
-        std::fs::write(&file, FORMER).unwrap();
+        std::fs::write(&file, former()).unwrap();
         let text = format!("{GTK_CSS_MARK}, from the design tokens (M6.18). */\n");
         assert_eq!(write_css(&file, &text).unwrap(), Written::Wrote);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), text);
         // With the person's own rules below it, it is theirs.
-        let added = format!("{FORMER}window {{ }}\n");
+        let added = format!("{}window {{ }}\n", former());
         std::fs::write(&file, &added).unwrap();
         assert_eq!(write_css(&file, &text).unwrap(), Written::Theirs);
         std::fs::remove_dir_all(dir).unwrap();
