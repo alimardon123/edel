@@ -911,6 +911,7 @@ pub fn ask_name(
         .modal(true)
         .resizable(false)
         .default_width(360)
+        .css_classes(["edel"])
         .build();
     if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
         window.set_transient_for(Some(&parent));
@@ -988,7 +989,7 @@ pub fn confirm(
         .title(act)
         .modal(true)
         .resizable(false)
-        .default_width(400)
+        .default_width(360)
         .css_classes(["edel"])
         .accessible_role(gtk::AccessibleRole::AlertDialog)
         .build();
@@ -1005,10 +1006,10 @@ pub fn confirm(
     let body = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(6)
-        .margin_top(24)
+        .margin_top(20)
         .margin_bottom(20)
-        .margin_start(24)
-        .margin_end(24)
+        .margin_start(20)
+        .margin_end(20)
         .build();
     body.append(&heading);
     if !detail.is_empty() {
