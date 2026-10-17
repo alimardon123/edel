@@ -124,7 +124,7 @@ unpack)
 	[ "$installed" = 0 ] && [ "$other" = 0 ]
 	;;
 *)
-	files "$1" >/dev/null
+	archive "$1" >/dev/null
 	mkdir -p out
 	run_lane "$1"
 	;;
