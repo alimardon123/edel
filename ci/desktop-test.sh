@@ -3696,7 +3696,7 @@ case_location() {
 		fail "the in-use sign at $1,$2 is $sign, not the token in_use $amber (location.png)"
 	asked_sockets=$(count 'DESKTOP-TEST: location_sockets ')
 	guest 'location sockets'
-	wait_more 'DESKTOP-TEST: location_sockets ' "$asked_sockets" || fail "the service did not list GeoClue's sockets"
+	wait_more 'DESKTOP-TEST: location_sockets ' "$asked_sockets" 40 || fail "the service did not list GeoClue's sockets"
 	sockets=$(value location_sockets)
 	case "$sockets" in '0 '*) ;; *) fail "GeoClue holds network sockets, or does not run, while the lookup is off: $sockets" ;; esac
 	case "$sockets" in *60-edel-online*) fail "the online lookup's file is there while location.online is off: $sockets" ;; esac

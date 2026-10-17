@@ -232,7 +232,7 @@ pub fn location_not_watched(why: impl Display) -> String {
 /// GeoClue does not say the place is in use, so the sign ends the use
 /// after a few seconds (M6.14c).
 pub fn location_not_in_use(why: impl Display) -> String {
-    format!("GeoClue does not say the place is in use: {why}; the sign shows the app for 5 s only")
+    format!("GeoClue does not say the place is in use: {why}; the sign shows the app for 10 s only")
 }
 
 pub fn tray_not_kept(why: impl Display) -> String {
@@ -558,7 +558,7 @@ mod tests {
         assert!(LOCATION_NO_HOME.contains("edel settings set location.enabled=false"));
         assert_eq!(
             location_not_in_use("no system bus"),
-            "GeoClue does not say the place is in use: no system bus; the sign shows the app for 5 s only"
+            "GeoClue does not say the place is in use: no system bus; the sign shows the app for 10 s only"
         );
     }
 

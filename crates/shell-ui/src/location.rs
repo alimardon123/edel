@@ -48,9 +48,10 @@ const ID: &str = "location";
 const GEOCLUE_BUS: &str = "org.freedesktop.GeoClue2";
 const GEOCLUE_PATH: &str = "/org/freedesktop/GeoClue2/Manager";
 const GEOCLUE_INTERFACE: &str = "org.freedesktop.GeoClue2.Manager";
-/// How long GeoClue may take to say it is in use after an app got the place,
-/// how often it is asked, and the back-off of a failed subscription.
-const WAIT_FOR_USE: Duration = Duration::from_secs(5);
+/// How long GeoClue may take to say it is in use after an app got the place
+/// (with no agent it waits 5 s for one before it starts), how often it is
+/// asked, and the back-off of a failed subscription.
+const WAIT_FOR_USE: Duration = Duration::from_secs(10);
 const POLL: Duration = Duration::from_secs(1);
 const FIRST_WAIT: Duration = Duration::from_secs(1);
 const LONGEST_WAIT: Duration = Duration::from_secs(30);
@@ -333,7 +334,10 @@ fn wait_for_use(holding: Holding) {
                     }
                     Ok(false) if Instant::now() < deadline => std::thread::sleep(POLL),
                     Ok(false) => {
-                        reason = Some("GeoClue did not start using the place within 5 s".into());
+                        reason = Some(format!(
+                            "GeoClue did not start using the place within {} s",
+                            WAIT_FOR_USE.as_secs()
+                        ));
                         break;
                     }
                     Err(e) => {
