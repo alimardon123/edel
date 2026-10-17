@@ -581,7 +581,11 @@ impl Build<'_> {
         let mut chroot = Command::new("chroot");
         chroot
             .arg(root)
-            .args(["fc-cache", "--system-only", "--really-force"]);
+            .args(["fc-cache", "--system-only", "--really-force"])
+            // fc-cache given SOURCE_DATE_EPOCH (M8.6) writes no cache for a
+            // folder newer than that date (1 cache file against 5 in a test
+            // on 2026-10-17), so it runs without it.
+            .env_remove("SOURCE_DATE_EPOCH");
         self.runner.run(&mut chroot)?;
         // fc-cache may still write to the old folder: move its files over,
         // so that folder never exists in the slot.
@@ -807,14 +811,21 @@ impl Build<'_> {
                 fs::remove_file(&path)?;
             }
         }
+        // apk's log of this build holds the build's path and clock and is read
+        // by nothing on a machine; left in, no two builds would match (M8.6).
+        let apk_log = root.join(addons::APK_LOG);
+        if apk_log.symlink_metadata().is_ok() {
+            fs::remove_file(&apk_log)?;
+        }
         Ok(())
     }
 
     fn pack_container(&self, root: &Path) -> Result<()> {
         let tarball = self.out.join(format!("{}.tar.gz", self.def.stem()));
+        let epoch = source_date_epoch(std::env::var("SOURCE_DATE_EPOCH").ok().as_deref())?;
         self.runner.run(
             Command::new("tar")
-                .args(["--numeric-owner", "-czf"])
+                .args(container_tar_args(epoch))
                 .arg(&tarball)
                 .arg("-C")
                 .arg(root)
@@ -1376,6 +1387,34 @@ impl Build<'_> {
     }
 }
 
+/// Reads the standard `SOURCE_DATE_EPOCH` variable (reproducible-builds.org),
+/// which dates every file of a container image, so two builds of one commit
+/// give the same bytes (M8.6). Unset or empty means no date.
+fn source_date_epoch(value: Option<&str>) -> Result<Option<u64>> {
+    match value {
+        None | Some("") => Ok(None),
+        Some(text) => match text.parse::<u64>() {
+            Ok(seconds) if text.bytes().all(|b| b.is_ascii_digit()) => Ok(Some(seconds)),
+            _ => bail!(
+                "SOURCE_DATE_EPOCH is {text:?}, not a number of seconds since 1970; unset it or give the commit's time, as `git log -1 --format=%ct` prints it"
+            ),
+        },
+    }
+}
+
+/// The arguments `tar` gets to pack a container image (M8.6). Names are
+/// sorted so the order never depends on the file system; every file is dated
+/// by the epoch when one is given, so files the build writes do not carry its
+/// clock; gzip reads standard input, so its header holds no time.
+fn container_tar_args(epoch: Option<u64>) -> Vec<String> {
+    let mut args: Vec<String> = ["--numeric-owner", "--sort=name"].map(String::from).into();
+    if let Some(seconds) = epoch {
+        args.push(format!("--mtime=@{seconds}"));
+    }
+    args.push("-czf".into());
+    args
+}
+
 /// Takes out of an add-on's new files what its `[[keep]]` lists do not keep
 /// (M7.2a), as the image's own `[[keep]]` does for its packages: under each
 /// folder, the new files a listed pattern matches stay. A pattern that
@@ -1878,6 +1917,34 @@ fn is_flatpakrepo(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_date_epoch_takes_digits_and_nothing_else() {
+        assert_eq!(source_date_epoch(None).unwrap(), None);
+        assert_eq!(source_date_epoch(Some("")).unwrap(), None);
+        assert_eq!(
+            source_date_epoch(Some("1760000000")).unwrap(),
+            Some(1760000000)
+        );
+        for bad in ["abc", "-1", "1.5", " 1"] {
+            assert!(
+                source_date_epoch(Some(bad)).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn container_tar_sorts_and_dates_every_file() {
+        assert_eq!(
+            container_tar_args(None),
+            ["--numeric-owner", "--sort=name", "-czf"]
+        );
+        assert_eq!(
+            container_tar_args(Some(42)),
+            ["--numeric-owner", "--sort=name", "--mtime=@42", "-czf"]
+        );
+    }
 
     #[test]
     fn alpines_init_resolves_a_root_named_by_its_partition() {
