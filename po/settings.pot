@@ -1136,7 +1136,7 @@ msgstr ""
 msgid "{n} minute"
 msgstr ""
 
-msgid "Suspend locks the screen first; with another screen connected, closing the lid does nothing"
+msgid "Suspend locks first; with another screen connected, nothing happens"
 msgstr ""
 
 msgid "Ask opens the lock screen's power menu"
@@ -1145,13 +1145,13 @@ msgstr ""
 msgid "Without any input; a playing video keeps the screen on"
 msgstr ""
 
-msgid "How hard the computer works on battery; plugged in, it works at Balanced, or Performance when that is chosen here"
+msgid "Plugged in, it runs at Balanced, or Performance when chosen here"
 msgstr ""
 
 msgid "Other batteries"
 msgstr ""
 
-msgid "Lid, power button and screen lock"
+msgid "Behaviour"
 msgstr ""
 
 msgid "Battery health"

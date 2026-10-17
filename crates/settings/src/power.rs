@@ -276,9 +276,7 @@ impl Lid {
             ChoiceRow::new(
                 &self.group,
                 LID_CLOSE,
-                n_(
-                    "Suspend locks the screen first; with another screen connected, closing the lid does nothing",
-                ),
+                n_("Suspend locks first; with another screen connected, nothing happens"),
                 LID_CLOSE_DEFAULT,
             ),
             ChoiceRow::new(
@@ -298,9 +296,7 @@ impl Lid {
             ChoiceRow::new(
                 &self.group,
                 ON_BATTERY,
-                n_(
-                    "How hard the computer works on battery; plugged in, it works at Balanced, or Performance when that is chosen here",
-                ),
+                n_("Plugged in, it runs at Balanced, or Performance when chosen here"),
                 ON_BATTERY_DEFAULT,
             ),
         ];
@@ -366,7 +362,7 @@ pub fn page() -> gtk::Widget {
     others_head.set_visible(false);
     others.set_visible(false);
 
-    widgets::heading(&content, tr("Lid, power button and screen lock"));
+    widgets::heading(&content, tr("Behaviour"));
     let lid = Lid::new(widgets::group(&content), problem.clone());
 
     // Details, closed: UPower's own words.
