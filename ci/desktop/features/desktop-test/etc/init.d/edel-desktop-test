@@ -913,6 +913,13 @@ commands() {
 			say "suspend_log $(joined /tmp/suspend.log 2>/dev/null)"
 			say "suspend_dmesg $(dmesg | grep -iE 'PM: suspend (entry|exit)|ACPI: PM: (Preparing|Waking)' | tail -4 | joined)"
 			;;
+		# The lid (M7.8): edel-testclient --lid 8, as root, shuts a lid switch
+		# on uinput for 8 s and opens it, its log in /tmp/lid.log. The host
+		# sends `lid close`, then `lid log` once it has the answer it waits for.
+		'lid close')
+			modprobe uinput 2>/dev/null; edel-testclient --lid 8 </dev/null >/tmp/lid.log 2>&1 &
+			;;
+		'lid log') say "lid_log $(joined /tmp/lid.log 2>/dev/null)" ;;
 		# Power and Users (M5.8b): what upower lists as ci (`upower -e` must
 		# exit 0: QEMU has no battery, so it lists the display device and
 		# perhaps a power cable), whether upowerd runs, Settings on each page
