@@ -16,6 +16,7 @@ mod apps;
 mod ask;
 mod bluetooth;
 mod card;
+mod choice_row;
 mod cmd;
 mod colours;
 mod cursor;
@@ -1012,8 +1013,8 @@ mod tests {
         assert_eq!(titles("switcher"), ["Appearance"]);
         assert_eq!(
             titles("lock"),
-            ["Lock screen", "Shortcuts"],
-            "its title, and the lock key in Shortcuts"
+            ["Lock screen", "Power", "Shortcuts"],
+            "its title, the Lock the screen after row of Power, and the lock key in Shortcuts"
         );
         assert_eq!(titles("resolution"), ["Displays"]);
         assert_eq!(titles("scale"), ["Displays"]);
