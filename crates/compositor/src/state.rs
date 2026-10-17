@@ -206,6 +206,8 @@ pub struct Edel {
     pub handle: Option<LoopHandle<'static, Edel>>,
     /// The protocols everyday apps expect (`everyday.rs`, M5.23).
     pub primary_selection: smithay::wayland::selection::primary_selection::PrimarySelectionState,
+    /// ext-data-control-v1, for shell-ui's clipboard history (M7.13).
+    pub data_control: smithay::wayland::selection::ext_data_control::DataControlState,
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     /// The surfaces that asked to keep the screen on.
     pub idle_inhibitors: Vec<WlSurface>,
@@ -246,6 +248,16 @@ impl Edel {
         crate::screencopy::create_global(&display);
         crate::games::create_global(&display);
         crate::backdrop::create_global(&display);
+        let primary_selection =
+            smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Edel>(
+                &display,
+            );
+        let data_control =
+            smithay::wayland::selection::ext_data_control::DataControlState::new::<Edel, _>(
+                &display,
+                Some(&primary_selection),
+                crate::sandbox::shell_may,
+            );
         Ok(Edel {
             dmabuf: crate::dmabuf::Dmabufs::default(),
             compositor: CompositorState::new::<Edel>(&display),
@@ -273,10 +285,9 @@ impl Edel {
                 _,
             >(&display, crate::sandbox::shell_may),
             handle: None,
-            primary_selection:
-                smithay::wayland::selection::primary_selection::PrimarySelectionState::new::<Edel>(
-                    &display,
-                ),
+            primary_selection,
+            // Clipboard history (M7.13), hidden from sandboxed apps.
+            data_control,
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Edel>(&display),
             idle_inhibitors: Vec::new(),
             idle_notifier: smithay::wayland::idle_notify::IdleNotifierState::new(
@@ -1404,6 +1415,22 @@ impl SeatHandler for Edel {
     fn cursor_image(&mut self, _seat: &Seat<Edel>, image: CursorImageStatus) {
         self.cursors.status = image;
         self.dirty = true;
+    }
+
+    /// The keyboard moved: the client that has it is the one offered the
+    /// clipboard and the primary selection, as a paste reads from there.
+    fn focus_changed(&mut self, seat: &Seat<Edel>, focused: Option<&WlSurface>) {
+        let client = focused.and_then(|surface| self.display.get_client(surface.id()).ok());
+        smithay::wayland::selection::data_device::set_data_device_focus(
+            &self.display,
+            seat,
+            client.clone(),
+        );
+        smithay::wayland::selection::primary_selection::set_primary_focus(
+            &self.display,
+            seat,
+            client,
+        );
     }
 }
 

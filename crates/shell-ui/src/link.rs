@@ -68,6 +68,14 @@ impl Link {
         }
     }
 
+    /// Asks the compositor to paste the selection into the window under
+    /// the clipboard history, which just set it (M7.13).
+    pub fn paste(&self) {
+        if let Some(link) = &self.0 {
+            link.paste();
+        }
+    }
+
     /// Asks for workspace `from` to move to place `to`, as a drag of its
     /// switcher button does (M5.2p).
     pub fn move_workspace(&self, from: usize, to: usize) {
@@ -118,6 +126,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::Lock => shell.lock_screen(),
             edel_shell_v1::Event::Lid { closed } => shell.lid(closed != 0),
             edel_shell_v1::Event::GameMode { on } => shell.game_mode(on != 0),
+            edel_shell_v1::Event::Clipboard => shell.clipboard_key_pressed(),
         }
     }
 }

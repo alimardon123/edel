@@ -259,6 +259,10 @@
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
 #               printed; run after flatpak (M6.7)
+#   clipboard   a test client copies two texts with the keys 1 and 2,
+#               Super+V lists them, Down and Return paste the first into it
+#               (Ctrl+V from the compositor); with clipboard.history off the
+#               list stays empty, and after a lock and unlock it is empty (M7.13)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -5314,6 +5318,84 @@ case_fullscreen() {
 	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F"
 }
 
+case_clipboard() {
+	# Clipboard history (M7.13): the test client clip copies a text on the
+	# key 1 and another on 2, which shell-ui keeps in memory; Super+V opens
+	# the list on the pointer's screen, kept as clipboard.png, and Down and
+	# Return choose the first text copied, which shell-ui sets as the
+	# selection and the compositor pastes into clip with Ctrl+V, so clip
+	# prints it. With clipboard.history off nothing is kept and the list is
+	# empty; a lock and unlock empties it too.
+	mapped=$(count 'edel-compositor: mapped window clip')
+	guest 'clip window'
+	wait_more 'edel-compositor: mapped window clip' "$mapped" || fail "the window clip did not open"
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 17 bytes')
+	python3 ci/qmp.py key 1
+	wait_more 'edel-shell-ui: clipboard kept a text of 17 bytes' "$kept" || fail "shell-ui kept nothing of clip's first copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
+	kept=$(count 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept')
+	python3 ci/qmp.py key 2
+	wait_more 'edel-shell-ui: clipboard kept a text of 18 bytes, 2 kept' "$kept" || fail "shell-ui did not keep clip's second copy: $(tr -d '\r' <"$log" | grep -a 'clipboard' | tail -n 3)"
+	shown=$(count 'edel-shell-ui: clipboard history shown, 2 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_for 'edel-compositor: clipboard history' || fail "Super+V did not reach the compositor's clipboard_history"
+	wait_more 'edel-shell-ui: clipboard history shown, 2 items' "$shown" || fail "Super+V did not show the list of two"
+	i=0
+	until value layers | grep -q 'edel-clipboard@'; do
+		i=$((i + 1))
+		[ "$i" -lt 50 ] || fail "the state file lists no clipboard surface: $(value layers)"
+		sleep 0.2
+	done
+	set -- $(value layers | grep -o 'edel-clipboard@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-clipboard@//; s/[,x]/ /g')
+	# The heading's middle, right of its word, is the card's own colour.
+	shot clipboard $(($1 + $3 / 2)) $(($2 + 22)) "$(token panel)" >/dev/null ||
+		fail "the list's card at $(($1 + $3 / 2)),$(($2 + 22)) is not the panel's colour"
+	pasted=$(count 'edel-compositor: pasted into window clip')
+	python3 ci/qmp.py key down
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: pasted into window clip' "$pasted" || fail "Return in the list pasted nothing into clip"
+	i=0
+	until guest 'clip log' && sleep 0.5 && value clip | grep -q 'pasted first copied text'; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "clip did not print the first text pasted: $(value clip)"
+	done
+	# Off: nothing is kept and the list is empty.
+	off=$(count 'edel-shell-ui: clipboard history off')
+	guest 'clipboard off'
+	wait_more 'edel-shell-ui: clipboard history off' "$off" || fail "shell-ui did not follow clipboard.history = false"
+	python3 ci/qmp.py key 1
+	empty=$(count 'edel-shell-ui: clipboard history shown, 0 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_more 'edel-shell-ui: clipboard history shown, 0 items' "$empty" || fail "with clipboard.history off the list was not empty"
+	python3 ci/qmp.py screendump "$dir/clipboard-off.png"
+	python3 ci/qmp.py key esc
+	wait_for 'edel-shell-ui: clipboard history hidden' || fail "Escape did not close the list"
+	on=$(count 'edel-shell-ui: clipboard history on')
+	guest 'clipboard on'
+	wait_more 'edel-shell-ui: clipboard history on' "$on" || fail "shell-ui did not follow clipboard.history coming back"
+	# A lock and unlock empty it.
+	kept=$(count 'edel-shell-ui: clipboard kept a text')
+	python3 ci/qmp.py key 2
+	wait_more 'edel-shell-ui: clipboard kept a text' "$kept" || fail "shell-ui kept nothing once clipboard.history was on again"
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	emptied=$(count 'edel-shell-ui: clipboard history emptied, the screen locked')
+	locked=$(count 'edel-compositor: screen locked$')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$locked" || fail "Super+L did not lock the screen"
+	wait_more 'edel-shell-ui: clipboard history emptied, the screen locked' "$emptied" || fail "the lock did not empty the list"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen"
+	empty=$(count 'edel-shell-ui: clipboard history shown, 0 items')
+	python3 ci/qmp.py key meta_l-v
+	wait_more 'edel-shell-ui: clipboard history shown, 0 items' "$empty" || fail "the list was not empty after the lock"
+	python3 ci/qmp.py key esc
+	closed=$(count 'edel-compositor: unmapped window clip')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window clip' "$closed" || fail "Super+Q did not close clip"
+	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -7851,6 +7933,7 @@ for c in "$@"; do
 	case "$c" in
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
+	fresh) [ "$#" = 1 ] || { echo "fresh runs alone: it boots the released image"; exit 1; } ;;
 	*)
 		case " $cases" in
 		*" $c "*) ;;
@@ -8215,13 +8298,25 @@ if [ "$*" = live ]; then
 	# own (en_US: America/New_York), and the first boot applies it.
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
-	# A computer nobody has an account on (M6.12): the released image as
-	# the computer's own disk, not a stick, so live logs in by itself and
-	# the Welcome asks for the first person and the time zone too. Return
-	# accepts each page's suggestion and the account is typed; Start using
-	# Edel OS makes cleo with edel settings first-boot, as root through
-	# doas, and restarts, which ends this VM (-no-reboot). The disk's next
-	# start leaves the login to the greeter.
+	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png)"
+	exit 0
+fi
+
+# fresh (M6.12): a computer nobody has an account on: the released image as
+# the computer's own disk, not a stick, so live logs in by itself and
+# the Welcome asks for the first person and the time zone too. Return
+# accepts each page's suggestion and the account is typed; Start using
+# Edel OS makes cleo with edel settings first-boot, as root through
+# doas, and restarts, which ends this VM (-no-reboot). The disk's next
+# start leaves the login to the greeter.
+# It runs apart from live, on a runner of its own in CI (ci/vm-tests.sh).
+if [ "$*" = fresh ]; then
+	. ci/names.sh
+	dir=out/desktop-live
+	QMP="$dir/qmp.sock"
+	mkdir -p "$dir"
+	rm -f "$QMP"
 	fresh="$dir/fresh.img"
 	cp --sparse=always out/edel-desktop-x86_64.img "$fresh"
 	fresh_log=out/desktop-fresh.log
@@ -8324,8 +8419,8 @@ if [ "$*" = live ]; then
 	stop_vm
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img" "$fresh" "$dir/fresh-data.img"
-	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png), and the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
+	rm -f "$fresh" "$dir/fresh-data.img"
+	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
 

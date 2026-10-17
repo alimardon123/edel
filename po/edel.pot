@@ -728,6 +728,9 @@ msgstr ""
 msgid "The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions."
 msgstr ""
 
+msgid "Keeps the last texts and pictures you copied, in memory only, for Super+V; false keeps nothing."
+msgstr ""
+
 msgid "The app that opens web pages and web links, by its desktop file id without .desktop."
 msgstr ""
 
@@ -2208,6 +2211,9 @@ msgid "Turn game mode on or off until the next login: a fullscreen game gets var
 msgstr ""
 
 msgid "Open or close the tray's apps behind its arrow, with the keyboard on them"
+msgstr ""
+
+msgid "Open the clipboard history: the last texts and pictures you copied"
 msgstr ""
 
 msgid "this machine has no {program}, so it has no sound system; the sound feature brings PipeWire"

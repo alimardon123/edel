@@ -152,6 +152,16 @@ impl Edel {
         }
     }
 
+    /// Super+V (M7.13): shell-ui opens its clipboard history, or closes it.
+    pub fn show_clipboard(&self) {
+        eprintln!("edel-compositor: clipboard history");
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.clipboard();
+            }
+        }
+    }
+
     /// The launcher's key: shell-ui shows its launcher, or hides it.
     pub fn show_launcher(&self) {
         eprintln!("edel-compositor: launcher");
@@ -251,6 +261,7 @@ impl Dispatch<EdelShellV1, ()> for Edel {
             edel_shell_v1::Request::TogglePolicy => state.toggle_tiling(),
             edel_shell_v1::Request::NextKeyboardLayout => state.next_keyboard_layout(),
             edel_shell_v1::Request::ToggleOverview => state.toggle_overview(),
+            edel_shell_v1::Request::Paste => state.paste(),
             edel_shell_v1::Request::MoveWorkspace { from, to } => {
                 state.move_workspace(from as usize, to as usize);
             }

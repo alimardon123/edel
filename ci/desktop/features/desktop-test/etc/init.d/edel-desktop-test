@@ -238,6 +238,14 @@ commands() {
 		'full window')
 			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
 			;;
+		# Clipboard history (M7.13): a window that copies two texts on the
+		# keys 1 and 2 and prints what Ctrl+V pastes into it.
+		'clip window')
+			as_ci edel-testclient --clipboard --size 300x200 --colour 336699 --title clip </dev/null >/tmp/clip.log 2>&1 &
+			;;
+		'clip log') say "clip $(tr '\n' ';' </tmp/clip.log)" ;;
+		'clipboard off') edel settings set clipboard.history=false ;;
+		'clipboard on') edel settings reset clipboard.history ;;
 		'big window')
 			as_ci edel-testclient --size 1200x740 --colour 884488 --title big </dev/null >/dev/null 2>&1 &
 			;;

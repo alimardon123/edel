@@ -116,7 +116,7 @@ When docs disagree, the newer ADR wins.
 | `features/` | The features images are made of (M4.0): `NAME.toml` and the files `NAME/` copies over the root ([docs/FEATURES.md](docs/FEATURES.md)) |
 | `ci/` | The build and test scripts CI runs; `ci/ab-test/files/`, `ci/install-test/files/` and `ci/flatpak/` (a CI-only definition and its `features/flatpak-test`) are test-only |
 | `docs/` | Principles, ADR-001 to ADR-012, the reviews of other projects and of this one (`REVIEW-project-2026-10-13.md`), the roadmap, and the guide (`index.md`, `guide/`); index in `docs/README.md`; mdBook builds it all into the docs site (`book.toml`, `SUMMARY.md`, `theme/`, M8.10a) |
-| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), Build and boot images, Desktop tests (beside it, four "Desktop part" jobs at once, each on a runner of its own, joined by one check, M6.17), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
+| `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), What this change can affect (`ci/changes.sh`: drafts run Rust checks only, and a change skips the jobs it cannot affect, their checks still passing), Build and boot images (joining the build and three VM test lanes, each on a runner of its own), Desktop tests (beside it, four "Desktop part" jobs at once, each on a runner of its own, joined by one check, M6.17), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published |
 | `Cargo.toml`, `Cargo.lock` | Workspace of six crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
@@ -134,7 +134,7 @@ cargo clippy -p edel-compositor --all-targets --locked --features winit -- -D wa
 cargo test --workspace --locked
 for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
 cargo build --locked --lib --no-default-features
-sh ci/keys-check.sh
+sh ci/keys-check.sh && sh ci/changes.sh --self-test
 sh ci/one-place.sh && sh ci/one-place.sh --self-test   # every fact at its owner (M5.27)
 sh ci/seams.sh && sh ci/seams.sh --self-test   # every part stands alone (M8.13)
 sh ci/audit.sh         # the dependency audit (M3.9); installs cargo-audit with cargo the first time, needs the network for the advisory database
@@ -150,7 +150,7 @@ docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 
 cargo build --release --locked -p edel --bin edel && EDEL=target/release/edel sh ci/sign.sh
 sh ci/container-test.sh
 sh ci/initramfs-check.sh
-sh ci/vm-tests.sh    # boot, system, install, ab and flatpak tests, two lanes at once
+sh ci/vm-tests.sh    # the VM tests' lanes, installed beside system, live, fresh and fleet; CI runs each lane on its own runner
 sh ci/sizes.sh
 sh ci/desktop-part.sh floating titlebar ...   # one of CI's four "Desktop part" jobs, after build.sh desktop-test
 ```
@@ -182,7 +182,7 @@ cargo build --locked -p edel-compositor -p edel-shell-ui -p edel-testclient --fe
 - Lasting decisions go into the repo (an ADR, a default row, a plan log line), not only into chat. The next session sees only the repo.
 - **Merging:** every change goes through a PR. Claude may merge its own PR with a merge commit (not squash or rebase) once every check is green and the PR is mergeable. Your own PR means one a Claude session opened here; its body ends with the Claude Code attribution lines, whatever author GitHub shows. Never merge a PR Alimardon wrote. Never merge a red, pending or conflicted PR. If CI is red for a reason outside your change, do not merge; report it.
 - **Reviews (Alimardon, 2026-10-04):** move fast; CI is the check on each PR. Run no review agents and no review workflows until Alimardon asks for the next review, which they expect around M8, before the first public release ("We will do review in maybe milestone 8"). That replaces the 2026-10-02 rule of one end-to-end review workflow after every 5 finished milestones; the first one covered M1, and one started early on 2026-10-04 was stopped at their word. Once before the first public release, M8.11 checks our code against the kinds of bugs other projects' trackers show (Alimardon, 2026-10-03). On 2026-10-06 Alimardon added one narrow review (Opus) of the updater, the guard and the signing path, just before the first preview is published (M3.4), after two outside reviews they ran found the two serious issues there (the roadmap log of 2026-10-06).
-- **Waiting for CI:** after opening the PR, subscribe to its activity when the session offers that; the CI result then wakes the session. Otherwise read the PR's check runs with the GitHub MCP tools or `gh api` REST. Following your own PR is not a periodic run: rule 7 bans only runs that wake a session on a schedule. When the run finishes, put the measured results in a code PR's "**In CI:**" line, then merge and report.
+- **Waiting for CI:** a draft runs only "Rust checks" (`ci/changes.sh`); mark the PR ready, or add the label `full-ci` and push, for the full run. After opening the PR, subscribe to its activity when the session offers that; the CI result then wakes the session. Otherwise read the PR's check runs with the GitHub MCP tools or `gh api` REST. Following your own PR is not a periodic run: rule 7 bans only runs that wake a session on a schedule. When the run finishes, put the measured results in a code PR's "**In CI:**" line, then merge and report.
 - **Faster steps (Alimardon, 2026-10-12):** take a step whole, one PR where it fits a few hundred lines, rather than parts a, b and c; run two or three independent steps side by side, each with its own agent and PR; polish waits for M8.21, never at the cost of quality, modularity, simplicity or speed.
 - **Several PRs at once (Alimardon, 2026-10-07):** to wait less on CI, push each finished step to its own branch and open its PR at once, stacked on the step before when they build on each other (base: the lower PR's branch), so CI runs on all of them together; merge them bottom up.
 - **Stacked PRs:** once the lower PR merges, retarget the upper one to `main` before merging it. (#2 was merged into #1's branch after #1 had merged, so it never reached `main` and was re-landed as #4.)

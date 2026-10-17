@@ -421,6 +421,13 @@ pub const ACTIONS: &[Action] = &[
         Group::System,
         n_("Open or close the tray's apps behind its arrow, with the keyboard on them"),
     ),
+    action(
+        "clipboard_history",
+        "Super+V",
+        false,
+        Group::System,
+        n_("Open the clipboard history: the last texts and pictures you copied"),
+    ),
 ];
 
 /// The action called `name`.

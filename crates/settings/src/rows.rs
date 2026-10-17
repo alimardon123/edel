@@ -628,6 +628,15 @@ pub const ROWS: &[Row] = &[
         key: "shortcuts.show_tray",
         title: n_("Show tray"),
     },
+    Row {
+        key: "shortcuts.clipboard_history",
+        title: n_("Clipboard history"),
+    },
+    // Whether the clipboard keeps what is copied (M7.13), beside its shortcut.
+    Row {
+        key: edel::settings::CLIPBOARD_HISTORY,
+        title: n_("Keep clipboard history"),
+    },
 ];
 
 /// What the Panels group says under its heading (M5.31d).
@@ -672,11 +681,8 @@ pub fn plain(key: &str) -> String {
 /// The rows on the page for `section`, such as `layout`, which search
 /// looks through as well as the pages' titles.
 pub fn on_page(section: &str) -> impl Iterator<Item = &'static Row> {
-    ROWS.iter().filter(move |r| {
-        r.key
-            .split_once('.')
-            .is_some_and(|(page, _)| page == section)
-    })
+    ROWS.iter()
+        .filter(move |r| edel::settings::page_of(r.key).is_some_and(|page| page.section == section))
 }
 
 /// The values `key` may take, as the key table lists them, so a row's
