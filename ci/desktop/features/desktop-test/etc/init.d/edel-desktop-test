@@ -219,6 +219,14 @@ commands() {
 		'desktop clock') edel settings set 'appearance.widgets=[{ widget = "clock", at = "top_right" }]' ;;
 		'desktop bad') say "desktop_bad $(edel settings set 'appearance.widgets=[{ widget = "person", at = "centre" }]' 2>&1 | tr '\n' ' ')" ;;
 		'desktop default') edel settings reset appearance.widgets ;;
+		# The desktop's widgets editor (M8.21 part 21j2): the call Settings' Edit
+		# makes, as ci on ci's session bus, which opens the editor over the usable
+		# area; and the editor's line out of ci's own file.
+		'desktop editor')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.edel.Shell --object-path /org/edel/Shell --method org.edel.Shell1.EditDesktop" </dev/null
+			;;
+		'desktop mine default') as_ci "sed -i -E '/^\[appearance\]/,/^\[/{/^widgets = /d}' /home/ci/.config/edel/$settings_name" ;;
 		# The family fontconfig names first for Arabic and for Hindi (M5.12b5
 		# part A), said back as values.
 		'fonts scripts')
@@ -1216,6 +1224,11 @@ commands() {
 		# which adds Flathub for ci and installs the app with flatpak --user.
 		# The download takes minutes, so the command's verdict is its status
 		# and the last lines of its log.
+		# Office documents' fonts (M7.6d): what fontconfig draws for the
+		# fonts Microsoft Office names, one family a line.
+		'fonts office')
+			say "fonts_office $(for f in Calibri Arial 'Times New Roman' 'Courier New'; do fc-match -f '%{family[0]}' "$f"; printf ';'; done 2>&1)"
+			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No
 		# download: the plan alone shows whether Steam would install.

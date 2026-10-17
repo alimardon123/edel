@@ -485,6 +485,15 @@ pub fn check_desktop(parts: &[Placed]) -> Result<(), String> {
     check_common(parts)
 }
 
+/// Checks `parts` for the surface `on` (M8.21 part 21j2): the desktop's
+/// rule for the desktop ([`check_desktop`]), the lock screen's for the lock.
+pub fn check_on(parts: &[Placed], on: crate::widgets::Surface) -> Result<(), String> {
+    match on {
+        crate::widgets::Surface::Desktop => check_desktop(parts),
+        _ => check(parts),
+    }
+}
+
 /// The key the desktop's widgets are kept under (M8.21 part 21j1): the
 /// clock and the date over the wallpaper, under the windows.
 pub const DESKTOP_WIDGETS: &str = "appearance.widgets";
@@ -1378,6 +1387,16 @@ pub fn missing(parts: &[Placed], battery: bool) -> Vec<Part> {
     .collect()
 }
 
+/// [`missing`] for the surface `on` (M8.21 part 21j2): only the parts that
+/// stand there. On the desktop a clock may be added while fewer than
+/// [`MOST_EACH`] stand, so a desktop with one clock still offers one.
+pub fn missing_on(parts: &[Placed], battery: bool, on: crate::widgets::Surface) -> Vec<Part> {
+    missing(parts, battery)
+        .into_iter()
+        .filter(|part| part.widget().fits(on))
+        .collect()
+}
+
 /// The words a new message starts with, until the person writes their own
 /// (M5.10c6).
 pub fn message_placeholder() -> String {
@@ -1399,7 +1418,33 @@ pub fn with_added(
     words: &str,
     battery: bool,
 ) -> Vec<Placed> {
-    if part == Part::Picture || !missing(parts, battery).contains(&part) {
+    with_added_on(
+        parts,
+        part,
+        rect,
+        screen,
+        margin,
+        words,
+        battery,
+        crate::widgets::Surface::LockScreen,
+    )
+}
+
+/// [`with_added`] for the surface `on` (M8.21 part 21j2): the same rules,
+/// with [`missing_on`] and [`check_on`], so the desktop takes a clock or a
+/// date and no person, message or picture.
+#[allow(clippy::too_many_arguments)]
+pub fn with_added_on(
+    parts: &[Placed],
+    part: Part,
+    rect: Rect,
+    screen: (f32, f32),
+    margin: f32,
+    words: &str,
+    battery: bool,
+    on: crate::widgets::Surface,
+) -> Vec<Placed> {
+    if part == Part::Picture || !missing_on(parts, battery, on).contains(&part) {
         return parts.to_vec();
     }
     let (at, x, y) = placed_at(rect, screen, margin);
@@ -1410,11 +1455,23 @@ pub fn with_added(
         text,
         ..part_at(part, at, y)
     });
-    if check(&list).is_ok() {
+    if check_on(&list, on).is_ok() {
         list
     } else {
         parts.to_vec()
     }
+}
+
+/// The line `appearance.widgets` gets for the desktop's `parts` (M8.21 part
+/// 21j2): `Ok(None)` when it equals the machine's list, so a default is never
+/// written (the absence of a key is the default, ADR-008); otherwise the
+/// list's text, `[]` included, or the refusal of [`check_desktop`].
+pub fn desktop_line(parts: &[Placed], machine: Option<&str>) -> Result<Option<String>, String> {
+    check_desktop(parts)?;
+    if crate::settings::desktop_widgets_in(machine, None) == parts {
+        return Ok(None);
+    }
+    widgets_value(parts).map(Some)
 }
 
 /// Whether the part at `index` may be taken away: every part but the person
@@ -3144,5 +3201,65 @@ mod tests {
             "the lock screen needs the person and their password field; add { widget = \"person\", at = \"centre\" }"
         );
         assert_eq!(DESKTOP_WIDGETS, "appearance.widgets");
+    }
+
+    #[test]
+    fn the_desktop_editor_adds_clocks_and_dates_only_and_keeps_a_default_unwritten() {
+        use crate::widgets::Surface;
+        let rect = Rect {
+            x: 100.0,
+            y: 100.0,
+            w: 200.0,
+            h: 40.0,
+        };
+        let screen = (1280.0, 764.0);
+        let default = desktop_default();
+        assert_eq!(missing_on(&default, false, Surface::Desktop), [Part::Clock]);
+        assert_eq!(
+            missing_on(&[], false, Surface::Desktop),
+            [Part::Clock, Part::Date]
+        );
+        let clock = with_added_on(
+            &[],
+            Part::Clock,
+            rect,
+            screen,
+            MARGIN,
+            "",
+            false,
+            Surface::Desktop,
+        );
+        assert_eq!(clock.len(), 1);
+        assert_eq!(clock[0].part, Part::Clock);
+        assert!(check_desktop(&clock).is_ok());
+        assert!(
+            with_added_on(
+                &[],
+                Part::Message,
+                rect,
+                screen,
+                MARGIN,
+                "hi",
+                false,
+                Surface::Desktop
+            )
+            .is_empty()
+        );
+
+        assert_eq!(
+            desktop_line(&default, None),
+            Ok(Some(widgets_value(&default).unwrap()))
+        );
+        assert_eq!(desktop_line(&[], None), Ok(None));
+        let machine = crate::settings::set(
+            "format = 1\n",
+            DESKTOP_WIDGETS,
+            &widgets_value(&default).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(desktop_line(&default, Some(&machine)), Ok(None));
+        assert_eq!(desktop_line(&[], Some(&machine)), Ok(Some("[]".into())));
+        let person = [part_at(Part::Person, Anchor::Centre, 0.0)];
+        assert!(desktop_line(&person, None).is_err());
     }
 }

@@ -15,6 +15,7 @@ use edel::lock_screen::{self, Anchor, Background, DatePart, DateStyle, Guide, Pa
 use edel::settings::{LockScreen, OwnLook};
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers::Wallpaper;
+use edel::widgets::Surface;
 use tiny_skia::{FillRule, PathBuilder, Pixmap, PixmapPaint, Transform};
 
 use crate::a11y::Item;
@@ -192,6 +193,19 @@ pub struct View {
     /// How much the background is darkened, in percent (M5.10c7g): the Dim
     /// slider's value, which the lock picture uses and Done saves.
     pub dim: u32,
+    /// The surface being edited (M8.21 part 21j2): the lock screen, or the
+    /// desktop, whose strip is the clock and the date, with no person,
+    /// wallpaper panel, Dim, tabs or looks.
+    pub on: Surface,
+}
+
+/// The words the log says the edit is called by (M8.21 part 21j2): the lock's
+/// lines keep "lock editor", the desktop's say "desktop editor".
+pub fn log_name(on: Surface) -> &'static str {
+    match on {
+        Surface::Desktop => "desktop editor",
+        _ => "lock editor",
+    }
 }
 
 /// The keyboard's focus in the edit mode (M5.10c6c): a placed part by its
@@ -464,8 +478,8 @@ pub const STRIP: [Part; 6] = [
 /// Whether `part` stands as many times as the look allows (M5.10c7f): `missing`
 /// does not offer it. A battery the machine does not have counts as full, as
 /// it can never be added there.
-pub fn full(parts: &[Placed], battery: bool, part: Part) -> bool {
-    !lock_screen::missing(parts, battery).contains(&part)
+pub fn full(parts: &[Placed], battery: bool, part: Part, on: Surface) -> bool {
+    !lock_screen::missing_on(parts, battery, on).contains(&part)
 }
 
 /// The strip's tiles (M5.10c6b, M5.10c7f, M5.10c7g): one for each `STRIP` part,
@@ -474,9 +488,10 @@ pub fn full(parts: &[Placed], battery: bool, part: Part) -> bool {
 /// whole: a press or Return on it chooses the look's part of that kind
 /// (`full` says which). Their live previews come from `preview_picture`,
 /// which the caller attaches.
-pub fn drawer_tiles() -> Vec<Tile> {
+pub fn drawer_tiles(on: Surface) -> Vec<Tile> {
     STRIP
         .into_iter()
+        .filter(|part| part.widget().fits(on))
         .map(|part| Tile {
             name: part.name().into(),
             icon: "",
@@ -694,7 +709,7 @@ pub fn drop(view: &View, at: &lock::Layout) -> Option<(Vec<Placed>, String)> {
 /// A drop on the screen and Enter on a drawer tile both come here, so the
 /// two add a part the same way.
 fn adding(view: &View, part: Part, rect: Rect) -> Option<(Vec<Placed>, String)> {
-    let parts = lock_screen::with_added(
+    let parts = lock_screen::with_added_on(
         &view.parts,
         part,
         to_lock(rect),
@@ -702,6 +717,7 @@ fn adding(view: &View, part: Part, rect: Rect) -> Option<(Vec<Placed>, String)> 
         lock::MARGIN,
         &lock_screen::message_placeholder(),
         true,
+        view.on,
     );
     if parts == view.parts {
         return None;
@@ -748,9 +764,10 @@ pub fn ring(view: &View) -> Vec<Focus> {
 }
 
 /// Whether the edit mode draws the wallpaper panel, and with it the Dim
-/// slider: on a screen at least `WIDE` wide (`panels`).
+/// slider: on the lock screen, on a screen at least `WIDE` wide (`panels`).
+/// The desktop has none (M8.21 part 21j2).
 pub fn has_panel(view: &View) -> bool {
-    view.screen.0 >= WIDE
+    view.on == Surface::LockScreen && view.screen.0 >= WIDE
 }
 
 /// The next focus of the ring after `view`'s, forwards or backwards (Tab,
@@ -1629,6 +1646,12 @@ pub fn background_chosen(view: &mut View, background: Background) {
 /// and on the Parts and Wallpaper tabs what Done does to this look, a new
 /// look for a built-in one. The Looks tab (tab 2) keeps its own hint (None).
 pub fn drawer_words(view: &View) -> (String, Option<&'static str>) {
+    if view.on == Surface::Desktop {
+        return (
+            tr("Edit desktop").to_string(),
+            Some(tr("Yours · Done saves it")),
+        );
+    }
     let title = lock_screen::look_title(&view.editing);
     let subtitle = if lock_screen::is_built_in(&view.editing) {
         tr("Built in · Done saves a new look")
@@ -1695,8 +1718,12 @@ pub fn paint_preview(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &m
     let y = popup::middle(pill.y, pill.h, size, s);
     text.draw(pixmap, &mut word, x * s, y, ink.text);
     let small = tokens.panel_text_small_size as f32;
+    let words = match view.on {
+        Surface::Desktop => tr("Esc to go back"),
+        _ => tr("Not locked · Esc to go back"),
+    };
     let mut dim = text.fit(
-        tr("Not locked · Esc to go back"),
+        words,
         small * s,
         ((pill.right() - BACK_W - 24.0) - (x + word.width / s + 8.0)).max(1.0) * s,
     );
@@ -1995,7 +2022,7 @@ mod tests {
             tabs: Vec::new(),
             tab: 0,
             tallest: 0,
-            tiles: drawer_tiles(),
+            tiles: drawer_tiles(Surface::LockScreen),
             compact: false,
             width: 1280,
             hover: None,
@@ -2020,7 +2047,28 @@ mod tests {
             hover: None,
             focus: None,
             drawer,
+            on: Surface::LockScreen,
         }
+    }
+
+    /// The desktop's edit mode over `parts` (M8.21 part 21j2): the usable area
+    /// of a 1280 by 800 screen with a 36 px panel at the foot, so 1280 by 764,
+    /// no wallpaper panel, no Dim, no tabs, the strip the clock and the date.
+    fn desktop_view_of(parts: Vec<Placed>) -> View {
+        let mut view = view_of(parts);
+        view.on = Surface::Desktop;
+        view.screen = (1280.0, 764.0);
+        view.background = Background::Sharp;
+        view.dim = 0;
+        view.drawer.tabs = Vec::new();
+        view.drawer.tiles = drawer_tiles(Surface::Desktop);
+        view
+    }
+
+    /// The desktop's layout of `parts` as the desktop editor draws it.
+    fn at_desktop(parts: &[Placed]) -> lock::Layout {
+        let mut text = Text::load(&Tokens::built_in().font);
+        lock::widgets_layout(1280.0, 764.0, &Tokens::built_in(), parts, &mut text)
     }
 
     /// The index of the part called `name` in `parts`.
@@ -2047,7 +2095,7 @@ mod tests {
     #[test]
     fn the_strip_shows_every_widget_kind_in_order_at_full_strength() {
         let classic = lock_screen::classic(false);
-        let tiles = drawer_tiles();
+        let tiles = drawer_tiles(Surface::LockScreen);
         let names: Vec<&str> = tiles.iter().map(|t| t.name.as_str()).collect();
         // The six kinds in the mockup's order; the person and the count are not offered.
         assert_eq!(
@@ -2058,10 +2106,10 @@ mod tests {
         // Every tile is at full strength, the kinds the look already holds too
         // (Classic's date, now playing bar and clock): a press chooses them.
         assert!(tiles.iter().all(|t| !t.placed));
-        assert!(full(&classic, true, Part::Date));
-        assert!(!full(&classic, true, Part::Message));
+        assert!(full(&classic, true, Part::Date, Surface::LockScreen));
+        assert!(!full(&classic, true, Part::Message, Surface::LockScreen));
         // A battery the machine lacks counts as full, though its tile is whole.
-        assert!(full(&classic, false, Part::Battery));
+        assert!(full(&classic, false, Part::Battery, Surface::LockScreen));
     }
 
     #[test]
@@ -3104,16 +3152,22 @@ mod tests {
             sessions: None,
         };
         let corner_at = corner::layout(screen.0, screen.1, &corner_view);
-        let look = lock::Look {
-            parts: &view.parts,
-            player: Some(player::wide_size(1)),
-            people: false,
-            keep_out: lock::keep_out(&corner_at),
-            battery: false,
-            background: view.background.clone(),
-            dim: lock_screen::DIM,
+        // The desktop's editor has no corner: its layout is the desktop's.
+        let at = match view.on {
+            Surface::Desktop => lock::widgets_layout(screen.0, screen.1, tokens, &view.parts, text),
+            _ => {
+                let look = lock::Look {
+                    parts: &view.parts,
+                    player: Some(player::wide_size(1)),
+                    people: false,
+                    keep_out: lock::keep_out(&corner_at),
+                    battery: false,
+                    background: view.background.clone(),
+                    dim: lock_screen::DIM,
+                };
+                lock::layout(screen.0, screen.1, tokens, true, &look, text)
+            }
         };
-        let at = lock::layout(screen.0, screen.1, tokens, true, &look, text);
         let mut lock_view =
             lock::View::new("9:41".into(), "Sunday 11 October".into(), "Ali".into());
         lock_view.when = Some(*when);
@@ -3124,37 +3178,52 @@ mod tests {
             ("Mail".into(), "mail".into()),
             ("Calendar".into(), "calendar".into()),
         ];
-        let mut lock_pixmap = Pixmap::new(1280, 800).unwrap();
-        lock::paint(
-            &mut lock_pixmap,
-            &lock_view,
-            &at,
-            tokens,
-            text,
-            None,
-            &mut lock::Pictures::default(),
-            &mut lock::Backdrops::default(),
-            &wallpaper,
-            1.0,
-        );
-        corner::paint(
-            &mut lock_pixmap,
-            &corner_view,
-            &corner_at,
-            tokens,
-            text,
-            1.0,
-        );
+        let (w, h) = (screen.0 as u32, screen.1 as u32);
+        let mut lock_pixmap = Pixmap::new(w, h).unwrap();
+        match view.on {
+            Surface::Desktop => lock::paint_desktop(
+                &mut lock_pixmap,
+                &lock_view,
+                &at,
+                tokens,
+                text,
+                &mut lock::Backdrops::default(),
+                &wallpaper,
+                1.0,
+            ),
+            _ => {
+                lock::paint(
+                    &mut lock_pixmap,
+                    &lock_view,
+                    &at,
+                    tokens,
+                    text,
+                    None,
+                    &mut lock::Pictures::default(),
+                    &mut lock::Backdrops::default(),
+                    &wallpaper,
+                    1.0,
+                );
+                corner::paint(
+                    &mut lock_pixmap,
+                    &corner_view,
+                    &corner_at,
+                    tokens,
+                    text,
+                    1.0,
+                );
+            }
+        }
         draw_placeholders(&mut lock_pixmap, view, &at, tokens, text, 1.0);
         if view.previewing {
             paint_preview(&mut lock_pixmap, view, tokens, text, 1.0);
             return lock_pixmap;
         }
-        let mut pixmap = Pixmap::new(1280, 800).unwrap();
+        let mut pixmap = Pixmap::new(w, h).unwrap();
         let picture = picture_rect(screen, shown);
         edit_kit::stage(
             &mut pixmap,
-            Rect::new(0.0, 0.0, 1280.0, 800.0),
+            Rect::new(0.0, 0.0, screen.0, screen.1),
             picture,
             tokens,
             edit_kit::Style::GLASS,
@@ -3171,22 +3240,24 @@ mod tests {
         paint(&mut pixmap, view, &at, shown, tokens, text, 1.0);
         paint_bar(&mut pixmap, view, &bar(screen), tokens, text, 1.0);
         if let Some((left, right)) = panels(screen, shown) {
-            let thumb = thumbnail(
-                &lock_view,
-                &[],
-                &view.background,
-                lock_screen::DIM,
-                false,
-                tokens,
-                text,
-                None,
-                &mut lock::Pictures::default(),
-                &mut lock::Backdrops::default(),
-                &wallpaper,
-                THUMB,
-                None,
-            );
-            paint_wallpaper_panel(&mut pixmap, left, view, thumb.as_ref(), tokens, text, 1.0);
+            if has_panel(view) {
+                let thumb = thumbnail(
+                    &lock_view,
+                    &[],
+                    &view.background,
+                    lock_screen::DIM,
+                    false,
+                    tokens,
+                    text,
+                    None,
+                    &mut lock::Pictures::default(),
+                    &mut lock::Backdrops::default(),
+                    &wallpaper,
+                    THUMB,
+                    None,
+                );
+                paint_wallpaper_panel(&mut pixmap, left, view, thumb.as_ref(), tokens, text, 1.0);
+            }
             if let Some(card) = view.card.as_ref() {
                 let near = at.placed[card.index].expect("the card's part is drawn");
                 let l = part_card::layout(card, shown.to_screen(near), screen, tokens, Some(right));
@@ -3238,7 +3309,7 @@ mod tests {
         let mut view = bare_view_of(parts.clone());
         view.drawer.heading = Some("Classic".into());
         view.drawer.subtitle = Some("Built in · Done saves a new look");
-        view.drawer.tiles = drawer_tiles();
+        view.drawer.tiles = drawer_tiles(Surface::LockScreen);
         attach_previews(&mut view, &when, &tokens, &mut text);
         let mut card = part_card::open(second, parts[second].clone());
         card.docked = true;
@@ -3302,7 +3373,7 @@ mod tests {
 
         // The preview: the lock over the whole screen with its pill.
         view.drawer.tab = 0;
-        view.drawer.tiles = drawer_tiles();
+        view.drawer.tiles = drawer_tiles(Surface::LockScreen);
         attach_previews(&mut view, &when, &tokens, &mut text);
         view.previewing = true;
         let preview_pixmap = stage_picture(&view, &when, &tokens, &mut text);
@@ -3478,5 +3549,101 @@ mod tests {
         let b = bar((1280.0, 800.0));
         assert!(b.cancel.right() <= b.title.x && b.title.right() <= b.preview.x);
         assert!(b.preview.right() <= b.done.x);
+    }
+
+    #[test]
+    fn the_desktop_strip_is_the_clock_and_the_date_and_its_edit_has_no_panel() {
+        assert_eq!(
+            drawer_tiles(Surface::Desktop)
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>(),
+            ["clock", "date"]
+        );
+        assert_eq!(log_name(Surface::Desktop), "desktop editor");
+        assert_eq!(log_name(Surface::LockScreen), "lock editor");
+        let parts = lock_screen::desktop_default();
+        let view = desktop_view_of(parts.clone());
+        // No Dim in the ring, the slider or the places line.
+        assert!(!ring(&view).contains(&Focus::Dim));
+        let at = at_desktop(&parts);
+        let drawer = editor::layout(&view.drawer);
+        let line = places(
+            &view,
+            &at,
+            preview(view.screen, &drawer),
+            drawer_rect(view.screen, &drawer),
+            &drawer,
+        );
+        assert!(line.starts_with("screen 1280x764, part0 clock "), "{line}");
+        assert!(
+            line.contains(", tile0 clock ") && line.contains(", tile1 date "),
+            "{line}"
+        );
+        assert!(!line.contains("tile2") && !line.contains("dim "), "{line}");
+        assert!(!has_panel(&view));
+        assert_eq!(drawer_words(&view).1, Some("Yours · Done saves it"));
+    }
+
+    #[test]
+    fn a_desktop_clock_dragged_to_the_top_left_stands_there_and_says_so() {
+        let parts = lock_screen::desktop_default();
+        let at = at_desktop(&parts);
+        let i = index_of(&parts, "clock");
+        let start = centre(at.placed[i].expect("the clock is drawn"));
+        let mut view = desktop_view_of(parts.clone());
+        view.drag = Some(drag(
+            From::Part(i),
+            start,
+            (start.0 - 1100.0, start.1 - 50.0),
+            false,
+        ));
+        dragged_rect(&mut view, &at);
+        let (moved, words) = drop(&view, &at).expect("a moved clock");
+        assert_eq!(words, "moved clock to top_left");
+        assert_eq!(moved[i].at, Anchor::TopLeft);
+        assert!(lock_screen::check_desktop(&moved).is_ok());
+    }
+
+    #[test]
+    fn the_desktop_edit_mode_draws_and_writes_its_picture() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let when = lock::When {
+            hour: 9,
+            minute: 41,
+            weekday: 7,
+            day: 11,
+            month: 10,
+            year: 2026,
+        };
+        // The clock moved to the top left, with its card docked on the right.
+        let mut parts = lock_screen::desktop_default();
+        parts[0].at = Anchor::TopLeft;
+        let mut view = desktop_view_of(parts.clone());
+        view.drawer.heading = Some("Edit desktop".into());
+        view.drawer.subtitle = Some("Yours · Done saves it");
+        attach_previews(&mut view, &when, &tokens, &mut text);
+        let mut card = part_card::open(0, parts[0].clone());
+        card.docked = true;
+        view.card = Some(card);
+        let stage = stage_picture(&view, &when, &tokens, &mut text);
+        let done = bar(view.screen).done;
+        let inside = stage
+            .pixel(
+                (done.x + done.w / 2.0) as u32,
+                (done.y + done.h / 2.0) as u32,
+            )
+            .expect("inside the picture");
+        assert_ne!(inside.alpha(), 0, "Done is drawn");
+        view.previewing = true;
+        let preview_pixmap = stage_picture(&view, &when, &tokens, &mut text);
+        if let Some(dir) = std::env::var_os("EDEL_LOCK_PNG") {
+            let dir = std::path::PathBuf::from(dir);
+            stage.save_png(dir.join("desktop-editor.png")).unwrap();
+            preview_pixmap
+                .save_png(dir.join("desktop-editor-preview.png"))
+                .unwrap();
+        }
     }
 }

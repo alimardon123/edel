@@ -40,6 +40,11 @@ pub const EDIT_LOCK_SCREEN: &str = "EditLockScreen";
 /// Settings does not call it yet.
 pub const EDIT_LOCK_LOOKS: &str = "EditLockLooks";
 
+/// The method that opens the desktop widgets' editor (M8.21 part 21j2), on
+/// the same interface: the lock screen's edit mode over the usable area the
+/// panels leave. Settings' Desktop group calls it.
+pub const EDIT_DESKTOP: &str = "EditDesktop";
+
 /// The three groups of widgets a panel holds, from its start to its end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
