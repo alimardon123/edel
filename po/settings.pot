@@ -1811,6 +1811,9 @@ msgstr ""
 msgid "Makes the file this machine's settings. Choose a file first to see what it changes."
 msgstr ""
 
+msgid "For developers"
+msgstr ""
+
 msgid "Change Edel OS's own files under /usr and install packages with apk. Takes effect when the computer next starts."
 msgstr ""
 

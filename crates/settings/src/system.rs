@@ -216,7 +216,7 @@ pub fn page() -> gtk::Widget {
 /// keys do), then applies, on a thread of its own. Turning it on asks
 /// first, and Cancel puts the switch back off.
 fn developer(content: &gtk::Box) -> Rc<Developer> {
-    widgets::heading(content, tr("Developer mode"));
+    widgets::heading(content, tr("For developers"));
     let group = widgets::group(content);
     let switch = gtk::Switch::new();
     let row = widgets::row(&group, rows::title(DEVELOPER_KEY), switch.upcast_ref());
