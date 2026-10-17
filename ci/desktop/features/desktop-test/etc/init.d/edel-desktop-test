@@ -214,6 +214,11 @@ commands() {
 		'icons test') edel settings set appearance.icon_theme=EdelTest ;;
 		'icons bad') say "icons_bad $(edel settings set appearance.icon_theme=NoSuchTheme 2>&1 | tr '\n' ' ')" ;;
 		'icons default') edel settings reset appearance.icon_theme ;;
+		# The desktop's widgets (M8.21 part 21j1): the clock over the wallpaper, a
+		# person refused with the list's message, then the release's none.
+		'desktop clock') edel settings set 'appearance.widgets=[{ widget = "clock", at = "top_right" }]' ;;
+		'desktop bad') say "desktop_bad $(edel settings set 'appearance.widgets=[{ widget = "person", at = "centre" }]' 2>&1 | tr '\n' ' ')" ;;
+		'desktop default') edel settings reset appearance.widgets ;;
 		# The family fontconfig names first for Arabic and for Hindi (M5.12b5
 		# part A), said back as values.
 		'fonts scripts')

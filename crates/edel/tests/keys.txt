@@ -120,3 +120,4 @@ install.then
 clipboard.history
 appearance.icon_theme
 system.profiles_without
+appearance.widgets
