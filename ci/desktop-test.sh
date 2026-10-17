@@ -5255,6 +5255,10 @@ case_fullscreen() {
 	wait_for 'DESKTOP-TEST: windows .* full@0,0,1280x800!' || fail "the windows line does not show full at 0,0 1280x800, fullscreen: $(value windows)"
 	shot fullscreen 640 790 33aa66 >/dev/null || fail "640,790, where the panel is, is not full's colour"
 	shot fullscreen 4 4 33aa66 >/dev/null || fail "the top left corner is not full's colour"
+	# Direct scanout (M7.7): full draws in shared memory, so it cannot go
+	# straight to the screen, and the compositor says why.
+	wait_for 'edel-compositor: scanout=unavailable for window full on ' ||
+		fail "the compositor did not say whether full goes straight to the screen"
 	# Game mode (M7.7): the VM has no battery, so power.game_mode's
 	# plugged-in has it on; the virtual screen has no variable refresh,
 	# which the compositor said when it lit it, and the compositor offers

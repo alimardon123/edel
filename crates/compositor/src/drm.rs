@@ -36,7 +36,7 @@ use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface}
 use smithay::backend::renderer::ImportDma;
 use smithay::backend::renderer::element::utils::select_dmabuf_feedback;
 use smithay::backend::renderer::element::{
-    RenderElementPresentationState, default_primary_scanout_output_compare,
+    RenderElementPresentationState, RenderingReason, default_primary_scanout_output_compare,
 };
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::session::libseat::LibSeatSession;
@@ -105,8 +105,8 @@ struct Screen {
     /// What apps are told to draw in for it (M7.7), so a fullscreen window
     /// can go straight to the screen.
     feedbacks: Option<crate::dmabuf::Feedbacks>,
-    /// The window shown straight on the screen now, by title, logged when
-    /// it changes (M7.7).
+    /// What was last said of the fullscreen window on top (M7.7):
+    /// `scanout=direct` or `scanout=unavailable`, and why.
     direct: Option<String>,
 }
 
@@ -976,9 +976,11 @@ fn follow_vrr(screen: &mut Screen, state: &Edel) {
     }
 }
 
-/// Tells the windows on `screen` the buffers to draw in (M7.7): the
+/// Tells the windows on a screen the buffers to draw in (M7.7): the
 /// screen's own formats for a window that goes, or could go, straight to
-/// it, else the renderer's; and logs which window is shown straight.
+/// it, else the renderer's; and says, when it changes, whether the
+/// fullscreen window on top goes straight to the screen (`scanout=direct`)
+/// or is drawn by the compositor, and why (`scanout=unavailable`).
 fn send_feedbacks(
     output: &Output,
     feedbacks: Option<&crate::dmabuf::Feedbacks>,
@@ -986,34 +988,42 @@ fn send_feedbacks(
     state: &Edel,
     states: &smithay::backend::renderer::element::RenderElementStates,
 ) {
-    let Some(feedbacks) = feedbacks else {
-        return;
-    };
-    for window in state.space.elements() {
-        window.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
-            select_dmabuf_feedback(surface, states, &feedbacks.render, &feedbacks.scanout)
-        });
+    if let Some(feedbacks) = feedbacks {
+        for window in state.space.elements() {
+            window.send_dmabuf_feedback(output, surface_primary_scanout_output, |surface, _| {
+                select_dmabuf_feedback(surface, states, &feedbacks.render, &feedbacks.scanout)
+            });
+        }
     }
-    let direct = state.fullscreen_top(output).and_then(|window| {
-        let shown = states.element_render_state(window.toplevel()?.wl_surface())?;
-        matches!(
-            shown.presentation_state,
-            RenderElementPresentationState::ZeroCopy
-        )
-        .then(|| crate::decoration::title(window))
-    });
-    if direct != *was {
-        match &direct {
-            Some(title) => eprintln!(
-                "edel-compositor: window {title} goes straight to {}",
-                output.name()
-            ),
-            None => eprintln!(
-                "edel-compositor: {} is drawn by the compositor again",
+    let line = state.fullscreen_top(output).map(|window| {
+        let title = crate::decoration::title(window);
+        let shown = window
+            .toplevel()
+            .and_then(|toplevel| states.element_render_state(toplevel.wl_surface()));
+        let why = match shown.map(|shown| shown.presentation_state) {
+            Some(RenderElementPresentationState::ZeroCopy) => None,
+            _ if feedbacks.is_none() => Some("the screen offers apps none of its formats"),
+            Some(RenderElementPresentationState::Rendering {
+                reason: Some(RenderingReason::FormatUnsupported),
+            }) => Some("its buffer is in a format the screen cannot show"),
+            Some(RenderElementPresentationState::Rendering {
+                reason: Some(RenderingReason::ScanoutFailed),
+            }) => Some("the screen refused its buffer"),
+            _ => Some("its buffer is not a GPU buffer the screen can show"),
+        };
+        match why {
+            None => format!("scanout=direct for window {title} on {}", output.name()),
+            Some(why) => format!(
+                "scanout=unavailable for window {title} on {} ({why})",
                 output.name()
             ),
         }
-        *was = direct;
+    });
+    if line != *was {
+        if let Some(line) = &line {
+            eprintln!("edel-compositor: {line}");
+        }
+        *was = line;
     }
 }
 
