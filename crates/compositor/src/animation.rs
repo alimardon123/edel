@@ -4,9 +4,11 @@
 //! M5.12b4) and with what feel (`appearance.animation_curve`). Opening,
 //! closing and popups run on the eased clock: their progress is the time since
 //! they began over their length, read when a frame is drawn, so a late frame
-//! skips ahead and never makes it run long. Slides and workspace switches run
-//! on springs (M5.14) that carry their position and speed when interrupted, so
-//! nothing jumps. Fades and growing keep the eased curves.
+//! skips ahead and never makes it run long. Slides run on springs (M5.14) that
+//! carry their position and speed when interrupted, so nothing jumps. A
+//! workspace switch is one spring per screen that the incoming windows and the
+//! leaving pictures share, which three fingers on a touchpad can hold (M5.14).
+//! Fades and growing keep the eased curves.
 
 use std::f64::consts::PI;
 use std::time::Duration;
@@ -371,6 +373,127 @@ impl Slide {
     }
 }
 
+/// How far fingers slide across a touchpad, in its own pixels, to move
+/// the workspaces by one whole screen (M5.14), as GNOME's swipe does.
+pub const SWIPE_SPAN: f64 = 400.0;
+/// How far three fingers slide across before they take the workspaces,
+/// so a swipe meant up or down never switches.
+pub const SWIPE_START: f64 = 16.0;
+
+/// A workspace switch on one screen (M5.14): the workspace coming in is
+/// drawn `offset_at` from its place and every picture leaving with the one
+/// before is drawn from there too; a spring takes the offset to nothing,
+/// unless a person's fingers hold it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Switch {
+    /// What moves the switch now.
+    drive: Drive,
+}
+
+/// What moves a switch: its spring, or fingers on a touchpad.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Drive {
+    /// A spring pulling the offset to nothing, as a switch runs by itself.
+    Spring(Spring),
+    /// Fingers hold the switch at an offset, moving at a speed.
+    Held {
+        /// Where the switch is held, as an offset from its place.
+        offset: Point<f64, Logical>,
+        /// How fast the fingers moved it, in logical px a second.
+        velocity: Point<f64, Logical>,
+    },
+}
+
+impl Switch {
+    /// A switch that begins at `now`: the leaving workspace goes `by`, the
+    /// other comes in from `-by`. A switch that interrupts `previous`
+    /// carries what was coming in from where it was drawn, at its speed. A
+    /// zero `length` makes a 1 ms spring.
+    pub fn start(
+        previous: Option<&Switch>,
+        by: Point<f64, Logical>,
+        now: Duration,
+        length: Duration,
+        curve: Curve,
+    ) -> Switch {
+        let (carried, speed) = previous.map_or_else(
+            || (Point::default(), Point::default()),
+            |p| (p.offset_at(now), p.velocity_at(now)),
+        );
+        Switch {
+            drive: Drive::Spring(Spring::new(now, carried - by, speed, length, curve)),
+        }
+    }
+
+    /// Where the switch draws its workspace at `now`, as an offset from its
+    /// place: the spring's, or the one fingers hold.
+    pub fn offset_at(&self, now: Duration) -> Point<f64, Logical> {
+        match self.drive {
+            Drive::Spring(spring) => spring.offset_at(now),
+            Drive::Held { offset, .. } => offset,
+        }
+    }
+
+    /// How fast the switch moves at `now`, in logical px a second: the
+    /// spring's, or the speed fingers gave it.
+    pub fn velocity_at(&self, now: Duration) -> Point<f64, Logical> {
+        match self.drive {
+            Drive::Spring(spring) => spring.velocity_at(now),
+            Drive::Held { velocity, .. } => velocity,
+        }
+    }
+
+    /// Fingers hold the switch at `offset`, moving at `velocity`, until
+    /// `release`.
+    pub fn hold(&mut self, offset: Point<f64, Logical>, velocity: Point<f64, Logical>) {
+        self.drive = Drive::Held { offset, velocity };
+    }
+
+    /// Fingers let go: a held switch springs on from where it is held, at
+    /// the speed it was held with. A switch that is not held stays as it is.
+    pub fn release(&mut self, now: Duration, length: Duration, curve: Curve) {
+        if let Drive::Held { offset, velocity } = self.drive {
+            self.drive = Drive::Spring(Spring::new(now, offset, velocity, length, curve));
+        }
+    }
+
+    /// Whether fingers hold the switch.
+    pub fn held(&self) -> bool {
+        matches!(self.drive, Drive::Held { .. })
+    }
+
+    /// Whether the switch has come to rest by `now`. A held switch is never
+    /// done: it waits for the fingers.
+    pub fn done(&self, now: Duration) -> bool {
+        match self.drive {
+            Drive::Spring(spring) => spring.done(now),
+            Drive::Held { .. } => false,
+        }
+    }
+}
+
+/// Where three fingers that slid `dx` across (touchpad pixels, from where
+/// they began) put the incoming workspace of a switch of `by_x` on a
+/// screen `width` wide: one to one, `SWIPE_SPAN` for the whole screen,
+/// never past either workspace's place (M5.14).
+pub fn swipe_offset(by_x: f64, dx: f64, width: f64) -> f64 {
+    let x = -by_x + dx * width / SWIPE_SPAN;
+    let (lo, hi) = if by_x < 0.0 {
+        (0.0, -by_x)
+    } else {
+        (-by_x, 0.0)
+    };
+    x.clamp(lo, hi)
+}
+
+/// Whether fingers that let go at `offset_x`, moving at `velocity_x`
+/// (logical px a second), go on to the incoming workspace of a switch of
+/// `by_x`: where it would be a tenth of a second on is less than half the
+/// way still to go, as a share of `by_x`. Else the switch goes back.
+pub fn swipe_goes(offset_x: f64, velocity_x: f64, by_x: f64) -> bool {
+    (offset_x + velocity_x * 0.1) / -by_x < 0.5
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -648,5 +771,100 @@ mod tests {
         );
         assert!(spring.done(MS(0)));
         assert_eq!(spring.offset_at(MS(0)), Point::from((0.0, 0.0)));
+    }
+
+    #[test]
+    fn a_new_switch_starts_its_workspace_away_and_settles_in_300_ms() {
+        let length = style(Tier::Full, Motion::Full, 100, Curve::Smooth).slide;
+        let by = Point::from((-1280.0, 0.0));
+        let switch = Switch::start(None, by, MS(0), length, Curve::Smooth);
+        assert!(near(switch.offset_at(MS(0)), (1280.0, 0.0).into()));
+        assert!(near(switch.velocity_at(MS(0)), (0.0, 0.0).into()));
+        assert!(switch.done(MS(300)), "still moving at 300 ms");
+    }
+
+    #[test]
+    fn a_switch_that_interrupts_another_keeps_its_place_and_speed() {
+        let length = style(Tier::Full, Motion::Full, 100, Curve::Smooth).slide;
+        let by1 = Point::from((-1280.0, 0.0));
+        let by2 = Point::from((-1280.0, 0.0));
+        let first = Switch::start(None, by1, MS(0), length, Curve::Smooth);
+        let second = Switch::start(Some(&first), by2, MS(60), length, Curve::Smooth);
+        assert!(near(
+            second.offset_at(MS(60)),
+            first.offset_at(MS(60)) - by2
+        ));
+        assert!(near(second.velocity_at(MS(60)), first.velocity_at(MS(60))));
+    }
+
+    #[test]
+    fn a_held_switch_waits_for_the_fingers_then_springs_on_from_there() {
+        let length = style(Tier::Full, Motion::Full, 100, Curve::Smooth).slide;
+        let mut switch = Switch::start(
+            None,
+            Point::from((-1280.0, 0.0)),
+            MS(0),
+            length,
+            Curve::Smooth,
+        );
+        switch.hold((300.0, 0.0).into(), (-2000.0, 0.0).into());
+        assert!(switch.held());
+        assert!(!switch.done(MS(0)) && !switch.done(MS(10_000)), "held");
+        assert!(near(switch.offset_at(MS(50)), (300.0, 0.0).into()));
+        switch.release(MS(100), length, Curve::Smooth);
+        assert!(!switch.held());
+        assert!(near(switch.offset_at(MS(100)), (300.0, 0.0).into()));
+        assert!(near(switch.velocity_at(MS(100)), (-2000.0, 0.0).into()));
+        assert!(switch.done(MS(100 + 400)), "settles after the release");
+    }
+
+    #[test]
+    fn releasing_a_switch_that_is_not_held_changes_nothing() {
+        let length = style(Tier::Full, Motion::Full, 100, Curve::Smooth).slide;
+        let mut switch = Switch::start(
+            None,
+            Point::from((-1280.0, 0.0)),
+            MS(0),
+            length,
+            Curve::Smooth,
+        );
+        let before = switch;
+        switch.release(MS(100), length, Curve::Smooth);
+        assert_eq!(switch, before);
+    }
+
+    #[test]
+    fn swipe_offset_follows_the_fingers_one_to_one_within_both_places() {
+        let width = 1280.0;
+        // Forward: the next workspace comes in from the right.
+        assert_eq!(swipe_offset(-1280.0, 0.0, width), 1280.0);
+        assert_eq!(swipe_offset(-1280.0, -400.0, width), 0.0, "a whole screen");
+        assert_eq!(
+            swipe_offset(-1280.0, -800.0, width),
+            0.0,
+            "clamped at its place"
+        );
+        assert_eq!(
+            swipe_offset(-1280.0, 100.0, width),
+            1280.0,
+            "clamped at its start"
+        );
+        assert_eq!(swipe_offset(-1280.0, -200.0, width), 640.0, "half a screen");
+        // Back: the previous workspace comes in from the left.
+        assert_eq!(swipe_offset(1280.0, 200.0, width), -640.0);
+    }
+
+    #[test]
+    fn swipe_goes_on_past_half_a_screen_or_on_a_flick() {
+        assert!(swipe_goes(500.0, 0.0, -1280.0));
+        assert!(
+            !swipe_goes(700.0, 0.0, -1280.0),
+            "more than half way still to go"
+        );
+        assert!(swipe_goes(700.0, -2000.0, -1280.0), "a flick goes on");
+        assert!(
+            swipe_goes(1200.0, -20000.0, -1280.0),
+            "a strong flick goes on"
+        );
     }
 }
