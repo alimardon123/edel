@@ -1,0 +1,6 @@
+# The kernel every bootable image runs (M8.17): one image for servers, VMs,
+# desktops and laptops, so one kernel. Firmware stays the laptop feature's.
+format = 1
+summary = "The long-term kernel and the CPU microcode"
+why = "One image boots every machine (M8.17), so it carries the one kernel that drives real hardware, linux-lts, where linux-virt drives only virtual machines; a VM loads only the few drivers it finds, so the bigger package costs disk, never memory or boot time (measured in CI). CPU microcode (amd-ucode, intel-ucode), which GRUB loads before the initramfs (M3.3a), fixes the processor's own bugs and security holes on servers as on laptops, and a VM ignores it."
+packages = ["linux-lts", "amd-ucode", "intel-ucode"]

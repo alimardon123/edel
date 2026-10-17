@@ -5,6 +5,13 @@
 //! feature that is on still lists: bluetooth off keeps dbus while network
 //! lists it. An absent key is the image's choice, on unless the image
 //! definition lists the feature in `off` (`EDEL_SERVICES_OFF`).
+//!
+//! A feature marked `screen` (M8.17: the login screen, the seat, the
+//! battery's daemon) is the desktop's: on a machine whose kernel shows no
+//! graphics card ([`has_screen`]), its services are taken out at boot, so
+//! one image runs a desktop and a server alike, and come back at the next
+//! boot with a screen. A switchable one still starts where the file says
+//! `services.NAME = true`.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -98,23 +105,52 @@ pub fn off_by_default(os_release: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Whether feature `name` is on: the file's choice, else on unless the
-/// image left it off.
-pub fn is_on(name: &str, wanted: &BTreeMap<String, bool>, off: &[String]) -> bool {
-    wanted
-        .get(name)
-        .copied()
-        .unwrap_or_else(|| !off.iter().any(|o| o == name))
+/// Whether this machine has a screen: the kernel shows a graphics card
+/// under `sys` (`/sys`), `class/drm/cardN`. A server or a virtual machine
+/// with no display device has none; the firmware's framebuffer counts, so
+/// a machine whose graphics driver fails still has its screen.
+pub fn has_screen(sys: &Path) -> bool {
+    fs::read_dir(sys.join("class/drm")).is_ok_and(|entries| {
+        entries.filter_map(|e| e.ok()).any(|e| {
+            e.file_name()
+                .to_str()
+                .and_then(|n| n.strip_prefix("card"))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        })
+    })
+}
+
+/// Whether feature `name` is on: the file's choice for a switchable one,
+/// else off for a `screen` feature on a machine without one, else on
+/// unless the image left it off.
+pub fn is_on(
+    name: &str,
+    feature: &Feature,
+    wanted: &BTreeMap<String, bool>,
+    off: &[String],
+    screen: bool,
+) -> bool {
+    if feature.switchable {
+        if let Some(&on) = wanted.get(name) {
+            return on;
+        }
+    }
+    if feature.screen && !screen {
+        return false;
+    }
+    !feature.switchable || !off.iter().any(|o| o == name)
 }
 
 /// The steps that make the runlevels `enabled` match `wanted`: a feature
 /// that is on has each of its services in its runlevel; one that is off
 /// has taken out those of its services that no feature that is on lists.
-/// Only the services of switchable features are ever touched.
+/// Only the services of switchable and `screen` features are ever touched;
+/// `screen` says whether the machine has one ([`has_screen`]).
 pub fn plan(
     installed: &[(String, Feature)],
     wanted: &BTreeMap<String, bool>,
     off: &[String],
+    screen: bool,
     enabled: &BTreeSet<Entry>,
 ) -> Vec<Step> {
     let entries = |f: &Feature| -> Vec<Entry> {
@@ -126,12 +162,12 @@ pub fn plan(
     };
     let kept: BTreeSet<Entry> = installed
         .iter()
-        .filter(|(n, f)| !f.switchable || is_on(n, wanted, off))
+        .filter(|(n, f)| is_on(n, f, wanted, off, screen))
         .flat_map(|(_, f)| entries(f))
         .collect();
     let mut steps = Vec::new();
-    for (name, feature) in installed.iter().filter(|(_, f)| f.switchable) {
-        let on = is_on(name, wanted, off);
+    for (name, feature) in installed.iter().filter(|(_, f)| f.switchable || f.screen) {
+        let on = is_on(name, feature, wanted, off, screen);
         for entry in entries(feature) {
             let here = enabled.contains(&entry);
             let step = if on && !here {
@@ -211,7 +247,7 @@ mod tests {
             .collect();
         let wanted = BTreeMap::from([("bluetooth".to_string(), false)]);
         assert_eq!(
-            plan(&machine(), &wanted, &[], &enabled),
+            plan(&machine(), &wanted, &[], true, &enabled),
             [Step {
                 level: "default".into(),
                 service: "bluetooth".into(),
@@ -227,10 +263,10 @@ mod tests {
             .into_iter()
             .map(entry)
             .collect();
-        assert!(plan(&machine(), &BTreeMap::new(), &off, &enabled).is_empty());
+        assert!(plan(&machine(), &BTreeMap::new(), &off, true, &enabled).is_empty());
         let wanted = BTreeMap::from([("ssh".to_string(), true)]);
         assert_eq!(
-            plan(&machine(), &wanted, &off, &enabled),
+            plan(&machine(), &wanted, &off, true, &enabled),
             [Step {
                 level: "default".into(),
                 service: "sshd".into(),
@@ -242,6 +278,57 @@ mod tests {
             ["ssh", "bluetooth"]
         );
         assert!(off_by_default("NAME=Edel\n").is_empty());
+    }
+
+    #[test]
+    fn a_machine_without_a_screen_starts_no_desktop_service() {
+        let mut login = feature(false, &["greetd"]);
+        login.screen = true;
+        let mut bluetooth = feature(true, &["dbus", "bluetooth"]);
+        bluetooth.screen = true;
+        let mut installed = machine();
+        installed[0].1 = bluetooth;
+        installed.push(("login".into(), login));
+        let enabled: BTreeSet<Entry> = ["dbus", "bluetooth", "networkmanager", "greetd"]
+            .into_iter()
+            .map(entry)
+            .collect();
+        let off = vec!["ssh".to_string()];
+        let step = |service: &str, on| Step {
+            level: "default".into(),
+            service: service.into(),
+            on,
+        };
+        // No screen: the login screen and bluetooth go, dbus stays for network.
+        assert_eq!(
+            plan(&installed, &BTreeMap::new(), &off, false, &enabled),
+            [step("bluetooth", false), step("greetd", false)]
+        );
+        // A screen again: they come back.
+        let headless: BTreeSet<Entry> = ["dbus", "networkmanager"].into_iter().map(entry).collect();
+        assert_eq!(
+            plan(&installed, &BTreeMap::new(), &off, true, &headless),
+            [step("bluetooth", true), step("greetd", true)]
+        );
+        // The file's word wins over the screen for a switchable feature.
+        let wanted = BTreeMap::from([("bluetooth".to_string(), true)]);
+        assert_eq!(
+            plan(&installed, &wanted, &off, false, &enabled),
+            [step("greetd", false)]
+        );
+    }
+
+    #[test]
+    fn a_screen_is_a_graphics_card_the_kernel_shows() {
+        let sys = std::env::temp_dir().join(format!("edel-screen-{}", std::process::id()));
+        let drm = sys.join("class/drm");
+        fs::create_dir_all(drm.join("renderD128")).unwrap();
+        fs::create_dir_all(drm.join("card0-Virtual-1")).unwrap();
+        assert!(!has_screen(&sys));
+        fs::create_dir_all(drm.join("card0")).unwrap();
+        assert!(has_screen(&sys));
+        assert!(!has_screen(&sys.join("nothing")));
+        fs::remove_dir_all(&sys).unwrap();
     }
 
     #[test]

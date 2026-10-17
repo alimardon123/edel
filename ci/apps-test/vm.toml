@@ -7,9 +7,9 @@ name = "edel-apps-test"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak", "apps-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "seat", "network", "flatpak", "apps-test"]
 
 [vm]
-kernel = "virt"
+kernel = "lts"
 slot_mib = 1024
 cmdline = "console=ttyS0"

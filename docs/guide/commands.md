@@ -164,7 +164,7 @@ Build an image from its definition file (run as root on Alpine).
 
 | | What it does |
 |---|---|
-| `DEFINITION` | Image definition, for example images/vm.toml |
+| `DEFINITION` | Image definition, for example images/edel.toml |
 | `--out OUT` | Directory for the finished images and the work area |
 | `--files DIR` | Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once |
 | `--settings FILE` | A settings file baked in as the image's own, which seeds each machine's first boot; given more than once, the files are merged and a later one wins where two set the same key (docs/FLEET.md) |
@@ -191,7 +191,7 @@ Check an image definition without building it.
 
 | | What it does |
 |---|---|
-| `DEFINITION` | Image definition, for example images/vm.toml |
+| `DEFINITION` | Image definition, for example images/edel.toml |
 
 ## `edel theme`
 

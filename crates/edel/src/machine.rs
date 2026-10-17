@@ -405,6 +405,9 @@ struct Machine {
     services_off: Vec<String>,
     /// The services in OpenRC's runlevels now
     runlevels: BTreeSet<services::Entry>,
+    /// Whether the kernel shows a graphics card (`services::has_screen`):
+    /// without one, the desktop's services stay off (M8.17).
+    screen: bool,
     /// The add-ons mounted now, by name (M7.2a)
     addons: Vec<String>,
     /// Their files and the links to them in `/etc`
@@ -465,6 +468,7 @@ impl Machine {
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
+            screen: services::has_screen(Path::new("/sys")),
             addons: crate::addons::mounted(),
             addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
@@ -784,6 +788,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         &machine.features,
         &file.services,
         &machine.services_off,
+        machine.screen,
         &machine.runlevels,
     ) {
         changes.push(Change::Service(step));
@@ -2801,6 +2806,7 @@ mod tests {
             features: Vec::new(),
             services_off: Vec::new(),
             runlevels: BTreeSet::new(),
+            screen: true,
             addons: Vec::new(),
             addon_links: Default::default(),
             mime_defaults: None,

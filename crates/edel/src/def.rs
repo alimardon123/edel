@@ -90,6 +90,9 @@ pub struct ImageDef {
     pub initramfs: Vec<String>,
     /// The health files the boot guard waits for (`EDEL_HEALTH`).
     pub health: Vec<String>,
+    /// Those of `health` only a machine with a screen waits for: the
+    /// health of the features marked `screen` (`EDEL_HEALTH_SCREEN`, M8.17).
+    pub health_screen: Vec<String>,
     /// Our own programs to copy to `/usr/bin`, each once, in order.
     pub programs: Vec<String>,
     /// What to keep of the packages' files under a folder (M5.30), one
@@ -330,6 +333,8 @@ impl ImageDef {
         let mut modules = Vec::new();
         let mut initramfs = Vec::new();
         let mut health = Vec::new();
+        let mut health_screen = Vec::new();
+        let mut health_always = Vec::new();
         let mut programs = Vec::new();
         let mut keep: Vec<(edel::keep::Keep, String)> = Vec::new();
         let mut shipped: BTreeMap<PathBuf, &str> = BTreeMap::new();
@@ -353,6 +358,11 @@ impl ImageDef {
             add_new(&mut modules, &f.modules);
             add_new(&mut initramfs, &f.initramfs);
             add_new(&mut health, &f.health);
+            if f.screen {
+                add_new(&mut health_screen, &f.health);
+            } else {
+                add_new(&mut health_always, &f.health);
+            }
             add_new(&mut programs, &f.programs);
             for k in &f.keep {
                 let under = k.under.trim_matches('/');
@@ -380,6 +390,8 @@ impl ImageDef {
             }
         }
         initramfs.sort();
+        // A health a feature without `screen` lists too is waited for everywhere.
+        health_screen.retain(|h| !health_always.contains(h));
         if file.alpine.is_some() {
             bail!(
                 "[alpine] belongs to the base feature (features/base.toml), which every image lists, so the branch is written once (M5.27); remove it here"
@@ -422,6 +434,7 @@ impl ImageDef {
             modules,
             initramfs,
             health,
+            health_screen,
             programs,
             keep: keep.into_iter().map(|(k, _)| k).collect(),
             apps,
@@ -1157,63 +1170,28 @@ mod tests {
         }
     }
 
-    /// Roadmap M4.0: each image made of features installs and enables what
-    /// main's format-1 definition did, and boots with the same modules and
-    /// initramfs. The laptop image, dropped on 2026-10-06, is the desktop's
-    /// stick now.
+    /// Roadmap M4.0: the container image made of features installs what
+    /// main's format-1 definition did. The VM's became the one image
+    /// (M8.17), which is no longer the same image.
     #[test]
-    fn features_rebuild_the_format_1_images() {
+    fn features_rebuild_the_format_1_container() {
         let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/format1");
-        for name in ["container", "vm"] {
-            let text = fs::read_to_string(fixtures.join(format!("{name}.toml"))).unwrap();
-            let old: toml::Table = toml::from_str(&text).unwrap();
-            let mut install: Vec<String> = old["packages"]["install"].clone().try_into().unwrap();
-            let services: Services = old
-                .get("services")
-                .map(|s| s.clone().try_into().unwrap())
-                .unwrap_or_default();
-            let mut old_services: Vec<(&str, &str)> = services.entries();
-            if name != "container" {
-                // Added since format 1: the machine feature's clock (M1.13),
-                // its stick that installs itself (M7.3),
-                // and its doas, its sudo name and linux-pam, which login's doas moved to (M6.5).
-                old_services.push(("default", "edel-clock"));
-                old_services.push(("default", "edel-install"));
-                install.extend(["doas", "doas-sudo-shim", "linux-pam"].map(String::from));
-            }
-            let new = repo_def(name);
-            assert_eq!(sorted(&new.packages), sorted(&install), "{name}: packages");
-            assert_eq!(
-                sorted(&new.services.entries()),
-                sorted(&old_services),
-                "{name}: services"
-            );
-            if name != "container" {
-                // Since the M2 and M3 review, i6300esb loads by hardware ID
-                // like a laptop's watchdog.
-                assert_eq!(
-                    new.modules.join(","),
-                    "ext4,overlay,softdog,virtio_pci,virtio_blk,nvme,ahci,sd_mod,usb-storage,uas,xhci_pci",
-                    "{name}: modules="
-                );
-                assert_eq!(
-                    new.initramfs.join(" "),
-                    "ata base ext4 kms nvme scsi usb virtio",
-                    "{name}: mkinitfs features"
-                );
-                assert_eq!(new.health, ["default-runlevel"], "{name}: EDEL_HEALTH");
-            }
-        }
-        assert_eq!(repo_def("desktop").off, ["ssh"]);
+        let text = fs::read_to_string(fixtures.join("container.toml")).unwrap();
+        let old: toml::Table = toml::from_str(&text).unwrap();
+        let install: Vec<String> = old["packages"]["install"].clone().try_into().unwrap();
+        let new = repo_def("container");
+        assert_eq!(sorted(&new.packages), sorted(&install), "packages");
+        assert!(new.services.entries().is_empty(), "services");
+        assert_eq!(repo_def("edel").off, ["ssh"]);
     }
 
     /// Roadmap M4.0: dropping a feature from a definition drops exactly
     /// what it brought.
     #[test]
     fn dropping_ssh_from_the_vm_drops_sshd_and_openssh_server() {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../images/vm.toml");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../ci/vm/vm.toml");
         let text = fs::read_to_string(&path).unwrap();
-        let without = text.replace(r#""ab-boot", "ssh", "vm""#, r#""ab-boot", "vm""#);
+        let without = text.replace(r#""ab-boot", "ssh", "kernel""#, r#""ab-boot", "kernel""#);
         assert_ne!(text, without);
         let dirs = feature_dirs(path.parent().unwrap()).unwrap();
         let with = ImageDef::merge(&text, find_features(&dirs).unwrap()).unwrap();

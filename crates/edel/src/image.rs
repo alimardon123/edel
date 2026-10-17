@@ -485,6 +485,12 @@ impl Build<'_> {
             self.def.stem(),
             self.def.health.join(" ")
         );
+        if !self.def.health_screen.is_empty() {
+            keys.push_str(&format!(
+                "EDEL_HEALTH_SCREEN=\"{}\"\n",
+                self.def.health_screen.join(" ")
+            ));
+        }
         if !self.def.off.is_empty() {
             keys.push_str(&format!(
                 "EDEL_SERVICES_OFF=\"{}\"\n",

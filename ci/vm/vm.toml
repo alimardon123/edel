@@ -1,0 +1,18 @@
+# CI only (roadmap M8.17): the one image's system without its desktop and
+# firmware, for the tests of edel's own work (system, developer mode, the
+# fleet, install and A/B), which boot it many times and need no screen.
+# The one image itself (images/edel.toml) is booted by boot-test.sh with
+# no screen and by desktop-test.sh with one. Release images never use it.
+format = 2
+name = "edel-vm"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "seat", "network"]
+
+[vm]
+kernel = "lts"
+# The slot size of every installed machine (docs/FORMATS.md, M3.3b): this
+# disk runs as it is and takes the A/B test's updates.
+slot_mib = 4096
+cmdline = "console=ttyS0"

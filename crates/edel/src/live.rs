@@ -50,8 +50,14 @@ fn with_live_session(config: &str) -> Option<String> {
 
 /// `edel boot live`, run at boot by the login feature's `edel-live`.
 pub fn live() -> Result<()> {
-    let disk = Disk::find()?;
     let sys = Path::new("/sys");
+    // The one image on a machine with no graphics card starts no desktop
+    // (M8.17), so nobody is logged in to one.
+    if !edel::services::has_screen(sys) {
+        println!("edel boot live: this machine has no screen, so no desktop starts");
+        return Ok(());
+    }
+    let disk = Disk::find()?;
     let stick = edel::install::running_from_stick(sys, &disk.name);
     if !wants_live(stick, &fs::read_to_string("/etc/passwd")?) {
         if report::is_removable(sys, &disk.name) {
