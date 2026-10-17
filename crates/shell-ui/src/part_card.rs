@@ -13,7 +13,8 @@ use std::sync::OnceLock;
 use accesskit::Role;
 use edel::i18n::{tr, trf};
 use edel::lock_screen::{self, Anchor, DatePart, DateStyle, Face, Part, Placed, Size};
-use edel::tokens::{Colour, Tokens};
+use edel::tokens::{self, Colour, Tokens};
+use edel::widgets::{self, Behind};
 use tiny_skia::Pixmap;
 
 use crate::a11y::Item;
@@ -47,6 +48,9 @@ const FACES: [Face; 4] = [Face::Digital, Face::Stacked, Face::Analog, Face::Mini
 const HOURS: [u8; 2] = [24, 12];
 const SIZES: [Size; 3] = [Size::Small, Size::Medium, Size::Large];
 const STYLES: [DateStyle; 3] = [DateStyle::Long, DateStyle::Short, DateStyle::Numeric];
+/// The colour grid's columns (M8.21 part 21k2): six swatches across, so the
+/// twelve of `widgets::swatches` take two rows.
+const SWATCH_COLUMNS: usize = 6;
 
 /// Whether a part has a card: it has lines to show (the clock, the date, the
 /// message and the picture; M5.33b). The count, the player, the person and the
@@ -71,6 +75,10 @@ pub enum Line {
     Label,
     File,
     Button,
+    /// A widget's colour, as a grid of swatches (M8.21 part 21k2).
+    Colour,
+    /// The card's "Use on every widget" button (M8.21 part 21k2).
+    Every,
 }
 
 /// What a control chooses: one option of a part, or the message's or a
@@ -87,6 +95,8 @@ pub enum Choice {
     Zone(String),
     /// A clock's label; empty is none.
     Label(String),
+    /// A widget's colour, as the file names it (`None` is automatic).
+    Colour(Option<String>),
 }
 
 /// What the card shows (M5.10c6c2): the part it changes, by its index in the
@@ -114,6 +124,21 @@ pub struct View {
     /// Whether the pointer is on the docked card's Remove (M5.10c7g), so it
     /// is lit.
     pub remove_hover: bool,
+    /// The colour swatches of the part's colour line (M8.21 part 21k2), in
+    /// `widgets::swatches`' order; empty until the card is opened with them.
+    pub swatches: Vec<Swatch>,
+}
+
+/// One swatch of a part's colour line (M8.21 part 21k2): the colour it names
+/// (None is automatic), the ink it draws in over what lies behind the widget
+/// (None when a `wallpaper` colour has no source, drawn as a ring), and
+/// whether that ink reads there (`widgets::problem`). One that does not read
+/// cannot be chosen.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Swatch {
+    pub value: Option<String>,
+    pub fill: Option<Colour>,
+    pub reads: bool,
 }
 
 /// Where a press lands on a card: a segment of a segmented row, a date
@@ -126,6 +151,8 @@ pub enum Hit {
     Button,
     /// The docked card's Remove (M5.10c7f).
     Remove,
+    /// The card's "Use on every widget" (M8.21 part 21k2).
+    Every,
 }
 
 impl Hit {
@@ -135,6 +162,7 @@ impl Hit {
         match self {
             Hit::Segment(line, _) | Hit::Toggle(line) | Hit::Field(line) => Some(line),
             Hit::Button => Some(Line::Button),
+            Hit::Every => Some(Line::Every),
             Hit::Remove => None,
         }
     }
@@ -156,6 +184,8 @@ pub enum Step {
     Settings,
     /// Takes the part away (M5.10c7f: the card's Remove, or Delete).
     Remove,
+    /// Gives the card's colour to every widget that takes one (M8.21 part 21k2).
+    Every,
     Close,
     Nothing,
 }
@@ -246,6 +276,7 @@ pub fn open(index: usize, placed: Placed) -> View {
         docked: false,
         number: None,
         remove_hover: false,
+        swatches: Vec::new(),
     }
 }
 
@@ -331,15 +362,26 @@ fn hours_toggled(view: &View) -> Choice {
 
 /// The lines a part's card has, in the order the keyboard goes round them.
 pub fn lines(part: Part) -> Vec<Line> {
+    let colour = [Line::Colour, Line::Every];
     match part {
-        Part::Clock => vec![Line::Face, Line::Hours, Line::Size, Line::Zone, Line::Label],
+        Part::Clock => {
+            let mut lines = vec![Line::Face, Line::Hours, Line::Size, Line::Zone, Line::Label];
+            lines.extend(colour);
+            lines
+        }
         Part::Date => {
             let mut lines = vec![Line::Style];
             lines.extend(ORDER.map(Line::Show));
+            lines.extend(colour);
             lines
         }
-        Part::Message => vec![Line::Field],
+        Part::Message => {
+            let mut lines = vec![Line::Field];
+            lines.extend(colour);
+            lines
+        }
         Part::Picture => vec![Line::File, Line::Button],
+        Part::Battery => colour.to_vec(),
         _ => Vec::new(),
     }
 }
@@ -386,6 +428,17 @@ fn show_word(part: DatePart) -> &'static str {
     }
 }
 
+/// The word a swatch of the colour line is read and named by (M8.21 part 21k2):
+/// automatic, the accent, the wallpaper's, or the accent's title.
+fn swatch_word(value: Option<&str>) -> &'static str {
+    match value {
+        None => tr("Automatic"),
+        Some(widgets::ACCENT) => tr("Accent"),
+        Some(tokens::WALLPAPER_ACCENT) => tr("From wallpaper"),
+        Some(name) => tokens::accent_title(name).unwrap_or_else(|| tr("Accent")),
+    }
+}
+
 /// The words of a segmented line's segments, each with what choosing it is.
 fn segments(line: Line) -> Vec<(&'static str, Choice)> {
     match line {
@@ -405,6 +458,10 @@ fn segments(line: Line) -> Vec<(&'static str, Choice)> {
             .iter()
             .map(|&s| (style_word(s), Choice::Style(s)))
             .collect(),
+        Line::Colour => widgets::swatches()
+            .into_iter()
+            .map(|value| (swatch_word(value.as_deref()), Choice::Colour(value)))
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -422,6 +479,8 @@ fn label(line: Line) -> &'static str {
         Line::Label => tr("Label"),
         Line::File => tr("Picture"),
         Line::Button => tr("Choose in Settings"),
+        Line::Colour => tr("Colour"),
+        Line::Every => tr("Use on every widget"),
     }
 }
 
@@ -438,6 +497,8 @@ fn prefix(line: Line) -> &'static str {
         Line::Label => "label",
         Line::File => "file",
         Line::Button => "settings",
+        Line::Colour => "colour",
+        Line::Every => "every",
     }
 }
 
@@ -449,6 +510,7 @@ fn key_of(choice: &Choice) -> String {
         Choice::Size(s) => s.name().into(),
         Choice::Style(s) => s.name().into(),
         Choice::Show(p) => p.name().into(),
+        Choice::Colour(v) => v.clone().unwrap_or_else(|| "automatic".into()),
         Choice::Words(_) | Choice::Zone(_) | Choice::Label(_) => String::new(),
     }
 }
@@ -542,6 +604,7 @@ fn chosen(placed: &Placed, line: Line) -> Option<usize> {
         Line::Hours => Choice::Hours(placed.hours.unwrap_or(24)),
         Line::Size => Choice::Size(placed.size.unwrap_or(Size::Large)),
         Line::Style => Choice::Style(placed.style.unwrap_or(DateStyle::Long)),
+        Line::Colour => Choice::Colour(placed.colour.clone()),
         _ => return None,
     };
     segments(line).iter().position(|(_, choice)| *choice == now)
@@ -578,6 +641,9 @@ pub fn apply(placed: &Placed, choice: &Choice) -> Placed {
         }
         (Part::Message, Choice::Words(words)) => {
             next.text = Some(words.chars().take(most_letters()).collect());
+        }
+        (part, Choice::Colour(colour)) if part.widget().takes(widgets::COLOUR) => {
+            next.colour = colour.clone();
         }
         // A zone is applied when it is a zone name (`lock_screen::is_zone_name`),
         // a label when it is one (`lock_screen::is_label`); else nothing changes.
@@ -639,6 +705,11 @@ pub fn said(choice: &Choice, placed: &Placed) -> String {
             placed.zone.as_deref().unwrap_or("this machine")
         ),
         Choice::Label(_) => format!("clock label {}", placed.label.as_deref().unwrap_or("none")),
+        Choice::Colour(v) => format!(
+            "{} colour {}",
+            placed.part.name(),
+            v.as_deref().unwrap_or("automatic")
+        ),
     }
 }
 
@@ -667,8 +738,15 @@ fn step(view: &View, backwards: bool) -> Option<Line> {
     ring.get(next).copied()
 }
 
+/// Whether segment `j` of `line` can be chosen: every segment but a colour
+/// swatch that does not read over what lies behind its widget (M8.21 part
+/// 21k2, `Swatch::reads`), which is only shown.
+fn choosable(view: &View, line: Line, j: usize) -> bool {
+    line != Line::Colour || view.swatches.get(j).is_some_and(|swatch| swatch.reads)
+}
+
 /// Left and Right on the focused segmented line: the segment beside the
-/// chosen one, when there is one.
+/// chosen one, when there is one and it can be chosen.
 fn segment_step(view: &View, line: Line, backwards: bool) -> Step {
     let Some(now) = chosen(&view.placed, line) else {
         return Step::Nothing;
@@ -679,7 +757,10 @@ fn segment_step(view: &View, line: Line, backwards: bool) -> Step {
     } else {
         Some(now + 1).filter(|j| *j < options.len())
     };
-    match next.and_then(|j| options.into_iter().nth(j)) {
+    match next
+        .filter(|j| choosable(view, line, *j))
+        .and_then(|j| options.into_iter().nth(j))
+    {
         Some((_, choice)) => Step::Choose(choice),
         None => Step::Nothing,
     }
@@ -744,6 +825,7 @@ pub fn key(view: &View, key: Option<Key>, shift: bool, typed: Option<char>) -> S
         (Some(Key::Activate), Line::Hours) if view.docked => Step::Choose(hours_toggled(view)),
         (Some(Key::Activate), line) if view.docked && disclosure(line) => Step::Disclose(line),
         (Some(Key::Activate), Line::Button) => Step::Settings,
+        (Some(Key::Activate), Line::Every) => Step::Every,
         _ => Step::Nothing,
     }
 }
@@ -753,6 +835,7 @@ pub fn key(view: &View, key: Option<Key>, shift: bool, typed: Option<char>) -> S
 /// control). `view` is the card as it is now, for the switch.
 pub fn press(view: &View, l: &Layout, x: f32, y: f32) -> Step {
     match hit(l, x, y) {
+        Some(Hit::Segment(line, j)) if !choosable(view, line, j) => Step::Nothing,
         Some(Hit::Segment(line, j)) => segments(line)
             .into_iter()
             .nth(j)
@@ -762,6 +845,7 @@ pub fn press(view: &View, l: &Layout, x: f32, y: f32) -> Step {
         Some(Hit::Toggle(line)) => Step::Disclose(line),
         Some(Hit::Field(line)) => Step::Focus(Some(line)),
         Some(Hit::Button) => Step::Settings,
+        Some(Hit::Every) => Step::Every,
         Some(Hit::Remove) => Step::Remove,
         None => Step::Nothing,
     }
@@ -787,7 +871,8 @@ pub fn hit(l: &Layout, x: f32, y: f32) -> Option<Hit> {
         row.label.is_some_and(|r| r.contains(x, y))
     };
     match row.line {
-        Line::Face => segment(),
+        Line::Face | Line::Colour => segment(),
+        Line::Every => Some(Hit::Every),
         Line::Hours if l.docked => Some(Hit::Toggle(row.line)),
         Line::Hours => segment(),
         Line::Size | Line::Style => {
@@ -828,11 +913,62 @@ pub fn layout(
     }
 }
 
+/// The swatches a part's colour line shows (M8.21 part 21k2): each colour
+/// `widgets::swatches` names, with the ink it draws in over `behind` (automatic
+/// draws the release's text colour) and whether that ink reads there.
+pub fn swatches_for(part: Part, tokens: &Tokens, behind: Behind) -> Vec<Swatch> {
+    let widget = part.widget();
+    widgets::swatches()
+        .into_iter()
+        .map(|value| {
+            let fill = match value.as_deref() {
+                None => Some(tokens.backdrop_text),
+                v => widgets::ink(v, widget, tokens, behind),
+            };
+            let reads = value
+                .as_deref()
+                .is_none_or(|v| widgets::problem(widget, v, tokens, behind.surface).is_none());
+            Swatch { value, fill, reads }
+        })
+        .collect()
+}
+
+/// The cells of a swatch grid (M8.21 part 21k2): `SWATCH_COLUMNS` across and
+/// `cell_h` high from `rect`'s top left, one for each of `n` swatches.
+fn swatch_cells(rect: Rect, n: usize, cell_h: f32) -> Vec<Rect> {
+    let cell_w = rect.w / SWATCH_COLUMNS as f32;
+    (0..n)
+        .map(|j| {
+            Rect::new(
+                rect.x + (j % SWATCH_COLUMNS) as f32 * cell_w,
+                rect.y + (j / SWATCH_COLUMNS) as f32 * cell_h,
+                cell_w,
+                cell_h,
+            )
+        })
+        .collect()
+}
+
+/// The rows of the colour grid: how many lines of `SWATCH_COLUMNS` its swatches take.
+fn swatch_rows() -> usize {
+    segments(Line::Colour).len().div_ceil(SWATCH_COLUMNS)
+}
+
+/// A line's height on a floating card (M8.21 part 21k2): a row, or the
+/// colour grid's label row and each row of its swatches.
+fn floating_h(line: Line, row_h: f32) -> f32 {
+    match line {
+        Line::Colour => (1 + swatch_rows()) as f32 * row_h,
+        _ => row_h,
+    }
+}
+
 /// The card floating beside its part (`layout`, no dock).
 fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Layout {
     let lines = lines(view.placed.part);
     let row_h = tokens.row as f32;
-    let height = 2.0 * PAD + lines.len() as f32 * row_h;
+    let heights: Vec<f32> = lines.iter().map(|line| floating_h(*line, row_h)).collect();
+    let height = 2.0 * PAD + heights.iter().sum::<f32>();
     let margin = lock::MARGIN;
     let right_x = near.right() + GAP;
     let x = if right_x + WIDTH <= screen.0 - margin {
@@ -846,16 +982,13 @@ fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Lay
     let card = Rect::new(x, y, WIDTH, height);
     let panel_control = tokens.panel_control as f32;
     let glyph = tokens.panel_glyph as f32;
+    let mut top = card.y + PAD;
     let rows = lines
         .into_iter()
-        .enumerate()
-        .map(|(i, line)| {
-            let rect = Rect::new(
-                card.x + PAD,
-                card.y + PAD + i as f32 * row_h,
-                WIDTH - 2.0 * PAD,
-                row_h,
-            );
+        .zip(heights)
+        .map(|(line, h)| {
+            let rect = Rect::new(card.x + PAD, top, WIDTH - 2.0 * PAD, h);
+            top += h;
             let right = rect.right() - INSET;
             let left = rect.x + INSET;
             let (control, cells, label) = match line {
@@ -876,7 +1009,7 @@ fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Lay
                     let label = Rect::new(left, rect.y, box_.x - 8.0 - left, rect.h);
                     (Some(box_), Vec::new(), Some(label))
                 }
-                Line::Field | Line::Button => (
+                Line::Field | Line::Button | Line::Every => (
                     Some(Rect::new(
                         rect.x + INSET,
                         rect.y + (rect.h - panel_control) / 2.0,
@@ -886,6 +1019,16 @@ fn floating(view: &View, near: Rect, screen: (f32, f32), tokens: &Tokens) -> Lay
                     Vec::new(),
                     None,
                 ),
+                // The label's row, then the swatches across the card.
+                Line::Colour => {
+                    let label = Rect::new(left, rect.y, rect.w - 2.0 * INSET, row_h);
+                    let grid = Rect::new(rect.x, rect.y + row_h, rect.w, rect.h - row_h);
+                    (
+                        Some(grid),
+                        swatch_cells(grid, segments(line).len(), row_h),
+                        Some(label),
+                    )
+                }
                 // A clock's zone and label: the row's name at the left, the
                 // field for the words at the right, from `FIELD_AT` across.
                 Line::Zone | Line::Label => {
@@ -943,7 +1086,8 @@ fn section(line: Line) -> Section {
         | Line::Field
         | Line::Zone
         | Line::Label => Section::Group,
-        Line::File | Line::Button => Section::Plain,
+        Line::Colour => Section::Grid,
+        Line::File | Line::Button | Line::Every => Section::Plain,
     }
 }
 
@@ -975,7 +1119,7 @@ fn head_of(row: &Row) -> Rect {
 fn docked_target(row: &Row) -> Option<Rect> {
     match row.line {
         Line::File => None,
-        Line::Face | Line::Button => row.control,
+        Line::Face | Line::Colour | Line::Button | Line::Every => row.control,
         line if disclosure(line) && row.control.is_some() => row.control,
         _ => Some(head_of(row)),
     }
@@ -1000,6 +1144,27 @@ fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
         y += gap(prev, next);
         prev = Some(next);
         let (row, used) = match line {
+            // The colour grid (M8.21 part 21k2): its label, then touch-sized
+            // cells, six across.
+            Line::Colour => {
+                let rows = swatch_rows();
+                let label = Rect::new(inner_x, y, inner_w, row_h);
+                let grid = Rect::new(
+                    inner_x,
+                    y + row_h,
+                    inner_w,
+                    rows as f32 * edit_kit::BUTTON_TOUCH,
+                );
+                let row = Row {
+                    line,
+                    rect: Rect::new(inner_x, y, inner_w, row_h + grid.h),
+                    control: Some(grid),
+                    segments: swatch_cells(grid, segments(line).len(), edit_kit::BUTTON_TOUCH),
+                    label: Some(label),
+                };
+                let used = row.rect.h;
+                (row, used)
+            }
             Line::Face => {
                 let tile_w = (inner_w - FACE_TILE_GAP) / 2.0;
                 let cells: Vec<Rect> = (0..4)
@@ -1078,7 +1243,7 @@ fn docked(view: &View, panel: Rect, tokens: &Tokens) -> Layout {
                 };
                 (row, used)
             }
-            Line::Button => {
+            Line::Button | Line::Every => {
                 let control = Rect::new(inner_x, y, inner_w, control_h);
                 let row = Row {
                     line,
@@ -1437,6 +1602,24 @@ pub fn paint(
                     label_ink,
                 );
             }
+            Line::Colour => {
+                draw_label(pixmap, text, row, label(row.line), text_px, s, label_ink);
+                let now = chosen(&view.placed, Line::Colour);
+                for (j, cell) in row.segments.iter().enumerate() {
+                    let Some(swatch) = view.swatches.get(j) else {
+                        continue;
+                    };
+                    edit_kit::swatch(
+                        pixmap,
+                        *cell,
+                        swatch.fill,
+                        now == Some(j),
+                        swatch.reads,
+                        &ink,
+                        s,
+                    );
+                }
+            }
             Line::Face | Line::Hours | Line::Size | Line::Style => {
                 if let Some(control) = row.control {
                     let words: Vec<&str> = segments(row.line).iter().map(|(w, _)| *w).collect();
@@ -1521,13 +1704,19 @@ pub fn paint(
                 let name = file_name(&view.placed);
                 draw_label(pixmap, text, row, &name, size, s, ink.text);
             }
-            Line::Button => {
+            Line::Button | Line::Every => {
                 let Some(button) = row.control else { continue };
+                // Use on every widget is a second action, so it is quiet.
+                let kind = if row.line == Line::Every {
+                    ButtonKind::Quiet
+                } else {
+                    ButtonKind::Accent
+                };
                 edit_kit::button(
                     pixmap,
                     button,
                     label(row.line),
-                    ButtonKind::Accent,
+                    kind,
                     State::Rest,
                     tokens,
                     Some(&mut *text),
@@ -1594,6 +1783,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
         toggled,
         value: None,
         value_text: None,
+        disabled: false,
     };
     let mut children: Vec<Item> = l
         .rows
@@ -1608,7 +1798,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
                     Some(view.placed.hours.unwrap_or(24) == 24),
                     Vec::new(),
                 )),
-                Line::Face | Line::Hours | Line::Size | Line::Style => {
+                Line::Face | Line::Hours | Line::Size | Line::Style | Line::Colour => {
                     if l.docked && row.control.is_none() {
                         let name = format!("{}: {}", label(row.line), value_of(view, row.line));
                         return Some(item(Role::Button, name, bounds, None, Vec::new()));
@@ -1619,13 +1809,20 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
                         .enumerate()
                         .filter_map(|(j, (word, _))| {
                             let cell = row.segments.get(j)?;
-                            Some(item(
-                                Role::RadioButton,
-                                word.into(),
-                                at(*cell),
-                                Some(now == Some(j)),
-                                Vec::new(),
-                            ))
+                            let name = match row.line {
+                                Line::Colour => trf("Colour, {name}", &[("name", word)]),
+                                _ => word.into(),
+                            };
+                            Some(Item {
+                                disabled: !choosable(view, row.line, j),
+                                ..item(
+                                    Role::RadioButton,
+                                    name,
+                                    at(*cell),
+                                    Some(now == Some(j)),
+                                    Vec::new(),
+                                )
+                            })
                         })
                         .collect();
                     Some(item(
@@ -1664,7 +1861,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
                     None,
                     Vec::new(),
                 )),
-                Line::Button => Some(item(
+                Line::Button | Line::Every => Some(item(
                     Role::Button,
                     label(row.line).into(),
                     at(row.control?),
@@ -1704,7 +1901,7 @@ pub fn places(l: &Layout) -> String {
     );
     for row in &l.rows {
         match row.line {
-            Line::Face | Line::Hours | Line::Size | Line::Style => {
+            Line::Face | Line::Hours | Line::Size | Line::Style | Line::Colour => {
                 for (cell, (_, choice)) in row.segments.iter().zip(segments(row.line).iter()) {
                     out.push_str(&format!(
                         ", {}_{} {}",
@@ -1727,6 +1924,11 @@ pub fn places(l: &Layout) -> String {
             Line::Button => {
                 if let Some(control) = row.control {
                     out.push_str(&format!(", settings {}", at(control)));
+                }
+            }
+            Line::Every => {
+                if let Some(control) = row.control {
+                    out.push_str(&format!(", every {}", at(control)));
                 }
             }
             Line::File => {}
@@ -1763,11 +1965,17 @@ mod tests {
     }
 
     #[test]
-    fn card_for_is_true_for_the_clock_the_date_the_message_and_the_picture_only() {
-        for part in [Part::Clock, Part::Date, Part::Message, Part::Picture] {
+    fn card_for_is_true_for_the_parts_with_lines_and_the_battery_too() {
+        for part in [
+            Part::Clock,
+            Part::Date,
+            Part::Message,
+            Part::Picture,
+            Part::Battery,
+        ] {
             assert!(card_for(part), "{part:?} has a card");
         }
-        for part in [Part::Count, Part::Player, Part::Person, Part::Battery] {
+        for part in [Part::Count, Part::Player, Part::Person] {
             assert!(!card_for(part), "{part:?} has no card");
         }
     }
@@ -1994,6 +2202,12 @@ mod tests {
         set_focus(&mut v, Some(Line::Label));
         assert_eq!(
             key(&v, Some(Key::Tab), false, None),
+            Step::Focus(Some(Line::Colour)),
+            "Tab goes on to the colour"
+        );
+        set_focus(&mut v, Some(Line::Every));
+        assert_eq!(
+            key(&v, Some(Key::Tab), false, None),
             Step::Focus(Some(Line::Face)),
             "Tab wraps"
         );
@@ -2041,7 +2255,15 @@ mod tests {
     fn a_clocks_zone_and_label_are_fields_that_take_letters() {
         assert_eq!(
             lines(Part::Clock),
-            vec![Line::Face, Line::Hours, Line::Size, Line::Zone, Line::Label]
+            vec![
+                Line::Face,
+                Line::Hours,
+                Line::Size,
+                Line::Zone,
+                Line::Label,
+                Line::Colour,
+                Line::Every
+            ]
         );
         let mut v = open(0, clock(None));
         set_focus(&mut v, Some(Line::Zone));
@@ -2138,7 +2360,8 @@ mod tests {
     /// The right panel of the edit mode on 1280 by 800 (M5.10c7e): 208 wide,
     /// from the canvas's top.
     fn dock() -> Rect {
-        Rect::new(1048.0, 76.0, 208.0, 480.0)
+        // As high as an 800 pixel screen's canvas (`lock_editor::panels`).
+        Rect::new(1048.0, 76.0, 208.0, 640.0)
     }
 
     /// Docked, a clock's card is the panel's width at its top left, inside it,
@@ -2180,10 +2403,16 @@ mod tests {
         assert!((group.w - (208.0 - 32.0)).abs() < 0.01);
         // Four rows of 40 px, closed (Hours, Size, Zone, Label).
         assert!((group.h - 160.0).abs() < 0.01, "{group:?}");
-        // Remove is the card's last line, 16 px under the group, and the card
-        // ends 16 px under it.
+        // Remove is the card's last line, 16 px under the clock's last line,
+        // the colour's "Use on every widget" button, and the card ends 16 px
+        // under it.
         let remove = l.remove.expect("docked cards have Remove");
-        assert!((remove.y - (group.y + group.h + 16.0)).abs() < 0.01);
+        let every = l
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Every)
+            .expect("the every button");
+        assert!((remove.y - (every.rect.y + every.rect.h + 16.0)).abs() < 0.01);
         assert!((remove.h - ROW_H).abs() < 0.01);
         assert!((l.card.y + l.card.h - (remove.y + remove.h + 16.0)).abs() < 0.01);
         assert!(face.label.is_none(), "the grid has no label of its own");
@@ -2312,8 +2541,8 @@ mod tests {
         assert_eq!(items[0].role, Role::Group);
         assert_eq!(
             items[0].children.len(),
-            5,
-            "face, hours, size, time zone and label"
+            7,
+            "face, hours, size, time zone, label, colour and use on every widget"
         );
         let face = &items[0].children[0];
         assert_eq!(face.role, Role::RadioGroup);
@@ -2387,7 +2616,16 @@ mod tests {
                 Part::Date => Line::Show(DatePart::Year),
                 _ => Line::Face,
             };
+            let behind = lock::behind_of(
+                edel::widgets::Surface::LockScreen,
+                &look.background,
+                look.dim,
+                &edel::wallpapers::Wallpaper::Background,
+                &t,
+            );
+            let part = placed.part;
             let mut card = open(index, placed);
+            card.swatches = swatches_for(part, &t, behind);
             set_focus(&mut card, Some(focus));
             let l = layout(&card, near, screen, &t, None);
             assert!(
@@ -2465,5 +2703,178 @@ mod tests {
         assert!(find(&l, Line::Size).control.is_none());
         assert!(find(&l, Line::Zone).control.is_some());
         assert!(shows(&v, Line::Zone) && !shows(&v, Line::Size));
+    }
+
+    /// The swatches of `part` over `surface` (M8.21 part 21k2).
+    fn swatches_over(part: Part, surface: Colour) -> Vec<Swatch> {
+        swatches_for(
+            part,
+            &tokens(),
+            Behind {
+                surface,
+                source: None,
+            },
+        )
+    }
+
+    /// A card of the clock with its swatches over `surface`, docked or floating.
+    fn clock_with(surface: Colour, dock: Option<Rect>) -> (View, Layout) {
+        let t = tokens();
+        let mut v = open(0, clock(None));
+        v.swatches = swatches_over(Part::Clock, surface);
+        let l = layout(&v, near_left(), (1280.0, 800.0), &t, dock);
+        (v, l)
+    }
+
+    #[test]
+    fn colour_lines_are_on_the_widgets_that_take_a_colour_and_not_the_others() {
+        assert_eq!(&lines(Part::Clock)[5..], &[Line::Colour, Line::Every]);
+        assert_eq!(
+            &lines(Part::Date)[lines(Part::Date).len() - 2..],
+            &[Line::Colour, Line::Every]
+        );
+        assert_eq!(
+            lines(Part::Message),
+            vec![Line::Field, Line::Colour, Line::Every]
+        );
+        assert_eq!(lines(Part::Battery), vec![Line::Colour, Line::Every]);
+        assert!(
+            lines(Part::Picture)
+                .iter()
+                .all(|line| *line != Line::Colour)
+        );
+        assert!(lines(Part::Count).is_empty());
+    }
+
+    #[test]
+    fn the_colour_line_has_twelve_swatches_and_apply_sets_or_clears_the_colour() {
+        assert_eq!(segments(Line::Colour).len(), 12);
+        assert_eq!(segments(Line::Colour)[0].0, tr("Automatic"));
+        assert_eq!(segments(Line::Colour)[1].0, tr("Accent"));
+        assert_eq!(segments(Line::Colour)[11].0, tr("From wallpaper"));
+        let blue = apply(&clock(None), &Choice::Colour(Some("blue".into())));
+        assert_eq!(blue.colour.as_deref(), Some("blue"));
+        assert_eq!(
+            said(&Choice::Colour(Some("blue".into())), &blue),
+            "clock colour blue"
+        );
+        let automatic = apply(&blue, &Choice::Colour(None));
+        assert_eq!(automatic.colour, None, "automatic writes none");
+        assert_eq!(
+            said(&Choice::Colour(None), &automatic),
+            "clock colour automatic"
+        );
+        assert_eq!(
+            apply(
+                &plain(Part::Picture, Anchor::Centre),
+                &Choice::Colour(Some("blue".into()))
+            )
+            .colour,
+            None,
+            "a picture takes no colour"
+        );
+        let blue_at = segments(Line::Colour)
+            .iter()
+            .position(|(_, choice)| *choice == Choice::Colour(Some("blue".into())))
+            .expect("blue is a swatch");
+        assert_eq!(chosen(&blue, Line::Colour), Some(blue_at));
+        assert_eq!(chosen(&automatic, Line::Colour), Some(0));
+        let hex = apply(&clock(None), &Choice::Colour(Some("#e8b04a".into())));
+        assert_eq!(chosen(&hex, Line::Colour), None, "a hex is in no swatch");
+    }
+
+    #[test]
+    fn a_swatch_that_does_not_read_cannot_be_chosen_and_is_announced_disabled() {
+        // The accent over its own colour does not read: its contrast is 1:1.
+        let accent = tokens().accent;
+        let (mut v, l) = clock_with(accent, None);
+        assert!(!v.swatches[1].reads, "the accent over itself");
+        assert!(v.swatches[0].reads, "automatic always reads");
+        let cell = find_colour(&l, 1);
+        let (cx, cy) = (cell.x + cell.w / 2.0, cell.y + cell.h / 2.0);
+        assert_eq!(press(&v, &l, cx, cy), Step::Nothing);
+        let auto = find_colour(&l, 0);
+        assert_eq!(
+            press(&v, &l, auto.x + auto.w / 2.0, auto.y + auto.h / 2.0),
+            Step::Choose(Choice::Colour(None))
+        );
+        set_focus(&mut v, Some(Line::Colour));
+        assert_eq!(
+            key(&v, Some(Key::Right), false, None),
+            Step::Nothing,
+            "next swatch reads no"
+        );
+        let items = nodes(&v, &l);
+        let grid = items[0]
+            .children
+            .iter()
+            .find(|c| c.role == Role::RadioGroup && c.label == "Colour")
+            .expect("the colour grid");
+        assert!(
+            grid.children[1].label.starts_with("Colour, "),
+            "named Colour, Accent"
+        );
+        assert!(
+            grid.children[1].disabled,
+            "not reading is announced disabled"
+        );
+        assert!(!grid.children[0].disabled, "automatic is not disabled");
+    }
+
+    /// The control of the colour swatch `j` on `l`.
+    fn find_colour(l: &Layout, j: usize) -> Rect {
+        let row = l
+            .rows
+            .iter()
+            .find(|row| row.line == Line::Colour)
+            .expect("the colour line");
+        row.segments[j]
+    }
+
+    #[test]
+    fn the_swatches_are_hit_one_by_one_and_every_is_its_own_button() {
+        let (v, l) = clock_with(tokens().background, None);
+        for j in 0..12 {
+            let cell = find_colour(&l, j);
+            let (cx, cy) = (cell.x + cell.w / 2.0, cell.y + cell.h / 2.0);
+            assert_eq!(hit(&l, cx, cy), Some(Hit::Segment(Line::Colour, j)));
+        }
+        let every = l
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Every)
+            .expect("every");
+        let c = every.control.expect("the button");
+        assert_eq!(hit(&l, c.x + 2.0, c.y + 2.0), Some(Hit::Every));
+        assert_eq!(press(&v, &l, c.x + 2.0, c.y + 2.0), Step::Every);
+        let mut v = v;
+        set_focus(&mut v, Some(Line::Every));
+        assert_eq!(key(&v, Some(Key::Activate), false, None), Step::Every);
+    }
+
+    #[test]
+    fn the_swatches_are_touch_sized_when_docked_and_labelled_over_two_rows_floating() {
+        let (_, docked) = clock_with(tokens().background, Some(dock()));
+        let row = docked
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Colour)
+            .expect("the colour grid");
+        assert_eq!(row.segments.len(), 12);
+        assert!(row.segments.iter().all(|c| c.h >= 44.0), "touch sizes");
+        let first = row.segments[0].y;
+        assert_eq!(row.segments.iter().filter(|c| c.y == first).count(), 6);
+        let (_, floating) = clock_with(tokens().background, None);
+        let grid = floating
+            .rows
+            .iter()
+            .find(|r| r.line == Line::Colour)
+            .expect("the colour grid");
+        // Its label's row, then two rows of swatches.
+        assert_eq!(grid.rect.h, 3.0 * tokens().row as f32);
+        assert_eq!(
+            grid.control.expect("the swatches").h,
+            2.0 * tokens().row as f32
+        );
     }
 }

@@ -613,6 +613,7 @@ pub fn items(view: &View, layout: &Layout) -> (Vec<Node>, Option<usize>) {
         toggled,
         value: None,
         value_text: None,
+        disabled: false,
     };
     put(
         &mut out,

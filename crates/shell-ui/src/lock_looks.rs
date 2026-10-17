@@ -333,6 +333,7 @@ fn items(view: &View, l: &Layout) -> Vec<(Option<Part>, Item)> {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     };
     let mut out = vec![
         (

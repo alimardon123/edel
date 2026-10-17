@@ -380,6 +380,24 @@ pub fn accent_named(name: &str, scheme: Scheme) -> Option<Colour> {
         })
 }
 
+/// An accent's name as people read it, translated (M8.21 part 21k2): the
+/// nine accents `accents` names. None for any other name, which the caller
+/// words itself (the wallpaper's and a custom colour's are Settings').
+pub fn accent_title(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "blue" => tr("Blue"),
+        "purple" => tr("Purple"),
+        "pink" => tr("Pink"),
+        "red" => tr("Red"),
+        "orange" => tr("Orange"),
+        "yellow" => tr("Yellow"),
+        "green" => tr("Green"),
+        "teal" => tr("Teal"),
+        "graphite" => tr("Graphite"),
+        _ => return None,
+    })
+}
+
 /// Whether `value` is an accent a person may choose: a name from
 /// [`accents`], `wallpaper` or `#rrggbb` (M5.12b1).
 pub fn is_accent(value: &str) -> bool {
@@ -3022,5 +3040,15 @@ mod tests {
             .to_string();
         assert!(error.contains("colour.light.contrast.title_bar"), "{error}");
         assert!(check(BUILT_IN).is_ok());
+    }
+
+    #[test]
+    fn every_accent_has_a_title_and_no_other_name_does() {
+        for (name, _, _) in accents() {
+            assert!(accent_title(&name).is_some(), "{name} has a title");
+        }
+        assert_eq!(accent_title("blue"), Some("Blue"));
+        assert_eq!(accent_title("navy"), None);
+        assert_eq!(accent_title("wallpaper"), None);
     }
 }

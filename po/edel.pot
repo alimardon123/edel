@@ -2537,6 +2537,33 @@ msgstr ""
 msgid "a time zone such as Europe/Berlin or Asia/Tashkent"
 msgstr ""
 
+msgid "Blue"
+msgstr ""
+
+msgid "Purple"
+msgstr ""
+
+msgid "Pink"
+msgstr ""
+
+msgid "Red"
+msgstr ""
+
+msgid "Orange"
+msgstr ""
+
+msgid "Yellow"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Teal"
+msgstr ""
+
+msgid "Graphite"
+msgstr ""
+
 msgid "accent {name} is not an accent or a colour; the release's is used"
 msgstr ""
 
