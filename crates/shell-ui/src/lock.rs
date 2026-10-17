@@ -399,6 +399,28 @@ pub fn screen_layout(
     layout(w, h, tokens, notices, &look, text)
 }
 
+/// The desktop's widgets on a usable area `w` by `h` (M8.21 part 21j1): the
+/// parts `desktop::draws` names, placed as `place_all` places them, with no
+/// person, count, battery, player or corner to keep clear.
+pub(crate) fn widgets_layout(
+    w: f32,
+    h: f32,
+    tokens: &Tokens,
+    parts: &[Placed],
+    text: &mut Text,
+) -> Layout {
+    let look = Look {
+        parts,
+        player: None,
+        people: false,
+        keep_out: Vec::new(),
+        battery: false,
+        background: Background::Sharp,
+        dim: 0,
+    };
+    place_all(w, h, tokens, false, &look, parts, text).0
+}
+
 /// The corner's buttons and, while it is open, its menu, as places no part
 /// may cover.
 pub fn keep_out(corner_at: &corner::Layout) -> Vec<lock_screen::Rect> {
@@ -1077,6 +1099,54 @@ pub(crate) fn glass(
     outline(pixmap, (x, y, w, h), r, s, tokens.lock_glass_edge);
 }
 
+/// The date and the clocks of `at`, drawn over what lies behind them (M8.21
+/// part 21j1): `paint` draws them for the lock screen, and the desktop's
+/// widgets draw them alone on their own surface, so one copy serves both.
+pub(crate) fn paint_time(
+    pixmap: &mut Pixmap,
+    view: &View,
+    at: &Layout,
+    tokens: &Tokens,
+    text: &mut Text,
+    s: f32,
+) {
+    let w = pixmap.width() as f32 / s;
+    let ink = tokens.backdrop_text;
+    let date_ink = mix(ink, tokens.lock_backdrop_deep, 0.15);
+    if let Some(rect) = at.date {
+        let centre = rect.x + rect.w / 2.0;
+        let date = view.when.map_or_else(
+            || view.date.clone(),
+            |n| {
+                crate::clock_face::date_text(
+                    n.weekday,
+                    n.day,
+                    n.month,
+                    n.year,
+                    &at.date_show,
+                    at.date_style,
+                )
+            },
+        );
+        centred(
+            pixmap,
+            text,
+            s,
+            w,
+            &date,
+            DATE,
+            Face::REGULAR,
+            (centre, rect.y),
+            date_ink,
+        );
+    }
+    for one in &at.clocks {
+        if let Some(rect) = one.rect {
+            paint_clock(pixmap, view, tokens, text, s, one, rect);
+        }
+    }
+}
+
 /// Draws `view` at `scale` into `pixmap`, the screen's size times `scale`,
 /// with the parts `at` places (from `layout`); the apps' icons come from
 /// `icons` when given, and the pictures from `pictures`.
@@ -1111,39 +1181,7 @@ pub fn paint(
     }
     let ink = tokens.backdrop_text;
     let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
-    let date_ink = mix(ink, tokens.lock_backdrop_deep, 0.15);
-    if let Some(rect) = at.date {
-        let centre = rect.x + rect.w / 2.0;
-        let date = view.when.map_or_else(
-            || view.date.clone(),
-            |n| {
-                crate::clock_face::date_text(
-                    n.weekday,
-                    n.day,
-                    n.month,
-                    n.year,
-                    &at.date_show,
-                    at.date_style,
-                )
-            },
-        );
-        centred(
-            pixmap,
-            text,
-            s,
-            w,
-            &date,
-            DATE,
-            Face::REGULAR,
-            (centre, rect.y),
-            date_ink,
-        );
-    }
-    for one in &at.clocks {
-        if let Some(rect) = one.rect {
-            paint_clock(pixmap, view, tokens, text, s, one, rect);
-        }
-    }
+    paint_time(pixmap, view, at, tokens, text, s);
     for (rect, lines, anchor) in &at.messages {
         message(pixmap, text, s, *rect, lines, *anchor, ink);
     }
