@@ -997,7 +997,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "addons.installed",
         help: n_(
-            "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list.",
+            "The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list.",
         ),
         default: "[]",
         from: DecidedBy::Release,

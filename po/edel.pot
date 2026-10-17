@@ -794,7 +794,7 @@ msgstr ""
 msgid "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id."
 msgstr ""
 
-msgid "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list."
+msgid "The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list."
 msgstr ""
 
 msgid "Whether banners stay away; notifications still arrive and are listed in the notification centre."
@@ -2843,7 +2843,7 @@ msgstr ""
 msgid "The preset's name, as preset list shows it"
 msgstr ""
 
-msgid "addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed"
+msgid "addon: software beside the system, such as more fonts or printing, that comes at the next restart and goes as easily; the same as in the settings file's addons.installed"
 msgstr ""
 
 msgid "List the add-ons of this machine's channel, marked installed, built in or chosen"

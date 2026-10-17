@@ -431,7 +431,7 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `addons.installed` | The add-ons this machine has, by name; each arrives with the next update and is in edel addon list. | `[]` | release |
+| `addons.installed` | The add-ons this machine has, by name; one added is downloaded by edel settings apply and starts at the next restart, and each is in edel addon list. | `[]` | release |
 
 ### `services`
 
