@@ -86,6 +86,10 @@ cp --sparse=always out/edel-x86_64.img "$grown"
 truncate -s +3G "$grown"
 boot out/boot-grown.log 'Username: ' "$grown"
 rm -f "$grown"
+# With no screen, ssh is on by default (images/edel.toml's headless), so a
+# seeded server is reachable without services.ssh; this boot typed nothing.
+grep -q 'Starting sshd' out/boot-grown.log ||
+	{ echo "FAIL: the one image with no screen did not start sshd by itself"; exit 1; }
 # busybox df -m: Filesystem 1M-blocks Used Available Use% Mounted on
 size=$(tr -d '\r' <out/boot-grown.log | awk '$NF == "/data" && $2 ~ /^[0-9]+$/ { print $2 }' | tail -n 1)
 if [ "$found" = 1 ] && [ "${size:-0}" -gt 2048 ]; then

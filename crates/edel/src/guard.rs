@@ -14,7 +14,7 @@
 //! become healthy later (M6.17).
 //!
 //! Early in boot the only watchdog is often softdog, a kernel timer that a
-//! frozen kernel never fires, or none at all (linux-virt has no softdog).
+//! frozen kernel never fires, or none at all (a kernel built without it).
 //! A hardware watchdog (a laptop's iTCO_wdt or sp5100_tco, QEMU's
 //! i6300esb) loads later, from hwdrivers, so the guard takes the first one
 //! that appears and stops softdog. Until the slot is confirmed, the
@@ -241,7 +241,7 @@ pub fn guard() -> Result<()> {
     let mut stood_down = false;
     let mut said_no_screen = false;
     loop {
-        let files = plan.wanted(|| edel::services::screen_now());
+        let files = plan.wanted(edel::services::screen_now);
         if !said_no_screen
             && files.len() == plan.files.len()
             && healthy(&files)
