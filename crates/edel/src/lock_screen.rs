@@ -37,17 +37,42 @@ pub enum Part {
 }
 
 impl Part {
-    /// The name the file writes the part by, the same as serde's.
+    /// Every part, in the order of the enum (M5.33b).
+    pub const ALL: [Part; 8] = [
+        Part::Clock,
+        Part::Date,
+        Part::Count,
+        Part::Player,
+        Part::Person,
+        Part::Message,
+        Part::Picture,
+        Part::Battery,
+    ];
+
+    /// The name the file writes the part by, the same as serde's: the
+    /// widget's name in the catalogue.
     pub fn name(self) -> &'static str {
+        self.widget().name
+    }
+
+    /// The part the file names `name`, if the release has it (M5.33b).
+    pub fn named(name: &str) -> Option<Part> {
+        Part::ALL.into_iter().find(|p| p.name() == name)
+    }
+
+    /// The part's entry in the widget catalogue (M5.33b), which owns its
+    /// name, title and options.
+    pub fn widget(self) -> &'static crate::widgets::Widget {
+        use crate::widgets;
         match self {
-            Part::Clock => "clock",
-            Part::Date => "date",
-            Part::Count => "count",
-            Part::Player => "player",
-            Part::Person => "person",
-            Part::Message => "message",
-            Part::Picture => "picture",
-            Part::Battery => "battery",
+            Part::Clock => &widgets::CLOCK,
+            Part::Date => &widgets::DATE,
+            Part::Count => &widgets::COUNT,
+            Part::Player => &widgets::PLAYER,
+            Part::Person => &widgets::PERSON,
+            Part::Message => &widgets::MESSAGE,
+            Part::Picture => &widgets::PICTURE,
+            Part::Battery => &widgets::BATTERY,
         }
     }
 }
@@ -393,7 +418,7 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
                     }
                 }
             },
-            _ if p.text.is_some() => {
+            _ if p.text.is_some() && !p.part.widget().takes("text") => {
                 return Err(trf(
                     "the {part} has text; only a message has words, so take text out",
                     &[("part", p.part.name())],
@@ -417,7 +442,7 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
                 }
                 Some(_) => {}
             },
-            _ if p.path.is_some() => {
+            _ if p.path.is_some() && !p.part.widget().takes("path") => {
                 return Err(trf(
                     "the {part} has a path; only a picture has one, so take path out",
                     &[("part", p.part.name())],
@@ -430,62 +455,58 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
     Ok(())
 }
 
-/// The clock's and the date's options: each refused on the other part, and
-/// the clock's hours and weight and the date's `show` checked. The message
-/// names the part and says what to do.
+/// The clock's and the date's options: each refused on a part whose catalogue
+/// entry does not take it (M5.33b), and the clock's hours and weight and the
+/// date's `show` checked. The message names the part and says what to do.
 fn check_options(p: &Placed) -> Result<(), String> {
     let part = p.part.name();
-    if p.part != Part::Clock {
-        if p.face.is_some() {
-            return Err(trf(
-                "the {part} has a face; only the clock has one, so take face out",
-                &[("part", part)],
-            ));
-        }
-        if p.hours.is_some() {
-            return Err(trf(
-                "the {part} has hours; only the clock has them, so take hours out",
-                &[("part", part)],
-            ));
-        }
-        if p.size.is_some() {
-            return Err(trf(
-                "the {part} has a size; only the clock has one, so take size out",
-                &[("part", part)],
-            ));
-        }
-        if p.weight.is_some() {
-            return Err(trf(
-                "the {part} has a weight; only the clock has one, so take weight out",
-                &[("part", part)],
-            ));
-        }
-        if p.zone.is_some() {
-            return Err(trf(
-                "the {part} has a time zone; only the clock has one, so take zone out",
-                &[("part", part)],
-            ));
-        }
-        if p.label.is_some() {
-            return Err(trf(
-                "the {part} has a label; only the clock has one, so take label out",
-                &[("part", part)],
-            ));
-        }
+    if p.face.is_some() && !p.part.widget().takes("face") {
+        return Err(trf(
+            "the {part} has a face; only the clock has one, so take face out",
+            &[("part", part)],
+        ));
     }
-    if p.part != Part::Date {
-        if p.show.is_some() {
-            return Err(trf(
-                "the {part} has show; only the date has it, so take show out",
-                &[("part", part)],
-            ));
-        }
-        if p.style.is_some() {
-            return Err(trf(
-                "the {part} has a style; only the date has one, so take style out",
-                &[("part", part)],
-            ));
-        }
+    if p.hours.is_some() && !p.part.widget().takes("hours") {
+        return Err(trf(
+            "the {part} has hours; only the clock has them, so take hours out",
+            &[("part", part)],
+        ));
+    }
+    if p.size.is_some() && !p.part.widget().takes("size") {
+        return Err(trf(
+            "the {part} has a size; only the clock has one, so take size out",
+            &[("part", part)],
+        ));
+    }
+    if p.weight.is_some() && !p.part.widget().takes("weight") {
+        return Err(trf(
+            "the {part} has a weight; only the clock has one, so take weight out",
+            &[("part", part)],
+        ));
+    }
+    if p.zone.is_some() && !p.part.widget().takes("zone") {
+        return Err(trf(
+            "the {part} has a time zone; only the clock has one, so take zone out",
+            &[("part", part)],
+        ));
+    }
+    if p.label.is_some() && !p.part.widget().takes("label") {
+        return Err(trf(
+            "the {part} has a label; only the clock has one, so take label out",
+            &[("part", part)],
+        ));
+    }
+    if p.show.is_some() && !p.part.widget().takes("show") {
+        return Err(trf(
+            "the {part} has show; only the date has it, so take show out",
+            &[("part", part)],
+        ));
+    }
+    if p.style.is_some() && !p.part.widget().takes("style") {
+        return Err(trf(
+            "the {part} has a style; only the date has one, so take style out",
+            &[("part", part)],
+        ));
     }
     if let Some(hours) = p.hours {
         if hours != 12 && hours != 24 {
@@ -1687,22 +1708,61 @@ mod tests {
 
     #[test]
     fn names_are_the_serde_names() {
-        for part in [
-            Part::Clock,
-            Part::Date,
-            Part::Count,
-            Part::Player,
-            Part::Person,
-            Part::Message,
-            Part::Picture,
-            Part::Battery,
-        ] {
+        for part in Part::ALL {
             let value = toml::Value::try_from(part).unwrap();
             assert_eq!(value, toml::Value::String(part.name().into()));
         }
         for anchor in ANCHORS {
             let value = toml::Value::try_from(anchor).unwrap();
             assert_eq!(value, toml::Value::String(anchor.name().into()));
+        }
+    }
+
+    #[test]
+    fn each_option_is_taken_only_by_the_widgets_the_catalogue_names() {
+        let mut options: Vec<&str> = crate::widgets::CATALOGUE
+            .iter()
+            .flat_map(|w| w.options.iter().copied())
+            .collect();
+        options.sort_unstable();
+        options.dedup();
+        for part in Part::ALL {
+            for option in &options {
+                let mut placed = part_at(part, Anchor::Top, 0.1);
+                // A message needs its words and a picture its path to pass.
+                if part == Part::Message {
+                    placed.text = Some("Hi".into());
+                }
+                if part == Part::Picture {
+                    placed.path = Some("/a.png".into());
+                }
+                match *option {
+                    "face" => placed.face = Some(Face::Digital),
+                    "hours" => placed.hours = Some(24),
+                    "size" => placed.size = Some(Size::Large),
+                    "weight" => placed.weight = Some(300),
+                    "zone" => placed.zone = Some("Asia/Tokyo".into()),
+                    "label" => placed.label = Some("Home".into()),
+                    "show" => placed.show = Some(vec![DatePart::Weekday]),
+                    "style" => placed.style = Some(DateStyle::Long),
+                    "text" => placed.text = Some("Hi".into()),
+                    "path" => placed.path = Some("/a.png".into()),
+                    other => panic!("no value for the option {other}"),
+                }
+                // The person stands alone; the others stand beside one.
+                let parts = if part == Part::Person {
+                    vec![placed]
+                } else {
+                    vec![person(false), placed]
+                };
+                let result = check(&parts);
+                assert_eq!(
+                    result.is_ok(),
+                    part.widget().takes(option),
+                    "{} with {option}: {result:?}",
+                    part.name()
+                );
+            }
         }
     }
 

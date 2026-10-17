@@ -48,13 +48,11 @@ const HOURS: [u8; 2] = [24, 12];
 const SIZES: [Size; 3] = [Size::Small, Size::Medium, Size::Large];
 const STYLES: [DateStyle; 3] = [DateStyle::Long, DateStyle::Short, DateStyle::Numeric];
 
-/// Whether a part has a card (the clock, the date, the message and the
-/// picture); the count, the player and the person have none.
+/// Whether a part has a card: its catalogue entry takes options (the clock,
+/// the date, the message and the picture; M5.33b). The count, the player,
+/// the person and the battery have none.
 pub fn card_for(part: Part) -> bool {
-    matches!(
-        part,
-        Part::Clock | Part::Date | Part::Message | Part::Picture
-    )
+    !part.widget().options.is_empty()
 }
 
 /// A line of a card (M5.10c6c2): a segmented row, a date part's check box,

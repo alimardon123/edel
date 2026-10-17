@@ -6,15 +6,15 @@
 //! controls' radius, filled faintly with the panel's text.
 
 use accesskit::Role;
-use edel::i18n::{n_, trf};
+use edel::i18n::trf;
 use edel::tokens::Colour;
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{Face, fill};
 
 pub const WIDGET: Widget = Widget {
-    name: "keyboard",
-    title: n_("Keyboard layout"),
+    name: edel::widgets::KEYBOARD.name,
+    title: edel::widgets::KEYBOARD.title,
     needs: None,
     shows,
     width,
