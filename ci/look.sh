@@ -24,7 +24,7 @@ set -eu
 # The desktop's UI features: their packages and their files over the root.
 features="fonts graphics compositor shell settings terminal wallpapers"
 
-if [ ! -e /etc/alpine-release ]; then
+if [ -z "${EDEL_LOOK_INSIDE:-}" ]; then
 	branch=$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)
 	packages=$(for f in $features; do
 		sed -n 's/^packages = \[\(.*\)\]$/\1/p' "features/$f.toml"
@@ -47,7 +47,7 @@ if [ ! -e /etc/alpine-release ]; then
 		docker rm edel-look-setup >/dev/null
 	fi
 	# shellcheck disable=SC2086
-	exec docker run --rm --network host $proxy $ca -v "$PWD:/src" -w /src "$tag" sh ci/look.sh "$@"
+	exec docker run --rm --network host -e EDEL_LOOK_INSIDE=1 $proxy $ca -v "$PWD:/src" -w /src "$tag" sh ci/look.sh "$@"
 fi
 
 . ci/names.sh
@@ -69,7 +69,7 @@ fc-cache -f >/dev/null
 work=$(mktemp -d)
 mkdir -m 700 "$work/run" "$work/home"
 cp -a /etc/skel/. "$work/home/"
-export DISPLAY=:73 XDG_RUNTIME_DIR="$work/run" HOME="$work/home"
+export DISPLAY=:74 XDG_RUNTIME_DIR="$work/run" HOME="$work/home"
 export PATH="$CARGO_TARGET_DIR/debug:$PATH" LIBGL_ALWAYS_SOFTWARE=1
 Xvfb "$DISPLAY" -screen 0 1280x800x24 -nolisten tcp >"$work/xvfb.log" 2>&1 &
 sleep 1
@@ -83,7 +83,7 @@ wait_for() {
 		n=$((n + 1))
 		if [ "$n" -gt $(($2 * 5)) ]; then
 			echo "ci/look.sh: no \"$1\" from the compositor within $2 s; its log:" >&2
-			cat "$work/compositor.log" "$work/command.log" >&2 2>/dev/null || true
+			cat "$work/xvfb.log" "$work/compositor.log" "$work/command.log" >&2 2>/dev/null || true
 			exit 1
 		fi
 		sleep 0.2
@@ -100,12 +100,22 @@ if [ $# -gt 0 ]; then
 	# the title bar's maximize button, from the place the compositor gave.
 	if [ -z "${EDEL_LOOK_FLOAT:-}" ]; then
 		set -- $(sed -n 's/^edel-compositor: mapped window .* at \([0-9]*\),\([0-9]*\) \([0-9]*\)x[0-9]*$/\1 \2 \3/p' "$work/compositor.log" | tail -n 1)
+		[ $# -ge 3 ] || {
+			echo "ci/look.sh: no place for the window in the compositor's log" >&2
+			cat "$work/compositor.log" >&2
+			exit 1
+		}
+		# The bar's middle row, from the title bar token; its maximize
+		# button is the second from the right in the default layout.
+		bar=$(awk '/^\[/ { size = ($0 == "[size]") } size && /^title_bar *=/ { print $3; exit }' design/tokens.toml)
 		sleep 1
-		xdotool mousemove $(($1 + $3 - 41)) $(($2 - 14)) click 1 mousemove 1279 400
+		xdotool mousemove $(($1 + $3 - 41)) $(($2 - bar / 2)) click 1 mousemove 1279 400
 	fi
 fi
 # Let the window's first frames and the panel's redraw land.
 sleep "${EDEL_LOOK_WAIT:-4}"
 mkdir -p out/look
 import -display "$DISPLAY" -window root "out/look/$name.png"
+# Hand the files back to the checkout's owner, as ci/build.sh does.
+chown -R "$(stat -c %u:%g /src)" target/look .cargo-home out/look
 echo "ci/look.sh: kept out/look/$name.png"
