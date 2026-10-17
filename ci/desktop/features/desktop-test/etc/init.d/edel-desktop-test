@@ -342,25 +342,17 @@ commands() {
 		'portal signals') say "portal signals $(tr -s ' \n' '  ' </tmp/portal-signals.txt)" ;;
 		# Screenshots and screen sharing (M6.3), asked as ci through the
 		# portals: the screenshot's URI is kept for `capture file`, which
-		# says the file's size and its first four bytes (a PNG's magic).
-		# The call runs in the background, its output kept in a file, and
-		# 'capture screenshot result' says it once it is there. `access ask`
-		# asks shell-ui's Access dialog what xdg-desktop-portal would ask,
-		# over D-Bus as ci; the call waits for the person (CI clicks Allow),
-		# and `access result` says its answer, (uint32 0, ...) for allowed.
-		'access ask')
-			bus=$(session_bus)
-			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --timeout 120 --dest org.freedesktop.impl.portal.desktop.edel --object-path /org/freedesktop/portal/desktop --method org.freedesktop.impl.portal.Access.AccessDialog /org/freedesktop/portal/desktop/request/1_1/ci ci-test '' 'Allow ci-test to take screenshots?' 'ci-test wants a picture of the screen' '' '{}'" </dev/null >/tmp/access-ask.txt 2>&1 &
-			;;
-		'access result') say "access_result $(tr '\n' ' ' </tmp/access-ask.txt 2>/dev/null)" ;;
-		# What the portal's backend said, for a failed screenshot: D-Bus
-		# starts it with the session bus's output, which is CI's
-		# /tmp/compositor.log, and grim run directly as ci.
+		# says the file's size, its first four bytes (a PNG's magic), its
+		# mode and owner, and whether grim's old /tmp/out.png is there
+		# (M8.21 part 21f: shell-ui keeps the picture in ci's runtime
+		# folder). The call runs in the background, its output kept in a
+		# file, and 'capture screenshot result' says it once it is there;
+		# the portal asks shell-ui's Access dialog first (CI clicks Allow).
+		# What the portals said, for a failed screenshot: D-Bus starts them
+		# with the session bus's output, which is CI's /tmp/compositor.log.
 		'capture debug')
 			say "capture_debug portals $(pgrep -a xdg-desktop-portal | tr '\n' ';')"
-			grep -a -i 'xdpw\|wlroots\|grim\|screenshot\|portal' /tmp/compositor.log 2>/dev/null | tail -n 30 | sed 's/^/DESKTOP-TEST: capture_debug log /' >/dev/console
-			bus=$(session_bus)
-			say "capture_debug grim $(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' grim /tmp/ci-grim.png" </dev/null 2>&1 | tr '\n' ' ') exit $? $(ls -l /tmp/ci-grim.png 2>&1)"
+			grep -a -i 'xdpw\|wlroots\|screenshot\|portal' /tmp/compositor.log 2>/dev/null | tail -n 30 | sed 's/^/DESKTOP-TEST: capture_debug log /' >/dev/console
 			;;
 		'capture screenshot')
 			bus=$(session_bus)
@@ -374,7 +366,8 @@ commands() {
 		'capture file')
 			path=$(sed -n 's|^file://||p' /tmp/capture-uri.txt 2>/dev/null)
 			if [ -n "$path" ] && [ -f "$path" ]; then
-				say "capture_file $path $(stat -c %s "$path") $(head -c 4 "$path" | od -An -tx1 | tr -d ' \n')"
+				if [ -e /tmp/out.png ]; then out=present; else out=absent; fi
+				say "capture_file $path $(stat -c %s "$path") $(head -c 4 "$path" | od -An -tx1 | tr -d ' \n') $(stat -c '%a %U' "$path") out.png $out"
 			else
 				say "capture_file ${path:-none} missing"
 			fi

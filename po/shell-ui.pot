@@ -539,13 +539,13 @@ msgstr ""
 msgid "Other"
 msgstr ""
 
-msgid "An app"
-msgstr ""
-
 msgid "Deny"
 msgstr ""
 
 msgid "Allow"
+msgstr ""
+
+msgid "An app"
 msgstr ""
 
 msgid "Suspend"
