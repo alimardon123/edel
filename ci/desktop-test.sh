@@ -5265,8 +5265,8 @@ case_fullscreen() {
 	# tearing-control-v1. Super+G turns game mode off and on again, each
 	# shown in shell-ui's pop-up over the fullscreen window, the first
 	# kept as game-mode.png; the state file follows.
-	grep -q 'edel-compositor: screen [^ ]* has no variable refresh' "$log" ||
-		fail "the compositor did not say whether the screen has variable refresh"
+	value vrr | grep -q 'edel-compositor: screen [^ ]* has no variable refresh' ||
+		fail "the compositor did not say the screen has no variable refresh: $(value vrr)"
 	case " $(value globals) " in
 	*" wp_tearing_control_manager_v1 "*) ;;
 	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
