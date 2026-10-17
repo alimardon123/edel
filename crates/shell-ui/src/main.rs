@@ -3072,6 +3072,8 @@ impl KeyboardHandler for Shell {
             self.styles_key(event);
         } else if self.tray_grid.is_some() {
             self.tray_key(event);
+        } else if self.clipboard.list.is_some() {
+            self.clipboard_key(event);
         } else {
             self.launcher_key(event);
         }
@@ -3109,6 +3111,8 @@ impl KeyboardHandler for Shell {
             self.styles_key(event);
         } else if self.tray_grid.is_some() {
             self.tray_key(event);
+        } else if self.clipboard.list.is_some() {
+            self.clipboard_key(event);
         } else {
             self.launcher_key(event);
         }

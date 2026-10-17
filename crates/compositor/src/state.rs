@@ -1416,6 +1416,22 @@ impl SeatHandler for Edel {
         self.cursors.status = image;
         self.dirty = true;
     }
+
+    /// The keyboard moved: the client that has it is the one offered the
+    /// clipboard and the primary selection, as a paste reads from there.
+    fn focus_changed(&mut self, seat: &Seat<Edel>, focused: Option<&WlSurface>) {
+        let client = focused.and_then(|surface| self.display.get_client(surface.id()).ok());
+        smithay::wayland::selection::data_device::set_data_device_focus(
+            &self.display,
+            seat,
+            client.clone(),
+        );
+        smithay::wayland::selection::primary_selection::set_primary_focus(
+            &self.display,
+            seat,
+            client,
+        );
+    }
 }
 
 impl TabletSeatHandler for Edel {}

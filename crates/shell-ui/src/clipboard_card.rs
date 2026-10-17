@@ -282,7 +282,7 @@ impl Shell {
 
     /// A key while the list is open: Escape closes, Return pastes the lit
     /// item, Delete removes it, Up, Down, Tab and Shift+Tab move.
-    fn clipboard_key(&mut self, event: KeyEvent) {
+    pub fn clipboard_key(&mut self, event: KeyEvent) {
         let Some(list) = &self.clipboard.list else {
             return;
         };
