@@ -103,21 +103,115 @@ fn lines(name: &str) -> Option<Table> {
 /// its value. Profiles are read in the order the file names them, after
 /// the file and before the preset (ADR-008's order), so of two profiles
 /// that set one value, the first one's wins. A name this release lacks is
-/// passed over ([`problems`] names it). Pure.
+/// passed over ([`problems`] names it). An item `system.profiles_without`
+/// names is laid under from none of them (M7.6c); the file's own lists
+/// keep theirs. Pure.
 pub fn applied(file: &SettingsFile) -> SettingsFile {
-    let names = file.system.profiles.as_deref().unwrap_or_default();
-    if names.is_empty() {
+    if file
+        .system
+        .profiles
+        .as_deref()
+        .unwrap_or_default()
+        .is_empty()
+    {
         return file.clone();
     }
     let Ok(Value::Table(mut out)) = Value::try_from(file) else {
         return file.clone();
     };
-    for table in names.iter().filter_map(|n| lines(n)) {
+    let without = file.system.profiles_without.as_deref().unwrap_or_default();
+    for mut table in named(file) {
+        leave_out(&mut table, without);
         lay_under(&mut out, table);
     }
     Value::Table(out)
         .try_into()
         .unwrap_or_else(|_| file.clone())
+}
+
+/// The lines of each profile the file names that this release has, in the
+/// file's order.
+fn named(file: &SettingsFile) -> impl Iterator<Item = Table> + '_ {
+    file.system
+        .profiles
+        .iter()
+        .flatten()
+        .filter_map(|n| lines(n))
+}
+
+/// The lists a profile adds to whose items the person can leave out
+/// (M7.6c): the apps and the add-ons. A profile's other lists stay whole.
+pub const LISTS: &[&str] = &["apps.installed", "addons.installed"];
+
+/// The list at the dotted `key` of `table`, if it has one.
+fn list_at<'a>(table: &'a mut Table, key: &str) -> Option<&'a mut Vec<Value>> {
+    let (last, parents) = key.rsplit_once('.').map_or((key, ""), |(p, l)| (l, p));
+    let mut here = table;
+    for part in parents.split('.').filter(|p| !p.is_empty()) {
+        here = here.get_mut(part)?.as_table_mut()?;
+    }
+    here.get_mut(last)?.as_array_mut()
+}
+
+/// Takes `items` out of `profile`'s [`LISTS`].
+fn leave_out(profile: &mut Table, items: &[String]) {
+    for key in LISTS {
+        if let Some(list) = list_at(profile, key) {
+            list.retain(|v| !v.as_str().is_some_and(|v| items.iter().any(|i| i == v)));
+        }
+    }
+}
+
+/// Whether a profile the file names brings `item` in its list at `key`,
+/// one of [`LISTS`] (M7.6c).
+pub fn brings(file: &SettingsFile, key: &str, item: &str) -> bool {
+    LISTS.contains(&key)
+        && named(file).any(|mut table| {
+            list_at(&mut table, key)
+                .is_some_and(|list| list.iter().any(|v| v.as_str() == Some(item)))
+        })
+}
+
+/// What `system.profiles_without` names that a profile the file names
+/// still brings, in the key's order: what the profiles leave out now
+/// (M7.6c).
+pub fn left_out(file: &SettingsFile) -> Vec<String> {
+    file.system
+        .profiles_without
+        .iter()
+        .flatten()
+        .filter(|item| LISTS.iter().any(|key| brings(file, key, item)))
+        .cloned()
+        .collect()
+}
+
+/// An item a profile brings as people read it: an app by the last part of
+/// its id with a capital first letter (`com.vscodium.codium` is Codium),
+/// an add-on by its name, as the Add-ons page shows it.
+pub fn item_title(item: &str) -> String {
+    if !crate::apps::is_flatpak_id(item) {
+        return item.to_string();
+    }
+    let last = item.rsplit('.').next().unwrap_or(item);
+    let mut chars = last.chars();
+    chars
+        .next()
+        .map(|c| c.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
+}
+
+/// What the file's profiles leave out, as the Profile row says it after
+/// what they bring: "without Steam", or nothing when they leave out none.
+pub fn without_words(file: &SettingsFile) -> Option<String> {
+    let items = left_out(file);
+    if items.is_empty() {
+        return None;
+    }
+    let titles: Vec<String> = items.iter().map(|i| item_title(i)).collect();
+    Some(crate::i18n::trf(
+        "without {items}",
+        &[("items", &titles.join(", "))],
+    ))
 }
 
 /// Lays `profile` under `own`, table by table: a value `own` has stays, a
@@ -249,5 +343,50 @@ mod tests {
         let lines = problems(&own);
         assert_eq!(lines.len(), 1);
         assert!(lines[0].contains("\"chess\""), "{}", lines[0]);
+    }
+
+    #[test]
+    fn an_item_left_out_is_not_laid_under_but_the_files_own_stays() {
+        let own = applied(&file(
+            "format = 1\n[system]\nprofiles = [\"gaming\"]\n\
+             profiles_without = [\"com.valvesoftware.Steam\"]\n",
+        ));
+        assert_eq!(own.apps.installed.unwrap_or_default(), Vec::<String>::new());
+        assert_eq!(
+            own.power.game_mode.as_deref(),
+            Some("always"),
+            "the rest stays"
+        );
+        let listed = applied(&file(
+            "format = 1\n[system]\nprofiles = [\"gaming\"]\n\
+             profiles_without = [\"com.valvesoftware.Steam\"]\n\
+             [apps]\ninstalled = [\"com.valvesoftware.Steam\"]\n",
+        ));
+        assert_eq!(listed.apps.installed.unwrap(), ["com.valvesoftware.Steam"]);
+    }
+
+    #[test]
+    fn two_profiles_bringing_one_item_both_lose_it() {
+        let both = applied(&file(
+            "format = 1\n[system]\nprofiles = [\"office\", \"developer\"]\n\
+             profiles_without = [\"printing\"]\n\
+             ",
+        ));
+        assert_eq!(both.addons.installed.unwrap(), ["containers"]);
+    }
+
+    #[test]
+    fn what_is_left_out_is_named_only_while_a_profile_brings_it() {
+        let gaming = file(
+            "format = 1\n[system]\nprofiles = [\"gaming\"]\n\
+             profiles_without = [\"com.valvesoftware.Steam\", \"printing\"]\n",
+        );
+        assert_eq!(left_out(&gaming), ["com.valvesoftware.Steam"]);
+        assert!(brings(&gaming, "apps.installed", "com.valvesoftware.Steam"));
+        assert!(!brings(&gaming, "startup.apps", "com.valvesoftware.Steam"));
+        assert_eq!(without_words(&gaming).unwrap(), "without Steam");
+        assert_eq!(item_title("com.vscodium.codium"), "Codium");
+        assert_eq!(item_title("printing"), "printing");
+        assert_eq!(without_words(&file("format = 1\n")), None);
     }
 }

@@ -623,7 +623,7 @@ msgstr ""
 msgid "What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts."
 msgstr ""
 
-msgid "Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one."
+msgid "Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light."
 msgstr ""
 
 msgid "High contrast gives strong edges and plain colours in both schemes; normal is the usual look."
@@ -702,6 +702,9 @@ msgid "How fast things move, in percent of the release's speed, from 25 to 400; 
 msgstr ""
 
 msgid "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little)."
+msgstr ""
+
+msgid "The widgets on the desktop, over the wallpaper and under the windows, and where each one stands, as a list of tables."
 msgstr ""
 
 msgid "The widgets on the lock and login screens and where each one stands, as a list of tables."
@@ -837,6 +840,9 @@ msgid "Whether an unattended install erases only an empty disk, or any disk afte
 msgstr ""
 
 msgid "What the machine does once a stick has installed itself: power off or restart."
+msgstr ""
+
+msgid "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off."
 msgstr ""
 
 msgid "English (United States)"
@@ -1005,6 +1011,9 @@ msgid "{path} is not a picture path; give the whole path, starting with / and en
 msgstr ""
 
 msgid "the {part} has a path; only a picture has one, so take path out"
+msgstr ""
+
+msgid "the {part} does not stand on the desktop; the desktop takes {names}"
 msgstr ""
 
 msgid "the {part} has a face; only the clock has one, so take face out"
@@ -1583,6 +1592,9 @@ msgstr ""
 msgid "there is no profile {name}; the profiles are {all}"
 msgstr ""
 
+msgid "without {items}"
+msgstr ""
+
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
@@ -1949,6 +1961,12 @@ msgstr ""
 msgid "a list of widgets, such as [{ widget = \"person\", at = \"centre\" }]"
 msgstr ""
 
+msgid "expected widgets as the desktop writes them: {why}"
+msgstr ""
+
+msgid "a list of widgets, such as [{ widget = \"clock\", at = \"top_right\" }]"
+msgstr ""
+
 msgid "{value} is not a look's name; use letters, digits and hyphens, such as \"minimal\""
 msgstr ""
 
@@ -2019,6 +2037,9 @@ msgid "a list of add-on names, such as [\"fonts-cjk\"]"
 msgstr ""
 
 msgid "a list of profile names, such as [\"gaming\"]"
+msgstr ""
+
+msgid "a list of the app ids and add-on names the profiles bring, such as [\"com.valvesoftware.Steam\"]"
 msgstr ""
 
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
@@ -2265,6 +2286,18 @@ msgid "No sound device found. Plug in speakers or a headset, or check that the m
 msgstr ""
 
 msgid "the table is format {format}, and this release reads format {current}"
+msgstr ""
+
+msgid "Dark at {time}"
+msgstr ""
+
+msgid "Light at {time}"
+msgstr ""
+
+msgid "Dark on {date} at {time}"
+msgstr ""
+
+msgid "Light on {date} at {time}"
 msgstr ""
 
 msgid "; the power rules come with the login feature (doas), so check that it is installed"

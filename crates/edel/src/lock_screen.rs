@@ -2,9 +2,10 @@
 //! names decision): the data model, its check, the default arrangements and
 //! the one pure layout function. No drawing here: shell-ui draws the parts,
 //! and the settings file holds the person's list as `lock_screen.widgets`
-//! ([`crate::settings`]). Each part stands at an anchor, the edge or the
-//! middle of the screen, with an offset from it, so one arrangement fits a
-//! phone, a laptop and a 4K screen.
+//! ([`crate::settings`]). `Placed` and `arrange` place the desktop's widgets
+//! too (M5.33c, `appearance.widgets`). Each part stands at an anchor, the edge
+//! or the middle of the screen, with an offset from it, so one arrangement fits
+//! a phone, a laptop and a 4K screen.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -355,6 +356,14 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
         1 => {}
         _ => return Err(tr("the person stands once; take out the second").into()),
     }
+    check_common(parts)
+}
+
+/// What [`check`] checks after the person's rule, which the desktop's list
+/// does not take (M8.21 part 21j1): the counts, and each part's offsets,
+/// words, path and options.
+fn check_common(parts: &[Placed]) -> Result<(), String> {
+    let count = |part: Part| parts.iter().filter(|p| p.part == part).count();
     if count(Part::Clock) > MOST_EACH {
         return Err(trf(
             "at most {most} clocks; take one out",
@@ -453,6 +462,43 @@ pub fn check(parts: &[Placed]) -> Result<(), String> {
         check_options(p)?;
     }
     Ok(())
+}
+
+/// Checks the desktop's widgets (M8.21 part 21j1, M5.33c): each one must
+/// stand on the desktop, as the catalogue says (the clock or the date), and
+/// the rest is [`check`]'s own. The desktop has no person, so none is needed.
+pub fn check_desktop(parts: &[Placed]) -> Result<(), String> {
+    use crate::widgets::{CATALOGUE, Surface};
+    let names: Vec<&str> = CATALOGUE
+        .iter()
+        .filter(|w| w.fits(Surface::Desktop))
+        .map(|w| w.name)
+        .collect();
+    for p in parts {
+        if !p.part.widget().fits(Surface::Desktop) {
+            return Err(trf(
+                "the {part} does not stand on the desktop; the desktop takes {names}",
+                &[("part", p.part.name()), ("names", &names.join(" or "))],
+            ));
+        }
+    }
+    check_common(parts)
+}
+
+/// The key the desktop's widgets are kept under (M8.21 part 21j1): the
+/// clock and the date over the wallpaper, under the windows.
+pub const DESKTOP_WIDGETS: &str = "appearance.widgets";
+
+/// The desktop's widgets as the release shows them first: the clock, small,
+/// at the top right, and the date under it (M8.21 part 21j1).
+pub fn desktop_default() -> Vec<Placed> {
+    vec![
+        Placed {
+            size: Some(Size::Small),
+            ..part_at(Part::Clock, Anchor::TopRight, 0.0)
+        },
+        part_at(Part::Date, Anchor::TopRight, 0.0),
+    ]
 }
 
 /// The clock's and the date's options: each refused on a part whose catalogue
@@ -3077,5 +3123,26 @@ mod tests {
         assert_eq!(nudged(&placed, 1, -1).y, -1.0);
         assert_eq!(nudged(&placed, 0, 0), placed);
         assert_eq!(NUDGE, 0.01);
+    }
+
+    #[test]
+    fn the_desktop_checks_its_own_widgets_and_keeps_the_lock_messages() {
+        assert!(check_desktop(&desktop_default()).is_ok());
+        assert!(check_desktop(&[]).is_ok());
+        let person = [part_at(Part::Person, Anchor::Centre, 0.0)];
+        assert_eq!(
+            check_desktop(&person).unwrap_err(),
+            "the person does not stand on the desktop; the desktop takes clock or date"
+        );
+        let four_clocks = vec![part_at(Part::Clock, Anchor::Top, 0.0); MOST_EACH + 1];
+        assert_eq!(
+            check_desktop(&four_clocks).unwrap_err(),
+            "at most 3 clocks; take one out"
+        );
+        assert_eq!(
+            check(&[part_at(Part::Clock, Anchor::Top, 0.0)]).unwrap_err(),
+            "the lock screen needs the person and their password field; add { widget = \"person\", at = \"centre\" }"
+        );
+        assert_eq!(DESKTOP_WIDGETS, "appearance.widgets");
     }
 }

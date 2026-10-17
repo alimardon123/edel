@@ -42,3 +42,21 @@ Because only the name is written, a profile a later release renews (a better edi
 A value your settings file sets wins over the profile's. A list your file has, such as `apps.installed`, keeps its items and gains the profile's. A machine may name more than one profile; where two set the same value, the first named wins. In full, a key's value comes from your own file, then the machine's, then its profiles in the order named, then the layout preset, then the release ([ADR-008](../ADR-008-features-defaults-and-install.md)).
 
 Apps a profile names are installed from Flathub when the machine is online, as `apps.installed` always is; its add-ons arrive with the next update and are listed by `edel addon list`.
+
+## Leaving out something a profile brings
+
+A profile is a starting set. To keep Gaming but not Steam, take Steam out as you would any app, and the profile stops bringing it:
+
+```sh
+edel settings set apps.installed-=com.valvesoftware.Steam
+```
+
+The same works for an add-on, such as printing, with its switch on the Add-ons page or `addons.installed-=printing`. Edel OS writes what you left out in one key, and Settings' Profile line says it ("Steam, and game mode for every fullscreen game; without Steam"):
+
+```toml
+[system]
+profiles = ["gaming"]
+profiles_without = ["com.valvesoftware.Steam"]
+```
+
+Adding it again (`apps.installed+=com.valvesoftware.Steam`) takes it off that list, and choosing another profile keeps only what the new one still brings, so you never edit the key by hand. Everything else the profile brings, including later releases' changes, still comes.

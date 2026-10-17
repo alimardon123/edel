@@ -74,6 +74,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `appearance.animations` | `"full"` | release |
 | `appearance.animation_speed` | `100` | release |
 | `appearance.animation_curve` | `"smooth"` | release |
+| `appearance.widgets` | none | release |
 | `lock_screen.widgets` | the look's | release |
 | `lock_screen.look` | `"classic"` | release |
 | `lock_screen.wallpaper` | the look's | release |
@@ -119,3 +120,4 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `install.disk` | `"auto"` | release |
 | `install.erase` | `"empty-only"` | release |
 | `install.then` | `"poweroff"` | release |
+| `system.profiles_without` | `[]` | release |

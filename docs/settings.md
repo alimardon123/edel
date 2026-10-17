@@ -112,7 +112,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.wallpaper` | a wallpaper's name (`"hills"`, the light or dark picture as the colour scheme says), a picture's path, a colour `"#rrggbb"` or `"none"`; absent is Hills where the `wallpapers` feature carries it, else the background colour | M5.10c4b |
 | `appearance.wallpaper_dark` | the same kinds of value as `appearance.wallpaper`, for dark mode when it differs: a person's own light and dark pair is two picture paths, one in each key; absent is the dark side of `appearance.wallpaper` | M5.10c4d |
 | `appearance.pictures` | the pictures of the theme in use, on top of its own: a list of wallpapers as `appearance.wallpaper` takes them, a wallpaper's name such as `["aurora", "earth"]`, a picture's full path or a colour; never copies of the files. Absent is the theme's own list, and `[]` shows none; at most 32, none twice. Set in the pictures sheet of Appearance (Add pictures, a picture's menu and drag and drop), or with `edel settings set appearance.pictures='["aurora"]'`. Changing a built-in theme this way makes it Changed; Keep as new saves the person's copy | M5.12b6, part c2 |
-| `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is the release's choice, light in this one, and missing is `auto`. A change takes effect at once | M5.5c |
+| `appearance.mode` | `light`, `dark` or `auto`: the colours of the title bars, the panels and, through the settings portal, the apps; `auto` is dark from sunset to sunrise at the place `location.place` names and light without one, and missing is `auto`. A change takes effect at once, and auto changes at sunset and sunrise with nothing polling (`edel settings get appearance.mode` says when next) | M5.5c, M7.14 |
 | `appearance.contrast` | `normal` or `high`: high contrast gives strong edges and the plainest colours, in both schemes, text at 7 to 1 or more and lines in black or white, over every colour the person chose; missing is `normal`. The desktop follows it at once | M6.9 |
 | `appearance.accent` | one of the release's named accents (`blue`, `purple`, `pink`, `red`, `orange`, `yellow`, `green`, `teal`, `graphite`), `wallpaper` for a colour taken from the picture, or a colour `"#rrggbb"`; missing is `blue`. The text on the accent is whichever of the two schemes' reads better. `edel settings set appearance.accent=red` works; `edel settings set appearance.accent=crimson` is refused with "`"crimson"` is not an accent; choose blue, purple, pink, red, orange, yellow, green, teal, graphite, wallpaper or a colour such as "#d0363f"". An accent that leaves its own pairs under their contrast ratio is refused too, with the pair named | M5.12b1 |
 | `appearance.colours.*` | a colour `"#rrggbb"` or `"#rrggbbaa"` for any colour token by its name (`background`, `panel`, `title_bar_focused`, ...), in both schemes; missing is the release's. `edel settings set appearance.colours.background=#202020` works; `edel settings set appearance.colours.panl=#ffffff` is refused with `appearance.colours.panl: "panl" is not a colour; did you mean panel?`. `edel settings reset appearance.colours.background` takes it back. A colour that leaves a pair under its ratio is refused with that pair's line, in both schemes | M5.12b1 |
@@ -141,6 +141,7 @@ The Sound page (M5.7b) has no key. The volume, the mute switch and the device in
 | `appearance.switcher_look` | `numbers` or `button`: `numbers` shows round buttons for the workspaces around the shown one, numbered as Super+1 to Super+9 are, the shown one a wider pill, with a workspace's name in its pill (the default); `button` shows the word Workspaces over an underline split into one segment per workspace, the shown one in the accent, and a click on a segment shows its workspace, a scroll the next or previous one. Missing is `numbers`. `edel settings set appearance.switcher_look=button` switches the look at once | M5.2m |
 | `appearance.switcher_shown` | a whole number from 1 to 9: how many numbers the `numbers` look shows at once, the shown workspace and its neighbours; missing is 3. `edel settings set appearance.switcher_shown=10` is refused with "expected a whole number from 1 to 9, not 10" | M5.2m |
 | `appearance.switcher_ends` | `fade`, `arrows` or `counts`: where more workspaces lie than show, an arrow at each end, dark where more lie that way and faint where none do (`arrows`), the next one peeking in, faded (`fade`), or with how many lie beyond it, as `+2` (`counts`); a click on an end shows the view one step towards it. Missing is `arrows`. `edel settings set appearance.switcher_ends=dots` is refused with "unknown value \"dots\"; use fade, arrows or counts" | M5.2m |
+| `appearance.widgets` | a list of widgets the desktop shows over the wallpaper and under the windows, as `[{ widget = "clock", at = "top_right" }]`: only `clock` and `date` stand there, each with an anchor and an offset as on the lock screen; missing or `[]` is none, so the desktop shows nothing. `edel settings set appearance.widgets='[{ widget = "person", at = "centre" }]'` is refused with "the person does not stand on the desktop; the desktop takes clock or date". The Appearance page's Desktop widgets switch sets the clock and the date. Removed with `edel settings reset appearance.widgets` | M8.21 part 21j1 |
 
 ## Lock screen: `[lock_screen]`
 
@@ -259,7 +260,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.switcher_look` | How the workspace switcher looks: round numbers, or a button with a line for each workspace. | `"numbers"` | release |
 | `appearance.switcher_shown` | How many workspace numbers the switcher shows at once, from 1 to 9. | `3` | release |
 | `appearance.switcher_ends` | What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts. | `"arrows"` | release |
-| `appearance.mode` | Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one. | `"auto"` | token |
+| `appearance.mode` | Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light. | `"auto"` | token |
 | `appearance.contrast` | High contrast gives strong edges and plain colours in both schemes; normal is the usual look. | `"normal"` | release |
 | `appearance.accent` | The accent colour for the shown workspace, buttons and marks: a named accent, wallpaper, or a colour. | `"blue"` | token |
 | `appearance.colours.*` | One colour of the look, by its token name, in both schemes. | the token's | token |
@@ -286,6 +287,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.animations` | How much things move: full, reduced (fades only) or off. | `"full"` | release |
 | `appearance.animation_speed` | How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast. | `100` | release |
 | `appearance.animation_curve` | How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little). | `"smooth"` | release |
+| `appearance.widgets` | The widgets on the desktop, over the wallpaper and under the windows, and where each one stands, as a list of tables. | none | release |
 | `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
 
 ### `layout`
@@ -467,6 +469,7 @@ This page has no key in the file.
 | `system.variant` | What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet. | the image's | image |
 | `system.developer_mode` | Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on. | `false` | release |
 | `system.profiles` | Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's. | `[]` | release |
+| `system.profiles_without` | The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off. | `[]` | release |
 
 ### Other keys
 
