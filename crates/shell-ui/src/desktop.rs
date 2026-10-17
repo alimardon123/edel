@@ -40,7 +40,8 @@ use smithay_client_toolkit::shell::wlr_layer::{
 use smithay_client_toolkit::shm::slot::Buffer;
 use tiny_skia::Pixmap;
 
-use edel::lock_screen::{Part, Placed};
+use edel::lock_screen::{Background, Part, Placed};
+use edel::widgets::Surface;
 
 use crate::Shell;
 use crate::lock::{self, Layout};
@@ -428,6 +429,13 @@ impl Shell {
             ..lock::View::new(String::new(), String::new(), String::new())
         };
         let at = moved(at, -b.x, -b.y);
+        let behind = lock::behind_of(
+            Surface::Desktop,
+            &Background::Sharp,
+            0,
+            &self.wallpaper,
+            &self.tokens,
+        );
         lock::paint_time(
             &mut pixmap,
             &view,
@@ -435,6 +443,7 @@ impl Shell {
             &self.tokens,
             &mut self.text,
             scale as f32,
+            behind,
         );
         let Ok((buffer, canvas)) =
             self.pool
@@ -468,6 +477,7 @@ mod tests {
     use super::*;
     use edel::lock_screen::desktop_default;
     use edel::tokens::Tokens;
+    use edel::wallpapers::Wallpaper;
     use edel::widgets::{CATALOGUE, Surface};
 
     use crate::paint::Text;
@@ -571,7 +581,14 @@ mod tests {
             when: Some(when(6)),
             ..lock::View::new(String::new(), String::new(), String::new())
         };
-        lock::paint_time(&mut pixmap, &view, &at, &tokens, &mut text, 1.0);
+        let behind = lock::behind_of(
+            Surface::Desktop,
+            &Background::Sharp,
+            0,
+            &Wallpaper::Background,
+            &tokens,
+        );
+        lock::paint_time(&mut pixmap, &view, &at, &tokens, &mut text, 1.0, behind);
         pixmap
             .save_png(format!("{dir}/desktop-widgets.png"))
             .unwrap();

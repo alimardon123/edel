@@ -31,6 +31,7 @@ use edel::pictures;
 use edel::settings::LockScreen;
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers::{self, Wallpaper};
+use edel::widgets::{self, Behind, Surface};
 use tiny_skia::{
     FillRule, GradientStop, Paint, PathBuilder, Pixmap, PixmapPaint, Point, RadialGradient,
     SpreadMode, Transform,
@@ -228,14 +229,18 @@ pub struct Layout {
     pub note: f32,
     /// The player card, when one shows.
     pub player: Option<Rect>,
-    /// Each message: its rectangle, its wrapped lines and its anchor, which
-    /// says how the lines are aligned.
-    pub messages: Vec<(Rect, Vec<String>, Anchor)>,
+    /// Each message: its rectangle, its wrapped lines, its anchor, which
+    /// says how the lines are aligned, and its colour (M5.33d).
+    pub messages: Vec<(Rect, Vec<String>, Anchor, Option<String>)>,
     /// Each picture: its rectangle and its path.
     pub pictures: Vec<(Rect, String)>,
     /// The battery's rectangle: its icon, then its percent; None without a
     /// battery in the list or on the machine (M5.10c5c).
     pub battery: Option<Rect>,
+    /// The date's and the battery's colours (M5.33d), as their parts give
+    /// them; None is automatic.
+    pub date_colour: Option<String>,
+    pub battery_colour: Option<String>,
     /// What lies behind the parts (M5.10c5c); `paint` draws it through
     /// `Backdrops`.
     pub background: Background,
@@ -264,6 +269,8 @@ pub struct ClockAt {
     pub zone: Option<String>,
     /// The words under the clock: its label, or its zone's city; None for none.
     pub label: Option<String>,
+    /// The clock's colour (M5.33d), as its part gives it; None is automatic.
+    pub colour: Option<String>,
 }
 
 /// What the layout needs besides the screen: the parts a list says, the
@@ -443,7 +450,7 @@ enum Slot {
     Count,
     Person,
     Player,
-    Message(Vec<String>, Anchor),
+    Message(Vec<String>, Anchor, Option<String>),
     Picture(String),
     Battery,
 }
@@ -484,6 +491,7 @@ fn clock_of(part: &Placed, w: f32, tokens: &Tokens, text: &mut Text) -> ClockAt 
         weight,
         zone: part.zone.clone(),
         label: lock_screen::clock_label(part),
+        colour: part.colour.clone(),
     }
 }
 
@@ -507,6 +515,11 @@ fn place_all(
         .and_then(|p| p.show.clone())
         .unwrap_or_else(|| vec![DatePart::Weekday, DatePart::Day, DatePart::Month]);
     let date_style = date_part.and_then(|p| p.style).unwrap_or(DateStyle::Long);
+    let date_colour = date_part.and_then(|p| p.colour.clone());
+    let battery_colour = parts
+        .iter()
+        .find(|p| p.part == Part::Battery)
+        .and_then(|p| p.colour.clone());
     let field_w = FIELD_WIDE.min(w - 2.0 * MARGIN).max(120.0);
     let person_w = if look.people {
         w - 2.0 * MARGIN
@@ -587,7 +600,10 @@ fn place_all(
             Part::Message => {
                 let (lines, width) = message_lines(text, p.text.as_deref().unwrap_or_default(), w);
                 let high = lines.len() as f32 * MESSAGE_TEXT * 1.25;
-                slots.push((Slot::Message(lines, p.at), item(width, high)));
+                slots.push((
+                    Slot::Message(lines, p.at, p.colour.clone()),
+                    item(width, high),
+                ));
             }
             Part::Picture => {
                 let path = p.path.clone().unwrap_or_default();
@@ -650,7 +666,7 @@ fn place_all(
             Slot::Count => count = Some(rect),
             Slot::Person => person = Some(rect),
             Slot::Player => player = Some(rect),
-            Slot::Message(lines, anchor) => messages.push((rect, lines, anchor)),
+            Slot::Message(lines, anchor, colour) => messages.push((rect, lines, anchor, colour)),
             Slot::Picture(path) => pictures.push((rect, path)),
             Slot::Battery => battery = Some(rect),
         }
@@ -708,6 +724,8 @@ fn place_all(
         messages,
         pictures,
         battery,
+        date_colour,
+        battery_colour,
         background: look.background.clone(),
         dim: look.dim,
         placed,
@@ -798,7 +816,7 @@ pub fn places(at: &Layout) -> String {
             line.push_str(&format!(", clock{} {}", i + 1, r(rect)));
         }
     }
-    for (i, (rect, _, _)) in at.messages.iter().enumerate() {
+    for (i, (rect, _, _, _)) in at.messages.iter().enumerate() {
         line.push_str(&format!(", message{i} {}", r(*rect)));
     }
     for (i, (rect, _)) in at.pictures.iter().enumerate() {
@@ -1099,6 +1117,42 @@ pub(crate) fn glass(
     outline(pixmap, (x, y, w, h), r, s, tokens.lock_glass_edge);
 }
 
+thread_local! {
+    /// Each picture's colour for a `wallpaper` colour (M5.33d), read once: the
+    /// picture is decoded at 64 px when a widget first asks, then kept.
+    static PICTURE_INKS: RefCell<HashMap<std::path::PathBuf, Option<edel::tokens::Colour>>> =
+        RefCell::new(HashMap::new());
+}
+
+/// The colour of the picture at `path` (M5.33d), as `pictures::accent_of`
+/// reads it, memoised per path.
+fn picture_colour(path: &Path) -> Option<Colour> {
+    PICTURE_INKS.with(|memo| {
+        *memo
+            .borrow_mut()
+            .entry(path.to_path_buf())
+            .or_insert_with(|| pictures::accent_of(path))
+    })
+}
+
+/// What lies behind a widget on `on` (M5.33d): `widgets::behind`, with the
+/// pictures' colours read by [`picture_colour`].
+pub(crate) fn behind_of(
+    on: Surface,
+    background: &Background,
+    dim: u32,
+    wallpaper: &Wallpaper,
+    tokens: &Tokens,
+) -> Behind {
+    widgets::behind(on, background, dim, wallpaper, tokens, picture_colour)
+}
+
+/// The ink a widget draws in (M5.33d): its `colour` fitted to read over
+/// `behind`, else the release's text colour, `backdrop_text`.
+fn ink_for(value: Option<&str>, part: &widgets::Widget, behind: Behind, tokens: &Tokens) -> Colour {
+    widgets::ink(value, part, tokens, behind).unwrap_or(tokens.backdrop_text)
+}
+
 /// The date and the clocks of `at`, drawn over what lies behind them (M8.21
 /// part 21j1): `paint` draws them for the lock screen, and the desktop's
 /// widgets draw them alone on their own surface, so one copy serves both.
@@ -1109,10 +1163,15 @@ pub(crate) fn paint_time(
     tokens: &Tokens,
     text: &mut Text,
     s: f32,
+    behind: Behind,
 ) {
     let w = pixmap.width() as f32 / s;
     let ink = tokens.backdrop_text;
-    let date_ink = mix(ink, tokens.lock_backdrop_deep, 0.15);
+    // The date keeps its mix unless a colour is given (M5.33d).
+    let date_ink = match at.date_colour.as_deref() {
+        None => mix(ink, tokens.lock_backdrop_deep, 0.15),
+        colour => ink_for(colour, Part::Date.widget(), behind, tokens),
+    };
     if let Some(rect) = at.date {
         let centre = rect.x + rect.w / 2.0;
         let date = view.when.map_or_else(
@@ -1142,7 +1201,7 @@ pub(crate) fn paint_time(
     }
     for one in &at.clocks {
         if let Some(rect) = one.rect {
-            paint_clock(pixmap, view, tokens, text, s, one, rect);
+            paint_clock(pixmap, view, tokens, text, s, one, rect, behind);
         }
     }
 }
@@ -1187,7 +1246,8 @@ pub(crate) fn paint_desktop(
     s: f32,
 ) {
     behind(pixmap, &Background::Sharp, 0, backdrops, wallpaper, tokens);
-    paint_time(pixmap, view, at, tokens, text, s);
+    let on_desktop = behind_of(Surface::Desktop, &Background::Sharp, 0, wallpaper, tokens);
+    paint_time(pixmap, view, at, tokens, text, s, on_desktop);
 }
 
 /// Draws `view` at `scale` into `pixmap`, the screen's size times `scale`,
@@ -1209,11 +1269,19 @@ pub fn paint(
     let s = scale;
     let w = pixmap.width() as f32 / s;
     behind(pixmap, &at.background, at.dim, backdrops, wallpaper, tokens);
+    let on_lock = behind_of(
+        Surface::LockScreen,
+        &at.background,
+        at.dim,
+        wallpaper,
+        tokens,
+    );
     let ink = tokens.backdrop_text;
     let quiet = mix(ink, tokens.lock_backdrop_deep, 0.3);
-    paint_time(pixmap, view, at, tokens, text, s);
-    for (rect, lines, anchor) in &at.messages {
-        message(pixmap, text, s, *rect, lines, *anchor, ink);
+    paint_time(pixmap, view, at, tokens, text, s, on_lock);
+    for (rect, lines, anchor, colour) in &at.messages {
+        let colour = ink_for(colour.as_deref(), Part::Message.widget(), on_lock, tokens);
+        message(pixmap, text, s, *rect, lines, *anchor, colour);
     }
     let side = (PICTURE * s).round() as u32;
     for (rect, path) in &at.pictures {
@@ -1234,7 +1302,13 @@ pub fn paint(
         count(pixmap, view, tokens, text, icons, s, w, rect);
     }
     if let (Some(rect), Some(charge)) = (at.battery, view.battery) {
-        battery_part(pixmap, rect, charge, ink, text, s);
+        let battery_ink = ink_for(
+            at.battery_colour.as_deref(),
+            Part::Battery.widget(),
+            on_lock,
+            tokens,
+        );
+        battery_part(pixmap, rect, charge, battery_ink, text, s);
     }
     match &view.people {
         Some(row) => {
@@ -1354,6 +1428,7 @@ pub fn paint(
 /// One clock of the list (M5.10c5b, M5.10c7d): its face in its own options
 /// at the time of its zone (`View::zoned`, else this machine's time), and its
 /// label under the face, centred, at 85 percent of the words' ink.
+#[allow(clippy::too_many_arguments)]
 fn paint_clock(
     pixmap: &mut Pixmap,
     view: &View,
@@ -1362,9 +1437,10 @@ fn paint_clock(
     s: f32,
     one: &ClockAt,
     rect: Rect,
+    behind: Behind,
 ) {
     let w = pixmap.width() as f32 / s;
-    let ink = tokens.backdrop_text;
+    let ink = ink_for(one.colour.as_deref(), Part::Clock.widget(), behind, tokens);
     let centre = rect.x + rect.w / 2.0;
     let face_rect = Rect::new(rect.x, rect.y, rect.w, one.face_h);
     let when = one
@@ -1951,7 +2027,7 @@ mod tests {
         if let Some(r) = at.player {
             out.push(("player".into(), r));
         }
-        for (i, (r, _, _)) in at.messages.iter().enumerate() {
+        for (i, (r, _, _, _)) in at.messages.iter().enumerate() {
             out.push((format!("message{i}"), *r));
         }
         for (i, (r, _)) in at.pictures.iter().enumerate() {
@@ -2090,6 +2166,7 @@ mod tests {
                 style: None,
                 zone: Some("UTC".into()),
                 label: None,
+                colour: None,
             });
             let corner_at = corner::layout(
                 w,
@@ -2144,6 +2221,7 @@ mod tests {
                 style: None,
                 zone: Some("UTC".into()),
                 label: None,
+                colour: None,
             });
             let corner_at = corner::layout(
                 1280.0,
@@ -2222,6 +2300,7 @@ mod tests {
                 style: None,
                 zone: None,
                 label: None,
+                colour: None,
             },
             Placed {
                 part: Part::Clock,
@@ -2238,6 +2317,7 @@ mod tests {
                 style: None,
                 zone: None,
                 label: None,
+                colour: None,
             },
             Placed {
                 part: Part::Message,
@@ -2254,6 +2334,7 @@ mod tests {
                 style: None,
                 zone: None,
                 label: None,
+                colour: None,
             },
         ];
         let corner_at = corner::layout(
@@ -2283,7 +2364,7 @@ mod tests {
         );
         let clock = at.clock.expect("the clock stands");
         assert!(clock.x < 100.0, "{clock:?}");
-        let (rect, lines, anchor) = &at.messages[0];
+        let (rect, lines, anchor, _) = &at.messages[0];
         assert_eq!(*anchor, Anchor::Bottom);
         assert_eq!(lines.join(" "), "If found, call 555 0100");
         assert!(rect.y + rect.h <= 800.0 - MARGIN, "{rect:?}");
@@ -2310,6 +2391,7 @@ mod tests {
                 style: None,
                 zone: None,
                 label: None,
+                colour: None,
             },
             Placed {
                 part: Part::Clock,
@@ -2326,6 +2408,7 @@ mod tests {
                 style: None,
                 zone: None,
                 label: None,
+                colour: None,
             },
             Placed {
                 part: Part::Message,
@@ -2342,6 +2425,7 @@ mod tests {
                 style: None,
                 zone: None,
                 label: None,
+                colour: None,
             },
         ];
         for (w, h) in [(1280.0, 800.0), (360.0, 740.0), (3840.0, 2160.0)] {
@@ -2444,6 +2528,82 @@ mod tests {
         let fallback = layout(360.0, 740.0, &tokens, false, &broken, &mut text);
         assert_eq!(fallback.field, at.field);
         assert_eq!(fallback.person, at.person);
+    }
+
+    /// A clock with `colour = "accent"` is drawn in the accent over black
+    /// (M5.33d), and one with no colour in the release's text colour.
+    #[test]
+    fn a_clock_takes_its_colour_and_none_draws_the_text_colour() {
+        let tokens = Tokens::built_in();
+        let mut text = Text::load(&tokens.font);
+        let view = View::new("14:06".into(), "Saturday 3 October".into(), "Ali".into());
+        let part = |part: Part, colour: Option<&str>| Placed {
+            part,
+            at: Anchor::TopLeft,
+            x: 0.0,
+            y: 0.0,
+            text: None,
+            path: None,
+            face: None,
+            hours: None,
+            size: None,
+            weight: None,
+            show: None,
+            style: None,
+            zone: None,
+            label: None,
+            colour: colour.map(str::to_string),
+        };
+        let person = Placed {
+            at: Anchor::Centre,
+            y: 0.21,
+            ..part(Part::Person, None)
+        };
+        let mut count = |colour: Option<&str>| {
+            let lock = LockScreen {
+                parts: Some(vec![person.clone(), part(Part::Clock, colour)]),
+                background: Some("#000000".into()),
+                ..LockScreen::default()
+            };
+            let at = at_with(&lock, false, false, &mut text);
+            let mut pixmap = Pixmap::new(1280, 800).unwrap();
+            paint(
+                &mut pixmap,
+                &view,
+                &at,
+                &tokens,
+                &mut text,
+                None,
+                &mut Pictures::default(),
+                &mut Backdrops::default(),
+                &Wallpaper::Background,
+                1.0,
+            );
+            let rect = at.clock.expect("the clock stands");
+            let matching = |c: Colour| {
+                let mut n = 0;
+                for y in rect.y as u32..(rect.y + rect.h) as u32 {
+                    for x in rect.x as u32..(rect.x + rect.w) as u32 {
+                        let p = pixmap.pixel(x, y).unwrap();
+                        let close = |channel: u8, want: f32| {
+                            (f32::from(channel) / 255.0 - want).abs() < 0.01
+                        };
+                        if close(p.red(), c.r) && close(p.green(), c.g) && close(p.blue(), c.b) {
+                            n += 1;
+                        }
+                    }
+                }
+                n
+            };
+            (matching(tokens.accent), matching(tokens.backdrop_text))
+        };
+        // The same glyphs are drawn either way, so the same pixels take the
+        // accent that take the text colour without one.
+        let (accent, _) = count(Some("accent"));
+        let (none, text_ink) = count(None);
+        assert_eq!(accent, text_ink, "the clock's pixels take its colour");
+        assert!(accent > 100, "{accent} accent pixels in the clock");
+        assert!(none < 20, "{none} accent pixels with no colour");
     }
 
     #[test]
@@ -2718,6 +2878,7 @@ mod tests {
             style: None,
             zone: None,
             label: None,
+            colour: None,
         });
         let lock = LockScreen {
             parts: Some(parts),
@@ -2940,6 +3101,7 @@ mod tests {
                     style: None,
                     zone: None,
                     label: None,
+                    colour: None,
                 },
                 Placed {
                     part: Part::Clock,
@@ -2956,6 +3118,7 @@ mod tests {
                     style: None,
                     zone: None,
                     label: None,
+                    colour: None,
                 },
                 Placed {
                     part: Part::Message,
@@ -2972,6 +3135,7 @@ mod tests {
                     style: None,
                     zone: None,
                     label: None,
+                    colour: None,
                 },
             ];
             let corner_at = corner::layout(

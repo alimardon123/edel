@@ -3304,6 +3304,7 @@ mod tests {
             style: None,
             zone: Some("Asia/Tokyo".into()),
             label: None,
+            colour: None,
         });
         let second = parts.len() - 1;
         let mut view = bare_view_of(parts.clone());

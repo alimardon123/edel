@@ -48,11 +48,12 @@ const HOURS: [u8; 2] = [24, 12];
 const SIZES: [Size; 3] = [Size::Small, Size::Medium, Size::Large];
 const STYLES: [DateStyle; 3] = [DateStyle::Long, DateStyle::Short, DateStyle::Numeric];
 
-/// Whether a part has a card: its catalogue entry takes options (the clock,
-/// the date, the message and the picture; M5.33b). The count, the player,
-/// the person and the battery have none.
+/// Whether a part has a card: it has lines to show (the clock, the date, the
+/// message and the picture; M5.33b). The count, the player, the person and the
+/// battery have none, so a part whose options gain no line gets no empty card
+/// (M8.21 part 21k1).
 pub fn card_for(part: Part) -> bool {
-    !part.widget().options.is_empty()
+    !lines(part).is_empty()
 }
 
 /// A line of a card (M5.10c6c2): a segmented row, a date part's check box,
@@ -515,6 +516,7 @@ fn plain(part: Part, at: Anchor) -> Placed {
         style: None,
         zone: None,
         label: None,
+        colour: None,
     }
 }
 

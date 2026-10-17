@@ -5862,6 +5862,48 @@ case_lock() {
 		fail "the locked screen with the parts at 640,790 is not the lock's #$deep"
 	guest 'lock parts reset'
 	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
+	# The widgets' colour (M5.33d): ci unlocks, `lock colour` sets the wallpaper
+	# to black and a clock at the top left in the accent, the screen locks again,
+	# and the clock's box holds more than 200 pixels of the accent token and fewer
+	# than 20 of the text colour. Kept as lock-colour.png. `lock colour reset`
+	# takes both out again while this lock holds, before the look below unlocks.
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" ||
+		fail "ci's password did not unlock the screen before the lock's colour"
+	guest 'lock colour'
+	wait_for 'DESKTOP-TEST: ran lock colour: 0' || fail "ci's lock colour could not be set"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with the colour"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen with the colour"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]' "$placed" ||
+		fail "shell-ui did not say where the lock's parts lie with the colour"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
+	set -- $clock
+	accent=$(token accent)
+	ink=$(token backdrop_text)
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/lock-colour.png"
+		drawn=$(python3 ci/qmp.py where "$dir/lock-colour.png" "$1" "$2" "$3" "$4" "$accent" | awk '{print $3}')
+		[ "${drawn:-0}" -gt 200 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] ||
+			fail "the lock's clock at $1,$2 ${3}x$4 has ${drawn:-0} pixels of the accent #$accent (lock-colour.png)"
+		sleep 1
+	done
+	text=$(python3 ci/qmp.py where "$dir/lock-colour.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
+	[ "${text:-0}" -lt 20 ] ||
+		fail "the lock's clock at $1,$2 ${3}x$4 has ${text} pixels of the text colour #$ink, not the accent (lock-colour.png)"
+	guest 'lock colour reset'
+	wait_for 'DESKTOP-TEST: ran lock colour reset: 0' || fail "ci's lock colour could not be reset"
 	# The lock's look (M5.10c5c): ci unlocks, `lock look` sets the minimal
 	# look over the blurred wallpaper, and the screen locks again: shell-ui
 	# logs a blurred backdrop, the last places line has no count (the look
@@ -6008,7 +6050,7 @@ case_lock() {
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
 	guest 'lock magazine reset'
 	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it; the clock of a list took the accent over black and no text colour, and lock colour reset took both out (lock-colour.png)"
 }
 
 # editor_places: the lock screen's edit mode's last whole places line,

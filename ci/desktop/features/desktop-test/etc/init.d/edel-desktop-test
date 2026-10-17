@@ -1098,6 +1098,10 @@ commands() {
 		# at the bottom, read when the screen locks; reset after the check.
 		'lock parts') edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre", y = 0.21 }, { widget = "clock", at = "top_left" }, { widget = "message", at = "bottom", text = "If found, call 555 0100" }, { widget = "player", at = "bottom_left" }]' ;;
 		'lock parts reset') edel settings reset lock_screen.widgets ;;
+		# The widgets' colour (M5.33d): black behind the lock and a clock at the
+		# top left in the accent, read when the screen locks; reset after the check.
+		'lock colour') edel settings set 'lock_screen.wallpaper="#000000"' && edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre", y = 0.21 }, { widget = "clock", at = "top_left", colour = "accent" }]' ;;
+		'lock colour reset') edel settings reset lock_screen.widgets lock_screen.wallpaper ;;
 		# The lines the lock screen's edit mode wrote to ci's own file
 		# (M5.10c6b, M5.10c6c3): the look, the widgets and the wallpaper under
 		# [lock_screen], taken out again.
