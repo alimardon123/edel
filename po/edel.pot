@@ -623,7 +623,7 @@ msgstr ""
 msgid "What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts."
 msgstr ""
 
-msgid "Light or dark colours for title bars, panels and apps; auto is the release's choice, light in this one."
+msgid "Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light."
 msgstr ""
 
 msgid "High contrast gives strong edges and plain colours in both schemes; normal is the usual look."
@@ -2265,6 +2265,18 @@ msgid "No sound device found. Plug in speakers or a headset, or check that the m
 msgstr ""
 
 msgid "the table is format {format}, and this release reads format {current}"
+msgstr ""
+
+msgid "Dark at {time}"
+msgstr ""
+
+msgid "Light at {time}"
+msgstr ""
+
+msgid "Dark on {date} at {time}"
+msgstr ""
+
+msgid "Light on {date} at {time}"
 msgstr ""
 
 msgid "; the power rules come with the login feature (doas), so check that it is installed"

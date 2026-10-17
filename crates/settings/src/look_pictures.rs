@@ -19,7 +19,7 @@ use gtk::{gio, glib};
 
 use edel::lock_screen::{self, Background, Placed};
 use edel::places;
-use edel::tokens::{Scheme, Tokens};
+use edel::tokens::Tokens;
 use edel::wallpapers;
 
 use gtk::prelude::*;
@@ -46,13 +46,7 @@ impl Inputs {
     /// The inputs the files and the tokens give now: the wallpaper that
     /// applies in the scheme the files choose, as shell-ui reads them
     /// (`wallpapers::value_for`, `quick::is_dark`).
-    pub fn of(
-        light: Option<&str>,
-        night: Option<&str>,
-        mode: Option<&str>,
-        tokens: &Tokens,
-    ) -> Inputs {
-        let dark = mode.and_then(Scheme::parse) == Some(Scheme::Dark);
+    pub fn of(light: Option<&str>, night: Option<&str>, dark: bool, tokens: &Tokens) -> Inputs {
         Inputs {
             wallpaper: wallpapers::value_for(light, night, dark)
                 .unwrap_or_default()
@@ -280,8 +274,8 @@ mod tests {
     #[test]
     fn the_inputs_read_the_scheme_the_files_choose() {
         let tokens = Tokens::built_in();
-        assert!(Inputs::of(None, None, Some("dark"), &tokens).dark);
-        assert!(!Inputs::of(None, None, Some("light"), &tokens).dark);
-        assert!(!Inputs::of(None, None, None, &tokens).dark);
+        assert!(Inputs::of(None, None, true, &tokens).dark);
+        assert!(!Inputs::of(None, None, false, &tokens).dark);
+        assert!(!Inputs::of(None, None, false, &tokens).dark);
     }
 }

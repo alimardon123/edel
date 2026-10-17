@@ -2048,6 +2048,9 @@ msgstr ""
 msgid "More for {theme}"
 msgstr ""
 
+msgid "Automatic, {when}"
+msgstr ""
+
 msgid "Pictures in {theme}"
 msgstr ""
 
