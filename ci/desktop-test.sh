@@ -59,6 +59,9 @@
 #               (M5.2g); with workspaces.per_screen on, Super+2 shows
 #               workspace 2 on Virtual-2 alone, and off, both screens switch
 #               together (M5.2k)
+#   one-screen  the second screen off and the pointer in the middle, as
+#               outputs leaves them, for a part of
+#               the cases that does not run outputs (M6.17)
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
 #               whose close button closes it
@@ -5957,6 +5960,12 @@ case_scheme() {
 	wait_more 'ci-test: Hello from CI' "$sent" || fail "shell-ui did not log the notification sent before the scheme changed"
 	started=$(count 'edel-compositor: started edel-shell-ui')
 	guest 'portal watch'
+	# One read first starts xdg-desktop-portal, as a part's earlier case
+	# may not have, so it already watches shell-ui's portal when the
+	# scheme changes below and passes on both changes (M6.17).
+	asked=$(count 'DESKTOP-TEST: portal accent-color ')
+	guest 'portal read'
+	wait_more 'DESKTOP-TEST: portal accent-color ' "$asked" 60 || fail "the service did not hear back from the portal"
 	opened=$(count 'edel-compositor: mapped window keys')
 	guest 'shortcut window'
 	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open"
@@ -7137,6 +7146,26 @@ outputs_show() {
 	done
 }
 
+# screen_two_off: turns the second screen off with
+# displays.Virtual-2.enabled = false, as the outputs case ends, so the
+# cases after it see one 1280x800 screen.
+screen_two_off() {
+	guest 'screen 2 off'
+	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
+		fail "edel settings set displays.Virtual-2.enabled=false did not run in the VM"
+	wait_for 'edel-compositor: output Virtual-2 off' ||
+		fail "the compositor did not turn Virtual-2 off"
+}
+
+# one-screen (M6.17): the second screen off, for a part of the cases
+# that does not run outputs, so its cases see the one screen, and the
+# pointer in its middle, that they see after outputs in a single run.
+case_one_screen() {
+	screen_two_off
+	python3 ci/qmp.py move 640 400
+	echo "PASS: displays.Virtual-2.enabled = false turned the second screen off, and the pointer is in the middle of the first"
+}
+
 case_outputs() {
 	n=$(tr -d '\r' <"$log" | grep -c 'DESKTOP-TEST: screen output Virtual-[12] [0-9]*x[0-9]* ready' || true)
 	[ "$n" = 2 ] || fail "$n screens showed a first frame, not 2: $(grep 'DESKTOP-TEST: screen' "$log" | tr -d '\r')"
@@ -7245,11 +7274,7 @@ case_outputs() {
 	python3 ci/qmp.py key meta_l-1
 	wait_more 'edel-compositor: workspace 1$' "$shows" || fail "Super+1 did not show workspace 1"
 	outputs_show 1 1 || fail "with workspaces per screen off, Super+1 should bring both screens to workspace 1: $outputs_now"
-	guest 'screen 2 off'
-	wait_for 'DESKTOP-TEST: ran screen 2 off: 0' ||
-		fail "edel settings set displays.Virtual-2.enabled=false did not run in the VM"
-	wait_for 'edel-compositor: output Virtual-2 off' ||
-		fail "the compositor did not turn Virtual-2 off"
+	screen_two_off
 	echo "PASS: two screens lit side by side, Virtual-1 at 0,0 and Virtual-2 at 1280,0 in the settings file's mode 1024x768, a window opened centred on Virtual-2 with the pointer there, in the overview its picture dragged onto Virtual-1's frame moved it there and back onto Virtual-2's, and displays.Virtual-2.enabled = false turned the second off, with workspaces.per_screen on Super+2 showed workspace 2 on Virtual-2 alone, and with it off both screens switched together"
 }
 

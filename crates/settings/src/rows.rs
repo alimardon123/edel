@@ -772,6 +772,10 @@ mod tests {
     /// and a retired key needs neither either.
     const NO_ROW: &[(&str, &str)] = &[
         (
+            "addons.installed",
+            "the Add-ons page, a switch for each add-on, comes with M7.2b, when one chosen there arrives at the next boot; until then edel settings set addons.installed+=NAME, and it arrives with the next update",
+        ),
+        (
             "system.developer_mode",
             "the System page gains it with developer mode (M7.1); until then an administrator sets it in the file",
         ),

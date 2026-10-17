@@ -115,6 +115,8 @@ pub fn need(command: &Commands) -> Need {
             PresetCommands::List => Need::Anyone,
             _ => Need::Admin,
         },
+        // It only reads the signed list and this machine's add-ons.
+        Commands::Addon { .. } => Need::Anyone,
         // A web app is the person's own files, in their own home.
         Commands::WebApp { .. } => Need::Anyone,
     }

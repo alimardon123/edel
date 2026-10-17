@@ -5,6 +5,60 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "add-on {name} is built into {version}, so it needs no download"
+msgstr ""
+
+msgid "add-on {name} is not in {version}; the update goes on without it, and edel addon list shows the add-ons there are"
+msgstr ""
+
+msgid "could not make {path}"
+msgstr ""
+
+msgid "add-on {name} is already here"
+msgstr ""
+
+msgid "could not fetch add-on {name}; the new slot stays off and this system is unchanged; check the network and run edel update again"
+msgstr ""
+
+msgid "refused: add-on {name} does not match the sha256 in release.toml, so it is damaged or was changed on the way; the new slot stays off and this system is unchanged; run edel update again"
+msgstr ""
+
+msgid "add-on {name} fetched and checked"
+msgstr ""
+
+msgid "could not take out {path}: {why}"
+msgstr ""
+
+msgid "add-on {name} is chosen but not here yet; it arrives with the next update"
+msgstr ""
+
+msgid "could not mount add-on {name}"
+msgstr ""
+
+msgid "could not lay the add-ons over /usr"
+msgstr ""
+
+msgid "add-ons mounted: {names}"
+msgstr ""
+
+msgid "installed"
+msgstr ""
+
+msgid "built in"
+msgstr ""
+
+msgid "chosen"
+msgstr ""
+
+msgid "could not read the release list ({why}), so only this machine's add-ons are shown"
+msgstr ""
+
+msgid "no add-ons for this image"
+msgstr ""
+
+msgid "to add one: edel settings set addons.installed+=NAME; it arrives with the next update"
+msgstr ""
+
 msgid "Camera"
 msgstr ""
 
@@ -632,7 +686,7 @@ msgstr ""
 msgid "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id."
 msgstr ""
 
-msgid "The add-ons this machine has, by name; this release does not act on them yet."
+msgid "The add-ons this machine has, by name; each arrives with the next update and is in edel addon list."
 msgstr ""
 
 msgid "Whether banners stay away; notifications still arrive and are listed in the notification centre."
@@ -906,6 +960,12 @@ msgid "Your message"
 msgstr ""
 
 msgid "could not replace {path}"
+msgstr ""
+
+msgid "add-on {name} arrives with the next update"
+msgstr ""
+
+msgid "add-on {name} goes at the next restart"
 msgstr ""
 
 msgid "{name} is not in /etc/passwd"
@@ -1400,6 +1460,9 @@ msgstr ""
 msgid "not newer"
 msgstr ""
 
+msgid "could not check the add-on's feature file {path}"
+msgstr ""
+
 msgid "the last update did not start, so the machine went back to the slot before; the system log is {log}, and edel report gathers it with the rest"
 msgstr ""
 
@@ -1580,9 +1643,6 @@ msgstr ""
 msgid "format {format} is newer than this release, so {older} was read instead"
 msgstr ""
 
-msgid "could not make {path}"
-msgstr ""
-
 msgid "{key}: not supported yet; this release does not act on it, so it cannot be set"
 msgstr ""
 
@@ -1758,6 +1818,12 @@ msgid "{item} is not a Flatpak app id; an id is the app's reverse-DNS name, thre
 msgstr ""
 
 msgid "a list of Flatpak app ids, such as [\"io.mpv.Mpv\"]"
+msgstr ""
+
+msgid "{item} is not an add-on name; a name is lowercase letters, digits and hyphens, such as \"fonts-cjk\" (edel addon list shows them)"
+msgstr ""
+
+msgid "a list of add-on names, such as [\"fonts-cjk\"]"
 msgstr ""
 
 msgid "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)"
@@ -2477,6 +2543,15 @@ msgstr ""
 msgid "Another directory to copy over the image, after the definition's own files; for test images. Can be given more than once"
 msgstr ""
 
+msgid "An add-on to build from this image's root, beside the definition's own; for test images. Can be given more than once"
+msgstr ""
+
+msgid "Another directory of feature files to find add-ons in; for test images"
+msgstr ""
+
+msgid "Build none of the definition's own add-ons, only those --addon names; for test images, which need no released add-on"
+msgstr ""
+
 msgid "Seconds the boot guard waits for health before the watchdog restarts the machine, instead of the definition's; for test images"
 msgstr ""
 
@@ -2568,6 +2643,12 @@ msgid "Delete one of your presets; the preset in use cannot be deleted"
 msgstr ""
 
 msgid "The preset's name, as preset list shows it"
+msgstr ""
+
+msgid "addon: software beside the system, such as more fonts or printing, that arrives with an update and goes as easily; the same as in the settings file's addons.installed"
+msgstr ""
+
+msgid "List the add-ons of this machine's channel, marked installed, built in or chosen"
 msgstr ""
 
 msgid "web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own"

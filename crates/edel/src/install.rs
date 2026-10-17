@@ -413,6 +413,15 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
     for (key, value) in wanted {
         text = settings::set(&text, &key, &value)?;
     }
+    // A language whose script the image has no font for brings its fonts'
+    // add-on (M7.2a); a file that lists it already stays as it is.
+    if let Some(addon) = answers
+        .language
+        .as_deref()
+        .and_then(crate::languages::font_addon)
+    {
+        text = settings::edit_list(&text, "addons.installed", addon, true)?;
+    }
     let problems = settings::check(&text)?;
     if !problems.is_empty() {
         bail!("{}", problems.join("\n"));
@@ -1062,6 +1071,15 @@ mod tests {
         );
         assert!(empty.contains("hostname = \"ali-laptop\""), "{empty}");
         assert!(merged("format = 9\n", &answers).is_err());
+        assert!(!empty.contains("addons"), "{empty}");
+        let japanese = Answers {
+            language: Some("ja_JP.UTF-8".into()),
+            ..answers
+        };
+        let out = merged("format = 1\n", &japanese).unwrap();
+        assert!(out.contains("installed = [\"fonts-cjk\"]"), "{out}");
+        let twice = merged(&out, &japanese).unwrap();
+        assert_eq!(twice.matches("fonts-cjk").count(), 1, "{twice}");
     }
 
     #[test]

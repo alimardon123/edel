@@ -246,14 +246,37 @@ jobs:
             out/*.packages
             out/desktop-live/*.png
 
-  # The desktop tests on a runner of their own, beside the VM tests, so a
-  # run takes about 3 minutes less (Alimardon asked for faster CI on
-  # 2026-10-06). It builds only the programs and the desktop test image,
-  # and has the runner to itself, so the frame times and memory it
-  # checks against ci/budgets.toml are measured on a quiet machine.
-  desktop:
-    name: Desktop tests
+  # The desktop tests on runners of their own, beside the VM tests, in four
+  # parts at once (M6.17). Each part builds the desktop test image and boots
+  # its own VM, so each part has its runner to itself, and the frame times
+  # and memory it checks against ci/budgets.toml are still measured on a
+  # quiet machine. The parts keep the cases' order, and a part holds every
+  # case a case relies on (see ci/CLAUDE.md, "Desktop test cases").
+  desktop-part:
+    name: Desktop part ${{ matrix.part }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: A
+            cases: >-
+              background floating titlebar tiling shape depth text cursor console pointer dmabuf outputs compositor
+              panel xwayland layers animations shortcuts workspaces windows launcher quick notify osd player
+              fallback switcher presets own-presets buttons styles scroll sandbox everyday scale
+          - part: B
+            cases: >-
+              titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen
+              keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper
+              settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome display
+              sound network power updates portal own-bars capture tray
+          - part: C
+            cases: >-
+              one-screen scheme terminal accent contrast wallpaper glass completion lock lock-edit lock-looks
+              default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
+              default-apps app-permissions in-use location flatpak suspend
+          - part: D
+            cases: one-screen language settings-tour theme
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -289,23 +312,51 @@ jobs:
       - name: Install QEMU and UEFI firmware
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
 
-      - name: Test the desktop image on a virtual GPU
-        run: sh ci/desktop-test.sh background floating titlebar tiling shape depth text cursor console pointer dmabuf outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick notify osd player fallback switcher presets own-presets buttons styles scroll sandbox everyday language taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome settings-tour theme display sound network power updates portal own-bars capture tray scheme terminal accent contrast wallpaper glass completion lock lock-edit lock-looks scale default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method default-apps app-permissions in-use location flatpak suspend
+      # A failed case's part runs once more; a pass then names it flaky (M6.17).
+      - name: Test part ${{ matrix.part }} of the desktop image on a virtual GPU
+        run: sh ci/desktop-part.sh ${{ matrix.cases }}
 
-      - name: Print the basics checklist
-        # The rows of every feature's [[basics]] (M6.7): PASS for a case
-        # that passed above, needs hardware, or the step that brings it.
-        run: sh ci/basics-test.sh
-
-      - name: Keep the log and the screenshots
+      - name: Keep the part's log, screenshots and passed cases
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: edel-desktop-test
+          name: edel-desktop-test-${{ matrix.part }}
           if-no-files-found: ignore
           path: |
             out/desktop-test.log
+            out/desktop-test-first.log
             out/desktop-test/*.png
+            out/desktop-test/first/
+            out/desktop-test/passed
+
+  # Joins the four parts, so one check says whether the desktop tests passed,
+  # and prints the basics checklist from every part's passed cases.
+  desktop:
+    name: Desktop tests
+    needs: desktop-part
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Gather the parts' passed cases
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: edel-desktop-test-*
+          path: out/parts
+
+      - name: Every part passed
+        if: always()
+        run: |
+          mkdir -p out/desktop-test
+          find out/parts -name passed ! -path '*/first/*' -exec cat {} + >out/desktop-test/passed 2>/dev/null || true
+          [ "${{ needs.desktop-part.result }}" = success ] || { echo "FAIL: a part of the desktop tests failed: ${{ needs.desktop-part.result }}"; exit 1; }
+
+      - name: Print the basics checklist
+        # The rows of every feature's [[basics]] (M6.7): PASS for a case
+        # that passed in any part, needs hardware, or the step that brings it.
+        if: always()
+        run: sh ci/basics-test.sh
 
   # Publishes the docs site to the gh-pages branch, which GitHub Pages
   # serves at https://alimardon123.github.io/edel/ (M8.10a), after every

@@ -6,6 +6,9 @@ variant = "vm"
 arch = "x86_64"
 hostname = "edel"
 features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm"]
+# Built beside the image and mounted where the settings file names them
+# (M7.2a).
+addons = ["containers", "virtualization"]
 
 [vm]
 # linux-virt, from the vm feature (its why says why not lts).

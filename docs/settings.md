@@ -430,7 +430,7 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `addons.installed` | The add-ons this machine has, by name; this release does not act on them yet. | `[]` | release |
+| `addons.installed` | The add-ons this machine has, by name; each arrives with the next update and is in edel addon list. | `[]` | release |
 
 ### `services`
 
