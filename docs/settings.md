@@ -285,6 +285,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.animations` | How much things move: full, reduced (fades only) or off. | `"full"` | release |
 | `appearance.animation_speed` | How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast. | `100` | release |
 | `appearance.animation_curve` | The curve every animation follows: smooth, snappy (quicker) or springy (overshoots a little). | `"smooth"` | release |
+| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
 
 ### `layout`
 
@@ -299,6 +300,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `layout.minimize_button` | Whether each title bar shows its minimize button. | `true` | release |
 | `layout.maximize_button` | Whether each title bar shows its maximize button; a hidden button's room goes to the title. | `true` | release |
 | `layout.tiling_style` | How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles). | the preset's | preset |
+| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
 
 ### `panels`
 
@@ -380,6 +382,7 @@ This page has no key in the file.
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
 | `shortcuts.*` | The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions. | each action's own keys, docs/SHORTCUTS.md | release |
+| `clipboard.history` | Keeps the last texts and pictures you copied, in memory only, for Super+V; false keeps nothing. | `true` | release |
 
 ### `region`
 
@@ -468,8 +471,6 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `themes.*` | One of your own themes: its title, its pictures and the appearance values it sets. | none | release |
-| `presets.*` | One of your own layout presets: the built-in preset it starts from and the layout keys it sets. | none | release |
 | `install.disk` | The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name. | `"auto"` | release |
 | `install.erase` | Whether an unattended install erases only an empty disk, or any disk after a ten second countdown. | `"empty-only"` | release |
 | `install.then` | What the machine does once a stick has installed itself: power off or restart. | `"poweroff"` | release |
