@@ -412,6 +412,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     };
     let mut out: Vec<Node> = view
         .icons

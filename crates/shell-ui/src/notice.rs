@@ -463,6 +463,7 @@ pub fn nodes(item: &Item, placed: &Placed, origin: (f64, f64)) -> Vec<Node> {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     };
     let mut out = vec![node(Role::Alert, item.spoken.clone(), placed.whole)];
     for (button, r) in item.buttons.iter().zip(&placed.buttons) {
