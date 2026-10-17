@@ -1,6 +1,7 @@
 //! `edel restart`, `edel shutdown` and `edel suspend` (M5.10c): the power
 //! menu's three actions, one way for the lock screen, Settings and people
-//! at a terminal. Each runs the base's own program (`edel::base`).
+//! at a terminal. Each runs the base's own program (`edel::base`). Also
+//! `edel power profile` (M7.8), the kernel's power profile.
 //!
 //! Root runs the program directly. Anyone else runs it through `doas -n`,
 //! which the login feature's rule file lets group `seat` run with no
@@ -11,9 +12,10 @@ use std::process::Command;
 
 use anyhow::{Result, bail};
 
-use edel::i18n::{tr, trf};
-
 use edel::base::{POWEROFF, REBOOT, SUSPEND};
+use edel::i18n::{tr, trf};
+use edel::settings::{self, ON_BATTERY};
+use edel::{places, profile, users};
 
 /// One of the three power actions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -86,6 +88,71 @@ pub fn run(action: Action) -> Result<()> {
                 &[("program", program), ("status", &exit)],
             ),
         };
+        bail!("{message}{hint}");
+    }
+    Ok(())
+}
+
+/// `edel power profile [NAME]` (M7.8): without NAME, shows the power profile
+/// the kernel uses and the ones it offers; with NAME, one of
+/// `power.on_battery`'s values, sets it. Setting needs root: anyone else runs
+/// the same command as root through doas, which the login feature's rule
+/// lets the people at the machine run with no password.
+pub fn profile(name: Option<&str>) -> Result<()> {
+    let Some(name) = name else {
+        match profile::now() {
+            Some((now, offered)) => println!("profile: {now} (offered: {})", offered.join(" ")),
+            None => println!(
+                "{}",
+                tr("this computer has no power profiles, so there is none to show")
+            ),
+        }
+        return Ok(());
+    };
+    let names = settings::choices(ON_BATTERY);
+    if !names.contains(&name) {
+        let quoted = format!("{name:?}");
+        let list = names.join(", ");
+        bail!(trf(
+            "unknown power profile {name}; use one of: {list}",
+            &[("name", &quoted), ("list", &list)]
+        ));
+    }
+    if users::current() == Some(0) {
+        let kernel = profile::set(name)?;
+        println!(
+            "{}",
+            trf(
+                "power profile {name} ({kernel})",
+                &[("name", name), ("kernel", &kernel)]
+            )
+        );
+        return Ok(());
+    }
+    let argv = [
+        places::AS_ROOT,
+        "-n",
+        places::EDEL_BIN,
+        "power",
+        "profile",
+        name,
+    ];
+    let hint =
+        tr("; the power rules come with the login feature (doas), so check that it is installed");
+    let status = match Command::new(argv[0]).args(&argv[1..]).status() {
+        Ok(status) => status,
+        Err(err) => {
+            let why = err.to_string();
+            let message = trf("could not set the power profile: {why}", &[("why", &why)]);
+            bail!("{message}{hint}");
+        }
+    };
+    if !status.success() {
+        let exit = status.to_string();
+        let message = trf(
+            "could not set the power profile: edel exited with {status}",
+            &[("status", &exit)],
+        );
         bail!("{message}{hint}");
     }
     Ok(())

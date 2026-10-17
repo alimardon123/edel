@@ -569,17 +569,17 @@ pub const KEYS: &[Key] = &[
     now("default_apps.terminal", Kind::Text),
     now("default_apps.mail", Kind::Text),
     now("startup.apps", Kind::Texts),
-    later(
-        "power.lid_close",
+    now(
+        LID_CLOSE,
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
     ),
-    later("power.lock_after_minutes", Kind::Whole),
-    later(
-        "power.power_button",
+    now(LOCK_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(
+        POWER_BUTTON,
         Kind::OneOf(&["suspend", "poweroff", "ask", "nothing"]),
     ),
-    later(
-        "power.on_battery",
+    now(
+        ON_BATTERY,
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
     now("services.*", Kind::Flag),
@@ -1742,6 +1742,42 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
         Source::Release => None,
     }
 }
+
+/// The key what closing the lid does is kept under (M7.8), the one name
+/// shell-ui, Settings and `edel settings` share; its values are [`choices`]'.
+pub const LID_CLOSE: &str = "power.lid_close";
+
+/// The key what the power button does is kept under (M7.8); its values are
+/// [`choices`]'.
+pub const POWER_BUTTON: &str = "power.power_button";
+
+/// The key the minutes without input before the screen locks are kept under
+/// (M7.8), 0 for never.
+pub const LOCK_AFTER_MINUTES: &str = "power.lock_after_minutes";
+
+/// The key how hard the machine works on battery is kept under (M7.8); its
+/// values are [`choices`]'. Plugged in, the machine works at Balanced, or at
+/// Performance when this is set to that.
+pub const ON_BATTERY: &str = "power.on_battery";
+
+/// What closing the lid does when the file does not say (M7.8): suspend,
+/// which locks the screen first.
+pub const LID_CLOSE_DEFAULT: &str = "suspend";
+
+/// What the power button does when the file does not say (M7.8): suspend,
+/// as the lid does.
+pub const POWER_BUTTON_DEFAULT: &str = "suspend";
+
+/// The minutes without input before the screen locks when the file does not
+/// say (M7.8): five.
+pub const LOCK_AFTER_MINUTES_DEFAULT: u32 = 5;
+
+/// [`LOCK_AFTER_MINUTES_DEFAULT`] as the key table and the docs write it.
+pub const LOCK_AFTER_MINUTES_DEFAULT_TEXT: &str = "5";
+
+/// How hard the machine works on battery when the file does not say (M7.8):
+/// balanced.
+pub const ON_BATTERY_DEFAULT: &str = "balanced";
 
 /// The key banners and sounds are kept away with (M5.9b), the one name
 /// shell-ui, Settings and `edel settings` share.
@@ -3186,6 +3222,9 @@ cursor_size = 11
 
 [power]
 lock_after_minutes = 11
+
+[updates]
+version = "1.2"
 "#;
 
     #[test]
@@ -3218,7 +3257,7 @@ lock_after_minutes = 11
         assert!(lines.contains(
             &"appearance.mode: unknown value \"sepia\"; use light, dark or auto".to_string()
         ));
-        assert!(lines.contains(&"power.lock_after_minutes: not supported yet".to_string()));
+        assert!(lines.contains(&"updates.version: not supported yet".to_string()));
         assert!(!lines.iter().any(|line| line.starts_with("network.")));
     }
 
@@ -3713,8 +3752,8 @@ lock_after_minutes = 11
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
         assert!(error("network.hostname", "not valid").contains("expected a hostname"));
         assert_eq!(
-            error("power.lock_after_minutes", "11"),
-            "power.lock_after_minutes: not supported yet; this release does not act on it, so it cannot be set"
+            error("updates.version", "\"1.2\""),
+            "updates.version: not supported yet; this release does not act on it, so it cannot be set"
         );
         assert!(error("users.Ali.admin", "true").contains("not a user name"));
     }

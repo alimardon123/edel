@@ -43,6 +43,7 @@ impl Shell {
     /// `brightness_down`. The level moves one step, is shown and sent.
     pub fn media_key(&mut self, key: &str) {
         match key {
+            "power" => self.power_button(),
             "volume_up" | "volume_down" | "mute" => {
                 let (percent, muted) = match &self.live.status.volume {
                     Some(v) => (v.percent, v.muted),

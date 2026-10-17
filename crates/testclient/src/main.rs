@@ -21,10 +21,12 @@
 //! (`mpris.rs`, M5.9d). `--screenshot` and `--screencast` draw nothing
 //! either: they ask xdg-desktop-portal for a screenshot or to share the
 //! screen, as an app does, and print what it answers (`portal.rs`, M6.3).
-//! `--location` draws nothing either: it asks the Location portal for the
-//! device's position and prints the first update (`portal.rs`, M6.14c),
-//! holding the session SECONDS more when given, so the in-use sign stays.
-//! `--recolour RRGGBB@FILE` draws the window in that
+//! `--lid SECONDS` draws nothing either: as root, it shuts a lid switch on
+//! uinput for SECONDS and opens it again, as a laptop's lid does
+//! (`lid.rs`, M7.8). `--location` draws nothing either: it asks the
+//! Location portal for the device's position and prints the first update
+//! (`portal.rs`, M6.14c), holding the session SECONDS more when given, so
+//! the in-use sign stays. `--recolour RRGGBB@FILE` draws the window in that
 //! colour once FILE exists, so a test can see whether a picture of it
 //! follows it live (M5.2j-b4).
 //!
@@ -38,6 +40,7 @@
 //!     edel-testclient --mpris NAME
 //!     edel-testclient --screenshot
 //!     edel-testclient --screencast
+//!     edel-testclient --lid 8
 //!     edel-testclient --location
 //!     edel-testclient --location SECONDS
 
@@ -213,6 +216,7 @@ impl Dispatch<wl_callback::WlCallback, Wake> for Client {
 }
 
 mod hold;
+mod lid;
 mod mpris;
 mod portal;
 mod sandbox;
@@ -229,6 +233,7 @@ fn main() -> Result<()> {
         ["--mpris"] => return mpris::run(None),
         ["--screenshot"] => return portal::screenshot(),
         ["--screencast"] => return portal::screencast(),
+        ["--lid", seconds] => return lid::run(seconds),
         ["--location"] => return portal::location(0),
         ["--location", seconds] => {
             let seconds = seconds

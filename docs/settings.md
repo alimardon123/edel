@@ -360,10 +360,10 @@ This page has no key in the file.
 
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
-| `power.lid_close` | What closing the lid does: suspend, lock, nothing or power off; this release does not act on it yet. | not set yet | release |
-| `power.lock_after_minutes` | How many minutes without input before the screen locks, 0 for never; this release does not act on it yet. | not set yet | release |
-| `power.power_button` | What the power button does: suspend, power off, ask or nothing; this release does not act on it yet. | not set yet | release |
-| `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; this release does not act on it yet. | not set yet | release |
+| `power.lid_close` | What closing the lid does: suspend (locking first), lock, nothing or power off; nothing happens while two or more screens are lit. | suspend | release |
+| `power.lock_after_minutes` | How many minutes without input before the screen locks, 0 for never. | `5` | release |
+| `power.power_button` | What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing. | suspend | release |
+| `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here. | balanced | release |
 
 ### `notifications`
 

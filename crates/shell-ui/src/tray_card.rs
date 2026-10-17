@@ -516,6 +516,8 @@ impl Shell {
         // panels.list and the preset's panels (M5.31b, M6.17): the panels
         // follow the files at once.
         let (machine, person) = crate::settings_texts();
+        // The power rules: the lid, the button, the idle lock and the profile (M7.8).
+        self.power_changed(machine.as_deref(), person.as_deref());
         // What each app may use (M6.14a), and which apps are asked for the
         // place every time (M6.14c).
         let asked = crate::app_permissions::follow(

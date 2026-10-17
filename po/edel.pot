@@ -641,16 +641,16 @@ msgstr ""
 msgid "The apps that start once the desktop is on screen, in the order listed, by desktop file id."
 msgstr ""
 
-msgid "What closing the lid does: suspend, lock, nothing or power off; this release does not act on it yet."
+msgid "What closing the lid does: suspend (locking first), lock, nothing or power off; nothing happens while two or more screens are lit."
 msgstr ""
 
-msgid "How many minutes without input before the screen locks, 0 for never; this release does not act on it yet."
+msgid "How many minutes without input before the screen locks, 0 for never."
 msgstr ""
 
-msgid "What the power button does: suspend, power off, ask or nothing; this release does not act on it yet."
+msgid "What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing."
 msgstr ""
 
-msgid "How hard the machine works on battery: power-saver, balanced or performance; this release does not act on it yet."
+msgid "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here."
 msgstr ""
 
 msgid "Turns one switchable feature, such as ssh or bluetooth, on or off by its name."
@@ -1400,6 +1400,21 @@ msgstr ""
 msgid "the password was not given; nothing was changed"
 msgstr ""
 
+msgid "this computer has no power profiles: {path} is missing, so the power profile is not changed"
+msgstr ""
+
+msgid "could not read {path}: {why}; the power profile is not changed"
+msgstr ""
+
+msgid "this computer offers no power profiles, so the power profile is not changed"
+msgstr ""
+
+msgid "this computer has no power profile for {ours} (it offers {offers}), so the power profile is not changed"
+msgstr ""
+
+msgid "could not set the power profile through {path}; this changes the system, so run it as root with doas"
+msgstr ""
+
 msgid "{channel} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\""
 msgstr ""
 
@@ -2078,6 +2093,21 @@ msgstr ""
 msgid "could not suspend: {program} exited with {status}"
 msgstr ""
 
+msgid "this computer has no power profiles, so there is none to show"
+msgstr ""
+
+msgid "unknown power profile {name}; use one of: {list}"
+msgstr ""
+
+msgid "power profile {name} ({kernel})"
+msgstr ""
+
+msgid "could not set the power profile: {why}"
+msgstr ""
+
+msgid "could not set the power profile: edel exited with {status}"
+msgstr ""
+
 msgid "the theme file has data after its end; copy it again"
 msgstr ""
 
@@ -2451,6 +2481,15 @@ msgid "Shut this machine down now: the system's own poweroff, through doas when 
 msgstr ""
 
 msgid "Suspend this machine to memory now; a key or the power button wakes it"
+msgstr ""
+
+msgid "power: how hard the machine works, its power profile; shell-ui sets it on battery and on the charger, as power.on_battery says"
+msgstr ""
+
+msgid "Show the power profile the kernel uses and the ones it offers, or set it: power-saver, balanced or performance"
+msgstr ""
+
+msgid "The profile to set, as power.on_battery names them"
 msgstr ""
 
 msgid "Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings"

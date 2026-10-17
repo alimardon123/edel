@@ -89,6 +89,10 @@ struct Screen {
     dirty: bool,
     /// A frame was queued and its vblank has not come yet.
     pending: bool,
+    /// The queued frame was drawn locked: its vblank confirms the lock
+    /// (M7.8), so a suspend that waits for the lock never sleeps before the
+    /// locked frame is on the screen.
+    locked_frame: bool,
     /// Its first frame was shown and announced.
     ready: bool,
 }
@@ -329,7 +333,12 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
     let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
-    let mut state = Edel::new(display.handle(), event_loop.get_signal(), tokens)?;
+    let mut state = Edel::new(
+        display.handle(),
+        event_loop.get_signal(),
+        event_loop.handle(),
+        tokens,
+    )?;
     let handle = event_loop.handle();
     let name = listen(&handle, &mut state, display)?;
     state.socket = name.clone();
@@ -449,7 +458,9 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             move |event, metadata, state: &mut Edel| match event {
                 DrmEvent::VBlank(crtc) => {
                     let mut gpu = vblank.borrow_mut();
-                    gpu.presented(crtc, metadata.as_ref());
+                    if let Some(name) = gpu.presented(crtc, metadata.as_ref()) {
+                        state.lock_drawn(&name);
+                    }
                     gpu.render(state);
                     // Once the desktop is on screen (M4.7b).
                     if gpu.announced {
@@ -492,12 +503,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
                     if let Err(e) = gpu.drm.activate(false) {
                         eprintln!("edel-compositor: {}", messages::screens_lost(e));
                     }
-                    for screen in gpu.screens.values_mut() {
-                        if let Err(e) = screen.compositor.reset_state() {
-                            eprintln!("edel-compositor: resetting a screen failed: {e}");
-                        }
-                        screen.pending = false;
-                    }
+                    gpu.reset_screens();
                     gpu.active = true;
                     state.dirty = true;
                     // Screens may have changed while another terminal had them.
@@ -524,6 +530,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     event_loop.run(None, &mut state, |state| {
         state.space.refresh();
         state.popups.cleanup();
+        state.sync_idle_inhibit();
         let _ = state.display.flush_clients();
         if let Ok(mut gpu) = gpu.try_borrow_mut() {
             if std::mem::take(&mut state.screens_changed) {
@@ -722,10 +729,22 @@ impl Gpu {
                 mode,
                 dirty: true,
                 pending: false,
+                locked_frame: false,
                 ready: false,
             },
         );
         Ok(())
+    }
+
+    /// Forgets what each screen showed, so the next frame sets it up and
+    /// draws it whole, after another terminal had the screens.
+    fn reset_screens(&mut self) {
+        for screen in self.screens.values_mut() {
+            if let Err(e) = screen.compositor.reset_state() {
+                eprintln!("edel-compositor: resetting a screen failed: {e}");
+            }
+            screen.pending = false;
+        }
     }
 
     /// Draws a frame on every screen where something changed, the seat is
@@ -754,7 +773,7 @@ impl Gpu {
             let started = Instant::now();
             if render_screen(screen, &mut self.renderer, state) {
                 screen.pending = true;
-                state.lock_drawn(&screen.output.name());
+                screen.locked_frame = state.locked.is_some();
                 state.last_frame = Some(Instant::now());
                 state.telemetry.frame(started.elapsed(), true);
                 state.frame_drawn(
@@ -808,13 +827,17 @@ impl Gpu {
     }
 
     /// The frame queued on `crtc` is shown: tell the clients when, and
-    /// announce the screen's first one.
-    fn presented(&mut self, crtc: crtc::Handle, metadata: Option<&DrmEventMetadata>) {
+    /// announce the screen's first one. Gives the screen's name when that
+    /// frame was drawn locked, for the lock's confirmation.
+    fn presented(
+        &mut self,
+        crtc: crtc::Handle,
+        metadata: Option<&DrmEventMetadata>,
+    ) -> Option<String> {
         let now = Duration::from(self.clock.now());
-        let Some(screen) = self.screens.get_mut(&crtc) else {
-            return;
-        };
+        let screen = self.screens.get_mut(&crtc)?;
         screen.pending = false;
+        let locked = std::mem::take(&mut screen.locked_frame).then(|| screen.output.name());
         match screen.compositor.frame_submitted() {
             Ok(Some(Some(mut feedback))) => {
                 let (time, sequence) = match metadata {
@@ -849,6 +872,7 @@ impl Gpu {
             self.announced = true;
             announce(&screen.output, first);
         }
+        locked
     }
 }
 

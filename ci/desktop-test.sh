@@ -258,7 +258,12 @@
 #   suspend     edel suspend, as ci, suspends the VM to memory (QEMU reports
 #               it suspended), QMP's system_wakeup brings it back, and a window
 #               opened after the wakeup is drawn; the kernel's PM lines are
-#               printed; run last, after flatpak (M6.7)
+#               printed; run after flatpak (M6.7)
+#   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
+#               root: the compositor hears it, shell-ui locks the screen and
+#               suspends the VM (QEMU reports it suspended), QMP's
+#               system_wakeup brings it back, the lid opens, and ci's password
+#               unlocks the screen; run after suspend (M7.8)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -287,7 +292,7 @@
 #               popup the compositor shows (`input method popup shown`,
 #               input-method.png); Escape, Super+Q, and reset stop fcitx5
 #               (`input method off, fcitx5 ended`) (M6.8)
-#   flatpak     last but suspend: `edel settings set apps.installed` lists io.mpv.Mpv
+#   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
 #               window maps in the session (flatpak-mpv.png); `edel settings
@@ -633,6 +638,12 @@ suspend_fail() {
 	fail "$1; edel suspend said: $(value suspend_log)"
 }
 
+lid_fail() {
+	guest 'lid log' 2>/dev/null || :
+	wait_for 'DESKTOP-TEST: lid_log ' 10 || :
+	fail "$1; edel-testclient's lid said: $(value lid_log)"
+}
+
 case_suspend() {
 	# Suspend and resume (M6.7). The VM offers suspend to memory only with
 	# q35's S3 on (the -global line of the desktop VM); ci runs edel
@@ -688,6 +699,69 @@ case_suspend() {
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
+}
+
+case_lid() {
+	# The lid (M7.8): a lid switch on uinput, which edel-testclient --lid
+	# shuts as root for 8 s (the test service's `lid close`), as a laptop's
+	# lid reports itself. The compositor hears it, shell-ui locks the screen
+	# and then suspends the VM (its lid default), so QEMU reports suspended;
+	# QMP's system_wakeup brings it back, the lid opens, and ci's password
+	# unlocks the screen. Kept as lid.png. Each line is counted before the
+	# lid closes, as earlier cases may have logged the same one.
+	guest 'lock password'
+	wait_for 'DESKTOP-TEST: ran lock password: 0' || fail "ci's password could not be set"
+	closed=$(count 'edel-compositor: lid closed')
+	shell=$(count 'edel-shell-ui: lid closed: suspend')
+	locked=$(count 'edel-compositor: screen locked$')
+	opened=$(count 'edel-compositor: lid opened')
+	guest 'lid close'
+	# The guest suspends within a second of the lid closing, before its log
+	# lines reach the serial line, so QEMU is asked first and the lines are
+	# read after the wakeup.
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = suspended ]; do
+		i=$((i + 1))
+		if [ "$i" -ge 30 ]; then
+			wait_more 'edel-compositor: lid closed' "$closed" 1 || lid_fail "the compositor did not hear the lid close"
+			wait_more 'edel-shell-ui: lid closed: suspend' "$shell" 1 || lid_fail "shell-ui did not take the lid close for suspend"
+			lid_fail "QEMU did not report the guest suspended within 30 s of the lid closing"
+		fi
+		sleep 1
+	done
+	sleep 2
+	python3 ci/qmp.py wakeup
+	i=0
+	until [ "$(python3 ci/qmp.py status)" = running ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "QEMU did not report the guest running within 20 s of system_wakeup"
+		sleep 1
+	done
+	# As in case_suspend, the serial line loses the first bytes sent after
+	# the wakeup, so a command that changes nothing is sent until answered.
+	i=0
+	answered=$(count 'DESKTOP-TEST: ran lid log')
+	until [ "$(count 'DESKTOP-TEST: ran lid log')" -gt "$answered" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the test service answered no command within 20 s of the wakeup"
+		guest 'lid log'
+		sleep 1
+	done
+	wait_more 'edel-compositor: lid closed' "$closed" || lid_fail "the compositor did not hear the lid close"
+	wait_more 'edel-shell-ui: lid closed: suspend' "$shell" || lid_fail "shell-ui did not take the lid close for suspend"
+	wait_more 'edel-compositor: screen locked$' "$locked" || lid_fail "the screen was not locked before the suspend"
+	wait_more 'edel-compositor: lid opened' "$opened" 30 || lid_fail "the compositor did not hear the lid open after the wakeup"
+	# QEMU's virtio-gpu shows "Display output is not active" after S3, as
+	# in case_suspend's picture, whatever the guest draws: the picture is
+	# kept, and the unlock below proves the lock screen still takes keys.
+	sleep 2
+	python3 ci/qmp.py screendump "$dir/lid.png"
+	uniform=$(python3 ci/qmp.py uniform "$dir/lid.png")
+	[ "$uniform" = varied ] || fail "the locked screen after the lid opened is $uniform"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the screen after the lid opened"
+	echo "PASS: the lid closed (uinput), shell-ui locked the screen and suspended the VM (QEMU said suspended), system_wakeup woke it, the lid opened and ci's password unlocked it (lid.png)"
 }
 
 case_default_apps_keys() {
