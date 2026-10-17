@@ -524,6 +524,9 @@ msgstr ""
 msgid "Who logs in"
 msgstr ""
 
+msgid "Apps and add-ons for one kind of work, if you like. Change it any time in Settings."
+msgstr ""
+
 msgid "Welcome to Edel OS"
 msgstr ""
 
@@ -1182,6 +1185,9 @@ msgid "Now"
 msgstr ""
 
 msgid "Power information is not available"
+msgstr ""
+
+msgid "What this computer is for"
 msgstr ""
 
 msgid "Remove {layout}"

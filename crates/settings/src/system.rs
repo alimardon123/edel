@@ -118,6 +118,9 @@ pub fn page() -> gtk::Widget {
     apply_row.reset.set_visible(false);
     let apply_out = widgets::output_row(&group);
 
+    // The machine's profile (M7.6), after the file it may come from.
+    crate::profiles::group(&content);
+
     let ui = Rc::new(Ui {
         page: page.clone(),
         export_out,

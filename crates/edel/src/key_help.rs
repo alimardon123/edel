@@ -91,7 +91,7 @@ pub const HELP: &[Help] = &[
     Help {
         key: "system.profiles",
         help: n_(
-            "The profiles this machine has, such as [\"gaming\"]: the add-ons, apps and values a kind of work needs; this file's own values win.",
+            "Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's.",
         ),
         default: "[]",
         from: DecidedBy::Release,

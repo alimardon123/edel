@@ -9,6 +9,8 @@
 - [Fleets](FLEET.md)
 - [How Edel OS works](guide/how-it-works.md)
 - [The settings file](settings.md)
+- [Profiles](guide/profiles.md)
+- [Coming from Ubuntu or RHEL](guide/coming-from-ubuntu-or-rhel.md)
 - [Defaults](defaults.md)
 - [Keyboard shortcuts](SHORTCUTS.md)
 - [Commands](guide/commands.md)
