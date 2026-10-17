@@ -59,6 +59,7 @@ pub fn ask(
         .modal(true)
         .resizable(false)
         .default_width(380)
+        .css_classes(["edel"])
         .build();
     if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
         window.set_transient_for(Some(&parent));

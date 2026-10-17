@@ -5183,6 +5183,53 @@ case_own_bars() {
 		[ "$(apart "$gap" "$bar")" -lt 30 ] ||
 			fail "the close glyph is filled between its arms at $mx,$((my - 5)) $2: $gap against the bar's $bar ($1)"
 	}
+	# adw_line WORD: waits until the libadwaita window's latest line says
+	# contrast WORD (M6.18), asking up to 30 times, a second apart.
+	adw_line() {
+		i=0
+		while [ "$i" -lt 30 ]; do
+			guest 'headerbar adw log'
+			sleep 1
+			adwaita=$(value adwaita_log)
+			case "$adwaita" in
+			*"contrast $1"*) return 0 ;;
+			esac
+			i=$((i + 1))
+		done
+		fail "the libadwaita window did not report contrast $1: ${adwaita:-nothing}"
+	}
+	# adw_place BEFORE: from the compositor's windows, the libadwaita window's
+	# place on the screen (wx, wy, ww, wh). The windows line is printed only
+	# when the windows change, so a window that has just mapped is read once
+	# the count of its lines has grown past BEFORE, counted before the
+	# window was started; with BEFORE 0 it is read from the last line, the
+	# window being up already (M6.18).
+	adw_place() {
+		wait_more 'DESKTOP-TEST: windows .*adwaita@' "$1" 20 ||
+			fail "the compositor's windows hold no adwaita window: $(value windows)"
+		set -- $(value windows | grep -o 'adwaita@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | head -n 1 | sed 's/adwaita@\([0-9]*\),\([0-9]*\),\([0-9]*\)x\([0-9]*\)/\1 \2 \3 \4/')
+		wx=$1 wy=$2 ww=$3 wh=$4
+		for v in "$wx" "$wy" "$ww" "$wh"; do
+			[ -n "$v" ] || fail "the libadwaita window has no place: windows: $(value windows)"
+		done
+	}
+	# adw_bar FILE: the colour of the libadwaita window's header bar in the
+	# screenshot FILE, 40 px in and 12 px down from the window's corner.
+	adw_bar() {
+		python3 ci/qmp.py pixel "$1" $((wx + 40)) $((wy + 12))
+	}
+	# near A B: whether two hex colours differ by at most 4 in every channel.
+	near() {
+		python3 -c 'import sys; a, b = (bytes.fromhex(x) for x in sys.argv[1:3]); sys.exit(0 if max(abs(p - q) for p, q in zip(a, b)) <= 4 else 1)' "$1" "$2"
+	}
+	# bar_is FILE WANT WHEN: screendumps FILE and wants the libadwaita
+	# window's header bar in it to be WANT (M6.18).
+	bar_is() {
+		python3 ci/qmp.py screendump "$1"
+		got=$(adw_bar "$1")
+		near "$got" "$2" ||
+			fail "the libadwaita window's header bar is $got, not $2, $3 ($1) (an unfocused window's bar takes the backdrop colour, the background token $(raw_token background))"
+	}
 	guest 'portal buttons'
 	wait_for 'DESKTOP-TEST: portal button-layout ' 60 || fail "the service did not hear back from the portal about the button layout"
 	first=$(layout_of)
@@ -5239,7 +5286,71 @@ case_own_bars() {
 	python3 ci/qmp.py screendump "$dir/headerbar-right.png"
 	cross_drawn "$dir/headerbar-right.png" 'on the right after the reset'
 	guest 'headerbar off'
-	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png)"
+	# A libadwaita window (M6.18), its header bar in our colours: Flatpak
+	# apps may read gtk.css, which shell-ui writes from the tokens and the
+	# settings, so the person's override must show it.
+	guest 'flatpak override'
+	wait_for 'DESKTOP-TEST: flatpak_override ' 30 || fail "the service did not print the Flatpak override"
+	value flatpak_override | grep -q 'xdg-config/gtk-4.0:ro' ||
+		fail "Flatpak apps may not read gtk.css: $(value flatpak_override)"
+	# The light scheme: a libadwaita window takes the light title_bar.
+	mapped=$(count 'edel-compositor: mapped window adwaita')
+	windows=$(count 'DESKTOP-TEST: windows .*adwaita@')
+	guest 'headerbar adw'
+	wait_more 'edel-compositor: mapped window adwaita' "$mapped" 60 ||
+		fail "the libadwaita window did not map: $(value windows)"
+	adw_line normal
+	adw_place "$windows"
+	sleep 1
+	bar_is "$dir/adwaita-light.png" "$(raw_token title_bar)" 'in the light scheme'
+	# High contrast reaches the open window with no restart: shell-ui tells
+	# apps, and libadwaita's header bar takes the high-contrast title_bar.
+	told=$(count 'edel-shell-ui: contrast told to apps')
+	guest 'contrast high'
+	wait_more 'edel-shell-ui: contrast told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps about high contrast: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: contrast' | tail -n 1)"
+	adw_line high
+	sleep 1
+	bar_is "$dir/adwaita-contrast.png" "$(raw_token title_bar colour.light.contrast)" 'with high contrast, with no restart'
+	# High contrast taken out again, which the open window hears too.
+	told=$(count 'edel-shell-ui: contrast told to apps')
+	guest 'contrast default'
+	wait_more 'edel-shell-ui: contrast told to apps' "$told" 30 ||
+		fail "shell-ui did not tell apps that high contrast was taken out: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: contrast' | tail -n 1)"
+	adw_line normal
+	# The person's own header bar colours (M6.18): the window is closed,
+	# shell-ui writes gtk.css again, and the window opened below reads it.
+	guest 'headerbar off'
+	written=$(count "edel-shell-ui: apps' colours written")
+	guest 'title colours'
+	wait_more "edel-shell-ui: apps' colours written" "$written" 30 ||
+		fail "shell-ui did not write apps' colours for the person's title_bar: $(tr -d '\r' <"$log" | grep -a "apps' colours" | tail -n 1)"
+	mapped=$(count 'edel-compositor: mapped window adwaita')
+	windows=$(count 'DESKTOP-TEST: windows .*adwaita@')
+	guest 'headerbar adw'
+	wait_more 'edel-compositor: mapped window adwaita' "$mapped" 60 ||
+		fail "the libadwaita window did not map again: $(value windows)"
+	adw_line normal
+	adw_place "$windows"
+	sleep 1
+	bar_is "$dir/adwaita-own-light.png" f0b8cc 'with appearance.colours.light.title_bar set'
+	# The dark scheme: the person's dark title_bar. The window is up already
+	# and keeps its place, so its last windows line is read (adw_place 0).
+	said=$(count 'edel-compositor: colour scheme dark')
+	guest 'scheme dark'
+	wait_more 'edel-compositor: colour scheme dark' "$said" 30 ||
+		fail "appearance.mode=dark did not reach the compositor's log"
+	sleep 2
+	adw_place 0
+	bar_is "$dir/adwaita-own-dark.png" 4a2a6a 'in the dark scheme with appearance.colours.dark.title_bar set'
+	# Back to the light scheme, the window closed and the colours taken out.
+	said=$(count 'edel-compositor: colour scheme light')
+	guest 'scheme default'
+	wait_more 'edel-compositor: colour scheme light' "$said" 30 ||
+		fail "taking appearance.mode out did not bring the light scheme back"
+	guest 'headerbar off'
+	guest 'colours default'
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png); a libadwaita window's header bar took the light title_bar, high contrast's live, and the person's own colour in light and in dark, and Flatpak apps may read gtk.css (adwaita-light.png, adwaita-contrast.png, adwaita-own-light.png, adwaita-own-dark.png)"
 }
 
 case_capture() {

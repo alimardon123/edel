@@ -475,7 +475,7 @@ impl Edel {
             text: self.text.is_some(),
             text_key: self.text_key,
             side: self.settings.button_side(),
-            shown: self.settings.buttons,
+            shown: self.shown(window),
             scheme: self.settings.color_scheme,
             border,
         };
