@@ -281,7 +281,8 @@
 #               with no seed and no test service; edel boot live says the
 #               stick logs live in, the slot is confirmed, and the panel
 #               lies along the bottom in the token colour, so the desktop
-#               showed with nobody logging in (M3.6); and the checks the
+#               showed with nobody logging in (M3.6), timed as the try walk
+#               and the install-page walk (M8.15a); and the checks the
 #               laptop stick had in boot-test: /data, the hardware
 #               watchdog, the report on the EFI system partition, ssh off
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
@@ -316,6 +317,7 @@
 # their budgets stay honest.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 
 dir=out/desktop-test
 log=out/desktop-test.log
@@ -373,11 +375,6 @@ matches() {
 	!*) [ "$1" != "${2#!}" ] ;;
 	*) case "|$2|" in *"|$1|"*) true ;; *) false ;; esac ;;
 	esac
-}
-
-# budget KEY: the number KEY has in ci/budgets.toml.
-budget() {
-	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
 # token KEY [TABLE]: the colour KEY has in design/tokens.toml's
@@ -8229,6 +8226,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
+	started=$(tr -d '\r' <"$log" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
@@ -8247,6 +8245,7 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	walk try "seconds=$started" || fail "starting the stick took longer than its budget (walk try, docs/REVIEW-experience.md)"
 	# The first start (M6.12): live's session opens Settings' Welcome,
 	# which on a stick asks Try or Install first, Install taking Return.
 	# Return opens Settings on its installer page and closes the Welcome,
@@ -8263,7 +8262,8 @@ if [ "$*" = live ]; then
 	done
 	sleep 3
 	python3 ci/qmp.py screendump "$dir/welcome-stick.png"
-	python3 ci/qmp.py key ret
+	walk_steps=0
+	press key ret
 	i=0
 	until stick_session | grep -qa 'edel-settings: install page shown'; do
 		i=$((i + 5))
@@ -8406,17 +8406,17 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py key ret
 	sleep 25
 	python3 ci/qmp.py screendump "$dir/install-page.png"
-	python3 ci/qmp.py type ali
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-install-test
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-install-test
-	python3 ci/qmp.py key ret
+	press type ali
+	press key ret
+	press type edel-install-test
+	press key ret
+	press type edel-install-test
+	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	sleep 1
-	python3 ci/qmp.py key ret
+	press key ret
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -8427,6 +8427,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
 	target_data || fail "the installed disk has no data partition"
@@ -8525,7 +8526,8 @@ fi
 # accepts each page's suggestion and the account is typed; Start using
 # Edel OS makes cleo with edel settings first-boot, as root through
 # doas, and restarts, which ends this VM (-no-reboot). The disk's next
-# start leaves the login to the greeter.
+# start leaves the login to the greeter. It times the first-setup walk
+# (M8.15a): the Welcome's presses, and the second boot's `Started in`.
 # It runs apart from live, on a runner of its own in CI (ci/vm-tests.sh).
 if [ "$*" = fresh ]; then
 	. ci/names.sh
@@ -8566,33 +8568,34 @@ if [ "$*" = fresh ]; then
 		fail "the released image on a computer's own disk with nobody on it did not log live in by itself"
 	fresh_wait 'edel-settings: welcome page language' 120
 	sleep 3
-	python3 ci/qmp.py key ret
+	walk_steps=0
+	press key ret
 	fresh_wait 'edel-settings: welcome page keyboard' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page account' 30
 	sleep 2
-	python3 ci/qmp.py type cleo
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-welcome-test
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-welcome-test
+	press type cleo
+	press key ret
+	press type edel-welcome-test
+	press key ret
+	press type edel-welcome-test
 	python3 ci/qmp.py screendump "$dir/welcome-account.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page timezone' 30
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-timezone.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page layout' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page style' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page done' 30
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-fresh-done.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	# The restart ends QEMU; up to 180 s for the account and the restart.
 	i=0
 	while kill -0 "$qemu" 2>/dev/null; do
@@ -8636,6 +8639,8 @@ if [ "$*" = fresh ]; then
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$fresh" "$dir/fresh-data.img"
+	greeter=$(tr -d '\r' <"$fresh_log.2" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	walk first-setup "seconds=$greeter" "steps=$walk_steps" || fail "the first setup on a new computer is over its budget (walk first-setup, docs/REVIEW-experience.md)"
 	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi

@@ -30,6 +30,12 @@ What each case of `desktop-test.sh CASE...` checks is in [CASES.md](CASES.md), o
 - "Build and boot images" is the job that must pass before a merge: once Alimardon turns on branch protection for `main` (M2.5), GitHub refuses to merge while it is red.
 - After a real build, `out/work/` and the `work/` directories under `out/install-test/`, `out/system-test/`, `out/ab-test-update/`, `out/flatpak/` and `out/desktop-test/` stay owned by root; a local container run also leaves `target/` owned by root. Deleting them needs root.
 
+## Lessons of the CI lane
+
+- A check on what an image contains belongs in the build, not in a new CI step (M8.8): `edel image build` already reads apk's database once for the package list and the bill of materials, so the platform level check runs there, every real build (test images too) is the check with no extra job, and its rules are pure functions with cargo tests. Tie each floor to the feature that brings its package, so a package renamed upstream fails the build rather than being skipped.
+- A measurement belongs on a boot or a case the tests already make, timed by the machine (a `Started in` line, the guest's clock), never by the host's polling (M8.15a): walks are checked by `walk` in `budgets.sh`, which also owns reading `budgets.toml`.
+- A ready pull request's full run took 46 to 54 minutes on 2026-10-17 with three or four full runs queued; when `main` moved during it, merging `main` locally and running `cargo test -p edel` (which covers the generated `po/edel.pot` and `docs/guide/commands.md`) was enough to merge, rather than a third run.
+
 ## Coming changes
 
 The roadmap adds `upgrade-test.sh` (M3.5). Make each change only in its step, and take the details from the step itself, not from here.

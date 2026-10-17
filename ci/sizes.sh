@@ -8,16 +8,12 @@
 # reports what was built.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 
 summary=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 container=out/edel-container-x86_64.tar.gz
 vm=out/edel-vm-x86_64.img
 desktop=out/edel-desktop-x86_64.ext4.gz
-
-# budget KEY: the number KEY has in ci/budgets.toml.
-budget() {
-	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
-}
 
 # median: the middle of three numbers on standard input.
 median() {

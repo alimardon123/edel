@@ -15,7 +15,7 @@ A walk has up to two measures, each with its budget in [the budgets](https://git
 
 - **Seconds** are what the machine makes a person wait, timed by the machine itself: the `Started in` line a boot prints, or the guest's own clock around a command and across a restart. The test's polling (screenshots, copies of the data partition, sleeps while a page settles) never counts, as it would measure CI and not Edel OS.
 - **Steps** are what a person does: each key, typed word or click, counted by `press` in `ci/budgets.sh`. The test's own detours (opening Firefox on the stick, a screenshot) are not steps.
-- **Frames missed** while a walk runs come with M7.7e's count of missed frames, as that step measures frames.
+- **Frames missed** are not a walk's measure in CI: the stick and the fresh disk draw with llvmpipe on a shared runner, so their frames measure the runner. Smoothness is gated where CI measures it honestly: the frames between presentations (`frame_p99_ms`), the animations (`animation_p99_ms`) and a game's slowest frames (M7.7e); the walks' frames are watched on the laptop (M8.15b).
 
 A walk that must grow (a new page in the Welcome, a new question in the installer) changes its budget in a reviewed pull request that says why, and that one step is worth it.
 
