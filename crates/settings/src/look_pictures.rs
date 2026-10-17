@@ -63,7 +63,7 @@ impl Inputs {
 pub fn key(parts: &[Placed], background: &Background, dim: u32, inputs: &Inputs) -> String {
     let text = format!(
         "{}|{}|{}|{}|{}|{}|{}",
-        lock_screen::parts_value(parts).unwrap_or_default(),
+        lock_screen::widgets_value(parts).unwrap_or_default(),
         lock_screen::background_value(background),
         dim,
         inputs.wallpaper,

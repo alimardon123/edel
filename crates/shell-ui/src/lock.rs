@@ -2455,7 +2455,7 @@ mod tests {
 
     #[test]
     fn the_persons_lock_settings_go_over_the_machines() {
-        let machine = "format = 1\n[lock_screen]\nlook = \"magazine\"\nbackground = \"#101820\"\nnotifications = \"none\"\n";
+        let machine = "format = 1\n[lock_screen]\nlook = \"magazine\"\nwallpaper = \"#101820\"\nnotifications = \"none\"\n";
         let person = "format = 1\n[lock_screen]\nlook = \"minimal\"\n";
         let lock = lock_settings(Some(machine), Some(person));
         assert_eq!(lock.look.as_deref(), Some("minimal"));
@@ -2470,8 +2470,8 @@ mod tests {
 
     #[test]
     fn a_machines_own_look_is_reachable_from_the_persons_look() {
-        let machine = "format = 1\n[lock_screen.looks.home]\nparts = [{ part = \"person\", at = \"centre\", y = 0.3 }]\n";
-        let person = "format = 1\n[lock_screen]\nlook = \"home\"\n\n[lock_screen.looks.mine]\nparts = [{ part = \"person\", at = \"centre\" }]\n";
+        let machine = "format = 1\n[lock_screen.looks.home]\nwidgets = [{ widget = \"person\", at = \"centre\", y = 0.3 }]\n";
+        let person = "format = 1\n[lock_screen]\nlook = \"home\"\n\n[lock_screen.looks.mine]\nwidgets = [{ widget = \"person\", at = \"centre\" }]\n";
         let lock = lock_settings(Some(machine), Some(person));
         let own = lock.looks.as_ref().expect("both looks are kept");
         assert!(own.contains_key("home") && own.contains_key("mine"));

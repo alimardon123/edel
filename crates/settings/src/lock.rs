@@ -6,8 +6,8 @@
 //! menu, then the notifications' switch. Each choice is one key of the
 //! person's settings file, written with `Files` as the other pages write
 //! theirs (ADR-008): `lock_screen.look`, `lock_screen.looks` and, for a look
-//! changed from the command line, `lock_screen.parts` and
-//! `lock_screen.background`. The cards are drawn from the parts the lock
+//! changed from the command line, `lock_screen.widgets` and
+//! `lock_screen.wallpaper`. The cards are drawn from the parts the lock
 //! draws, laid out by `edel::lock_screen::arrange` on a 1280 by 800 screen, so
 //! a card shows where each part stands.
 
@@ -20,7 +20,7 @@ use gtk::cairo::{Context, LinearGradient, RadialGradient};
 use gtk::{gio, glib};
 
 use edel::i18n::{n_, tr, trf};
-use edel::lock_screen::{self, BACKGROUND, Background, Face, Item, LOOK, Part, Placed, Rect};
+use edel::lock_screen::{self, Background, Face, Item, LOOK, Part, Placed, Rect, WALLPAPER};
 use edel::panel_edit::EDIT_LOCK_SCREEN;
 use edel::settings::{LockScreen, OwnLook, Source};
 use edel::tokens::{Colour, Tokens};
@@ -30,10 +30,10 @@ use crate::look_pictures::{self, Inputs};
 use crate::style::Theme;
 use crate::{icon, panels, preview, rows, widgets};
 
-const INTRO: &str = n_("Pick a look. Each look keeps its own arrangement and background.");
+const INTRO: &str = n_("Pick a look. Each look keeps its own arrangement and wallpaper.");
 
 /// The keys this page chooses.
-const PARTS: &str = lock_screen::PARTS;
+const WIDGETS: &str = lock_screen::WIDGETS;
 const NOTIFICATIONS: &str = "lock_screen.notifications";
 const OWN_LOOKS: &str = "lock_screen.looks";
 
@@ -127,10 +127,10 @@ fn on_screen(parts: &[Placed]) -> Vec<Option<Rect>> {
     lock_screen::arrange(SCREEN, &items_of(parts), &[], GAP, MARGIN)
 }
 
-/// The text `lock_screen.parts` takes, as `edel settings set` reads it: the
+/// The text `lock_screen.widgets` takes, as `edel settings set` reads it: the
 /// list of tables in one line, absent options left out.
 fn parts_text(parts: &[Placed]) -> Result<String, String> {
-    lock_screen::parts_value(parts)
+    lock_screen::widgets_value(parts)
 }
 
 /// The built-in looks, then the person's own by name, each with what its
@@ -168,7 +168,7 @@ fn current_look(lock: &LockScreen) -> String {
 }
 
 /// The title of what applies now: the person's own arrangement while
-/// `lock_screen.parts` is set, else the look's name.
+/// `lock_screen.widgets` is set, else the look's name.
 fn current_title(lock: &LockScreen) -> String {
     if lock.parts.is_some() {
         tr("Your own arrangement").to_string()
@@ -242,7 +242,7 @@ fn command_for(key: &str) -> String {
     let lock = files.lock();
     let applied = lock_screen::applied(&lock, false);
     let value = match key {
-        PARTS => parts_text(&applied.parts).unwrap_or_default(),
+        WIDGETS => parts_text(&applied.parts).unwrap_or_default(),
         NOTIFICATIONS if applied.notifications => COUNT.to_string(),
         NOTIFICATIONS => NONE.to_string(),
         _ => current_look(&lock),
@@ -324,7 +324,7 @@ fn delete_look(name: &str) -> Result<(), String> {
     // The look line first, so the file never names a look it has not got,
     // and the changes over the look go with it.
     if files.lock().look.as_deref() == Some(name) {
-        for key in [LOOK, PARTS, BACKGROUND] {
+        for key in [LOOK, WIDGETS, WALLPAPER] {
             reset_person(&files, key)?;
         }
     }
@@ -398,7 +398,7 @@ impl Ui {
             &self.theme.tokens(),
         );
         self.quiet.set(true);
-        let changed = [PARTS, BACKGROUND]
+        let changed = [WIDGETS, WALLPAPER]
             .iter()
             .any(|key| matches!(files.source(key), Source::Person(_)));
         self.current_title.set_label(&current_title(&lock));
@@ -438,7 +438,7 @@ impl Ui {
             )]);
         self.show_looks(&lock, &inputs);
         let source = if lock.parts.is_some() {
-            files.source(PARTS)
+            files.source(WIDGETS)
         } else {
             files.source(LOOK)
         };
@@ -446,7 +446,7 @@ impl Ui {
             .label
             .set_label(&rows::describe(&source, &current_title(&lock)));
         self.look_source.reset.set_visible(
-            [LOOK, PARTS, BACKGROUND]
+            [LOOK, WIDGETS, WALLPAPER]
                 .iter()
                 .any(|key| rows::resettable(&files.source(key))),
         );
@@ -1263,8 +1263,8 @@ fn wire(ui: &Rc<Ui>) {
         if let Some(ui) = weak.upgrade() {
             let files = Files::here();
             let result = reset_person(&files, LOOK)
-                .and_then(|()| reset_person(&files, PARTS))
-                .and_then(|()| reset_person(&files, BACKGROUND));
+                .and_then(|()| reset_person(&files, WIDGETS))
+                .and_then(|()| reset_person(&files, WALLPAPER));
             ui.update();
             ui.report(result);
         }
@@ -1283,7 +1283,7 @@ fn wire(ui: &Rc<Ui>) {
     copy(&ui.look_source.copy, || {
         let files = Files::here();
         if files.lock().parts.is_some() {
-            command_for(PARTS)
+            command_for(WIDGETS)
         } else {
             command_for(LOOK)
         }
@@ -1309,7 +1309,7 @@ fn ask_name(ui: &Rc<Ui>, near: &gtk::Widget, current: &str) {
         near,
         tr("Rename look"),
         tr(
-            "Give this look another name. It keeps its parts and its background, and shows in the cards above.",
+            "Give this look another name. It keeps its widgets and its wallpaper, and shows in the cards above.",
         ),
         current,
         tr("Name, such as home"),
@@ -1358,8 +1358,8 @@ fn ask_delete(ui: &Rc<Ui>, near: &gtk::Widget, current: &str) {
 /// pixels), as `edel-settings: lock_screen group places classic X+Y+WxH
 /// magazine X+Y+WxH minimal X+Y+WxH new X+Y+WxH, reset X+Y+WxH`. Asked for by
 /// `lock_screen.look` the page first scrolls the gallery to the top and gives
-/// the keyboard to the look in use; asked for by `lock_screen.background` or
-/// `.parts` it scrolls the look in use to the top and gives the keyboard to
+/// the keyboard to the look in use; asked for by `lock_screen.wallpaper` or
+/// `.widgets` it scrolls the look in use to the top and gives the keyboard to
 /// Customize. It logs once two frames agree, after the scroll.
 fn log_places(looks: &gtk::FlowBox, ui: &Rc<Ui>) {
     let weak = Rc::downgrade(ui);
@@ -1432,7 +1432,7 @@ fn ask_for(ui: &Ui, cards: &[LookCard], flow: &gtk::Widget) {
                 widgets::take_asked(&page, &card.button);
             }
         }
-        Some(BACKGROUND) | Some(PARTS) => {
+        Some(WALLPAPER) | Some(WIDGETS) => {
             widgets::scroll_to_top(&ui.current_head);
             widgets::take_asked(&page, &ui.edit);
         }
@@ -1476,7 +1476,7 @@ mod tests {
         for name in lock_screen::LOOKS {
             let parts = lock_screen::look_parts(name, false).unwrap();
             let text = parts_text(&parts).unwrap();
-            let set = edel::settings::set("format = 1\n", PARTS, &text).unwrap();
+            let set = edel::settings::set("format = 1\n", WIDGETS, &text).unwrap();
             let read = edel::settings::read(&set).unwrap();
             assert!(read.problems.is_empty(), "{name}: {:?}", read.problems);
             assert_eq!(read.file.lock_screen.parts, Some(parts), "{name}");

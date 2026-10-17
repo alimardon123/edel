@@ -6008,7 +6008,7 @@ case_lock() {
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
 	guest 'lock magazine reset'
 	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of parts put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
 }
 
 # editor_places: the lock screen's edit mode's last whole places line,
@@ -6079,7 +6079,7 @@ case_lock_edit() {
 	# clock is dragged from its middle to the top right (shell-ui logs the
 	# anchor it snapped to), a message is dragged from the drawer to the
 	# bottom middle of the lock's picture (drawn smaller above the drawer,
-	# so 640,480 is its bottom third), and Done writes lock_screen.parts
+	# so 640,480 is its bottom third), and Done writes lock_screen.widgets
 	# into ci's file. The
 	# next lock must place the clock at the top right and show a message.
 	# Kept as lock-editor.png, and the list is reset at the end. The part card
@@ -6114,9 +6114,9 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "classic-2"' ||
 		fail "ci's settings file does not use the look classic-2: $(value settings_file)"
-	value settings_file | grep -q 'at = "top_right", part = "clock"' ||
+	value settings_file | grep -q 'at = "top_right", widget = "clock"' ||
 		fail "ci's settings file does not hold the clock at the top right: $(value settings_file)"
-	value settings_file | grep -q 'part = "message"' ||
+	value settings_file | grep -q 'widget = "message"' ||
 		fail "ci's settings file does not hold the message: $(value settings_file)"
 	# The next lock reads the file: the clock on the right, the message below.
 	# Its places line is waited for whole (it ends with the corner's power
@@ -6259,8 +6259,8 @@ case_lock_edit() {
 	guest 'settings file'
 	value settings_file | grep -q 'look = "magazine"' ||
 		fail "ci's settings file does not hold look = \"magazine\": $(value settings_file)"
-	value settings_file | grep -q '^parts = ' &&
-		fail "ci's settings file still holds a parts line with the look: $(value settings_file)"
+	value settings_file | grep -q '^widgets = ' &&
+		fail "ci's settings file still holds a widgets line with the look: $(value settings_file)"
 	# Done wrote ci's own file, so the lines are taken out of it.
 	guest 'lock parts mine default'
 	wait_for 'DESKTOP-TEST: ran lock parts mine default: 0' || fail "ci's lock parts could not be taken out of ci's file"

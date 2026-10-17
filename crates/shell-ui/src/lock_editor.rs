@@ -1901,7 +1901,7 @@ pub fn preview_picture(
 pub struct Lines {
     pub looks: Option<Option<String>>,
     pub look: Option<Option<String>>,
-    /// The person's `lock_screen.parts` and `background` lines, changes over
+    /// The person's `lock_screen.widgets` and `wallpaper` lines, changes over
     /// the look from the command line: None leaves them, `Some(None)` takes
     /// them out, as a look Done saves or switches to brings its own.
     pub parts: Option<Option<String>>,
@@ -2174,7 +2174,7 @@ mod tests {
         let classic = lock_screen::classic(false);
         let at = at_classic(&classic);
         let mut view = view_of(classic.clone());
-        view.drawer.tabs = vec!["Parts", "Wallpaper"];
+        view.drawer.tabs = vec!["Widgets", "Wallpaper"];
         let drawer = editor::layout(&view.drawer);
         let drawer_at = drawer_rect(view.screen, &drawer);
         let line = places(
@@ -2746,10 +2746,10 @@ mod tests {
         let text = lines.looks.flatten().expect("the look is written");
         assert!(text.contains("classic-2"), "{text}");
         assert!(
-            text.contains(r#"background = "backdrop""#),
+            text.contains(r#"wallpaper = "backdrop""#),
             "classic's navy backdrop is kept, as only blurred is left out: {text}"
         );
-        assert!(text.contains(r#"part = "clock""#), "{text}");
+        assert!(text.contains(r#"widget = "clock""#), "{text}");
     }
 
     #[test]
@@ -2760,7 +2760,7 @@ mod tests {
         let text = written_for(&view).looks.flatten().unwrap();
         let file = settings::set("format = 1\n", "lock_screen.looks", &text).unwrap();
         assert!(
-            file.contains(r#"at = "top_right", part = "clock""#),
+            file.contains(r#"at = "top_right", widget = "clock""#),
             "{file}"
         );
         assert!(settings::check(&file).unwrap().is_empty(), "{file}");
@@ -2811,7 +2811,7 @@ mod tests {
         background_chosen(&mut view, Background::Sharp);
         assert!(view.changed);
         let text = written_for(&view).looks.flatten().unwrap();
-        assert!(text.contains(r#"background = "sharp""#), "{text}");
+        assert!(text.contains(r#"wallpaper = "sharp""#), "{text}");
     }
 
     /// The edit mode's view of `parts` as the lock editor shows it (M5.10c7e):
