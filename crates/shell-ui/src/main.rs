@@ -23,6 +23,7 @@ mod app_windows;
 mod app_windows_card;
 mod apps_colours;
 mod apps_drag;
+mod aside;
 mod backdrop;
 mod banner;
 mod calendar;
@@ -307,6 +308,13 @@ struct Shell {
     status_busy: u32,
     status_again: Option<bool>,
     status_tx: channel::Sender<status::Msg>,
+    /// Whether a game plays on every screen, as the compositor says (M7.7c).
+    playing: bool,
+    /// Whether the minute came due while a game played, so its work waits
+    /// for the end (M7.7c).
+    missed_minute: bool,
+    /// The battery's state as last sent to the compositor (M7.7c).
+    battery_told: Option<bool>,
     /// The apps using the camera, the microphone or the screen now, as
     /// `in_use.rs` reads them, and when each (app, kind) use began, seconds
     /// since 1970, for the record of use (M6.14b). `in_use_sign` is the sign's
@@ -668,6 +676,9 @@ fn run() -> Result<()> {
         status_busy: 0,
         status_again: None,
         status_tx,
+        playing: false,
+        missed_minute: false,
+        battery_told: None,
         in_use: Vec::new(),
         pipewire_uses: Vec::new(),
         location_uses: Vec::new(),
@@ -1067,11 +1078,15 @@ fn check_updates(handle: &LoopHandle<'static, Shell>) {
         return;
     }
     let timer = Timer::from_duration(Duration::from_secs(first));
-    let checked = handle.insert_source(timer, move |_, _, _shell: &mut Shell| {
-        let answers = answers.clone();
-        std::thread::spawn(move || {
-            let _ = answers.send(run_update_check());
-        });
+    let checked = handle.insert_source(timer, move |_, _, shell: &mut Shell| {
+        // The check needs the network, so while a game plays it waits for
+        // the next round (M7.7c).
+        if !shell.playing {
+            let answers = answers.clone();
+            std::thread::spawn(move || {
+                let _ = answers.send(run_update_check());
+            });
+        }
         TimeoutAction::ToDuration(Duration::from_secs(telling::CHECK_EVERY_SECS))
     });
     if let Err(e) = checked {
@@ -1108,17 +1123,12 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
     let result = handle.insert_source(
         Timer::from_duration(next()),
         move |_, _, shell: &mut Shell| {
-            for i in 0..shell.panels.len() {
-                shell.draw(i);
+            // While a game plays the minute's work waits for its end (M7.7c).
+            if shell.playing {
+                shell.missed_minute = true;
+            } else {
+                shell.minute();
             }
-            for i in 0..shell.desktops.len() {
-                shell.draw_desktop(i);
-            }
-            shell.launcher.reap();
-            shell.draw_lock();
-            // The status area follows the machine on the minute too, for
-            // a change no daemon signalled.
-            shell.request_status(false);
             TimeoutAction::ToDuration(next())
         },
     );
@@ -1128,6 +1138,24 @@ fn tick(handle: &LoopHandle<'static, Shell>) {
 }
 
 impl Shell {
+    /// The minute's work: the panels and the desktop's widgets draw again
+    /// for the clock, the launcher collects the apps that ended, the lock
+    /// screen draws and the status area is read again. Anything that ticks
+    /// with the minute goes here, so it pauses behind a game (M7.7c).
+    pub fn minute(&mut self) {
+        for i in 0..self.panels.len() {
+            self.draw(i);
+        }
+        for i in 0..self.desktops.len() {
+            self.draw_desktop(i);
+        }
+        self.launcher.reap();
+        self.draw_lock();
+        // The status area follows the machine on the minute too, for
+        // a change no daemon signalled.
+        self.request_status(false);
+    }
+
     /// Whether panel `i` lies on the main screen (M5.12b3): one with no
     /// output of its own, or one on the first screen the compositor lists.
     /// The glass is made for that screen alone until each screen has its own.
