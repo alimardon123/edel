@@ -62,14 +62,17 @@ use edel::places;
 use edel::settings::LockScreen;
 use edel::tokens::Tokens;
 use edel::wallpapers::Wallpaper;
+use smithay_client_toolkit::dispatch2::Dispatch2;
 
 use crate::corner;
 use crate::greetd::{self, Login};
+use crate::link::protocol::edel_shell_v1::{self, EdelShellV1};
 use crate::lock::{self, Field, View};
 use crate::messages;
 use crate::paint::{self, Text};
 use crate::people;
 use crate::power;
+use crate::power_rules::{self, Do, Rules};
 use crate::quick;
 use crate::sessions::{self, Session};
 
@@ -129,6 +132,29 @@ struct Greeter {
     /// The time zones a clock named that this machine lacks, logged once
     /// each (M5.10c7d).
     zones_warned: RefCell<Vec<String>>,
+    /// The power rules the machine's file gives (M7.8: the lid), and the
+    /// compositor's `edel-shell-v1`, which tells the greeter of the lid.
+    rules: Rules,
+    _lid_link: Option<EdelShellV1>,
+}
+
+/// The user data of `edel-shell-v1` at the greeter: the lid's news reaches
+/// `Greeter` (M7.8), and nothing else of the link is read here.
+pub struct LidEvents;
+
+impl Dispatch2<EdelShellV1, Greeter> for LidEvents {
+    fn event(
+        &self,
+        greeter: &mut Greeter,
+        _: &EdelShellV1,
+        event: edel_shell_v1::Event,
+        _: &Connection,
+        _: &QueueHandle<Greeter>,
+    ) {
+        if let edel_shell_v1::Event::Lid { closed } = event {
+            greeter.lid(closed != 0);
+        }
+    }
 }
 
 /// One screen's surface.
@@ -175,6 +201,7 @@ pub fn run(cmd: String) -> Result<()> {
         None => (String::new(), false),
     };
     let machine = crate::settings_texts().0;
+    let rules = Rules::read(machine.as_deref(), None);
     let lock = lock::lock_settings(machine.as_deref(), None);
     let dark = quick::is_dark(machine.as_deref(), None);
     let wallpaper = lock::wallpaper_of(machine.as_deref(), None, dark);
@@ -190,6 +217,8 @@ pub fn run(cmd: String) -> Result<()> {
         pictures: lock::Pictures::default(),
         backdrops: lock::Backdrops::default(),
         zones_warned: RefCell::new(Vec::new()),
+        rules,
+        _lid_link: globals.bind(&qh, 1..=1, LidEvents).ok(),
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -455,6 +484,36 @@ impl Greeter {
             eprintln!("edel-shell-ui: greeter: power menu hidden");
         }
         self.draw();
+    }
+
+    /// The lid moved (M7.8): a closed lid suspends the computer, or shuts it
+    /// down when the rules say so. No lock is drawn first, as there is no
+    /// session to lock here; the other rules wait for the lock.
+    fn lid(&mut self, closed: bool) {
+        if !closed {
+            return;
+        }
+        let choice =
+            match power_rules::on_lid(&self.rules, self.screens.len(), crate::on_path(crate::EDEL))
+            {
+                Do::Suspend | Do::Lock => power::Choice::Suspend,
+                Do::PowerOff => power::Choice::ShutDown,
+                Do::Nothing | Do::Ask => return,
+            };
+        eprintln!("edel-shell-ui: greeter: lid closed, {}", choice.name());
+        let spawned = std::thread::Builder::new()
+            .name("power".into())
+            .spawn(move || {
+                if let Err(e) = power::run(choice) {
+                    eprintln!("edel-shell-ui: {e}");
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::power_failed(choice.name(), e)
+            );
+        }
     }
 
     /// Closes Power's menu, then runs `choice` on a thread of its own, so
