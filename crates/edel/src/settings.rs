@@ -278,6 +278,9 @@ pub enum Kind {
     /// A list of Flatpak app ids, such as `["io.mpv.Mpv"]`
     /// ([`crate::apps::is_flatpak_id`], M6.1)
     AppIds,
+    /// A list of add-on names, such as `["fonts-cjk"]`: feature names
+    /// ([`crate::features::is_name`], M7.2a)
+    Addons,
     /// A list of host names, such as `["pool.ntp.org"]`: dot-separated
     /// names of letters, digits and hyphens, at most [`MOST_HOSTS`]
     /// (M1.13)
@@ -604,7 +607,7 @@ pub const KEYS: &[Key] = &[
         "apps.files",
         Kind::AppChoices(crate::app_permissions::FILES_CHOICES),
     ),
-    later("addons.installed", Kind::Texts),
+    now("addons.installed", Kind::Addons),
     // Banners stay away while the notification list still fills (M5.9b).
     now("notifications.do_not_disturb", Kind::Flag),
     // Where banners appear (M5.9j): by the status area, or a corner or the
@@ -2015,7 +2018,7 @@ fn present_keys(table: &Table, prefix: &str, out: &mut Vec<String>) {
 fn is_list(kind: Kind) -> bool {
     matches!(
         kind,
-        Kind::Texts | Kind::AppIds | Kind::Hosts | Kind::Pictures
+        Kind::Texts | Kind::AppIds | Kind::Addons | Kind::Hosts | Kind::Pictures
     )
 }
 
@@ -2722,6 +2725,21 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Ok(value.clone())
         }
         (Kind::AppIds, _) => fail(tr("a list of Flatpak app ids, such as [\"io.mpv.Mpv\"]")),
+        (Kind::Addons, Value::Array(items)) => {
+            for item in items {
+                match item.as_str() {
+                    Some(name) if crate::features::is_name(name) => {}
+                    _ => {
+                        return Err(trf(
+                            "{item} is not an add-on name; a name is lowercase letters, digits and hyphens, such as \"fonts-cjk\" (edel addon list shows them)",
+                            &[("item", &item.to_string())],
+                        ));
+                    }
+                }
+            }
+            Ok(value.clone())
+        }
+        (Kind::Addons, _) => fail(tr("a list of add-on names, such as [\"fonts-cjk\"]")),
         (Kind::Channel, Value::String(s)) if is_channel(s) => Ok(value.clone()),
         (Kind::Channel, Value::String(s)) => Err(trf(
             "{value} is not a channel name; use lowercase letters, digits and hyphens, such as \"stable\" or \"preview\" (to follow the channel this image was built for, run edel settings reset on this key)",
@@ -3043,6 +3061,7 @@ mod tests {
             Kind::TimeZone => Value::String("Europe/Berlin".into()),
             Kind::Hosts => Value::Array(vec![Value::String("pool.ntp.org".into())]),
             Kind::AppIds => value_from_arg(r#"["io.mpv.Mpv"]"#),
+            Kind::Addons => value_from_arg(r#"["fonts-cjk"]"#),
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::Wallpaper => Value::String("hills".into()),

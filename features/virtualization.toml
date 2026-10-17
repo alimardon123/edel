@@ -1,0 +1,7 @@
+# Virtual machines (M7.2a): QEMU, as an add-on for the people who run
+# other systems on their machine.
+format = 1
+summary = "Virtual machines: QEMU with KVM"
+why = "Developers and admins run other systems in virtual machines, and QEMU with the kernel's KVM is the one engine every Linux tool for it uses; qemu-img makes and converts their disks. No libvirt daemon: a machine runs while QEMU does and nothing stays in the background, and apps such as GNOME Boxes come as Flatpaks."
+packages = ["qemu-system-x86_64", "qemu-img"]
+addon = true

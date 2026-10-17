@@ -277,6 +277,16 @@ pub const LANGUAGES: &[Language] = &[
     },
 ];
 
+/// The add-on with the fonts a language's script needs where the image has
+/// none (M7.2a): Japanese, Chinese and Korean take `fonts-cjk`, which the
+/// installer adds with the language.
+pub fn font_addon(code: &str) -> Option<&'static str> {
+    ["ja_", "ko_", "zh_"]
+        .iter()
+        .any(|start| code.starts_with(start))
+        .then_some("fonts-cjk")
+}
+
 /// The language whose code is `code`.
 pub fn find(code: &str) -> Option<&'static Language> {
     LANGUAGES.iter().find(|language| language.code == code)
@@ -296,6 +306,13 @@ pub fn label(language: &Language) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cjk_languages_bring_their_fonts() {
+        assert_eq!(font_addon("ja_JP.UTF-8"), Some("fonts-cjk"));
+        assert_eq!(font_addon("zh_TW.UTF-8"), Some("fonts-cjk"));
+        assert_eq!(font_addon("de_DE.UTF-8"), None);
+    }
 
     // The installer's answers are the system's own work (the os feature).
     #[cfg(feature = "os")]
