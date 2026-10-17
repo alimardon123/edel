@@ -100,4 +100,4 @@
 
 ## Running it
 
-Inside a running compositor: `WAYLAND_DISPLAY=wayland-N cargo run -p edel-shell-ui`. The compositor starts it by itself when `edel-shell-ui` is on the `PATH`, as in the desktop image (the `shell` feature).
+Inside a running compositor: `WAYLAND_DISPLAY=wayland-N cargo run -p edel-shell-ui`. For a picture to show while coding, `sh ci/look.sh NAME [COMMAND...]` (Docker) runs the compositor and shell-ui inside the release's Alpine, with its fonts and the desktop's feature files, nested under Xvfb at the VM tests' 1280x800, and keeps `out/look/NAME.png`, which matches CI's screenshots; never show one drawn with the host's own fonts and libraries. Every surface draws with `paint.rs` and the tokens, in the look of the fifth round of mockups (`docs/mockups/shell/`) and of the surfaces already built (the panel, quick settings, the notification centre). The compositor starts it by itself when `edel-shell-ui` is on the `PATH`, as in the desktop image (the `shell` feature).
