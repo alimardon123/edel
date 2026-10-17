@@ -241,7 +241,7 @@ pub fn guard() -> Result<()> {
     let mut stood_down = false;
     let mut said_no_screen = false;
     loop {
-        let files = plan.wanted(|| edel::services::has_screen(Path::new("/sys")));
+        let files = plan.wanted(|| edel::services::screen_now());
         if !said_no_screen
             && files.len() == plan.files.len()
             && healthy(&files)

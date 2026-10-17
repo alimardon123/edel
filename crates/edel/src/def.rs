@@ -35,6 +35,9 @@ struct DefFile {
     /// Switchable features shipped with their services off.
     #[serde(default)]
     off: Vec<String>,
+    /// Switchable features on by default where there is no screen (M8.17).
+    #[serde(default)]
+    headless: Vec<String>,
     /// Add-ons built from this image's root (M7.2a).
     #[serde(default)]
     addons: Vec<String>,
@@ -80,6 +83,9 @@ pub struct ImageDef {
     /// Switchable features shipped with their services off, written as
     /// `EDEL_SERVICES_OFF` in os-release.
     pub off: Vec<String>,
+    /// Switchable features on by default on a machine with no screen,
+    /// written as `EDEL_SERVICES_HEADLESS` (M8.17).
+    pub headless: Vec<String>,
     /// The packages of every listed feature, each once, in order.
     pub packages: Vec<String>,
     /// The services to enable: those of the features not in `off`.
@@ -317,13 +323,15 @@ impl ImageDef {
             };
             listed.push(feature);
         }
-        for name in &file.off {
-            match listed.iter().find(|l| &l.name == name) {
-                None => bail!("off lists {name}, which is not in features"),
-                Some(l) if !l.feature.switchable => {
-                    bail!("off lists {name}, which is not switchable")
+        for (key, names) in [("off", &file.off), ("headless", &file.headless)] {
+            for name in names {
+                match listed.iter().find(|l| &l.name == name) {
+                    None => bail!("{key} lists {name}, which is not in features"),
+                    Some(l) if !l.feature.switchable => {
+                        bail!("{key} lists {name}, which is not switchable")
+                    }
+                    Some(_) => {}
                 }
-                Some(_) => {}
             }
         }
 
@@ -429,6 +437,7 @@ impl ImageDef {
             features: listed,
             addons: Vec::new(),
             off: file.off,
+            headless: file.headless,
             packages,
             services,
             modules,

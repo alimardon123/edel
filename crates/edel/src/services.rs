@@ -8,10 +8,15 @@
 //!
 //! A feature marked `screen` (M8.17: the login screen, the seat, the
 //! battery's daemon) is the desktop's: on a machine whose kernel shows no
-//! graphics card ([`has_screen`]), its services are taken out at boot, so
-//! one image runs a desktop and a server alike, and come back at the next
-//! boot with a screen. A switchable one still starts where the file says
-//! `services.NAME = true`.
+//! graphics card ([`has_screen`]), its default runlevel's services are
+//! taken out at boot (those of the boot runlevel only make folders or
+//! return, and OpenRC has listed them already), so one image runs a
+//! desktop and a server alike, and they come back at the next boot with a
+//! screen. A switchable one still starts where the file says
+//! `services.NAME = true`. The boot decides once ([`decide_screen`]) and
+//! every later reader follows that answer ([`screen_now`]). The image's
+//! `headless` features (ssh) are on by default without a screen, as
+//! nobody sits at such a machine (`EDEL_SERVICES_HEADLESS`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -19,6 +24,7 @@ use std::path::Path;
 
 use crate::features::{self, Feature};
 use crate::i18n::trf;
+use crate::places;
 
 /// One service in one runlevel, as OpenRC keeps it
 /// (`/etc/runlevels/LEVEL/SERVICE`).
@@ -90,12 +96,11 @@ pub fn problems(wanted: &BTreeMap<String, bool>, installed: &[(String, Feature)]
         .collect()
 }
 
-/// The features the image definition left off, from os-release's
-/// `EDEL_SERVICES_OFF="ssh ..."`.
-pub fn off_by_default(os_release: &str) -> Vec<String> {
+/// The names os-release's line `KEY"a b"` lists.
+fn listed(os_release: &str, key: &str) -> Vec<String> {
     os_release
         .lines()
-        .find_map(|l| l.strip_prefix("EDEL_SERVICES_OFF="))
+        .find_map(|l| l.strip_prefix(key))
         .map(|v| {
             v.trim_matches('"')
                 .split_whitespace()
@@ -120,14 +125,56 @@ pub fn has_screen(sys: &Path) -> bool {
     })
 }
 
+/// This boot's answer to whether the machine has a screen: the one the
+/// boot's apply wrote ([`decide_screen`]), else the kernel's now.
+pub fn screen_now() -> bool {
+    match fs::read_to_string(places::SCREEN).as_deref().map(str::trim) {
+        Ok("yes") => true,
+        Ok("no") => false,
+        _ => has_screen(Path::new("/sys")),
+    }
+}
+
+/// Decides at boot whether the machine has a screen, after udev has
+/// settled, and writes it to [`places::SCREEN`] for the rest of the boot.
+pub fn decide_screen() -> bool {
+    let screen = has_screen(Path::new("/sys"));
+    let written = fs::create_dir_all(places::RUN_DIR)
+        .and_then(|()| fs::write(places::SCREEN, if screen { "yes\n" } else { "no\n" }));
+    if let Err(err) = written {
+        eprintln!("warning: could not write {}: {err}", places::SCREEN);
+    }
+    screen
+}
+
+/// What the image chose for its switchable features (os-release).
+#[derive(Clone, Debug, Default)]
+pub struct Defaults {
+    /// Shipped off (`EDEL_SERVICES_OFF`).
+    pub off: Vec<String>,
+    /// On by default on a machine with no screen (`EDEL_SERVICES_HEADLESS`).
+    pub headless: Vec<String>,
+}
+
+impl Defaults {
+    /// The image's choices from os-release's text.
+    pub fn read(os_release: &str) -> Defaults {
+        Defaults {
+            off: listed(os_release, "EDEL_SERVICES_OFF="),
+            headless: listed(os_release, "EDEL_SERVICES_HEADLESS="),
+        }
+    }
+}
+
 /// Whether feature `name` is on: the file's choice for a switchable one,
-/// else off for a `screen` feature on a machine without one, else on
-/// unless the image left it off.
+/// else off for a `screen` feature on a machine without one, else, for a
+/// switchable one, on without a screen when the image lists it headless,
+/// and on unless the image left it off.
 pub fn is_on(
     name: &str,
     feature: &Feature,
     wanted: &BTreeMap<String, bool>,
-    off: &[String],
+    image: &Defaults,
     screen: bool,
 ) -> bool {
     if feature.switchable {
@@ -138,7 +185,8 @@ pub fn is_on(
     if feature.screen && !screen {
         return false;
     }
-    !feature.switchable || !off.iter().any(|o| o == name)
+    let named = |list: &[String]| list.iter().any(|o| o == name);
+    !feature.switchable || (!screen && named(&image.headless)) || !named(&image.off)
 }
 
 /// The steps that make the runlevels `enabled` match `wanted`: a feature
@@ -149,7 +197,7 @@ pub fn is_on(
 pub fn plan(
     installed: &[(String, Feature)],
     wanted: &BTreeMap<String, bool>,
-    off: &[String],
+    image: &Defaults,
     screen: bool,
     enabled: &BTreeSet<Entry>,
 ) -> Vec<Step> {
@@ -162,13 +210,17 @@ pub fn plan(
     };
     let kept: BTreeSet<Entry> = installed
         .iter()
-        .filter(|(n, f)| is_on(n, f, wanted, off, screen))
+        .filter(|(n, f)| is_on(n, f, wanted, image, screen))
         .flat_map(|(_, f)| entries(f))
         .collect();
     let mut steps = Vec::new();
     for (name, feature) in installed.iter().filter(|(_, f)| f.switchable || f.screen) {
-        let on = is_on(name, feature, wanted, off, screen);
-        for entry in entries(feature) {
+        let on = is_on(name, feature, wanted, image, screen);
+        // A screen feature's earlier runlevels run everywhere (see above).
+        let touched = entries(feature)
+            .into_iter()
+            .filter(|(level, _)| feature.switchable || level == "default");
+        for entry in touched {
             let here = enabled.contains(&entry);
             let step = if on && !here {
                 Some(true)
@@ -247,7 +299,7 @@ mod tests {
             .collect();
         let wanted = BTreeMap::from([("bluetooth".to_string(), false)]);
         assert_eq!(
-            plan(&machine(), &wanted, &[], true, &enabled),
+            plan(&machine(), &wanted, &Defaults::default(), true, &enabled),
             [Step {
                 level: "default".into(),
                 service: "bluetooth".into(),
@@ -258,7 +310,10 @@ mod tests {
 
     #[test]
     fn an_absent_key_is_the_images_choice() {
-        let off = vec!["ssh".to_string()];
+        let off = Defaults {
+            off: vec!["ssh".to_string()],
+            ..Default::default()
+        };
         let enabled: BTreeSet<Entry> = ["dbus", "bluetooth", "networkmanager"]
             .into_iter()
             .map(entry)
@@ -274,16 +329,17 @@ mod tests {
             }]
         );
         assert_eq!(
-            off_by_default("NAME=Edel\nEDEL_SERVICES_OFF=\"ssh bluetooth\"\n"),
+            Defaults::read("NAME=Edel\nEDEL_SERVICES_OFF=\"ssh bluetooth\"\n").off,
             ["ssh", "bluetooth"]
         );
-        assert!(off_by_default("NAME=Edel\n").is_empty());
+        assert!(Defaults::read("NAME=Edel\n").off.is_empty());
     }
 
     #[test]
     fn a_machine_without_a_screen_starts_no_desktop_service() {
         let mut login = feature(false, &["greetd"]);
         login.screen = true;
+        login.services.boot = vec!["edel-live".to_string()];
         let mut bluetooth = feature(true, &["dbus", "bluetooth"]);
         bluetooth.screen = true;
         let mut installed = machine();
@@ -293,25 +349,40 @@ mod tests {
             .into_iter()
             .map(entry)
             .collect();
-        let off = vec!["ssh".to_string()];
+        let off = Defaults {
+            off: vec!["ssh".to_string()],
+            headless: vec!["ssh".to_string()],
+        };
         let step = |service: &str, on| Step {
             level: "default".into(),
             service: service.into(),
             on,
         };
-        // No screen: the login screen and bluetooth go, dbus stays for network.
+        // No screen: the login screen and bluetooth go, dbus stays for
+        // network, edel-live (boot) is left alone and ssh comes on.
         assert_eq!(
             plan(&installed, &BTreeMap::new(), &off, false, &enabled),
-            [step("bluetooth", false), step("greetd", false)]
+            [
+                step("bluetooth", false),
+                step("sshd", true),
+                step("greetd", false)
+            ]
         );
-        // A screen again: they come back.
-        let headless: BTreeSet<Entry> = ["dbus", "networkmanager"].into_iter().map(entry).collect();
+        // A screen again: they come back and ssh goes off.
+        let headless: BTreeSet<Entry> = ["dbus", "networkmanager", "sshd"]
+            .into_iter()
+            .map(entry)
+            .collect();
         assert_eq!(
             plan(&installed, &BTreeMap::new(), &off, true, &headless),
-            [step("bluetooth", true), step("greetd", true)]
+            [
+                step("bluetooth", true),
+                step("sshd", false),
+                step("greetd", true)
+            ]
         );
         // The file's word wins over the screen for a switchable feature.
-        let wanted = BTreeMap::from([("bluetooth".to_string(), true)]);
+        let wanted = BTreeMap::from([("bluetooth".to_string(), true), ("ssh".to_string(), false)]);
         assert_eq!(
             plan(&installed, &wanted, &off, false, &enabled),
             [step("greetd", false)]

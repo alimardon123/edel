@@ -497,6 +497,12 @@ impl Build<'_> {
                 self.def.off.join(" ")
             ));
         }
+        if !self.def.headless.is_empty() {
+            keys.push_str(&format!(
+                "EDEL_SERVICES_HEADLESS=\"{}\"\n",
+                self.def.headless.join(" ")
+            ));
+        }
         if let Some(hostname) = &self.def.hostname {
             keys.push_str(&format!("EDEL_HOSTNAME=\"{hostname}\"\n"));
         }

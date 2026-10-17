@@ -101,8 +101,8 @@ fn can_log_in_now() -> bool {
 /// `edel settings first-boot --console`: asks for the first person when
 /// nobody can log in, and does nothing otherwise.
 pub fn console() -> Result<()> {
-    let greeter = Path::new(places::FEATURES_DIR).join("login.toml").exists()
-        && edel::services::has_screen(Path::new("/sys"));
+    let greeter =
+        Path::new(places::FEATURES_DIR).join("login.toml").exists() && edel::services::screen_now();
     if greeter || can_log_in_now() {
         return Ok(());
     }

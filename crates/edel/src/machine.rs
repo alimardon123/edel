@@ -402,7 +402,7 @@ struct Machine {
     /// The features this machine has, for `[services]` (M6.10)
     features: Vec<(String, edel::features::Feature)>,
     /// The features the image left off (`EDEL_SERVICES_OFF`)
-    services_off: Vec<String>,
+    services_off: services::Defaults,
     /// The services in OpenRC's runlevels now
     runlevels: BTreeSet<services::Entry>,
     /// Whether the kernel shows a graphics card (`services::has_screen`):
@@ -464,11 +464,11 @@ impl Machine {
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
             features,
-            services_off: services::off_by_default(
+            services_off: services::Defaults::read(
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
-            screen: services::has_screen(Path::new("/sys")),
+            screen: services::screen_now(),
             addons: crate::addons::mounted(),
             addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
@@ -1338,6 +1338,10 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     let Some(read) = load(file, true)? else {
         return Ok(());
     };
+    if boot {
+        // Once per boot, after udev settled, for every later reader (M8.17).
+        services::decide_screen();
+    }
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
     for note in &notes {
         println!("edel settings: {note}");
@@ -2804,7 +2808,7 @@ mod tests {
             developer: false,
             flatpak: BTreeMap::new(),
             features: Vec::new(),
-            services_off: Vec::new(),
+            services_off: services::Defaults::default(),
             runlevels: BTreeSet::new(),
             screen: true,
             addons: Vec::new(),
