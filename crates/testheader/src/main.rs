@@ -5,18 +5,66 @@
 //! icon PATH`, the decoration layout GTK took from the settings portal, the
 //! close button's place in logical pixels from the window's corner, and the
 //! file GTK draws the close glyph from. Only CI's images ship it.
+//!
+//! With `--adw` (M6.18) it is a second mode: one libadwaita window titled
+//! adwaita, with an adw::HeaderBar in an adw::ToolbarView, as libadwaita
+//! apps draw theirs. It prints `adwaita contrast high` or `adwaita contrast
+//! normal` at its start and whenever libadwaita's high contrast changes, for
+//! own-bars' check that high contrast reaches an open libadwaita app.
 
 use std::cell::RefCell;
 
-use gtk::prelude::*;
+use adw::prelude::*;
 
 fn main() -> gtk::glib::ExitCode {
+    if std::env::args().any(|a| a == "--adw") {
+        return adw_main();
+    }
     let app = gtk::Application::builder()
         .application_id("org.edel.TestHeader")
         .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
         .build();
     app.connect_activate(window);
     app.run_with_args::<&str>(&[])
+}
+
+/// The `--adw` mode (M6.18): the libadwaita window, run as its own
+/// application.
+fn adw_main() -> gtk::glib::ExitCode {
+    let app = adw::Application::builder()
+        .application_id("org.edel.TestHeaderAdw")
+        .flags(gtk::gio::ApplicationFlags::NON_UNIQUE)
+        .build();
+    app.connect_activate(adw_window);
+    app.run_with_args::<&str>(&[])
+}
+
+/// The libadwaita window: a header bar in a toolbar view, drawn raised so
+/// the bar has a background of its own (a flat bar shows the window's), and
+/// one label; it reports the high contrast it has each time that changes.
+fn adw_window(app: &adw::Application) {
+    let window = adw::ApplicationWindow::builder()
+        .application(app)
+        .title("adwaita")
+        .default_width(480)
+        .default_height(200)
+        .build();
+    let toolbar = adw::ToolbarView::new();
+    toolbar.add_top_bar(&adw::HeaderBar::new());
+    toolbar.set_top_bar_style(adw::ToolbarStyle::Raised);
+    toolbar.set_content(Some(&gtk::Label::new(Some("libadwaita"))));
+    window.set_content(Some(&toolbar));
+    window.present();
+    print_contrast();
+    adw::StyleManager::default().connect_high_contrast_notify(|_| print_contrast());
+}
+
+/// Prints the high contrast libadwaita has, as `adwaita contrast high` or
+/// `adwaita contrast normal`, and flushes, so CI reads it at once.
+fn print_contrast() {
+    let high = adw::StyleManager::default().is_high_contrast();
+    println!("adwaita contrast {}", if high { "high" } else { "normal" });
+    let _ = std::io::Write::flush(&mut std::io::stdout());
 }
 
 /// The window: a header bar of its own, one label, and a report of the
