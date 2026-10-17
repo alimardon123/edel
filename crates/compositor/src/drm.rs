@@ -486,6 +486,17 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             move |event, metadata, state: &mut Edel| match event {
                 DrmEvent::VBlank(crtc) => {
                     let mut gpu = vblank.borrow_mut();
+                    // A frame of the game, if it drew one (M7.7d).
+                    if let Some(screen) = gpu.screens.get(&crtc) {
+                        let at = match metadata.as_ref() {
+                            Some(DrmEventMetadata {
+                                time: DrmEventTime::Monotonic(time),
+                                ..
+                            }) => *time,
+                            _ => Duration::from(gpu.clock.now()),
+                        };
+                        state.game.frame_shown(&screen.output.name(), at);
+                    }
                     if let Some(name) = gpu.presented(crtc, metadata.as_ref()) {
                         state.lock_drawn(&name);
                     }

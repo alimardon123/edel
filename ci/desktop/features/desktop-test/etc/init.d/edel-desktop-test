@@ -258,7 +258,21 @@ commands() {
 		'busy window')
 			as_ci edel-testclient --busy --size 300x200 --colour 3a8fc0 --title busy </dev/null >/tmp/busy.log 2>&1 &
 			;;
-		'busy close') pkill -f 'edel-testclient --busy' ;;
+		'busy close') pkill -f 'edel-testclient --busy --size' ;;
+		# A game (M7.7d): a fullscreen window that draws on every frame, its
+		# frames in /tmp/game.log; `game close` ends it, and `game report`
+		# says the frames edel report shows for it and the ones it drew at
+		# the screen's size.
+		'game window')
+			as_ci edel-testclient --busy --fullscreen --app-id edel.test.game --size 300x200 --colour 9a5ac8 --title game </dev/null >/tmp/game.log 2>&1 &
+			;;
+		'game close') pkill -f 'edel-testclient --busy --fullscreen' ;;
+		'game report')
+			edel report >/tmp/game-report.toml 2>/dev/null
+			shown=$(awk '/^\[\[games\]\]/ { g = 1 } g && /^app = "edel.test.game"/ { a = 1 } a && /^frames = / { print $3; exit }' /tmp/game-report.toml)
+			drawn=$(grep -c ' 1280x800$' /tmp/game.log)
+			say "game_frames ${shown:-0} $drawn"
+			;;
 		# The desktop's CPU over 30 s, and the busy window's frames before and
 		# after (M7.7c). It runs in the background, so the reader of commands
 		# is not held for the 30 s.

@@ -67,6 +67,7 @@ pub mod services;
 pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
+pub mod smoothness;
 pub mod sound;
 #[cfg(feature = "os")]
 pub mod speakers;

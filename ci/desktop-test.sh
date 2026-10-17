@@ -5325,6 +5325,10 @@ case_fullscreen() {
 	# desktop's CPU over 30 s and the busy window's frames show it.
 	wait_for 'edel-compositor: a game is playing; the desktop steps aside' || fail "the compositor did not say a game plays"
 	wait_for 'edel-shell-ui: a game is playing; the timers stop' || fail "shell-ui did not stop its timers for the game"
+	# Full power for the game (M7.7b): the VM counts as plugged in and its
+	# kernel offers no power profiles, so shell-ui says it asks for none.
+	wait_for 'edel-shell-ui: a game is playing on the charger, but this computer has no power profiles' ||
+		fail "shell-ui did not say the VM has no power profile for the game"
 	state_now && grep -q '^playing = true' "$dir/state-now.toml" || fail "the state file does not say playing = true"
 	n=$(count 'DESKTOP-TEST: busy_frames ')
 	guest 'desktop cpu'
@@ -5388,10 +5392,30 @@ case_fullscreen() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
 	guest 'busy close'
+	# Each game's smoothness (M7.7d): a fullscreen window that draws on
+	# every frame plays for 15 s in game mode; when it closes the
+	# compositor logs its record and edel report shows its frames, within
+	# 2 percent of the ones it drew at the screen's size.
+	opened=$(count 'edel-compositor: window game fullscreen')
+	guest 'game window'
+	wait_more 'edel-compositor: window game fullscreen' "$opened" || fail "the window game did not go fullscreen"
+	sleep 15
+	kept=$(count 'edel-compositor: game edel.test.game: ')
+	guest 'game close'
+	wait_more 'edel-compositor: game edel.test.game: ' "$kept" || fail "the compositor logged no record of the game"
+	n=$(count 'DESKTOP-TEST: game_frames ')
+	guest 'game report'
+	wait_more 'DESKTOP-TEST: game_frames ' "$n" || fail "game report did not answer"
+	set -- $(value game_frames)
+	shown=${1:-0} drawn=${2:-0}
+	awk -v s="$shown" -v d="$drawn" 'BEGIN { x = s - d; if (x < 0) x = -x; exit !(d > 0 && x <= d * 0.02) }' ||
+		fail "edel report shows $shown frames of the game, and it drew $drawn at the screen's size, more than 2 percent apart"
+	record=$(tr -d '\r' <"$log" | grep -o 'edel-compositor: game edel.test.game: .*' | tail -n 1)
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "A game's smoothness (M7.7d): ${record#edel-compositor: }; edel report shows $shown frames, the game drew $drawn." >>"$GITHUB_STEP_SUMMARY"
 		echo "Behind a fullscreen game (M7.7c): the compositor and shell-ui used $percent percent of a CPU over 30 s in game mode, $percent_off percent with it off; the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game; a game's record (M7.7d) showed $shown frames in edel report against the $drawn it drew"
 }
 
 case_clipboard() {

@@ -209,6 +209,25 @@ impl Shell {
         self.follow_profile();
     }
 
+    /// A game plays on some screen, or none does any more (M7.7b): on the
+    /// charger the profile becomes Performance while it plays, and the
+    /// rules' profile comes back when it ends. A machine with no profile
+    /// file says so once per game, as a VM does.
+    pub fn game_changed(&mut self, on: bool) {
+        if self.game == on {
+            return;
+        }
+        self.game = on;
+        if on
+            && self.live.status.on_battery != Some(true)
+            && crate::on_path(crate::EDEL)
+            && edel::profile::now().is_none()
+        {
+            eprintln!("edel-shell-ui: {}", messages::no_profile_for_game());
+        }
+        self.follow_profile();
+    }
+
     /// Asks `edel power profile` for the profile the rules want now, when
     /// `edel` is here, the kernel offers one of ours and it is not set yet
     /// (M7.8). Each change is asked once, and the command writes the file as
@@ -221,7 +240,8 @@ impl Shell {
         let Some((now, offered)) = edel::profile::now() else {
             return;
         };
-        let want = power_rules::profile(&self.rules, self.live.status.on_battery).to_string();
+        let want =
+            power_rules::profile(&self.rules, self.live.status.on_battery, self.game).to_string();
         let names: Vec<&str> = offered.iter().map(String::as_str).collect();
         let Some(kernel) = edel::profile::kernel_profile(&want, &names) else {
             return;
