@@ -7,15 +7,15 @@
 //! the tiling styles' menu (M5.16b, `crate::styles`).
 
 use accesskit::Role;
-use edel::i18n::{n_, tr, trf};
+use edel::i18n::{tr, trf};
 use edel::tokens::Tokens;
 
 use super::{Action, Canvas, Input, Live, Widget};
 use crate::paint::{self, fill, lit, mix};
 
 pub const WIDGET: Widget = Widget {
-    name: "layout",
-    title: n_("Floating or tiling"),
+    name: edel::widgets::LAYOUT.name,
+    title: edel::widgets::LAYOUT.title,
     needs: None,
     shows,
     width,

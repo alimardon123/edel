@@ -323,32 +323,12 @@ pub struct Drag {
 
 /// The title of a part as people read it (M5.10c6b), translated.
 pub fn part_title(part: Part) -> String {
-    match part {
-        Part::Clock => tr("Clock").into(),
-        Part::Date => tr("Date").into(),
-        Part::Count => tr("Notification count").into(),
-        Part::Player => tr("Music player").into(),
-        Part::Person => tr("Sign in").into(),
-        Part::Message => tr("Message").into(),
-        Part::Picture => tr("Picture").into(),
-        Part::Battery => tr("Battery").into(),
-    }
+    tr(part.widget().title).into()
 }
 
 /// The part a drawer tile is named for (`Part::name`), if the release has it.
 pub fn part_named(name: &str) -> Option<Part> {
-    [
-        Part::Clock,
-        Part::Date,
-        Part::Count,
-        Part::Player,
-        Part::Person,
-        Part::Message,
-        Part::Picture,
-        Part::Battery,
-    ]
-    .into_iter()
-    .find(|part| part.name() == name)
+    Part::named(name)
 }
 
 /// A look's or a background's thumbnail, logical pixels (M5.10c6c3): a
