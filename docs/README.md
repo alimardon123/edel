@@ -23,6 +23,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [REVIEW-postmarketos.md](REVIEW-postmarketos.md) | What we can learn from postmarketOS (now Nura) and its immutable Duranium | Review |
 | [REVIEW-project-2026-10-13.md](REVIEW-project-2026-10-13.md) | Edel OS itself, by four reviewers: the principles, the base and the desktop as independent parts, three dangers, the fixes (M6.17) | Review |
 | [FEATURES.md](FEATURES.md) | How images are made of feature files: the features today, the file, format 2 definitions, the merge and its refusals, worked examples | Reference |
+| [platform-levels.md](platform-levels.md) | Platform levels: what apps can count on from every release of a level, how the build keeps it, `edel platform status` | Reference |
 | [FORMATS.md](FORMATS.md) | Every file format edel owns: fields, signatures, leniency, the stepping-stone rule | Reference |
 | [RELEASE.md](RELEASE.md) | What CI publishes, what is kept forever, the release key and the steps that wait for Alimardon | Reference |
 | [SPIKE-flatpak.md](SPIKE-flatpak.md) | Flatpak's glibc runtimes on the musl base: the verdict and what CI measured | Spike |

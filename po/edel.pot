@@ -1373,6 +1373,33 @@ msgstr ""
 msgid "the last panel stays: a desktop needs one to reach its menu and its windows"
 msgstr ""
 
+msgid "{version} ({floor} or newer)"
+msgstr ""
+
+msgid "not on this system"
+msgstr ""
+
+msgid "kernel"
+msgstr ""
+
+msgid "not on this system ({floor} or newer where it is)"
+msgstr ""
+
+msgid "runtimes"
+msgstr ""
+
+msgid "This system promises no platform level: it was built before level 1"
+msgstr ""
+
+msgid "This system promises platform level {n}, which this edel does not know"
+msgstr ""
+
+msgid "Platform level {n}: what apps can count on here, kept by every later release"
+msgstr ""
+
+msgid "The contract: docs/platform-levels.md"
+msgstr ""
+
 msgid "less than a minute"
 msgstr ""
 
@@ -1583,7 +1610,7 @@ msgstr ""
 msgid "Gaming"
 msgstr ""
 
-msgid "LibreOffice and printing"
+msgid "LibreOffice, printing and scanning"
 msgstr ""
 
 msgid "Podman containers and the VSCodium editor"
@@ -2130,6 +2157,12 @@ msgid "{person} may not read {path}, and through doas edel reads as root; give a
 msgstr ""
 
 msgid "could not download the settings file {location}; check the network and the address, then try again (nothing was changed)"
+msgstr ""
+
+msgid "a game is playing, so this waits until it ends"
+msgstr ""
+
+msgid "the game ended; going on"
 msgstr ""
 
 msgid "Windows"
@@ -2784,6 +2817,12 @@ msgid "Go back to the version in the other slot, the one before the last update;
 msgstr ""
 
 msgid "Show the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong"
+msgstr ""
+
+msgid "platform: what apps can count on from this system, its platform level, kept by every later release"
+msgstr ""
+
+msgid "Show this system's platform level: its kernel, Flatpak and portal versions against the level's floors, and its runtimes"
 msgstr ""
 
 msgid "Restart this machine now: the system's own reboot, through doas when you are not root"
