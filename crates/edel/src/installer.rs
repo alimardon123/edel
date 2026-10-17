@@ -607,6 +607,10 @@ fn install_on(
     write(&plan, &slot, running_mib, system_file, password)
 }
 
+/// How long the device manager may take over a new partition table's
+/// events before `write` scans for the nodes itself.
+const SETTLE: Duration = Duration::from_secs(1);
+
 /// Waits for the kernel's device node of a new partition; after a second
 /// without one, asks mdev to scan, in case nothing handles hotplug events.
 fn wait_for(device: &Path) -> Result<()> {
@@ -690,6 +694,12 @@ fn write(
             )
         );
     }
+    // A disk that had partitions still shows their old device nodes, which
+    // mdev takes out and makes again while it handles the kernel's events
+    // for the new table, so a node seen at once may be gone a moment later.
+    // Let those events pass, then scan, so every node is the new one.
+    sleep(SETTLE);
+    let _ = base::scan_devices().status();
     for n in 1..=4 {
         wait_for(&part(n))?;
     }
