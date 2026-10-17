@@ -770,7 +770,7 @@ msgstr ""
 msgid "Also a tile in quick settings."
 msgstr ""
 
-msgid "Pick a look. Each look keeps its own arrangement and background."
+msgid "Pick a look. Each look keeps its own arrangement and wallpaper."
 msgstr ""
 
 msgid "Your own arrangement"
@@ -878,7 +878,7 @@ msgstr ""
 msgid "Rename look"
 msgstr ""
 
-msgid "Give this look another name. It keeps its parts and its background, and shows in the cards above."
+msgid "Give this look another name. It keeps its widgets and its wallpaper, and shows in the cards above."
 msgstr ""
 
 msgid "Name, such as home"
@@ -1374,9 +1374,6 @@ msgid "Switcher ends"
 msgstr ""
 
 msgid "Look"
-msgstr ""
-
-msgid "Background"
 msgstr ""
 
 msgid "Clock and date"

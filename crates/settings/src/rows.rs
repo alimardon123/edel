@@ -255,11 +255,11 @@ pub const ROWS: &[Row] = &[
         title: n_("Look"),
     },
     Row {
-        key: "lock_screen.background",
-        title: n_("Background"),
+        key: "lock_screen.wallpaper",
+        title: n_("Wallpaper"),
     },
     Row {
-        key: "lock_screen.parts",
+        key: "lock_screen.widgets",
         title: n_("Clock and date"),
     },
     Row {

@@ -681,13 +681,13 @@ pub(crate) fn hint_words(view: &View) -> &'static str {
         ),
         (Kind::LockScreen, true) => tr("Drop here to take it away"),
         (Kind::LockScreen, false) if view.tab == 2 => {
-            tr("Choose a look, which brings its parts and its background")
+            tr("Choose a look, which brings its widgets and its wallpaper")
         }
         (Kind::LockScreen, false) if view.tab == 1 => {
-            tr("Choose what lies behind the lock screen's parts")
+            tr("Choose what lies behind the lock screen's widgets")
         }
         (Kind::LockScreen, false) => {
-            tr("Drag a part anywhere, from here to add it, or here to take it away")
+            tr("Drag a widget anywhere, from here to add it, or here to take it away")
         }
     }
 }
@@ -1454,7 +1454,7 @@ mod tests {
                     picture: None,
                 })
                 .collect(),
-            tabs: vec!["Parts", "Looks", "Background"],
+            tabs: vec!["Widgets", "Looks", "Wallpaper"],
             tab,
             tallest,
             compact: false,
