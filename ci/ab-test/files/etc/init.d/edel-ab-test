@@ -61,6 +61,10 @@ description="Edel OS A/B update test"
 
 depend() {
 	need edel-boot-ok
+	# OpenRC starts the default runlevel one service at a time, so step 2's
+	# wait for the add-on's greeting would hold ci-hello back if this test
+	# came first.
+	after ci-hello
 }
 
 ab_say() {

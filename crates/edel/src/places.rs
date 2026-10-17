@@ -242,6 +242,12 @@ pub const ZONEINFO_DIR: &str = "/usr/share/zoneinfo";
 pub const LOCALTIME: &str = "/etc/localtime";
 /// The time zone's name, beside [`LOCALTIME`], for programs that read the name.
 pub const TIMEZONE_FILE: &str = "/etc/timezone";
+/// The place of this computer, the static source GeoClue reads when it is
+/// asked (M6.14c): `edel settings apply` writes it from `location.place`.
+pub const GEOLOCATION: &str = "/etc/geolocation";
+/// The drop-in that turns GeoClue's lookup of nearby Wi-Fi on, written from
+/// `location.online` (M6.14c); GeoClue reads it when it starts.
+pub const GEOCLUE_ONLINE: &str = "/etc/geoclue/conf.d/60-edel-online.conf";
 /// The system's default apps, written by `edel settings apply` from
 /// `[default_apps]` (M6.10): freedesktop's `mimeapps.list`, read by every
 /// desktop app and by `xdg-open`. Only a file that starts with

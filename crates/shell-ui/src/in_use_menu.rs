@@ -1,8 +1,10 @@
 //! The in-use card (M6.14b): what the card shows and where each part lies,
 //! plain data and drawing, tested without a display. The card lists each app
-//! using the camera, the microphone or the screen, what it uses, and two
-//! buttons, Stop and Settings (Settings only for an app with a page in
-//! Settings). `in_use_card.rs` holds its surface and the keyboard.
+//! using the camera, the microphone, the screen or the place (M6.14c), what
+//! it uses, and two buttons, Stop and Settings (Settings only for an app
+//! with a page in Settings). Stop is there only for a PipeWire use: a place
+//! has no client, so its row has Settings alone, where Location is set to
+//! Never. `in_use_card.rs` holds its surface and the keyboard.
 //!
 //! The card is `popup`'s card, its rows, text sizes, radii and hover look
 //! as the app windows menu's (`app_windows.rs`), so one change to the tokens
@@ -119,7 +121,12 @@ pub fn layout(view: &View, tokens: &Tokens, measure: &mut dyn FnMut(&str, f32) -
         let text_w = measure(&row.used.name, size)
             .max(measure(&uses, small))
             .min(TEXT_MOST);
-        let mut buttons = vec![(Button::Stop(r), measure(tr("Stop"), size) + 2.0 * INSET)];
+        // A place (M6.14c) holds no PipeWire client to destroy, so its row has
+        // no Stop: only its Settings button, where Location is set to Never.
+        let mut buttons = Vec::new();
+        if row.used.client.is_some() {
+            buttons.push((Button::Stop(r), measure(tr("Stop"), size) + 2.0 * INSET));
+        }
         if row.page {
             let words = measure(tr("Settings"), size);
             buttons.push((Button::Settings(r), words + 2.0 * INSET));
@@ -373,7 +380,7 @@ mod tests {
 
     fn used(app: &str, name: &str, flatpak: bool, kinds: &[Kind]) -> InUse {
         InUse {
-            client: 60,
+            client: Some(60),
             app: app.into(),
             name: name.into(),
             flatpak,
@@ -416,6 +423,30 @@ mod tests {
             None,
         );
         assert!(host.rows[0].page, "a host app listed in Settings has one");
+    }
+
+    /// A place's row (M6.14c) has no Stop, only Settings, and the keys and
+    /// the reader's list see only the button there is.
+    #[test]
+    fn a_place_row_has_settings_and_no_stop() {
+        let tokens = Tokens::built_in();
+        let mut maps = used("org.gnome.Maps", "Maps", true, &[Kind::Location]);
+        maps.client = None;
+        let v = view(&[maps], &[], None);
+        let layout = layout(&v, &tokens, &mut measure);
+        let buttons: Vec<Button> = layout.buttons.iter().map(|(b, _)| *b).collect();
+        assert_eq!(buttons, [Button::Settings(0)]);
+        let (items, _) = nodes(&v, &layout);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Maps, Location", "Settings for Maps"]);
+        let text = places(&v, &layout);
+        assert!(!text.contains("stop:"), "{text}");
+        assert!(text.contains("settings:org.gnome.Maps "), "{text}");
+        assert_eq!(moved(None, layout.buttons.len(), 1), Some(0));
+        assert_eq!(moved(Some(0), layout.buttons.len(), 1), Some(0));
+        let (_, rect) = layout.buttons[0];
+        let (cx, cy) = (rect.x + rect.w / 2.0, rect.y + rect.h / 2.0);
+        assert_eq!(button_at(&layout, cx, cy), Some((0, Button::Settings(0))));
     }
 
     #[test]

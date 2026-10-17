@@ -516,19 +516,24 @@ impl Shell {
         // panels.list and the preset's panels (M5.31b, M6.17): the panels
         // follow the files at once.
         let (machine, person) = crate::settings_texts();
-        // What each app may use (M6.14a).
-        crate::app_permissions::follow(
+        // What each app may use (M6.14a), and which apps are asked for the
+        // place every time (M6.14c).
+        let asked = crate::app_permissions::follow(
             self._portal.as_ref(),
             &mut self.app_permissions,
             machine.as_deref(),
             person.as_deref(),
         );
-        // The colour scheme, the accent (M5.5c, M6.17) and the header bars'
-        // button layout (M6.16): apps already open follow.
+        crate::location::set_asked(&self.location_asked, asked);
+        // The colour scheme, the accent (M5.5c, M6.17), the header bars'
+        // button layout (M6.16) and the Location switch (M6.14c): apps
+        // already open follow.
         if let Some(connection) = &self._portal {
             let buttons = crate::button_layout(machine.as_deref(), person.as_deref());
             let high = edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref());
             crate::portal::follow(connection, &self.tokens, &buttons, high);
+            let off = !crate::location::enabled(machine.as_deref(), person.as_deref());
+            crate::portal::follow_location(connection, off);
         }
         let wanted = edel::panel_edit::applying(machine.as_deref(), person.as_deref());
         if wanted != self.panel_specs {

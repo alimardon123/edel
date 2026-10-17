@@ -1041,6 +1041,42 @@ pub const HELP: &[Help] = &[
         belongs: Belongs::Person,
         retired: None,
     },
+    Help {
+        key: "apps.location",
+        help: n_(
+            "Which apps may know where this computer is, by Flatpak app id: allow, ask every time or never.",
+        ),
+        default: "{}",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "location.enabled",
+        help: n_("Off gives every app nothing, whatever each app may use."),
+        default: "true",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
+        key: "location.place",
+        help: n_("The city apps are told, named by its time zone, such as Asia/Tashkent."),
+        default: "the time zone's city",
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "location.online",
+        help: n_(
+            "Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses.",
+        ),
+        default: "false",
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
 ];
 
 /// The line for `key`, a concrete key (`users.ali.admin`) or a table path

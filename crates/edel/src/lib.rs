@@ -42,6 +42,7 @@ pub mod keep;
 pub mod key_help;
 pub mod keyboard;
 pub mod languages;
+pub mod location;
 pub mod lock_screen;
 pub mod network;
 pub mod panel_edit;

@@ -13,7 +13,7 @@ When two principles conflict, **the one higher in the list wins.**
 |---|-----------|-------------|
 | 1 | Reliable | Never leaves anyone with a broken machine |
 | 2 | Instant | Reacts on the next frame, on old hardware too |
-| 3 | Simple | Fewest parts, plain files, one way to do each thing |
+| 3 | Simple and modular | Fewest parts, plain files, one way to do each thing; each fact and each piece of code in one place, reused, never copied; every feature added, changed, swapped or removed alone |
 | 4 | Efficient | Light and small, no waste |
 | 5 | Beautiful | One coherent, pleasant look and feel |
 | 6 | Functional | The basics all work, every time |
@@ -34,10 +34,14 @@ Everything reacts on the next frame, on old hardware as well as new.
 - Opening the launcher, switching apps and moving windows have no visible delay.
 - Complexity added for speed is allowed **only** when a measurement shows a gain people can actually see.
 
-### 3. Simple
-As few parts as possible, plain files, one way to do each thing.
+### 3. Simple and modular
+As few parts as possible, plain files, one way to do each thing. Modular and reusable joined this principle on 2026-10-16, Alimardon's choice: they are how things stay simple, so they rank with it. The same day they added that code and features stay "flexible to change/add/remove/swap".
 - The whole project is built from the four parts in the map below. A fifth part needs a written reason.
 - Every new service, setting or dependency needs a one-paragraph written reason. Deleting beats adding.
+- Every fact has one owner file and every piece of code one module; everything else reads it or calls it, never a copy (ADR-010, checked by `ci/one-place.sh`).
+- Each part is a module with a small, plain boundary (files, standard protocols, a function), so it can be changed, reused, dropped or replaced alone (ADR-010, checked by `ci/seams.sh`).
+- Every feature can be added, changed, swapped for another or removed alone, in one PR, without editing the parts around it: a feature is its own `features/NAME.toml` and one module per part (ADR-008), reached only through the doors that exist (ADR-010).
+- Before writing something, look for the module that already does it; when a second place needs it, move it into a module both call, in the same change.
 
 ### 4. Efficient (light and small)
 - Budgets for base image size, idle memory, boot time and idle battery drain, set from measurements on the reference hardware and checked in CI on every change.

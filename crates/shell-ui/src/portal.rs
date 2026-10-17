@@ -255,6 +255,88 @@ impl Backend {
     ) -> zbus::Result<()>;
 }
 
+/// The Lockdown backend (M6.14c): the portal's own switches, which its
+/// location portal checks at each request (CreateSession and Start). Only
+/// `disable-location` is set, from the person's `location.enabled` (ADR-008,
+/// the same setting as the Location tile): while it is off every app gets
+/// nothing from the location portal, whatever its own choice, and turning it
+/// off refuses new requests but does not end one already running. Every
+/// other switch is off. Without shell-ui the portal reads it as false, so
+/// Location is not off.
+struct Lockdown {
+    location_off: bool,
+}
+
+#[zbus::interface(name = "org.freedesktop.impl.portal.Lockdown")]
+impl Lockdown {
+    #[zbus(property, name = "disable-printing")]
+    fn disable_printing(&self) -> bool {
+        false
+    }
+
+    #[zbus(property, name = "disable-save-to-disk")]
+    fn disable_save_to_disk(&self) -> bool {
+        false
+    }
+
+    #[zbus(property, name = "disable-application-handlers")]
+    fn disable_application_handlers(&self) -> bool {
+        false
+    }
+
+    #[zbus(property, name = "disable-camera")]
+    fn disable_camera(&self) -> bool {
+        false
+    }
+
+    #[zbus(property, name = "disable-microphone")]
+    fn disable_microphone(&self) -> bool {
+        false
+    }
+
+    #[zbus(property, name = "disable-sound-output")]
+    fn disable_sound_output(&self) -> bool {
+        false
+    }
+
+    #[zbus(property, name = "disable-location")]
+    fn disable_location(&self) -> bool {
+        self.location_off
+    }
+}
+
+/// Tells the portal the Location switch changed (M6.14c): `off` says whether
+/// the person's `location.enabled` is false now. The property's changed
+/// signal goes out with it, and the value is set only when it differs.
+pub fn follow_location(connection: &zbus::blocking::Connection, off: bool) {
+    let lockdown = match connection.object_server().interface::<_, Lockdown>(PATH) {
+        Ok(lockdown) => lockdown,
+        Err(e) => {
+            eprintln!("edel-shell-ui: {}", crate::messages::location_not_told(e));
+            return;
+        }
+    };
+    {
+        let mut held = lockdown.get_mut();
+        if held.location_off == off {
+            return;
+        }
+        held.location_off = off;
+    }
+    let said = zbus::block_on(
+        lockdown
+            .get()
+            .disable_location_changed(lockdown.signal_emitter()),
+    );
+    match said {
+        Ok(()) => eprintln!(
+            "edel-shell-ui: location {} told to the portal",
+            if off { "off" } else { "on" }
+        ),
+        Err(e) => eprintln!("edel-shell-ui: {}", crate::messages::location_not_told(e)),
+    }
+}
+
 /// Says again each setting apps read that changed (M5.5c, M6.16, M6.17):
 /// the colour scheme, the accent, high contrast and the fonts from `tokens`,
 /// and the header bars' button layout; each changed value is stored and
@@ -324,6 +406,7 @@ pub fn serve(
     layout: &str,
     high: bool,
     edits: channel::Sender<Edit>,
+    location_off: bool,
 ) -> Option<zbus::blocking::Connection> {
     let backend = Backend {
         settings: settings(tokens, layout, high),
@@ -335,6 +418,7 @@ pub fn serve(
         .and_then(|b| b.name(NAME))
         .and_then(|b| b.serve_at(PATH, backend))
         .and_then(|b| b.serve_at(PATH, asking))
+        .and_then(|b| b.serve_at(PATH, Lockdown { location_off }))
         .and_then(|b| b.serve_at(SHELL_PATH, ShellBus::new(edits)))
         .and_then(|b| b.build());
     let connection = match built {
@@ -390,15 +474,21 @@ mod tests {
         assert_eq!(text_option(&options, "missing"), None);
     }
 
+    /// The tests that serve the portal's name on a session bus, one at a
+    /// time: two at once would each own it in turn, and a call would reach
+    /// the other's loop.
+    static ON_THE_BUS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// A question asked over the bus reaches the event loop as `Edit::Access`
     /// and its answer goes back to the caller (M6.3). Needs a session bus:
     /// without one, `serve` gives nothing and the test passes by saying so.
     #[test]
     fn an_access_question_is_asked_and_answered_over_the_bus() {
+        let _alone = ON_THE_BUS.lock();
         use smithay_client_toolkit::reexports::calloop::EventLoop;
         use std::time::Duration;
         let (edits, asks) = channel::channel::<Edit>();
-        let Some(_served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits) else {
+        let Some(_served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, false) else {
             return;
         };
         let client = zbus::blocking::Connection::session().expect("the session bus");
@@ -464,6 +554,54 @@ mod tests {
             Asking::name().as_str(),
             "org.freedesktop.impl.portal.Access"
         );
+    }
+
+    /// The Lockdown backend says `disable-location` only while the person
+    /// has Location off, and no other switch (M6.14c).
+    #[test]
+    fn the_lockdown_says_location_is_off_only_when_the_person_turned_it_off() {
+        use zbus::object_server::Interface;
+
+        assert_eq!(
+            Lockdown::name().as_str(),
+            "org.freedesktop.impl.portal.Lockdown"
+        );
+        assert!(Lockdown { location_off: true }.disable_location());
+        assert!(
+            !Lockdown {
+                location_off: false
+            }
+            .disable_location()
+        );
+        assert!(!Lockdown { location_off: true }.disable_camera());
+    }
+
+    /// Served with a session bus, the Lockdown properties read as set and
+    /// `follow_location` changes the one that is told (M6.14c). Without a
+    /// session bus the test passes by saying nothing.
+    #[test]
+    fn the_lockdown_is_served_and_follows_the_location_switch() {
+        let _alone = ON_THE_BUS.lock();
+        let (edits, _asks) = channel::channel::<Edit>();
+        let Some(served) = serve(&Tokens::built_in(), BUTTONS_RIGHT, false, edits, true) else {
+            return;
+        };
+        let client = zbus::blocking::Connection::session().expect("the session bus");
+        let proxy =
+            zbus::blocking::Proxy::new(&client, NAME, PATH, "org.freedesktop.DBus.Properties")
+                .expect("the properties proxy");
+        let read = |name: &str| -> bool {
+            let value: OwnedValue = proxy
+                .call("Get", &("org.freedesktop.impl.portal.Lockdown", name))
+                .expect("the property");
+            bool::try_from(value).expect("a bool")
+        };
+        assert!(read("disable-location"), "the switch is off at start");
+        assert!(!read("disable-camera"));
+        follow_location(&served, false);
+        assert!(!read("disable-location"), "the switch is on again");
+        follow_location(&served, false);
+        assert!(!read("disable-location"), "the same value says nothing");
     }
 
     #[test]

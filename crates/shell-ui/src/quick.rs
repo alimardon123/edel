@@ -70,15 +70,22 @@ pub enum Tile {
     /// A plain toggle of `notifications.do_not_disturb` (M5.9b), with no
     /// page behind an arrow: its row is in the notification centre.
     DoNotDisturb,
+    /// A plain toggle of `location.enabled` (M6.14c), whose right click opens
+    /// Settings' Location page; shown only where the location feature is.
+    Location,
     DarkStyle,
 }
 
+/// The Settings page a Location tile's right click opens (M6.14c).
+pub const LOCATION_PAGE: &str = "location";
+
 /// Every tile, in the order `edel::presets::TILES` lists them.
-pub const ALL: [Tile; 5] = [
+pub const ALL: [Tile; 6] = [
     Tile::Wifi,
     Tile::Bluetooth,
     Tile::Airplane,
     Tile::DoNotDisturb,
+    Tile::Location,
     Tile::DarkStyle,
 ];
 
@@ -89,6 +96,7 @@ impl Tile {
             Tile::Bluetooth => "bluetooth",
             Tile::Airplane => "airplane",
             Tile::DoNotDisturb => "do_not_disturb",
+            Tile::Location => "location",
             Tile::DarkStyle => "dark_style",
         }
     }
@@ -103,6 +111,7 @@ impl Tile {
             Tile::Bluetooth => tr("Bluetooth"),
             Tile::Airplane => tr("Airplane mode"),
             Tile::DoNotDisturb => tr("Do not disturb"),
+            Tile::Location => tr("Location"),
             Tile::DarkStyle => tr("Dark style"),
         }
     }
@@ -114,6 +123,7 @@ impl Tile {
             Tile::Bluetooth => tr("Bluetooth"),
             Tile::Airplane => tr("Airplane"),
             Tile::DoNotDisturb => tr("Do not disturb"),
+            Tile::Location => tr("Location"),
             Tile::DarkStyle => tr("Dark"),
         }
     }
@@ -131,6 +141,7 @@ impl Tile {
             Tile::Bluetooth => "page-bluetooth",
             Tile::Airplane => "airplane",
             Tile::DoNotDisturb => "do-not-disturb",
+            Tile::Location => "location",
             Tile::DarkStyle => "moon",
         }
     }
@@ -142,6 +153,7 @@ impl Tile {
             Tile::Wifi => Some("network"),
             Tile::Bluetooth => Some("bluetooth"),
             Tile::Airplane | Tile::DoNotDisturb => None,
+            Tile::Location => Some(LOCATION_PAGE),
             Tile::DarkStyle => Some(DARK_PAGE),
         }
     }
@@ -358,6 +370,13 @@ pub fn tiles(
                 state: switch(switches.dnd),
                 on: switches.dnd,
             },
+            // Only where the location feature is installed (M6.14c).
+            Tile::Location if !switches.location_there => continue,
+            Tile::Location => TileView {
+                tile,
+                state: switch(switches.location),
+                on: switches.location,
+            },
             Tile::DarkStyle => TileView {
                 tile,
                 state: switch(switches.dark),
@@ -387,12 +406,16 @@ pub fn volume(status: &Status, percent: Option<u32>, muted: Option<bool>) -> Opt
     })
 }
 
-/// The two tiles that are lines of the person's settings file: whether
-/// the colour scheme is dark and whether banners are kept away.
+/// The tiles that are lines of the person's settings file: whether the
+/// colour scheme is dark, whether banners are kept away and whether the
+/// place is given to apps (M6.14c), and whether the location feature is
+/// installed, without which the Location tile is not shown.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Switches {
     pub dark: bool,
     pub dnd: bool,
+    pub location: bool,
+    pub location_there: bool,
 }
 
 /// What the open card keeps besides what the machine says: its width, the
@@ -405,6 +428,10 @@ pub struct State {
     pub compact: bool,
     pub dark: bool,
     pub dnd: bool,
+    /// Whether apps may have the place, and whether the location feature is
+    /// installed (M6.14c).
+    pub location: bool,
+    pub location_there: bool,
     pub list: bool,
     pub focus: Option<Focus>,
     pub hover: Option<Focus>,
@@ -428,6 +455,8 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
             Switches {
                 dark: state.dark,
                 dnd: state.dnd,
+                location: state.location,
+                location_there: state.location_there,
             },
             &state.pending,
         ),
@@ -1750,6 +1779,7 @@ mod tests {
             Switches {
                 dark: true,
                 dnd: true,
+                ..Switches::default()
             },
             &[],
         );
@@ -1770,6 +1800,25 @@ mod tests {
             .map(|t| t.tile)
             .collect();
         assert_eq!(shown, [Tile::DoNotDisturb, Tile::DarkStyle]);
+        // With the location feature installed, its tile joins the others,
+        // on or off as the person's switch says (M6.14c).
+        let there = Switches {
+            location: true,
+            location_there: true,
+            ..Switches::default()
+        };
+        let shown: Vec<_> = tiles(&list, &vm, there, &[])
+            .iter()
+            .map(|t| (t.tile, t.on))
+            .collect();
+        assert_eq!(
+            shown,
+            [
+                (Tile::DoNotDisturb, false),
+                (Tile::Location, true),
+                (Tile::DarkStyle, false)
+            ]
+        );
         // Bluetooth alone is enough for flight mode.
         let bluetooth = Status {
             bluetooth: Some(true),
@@ -1934,6 +1983,31 @@ mod tests {
             l.tiles[2].whole.x, 18.0,
             "a last one alone keeps the left column"
         );
+    }
+
+    /// The Location tile lies after Do not disturb and moves Dark style along
+    /// (M6.14c); the test machine without the feature shows five tiles.
+    #[test]
+    fn location_lies_after_do_not_disturb_when_its_feature_is_there() {
+        let list = names(edel::presets::DEFAULT_TILES);
+        let state = State {
+            width: WIDTH,
+            location: true,
+            location_there: true,
+            ..State::default()
+        };
+        let view = view(&state, &laptop(), &list, false);
+        assert_eq!(view.tiles.len(), 6);
+        let l = layout(&view);
+        let line = places(&view, &l);
+        assert!(
+            line.contains(
+                ", do_not_disturb 102+86+64x64, location 186+86+64x64, dark_style 270+86+64x64, "
+            ),
+            "{line}"
+        );
+        let plain = view_of(&laptop(), false, 1280);
+        assert_eq!(plain.tiles.len(), 5, "no feature, no tile");
     }
 
     #[test]
