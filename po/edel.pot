@@ -638,6 +638,9 @@ msgstr ""
 msgid "The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow."
 msgstr ""
 
+msgid "The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's."
+msgstr ""
+
 msgid "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150."
 msgstr ""
 
@@ -1724,6 +1727,9 @@ msgstr ""
 msgid "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
 msgstr ""
 
+msgid "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
+msgstr ""
+
 msgid "the file is not valid TOML"
 msgstr ""
 
@@ -1941,6 +1947,9 @@ msgid "a channel name in quotes, such as \"stable\""
 msgstr ""
 
 msgid "a cursor theme's name in quotes, such as \"default\""
+msgstr ""
+
+msgid "an icon theme's name in quotes, such as \"Edel\""
 msgstr ""
 
 msgid "a wallpaper's name, a picture's path or a colour in quotes, such as \"hills\""

@@ -69,6 +69,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `appearance.text_size` | `100` | release |
 | `appearance.cursor_size` | `24` | release |
 | `appearance.cursor_theme` | `"default"` | release |
+| `appearance.icon_theme` | `"Edel"` | release |
 | `appearance.icon_size` | `100` | release |
 | `appearance.animations` | `"full"` | release |
 | `appearance.animation_speed` | `100` | release |

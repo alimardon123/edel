@@ -281,6 +281,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.text_size` | How big every text is, in percent of the release's size, from 80 to 150. | `100` | release |
 | `appearance.cursor_size` | The pointer's height in logical pixels, from 16 to 96. | `24` | release |
 | `appearance.cursor_theme` | The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow. | `"default"` | release |
+| `appearance.icon_theme` | The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's. | `"Edel"` | release |
 | `appearance.icon_size` | How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150. | `100` | release |
 | `appearance.animations` | How much things move: full, reduced (fades only) or off. | `"full"` | release |
 | `appearance.animation_speed` | How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast. | `100` | release |

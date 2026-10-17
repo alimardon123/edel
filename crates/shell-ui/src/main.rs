@@ -573,11 +573,12 @@ fn run() -> Result<()> {
         EventLoop::try_new().context("starting the event loop")?;
     let (status_tx, status_rx) = channel::channel::<status::Msg>();
     let (edits, asks) = channel::channel::<shell_bus::Edit>();
-    let (buttons, high) = {
+    let (buttons, high, icon_theme) = {
         let (machine, person) = settings_texts();
         (
             button_layout(machine.as_deref(), person.as_deref()),
             edel::tokens::high_contrast_in(machine.as_deref(), person.as_deref()),
+            edel::settings::icon_theme_in(machine.as_deref(), person.as_deref()),
         )
     };
     let rules = {
@@ -590,6 +591,9 @@ fn run() -> Result<()> {
         let (machine, person) = settings_texts();
         !location::enabled(machine.as_deref(), person.as_deref())
     };
+    // The app icons come from the theme the person chose (M8.21 part g), and
+    // apps hear it through the portal below.
+    eprintln!("edel-shell-ui: app icons from {icon_theme:?}");
     let mut shell = Shell {
         rules,
         suspend_after_lock: false,
@@ -671,8 +675,8 @@ fn run() -> Result<()> {
         clipboard: clipboard_card::Clipboard::bind(&globals, &qh, &event_loop.handle()),
         chosen: chosen(),
         text: Text::load(&tokens.font),
-        icons: icons::Icons::new(apps::data_dirs()),
-        _portal: portal::serve(&tokens, &buttons, high, edits, location_off),
+        icons: icons::Icons::new(apps::data_dirs(), &icon_theme),
+        _portal: portal::serve(&tokens, &buttons, high, &icon_theme, edits, location_off),
         app_permissions: None,
         player_tx: None,
         tokens,

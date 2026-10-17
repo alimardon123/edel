@@ -316,6 +316,10 @@ pub enum Kind {
     /// An xcursor theme's folder name, one this machine has under
     /// [`crate::places::ICON_THEME_DIRS`] (M5.12b5, [`cursor_themes`])
     CursorTheme,
+    /// An icon theme's folder name, one this machine has under
+    /// [`crate::places::ICON_THEME_DIRS`] with an `index.theme` that makes
+    /// an icon theme (M8.21 part g, [`icon_themes`])
+    IconTheme,
     /// Apps and the workspace each opens on, such as `{ "org.mozilla.firefox" = 2 }` (M5.2l)
     AppWorkspaces,
     /// Flatpak apps and one of these choices each, such as
@@ -541,10 +545,12 @@ pub const KEYS: &[Key] = &[
     now(FONT, Kind::Text),
     now(MONOSPACE_FONT, Kind::Text),
     now(TEXT_SIZE, Kind::WholeFromTo(80, 150)),
-    // The pointer and the icons (M5.12b5 part A): the cursor's size in
-    // logical pixels, its theme, and the icons' size in percent.
+    // The pointer and the icons (M5.12b5 part A, M8.21 part g): the
+    // cursor's size in logical pixels, its theme, the apps' icon theme, and
+    // the icons' size in percent.
     now(CURSOR_SIZE, Kind::WholeFromTo(16, 96)),
     now(CURSOR_THEME, Kind::CursorTheme),
+    now(ICON_THEME, Kind::IconTheme),
     now(ICON_SIZE, Kind::WholeFromTo(75, 150)),
     now(
         "appearance.animations",
@@ -1054,6 +1060,9 @@ pub struct Appearance {
     /// [`CURSOR_THEME_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_theme: Option<String>,
+    /// The apps' icon theme (M8.21 part g); absent is [`ICON_THEME_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_theme: Option<String>,
     /// The icons' size in percent, 75 to 150 (M5.12b5 part A); absent is
     /// [`ICON_SIZE_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1195,6 +1204,13 @@ pub const CURSOR_SIZE_DEFAULT: u32 = 24;
 pub const CURSOR_THEME_DEFAULT: &str = "default";
 /// The icons' size when no file sets it, in percent of the release's.
 pub const ICON_SIZE_DEFAULT: u32 = 100;
+/// The apps' icon theme, a folder name [`icon_themes`] lists; absent is
+/// [`ICON_THEME_DEFAULT`] (M8.21 part g). The shell's own icons stay Edel's.
+pub const ICON_THEME: &str = "appearance.icon_theme";
+/// The release's own icon theme, `features/shell/usr/share/icons/Edel`,
+/// which inherits Adwaita and hicolor, so apps keep their own icons (M8.21
+/// part g).
+pub const ICON_THEME_DEFAULT: &str = "Edel";
 
 /// The three keys of the text (M5.12b5), read by [`crate::tokens::Text`].
 pub const TEXT_KEYS: &[&str] = &[FONT, MONOSPACE_FONT, TEXT_SIZE];
@@ -1232,6 +1248,64 @@ pub fn cursor_theme_problem(name: &str) -> Option<String> {
         "{name} is not a cursor theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)",
         &[("name", &format!("{name:?}")), ("names", &names)],
     ))
+}
+
+/// The icon themes this machine has, [`ICON_THEME_DEFAULT`] first, then the
+/// others under [`crate::places::ICON_THEME_DIRS`] whose `index.theme` makes
+/// an icon theme ([`crate::icon_theme::is_icon_theme`]), sorted and without
+/// repeats (M8.21 part g). Settings lists them and the checker takes a theme
+/// only from this list, as [`cursor_themes`] does.
+pub fn icon_themes() -> Vec<String> {
+    let mut names: Vec<String> = crate::places::ICON_THEME_DIRS
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flatten()
+        .flatten()
+        .filter(|entry| {
+            crate::icon_theme::read(&entry.path())
+                .is_some_and(|index| crate::icon_theme::is_icon_theme(&index))
+        })
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name != ICON_THEME_DEFAULT)
+        .collect();
+    names.sort_by_key(|name| name.to_lowercase());
+    names.dedup();
+    names.insert(0, ICON_THEME_DEFAULT.to_string());
+    names
+}
+
+/// What is wrong with `name` as an icon theme on this machine, if anything:
+/// the same rule as [`cursor_theme_problem`], with [`icon_themes`] as the
+/// list. `Edel` is always taken, as the release's own.
+pub fn icon_theme_problem(name: &str) -> Option<String> {
+    if name == ICON_THEME_DEFAULT || icon_themes().iter().any(|t| t == name) {
+        return None;
+    }
+    let names = icon_themes().join(", ");
+    Some(trf(
+        "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)",
+        &[("name", &format!("{name:?}")), ("names", &names)],
+    ))
+}
+
+/// The icon theme a value names when it is a folder name the machine may
+/// hold: not empty, with no `/` and not starting with a dot. Anything else,
+/// and an absent value, is [`ICON_THEME_DEFAULT`]. The one copy of the rule
+/// every reader calls, lenient so a theme the machine lacks draws hicolor's
+/// icons (M8.21 part g).
+pub fn icon_theme_or_default(value: Option<&str>) -> &str {
+    match value {
+        Some(name) if !name.is_empty() && !name.contains('/') && !name.starts_with('.') => name,
+        _ => ICON_THEME_DEFAULT,
+    }
+}
+
+/// The apps' icon theme the machine's and the person's files choose (M8.21
+/// part g): the one reader shell-ui, the compositor and Settings call. A
+/// theme the machine lacks is not refused here, so it draws hicolor's icons
+/// through the theme's inheritance; the checker refuses it when it is set.
+pub fn icon_theme_in(machine: Option<&str>, person: Option<&str>) -> String {
+    icon_theme_or_default(chosen(ICON_THEME, machine, person).as_deref()).to_string()
 }
 
 /// The least and most a whole-number key takes, from its entry in [`KEYS`]
@@ -2968,6 +3042,11 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             Some(problem) => Err(problem),
         },
         (Kind::CursorTheme, _) => fail(tr("a cursor theme's name in quotes, such as \"default\"")),
+        (Kind::IconTheme, Value::String(s)) => match icon_theme_problem(s) {
+            None => Ok(value.clone()),
+            Some(problem) => Err(problem),
+        },
+        (Kind::IconTheme, _) => fail(tr("an icon theme's name in quotes, such as \"Edel\"")),
         (Kind::Wallpaper, Value::String(s)) if crate::wallpapers::is_form(s) => Ok(value.clone()),
         (Kind::Wallpaper, Value::String(s)) => Err(wallpaper_problem(s)),
         (Kind::Wallpaper, _) => fail(tr(
@@ -3311,6 +3390,7 @@ mod tests {
             Kind::Addons => value_from_arg(r#"["fonts-cjk"]"#),
             Kind::Channel => Value::String("stable".into()),
             Kind::CursorTheme => Value::String("default".into()),
+            Kind::IconTheme => Value::String(ICON_THEME_DEFAULT.into()),
             Kind::Wallpaper => Value::String("hills".into()),
             Kind::WallpaperList => value_from_arg(r##"["", "#336699"]"##),
             Kind::Pictures => value_from_arg(r#"["hills"]"#),
@@ -4736,6 +4816,31 @@ version = "1.2"
                 .unwrap()
                 .contains("cursor_theme = \"default\"")
         );
+    }
+
+    #[test]
+    fn an_icon_theme_is_one_this_machine_has_and_edel_always_is() {
+        let themes = icon_themes();
+        assert_eq!(themes.first().map(String::as_str), Some(ICON_THEME_DEFAULT));
+        assert!(icon_theme_problem("Edel").is_none());
+        let theme = |value: &str| set("format = 1\n", ICON_THEME, value);
+        let refused = theme("NoSuchTheme").unwrap_err().to_string();
+        assert!(
+            refused.contains("is not an icon theme this machine has"),
+            "{refused}"
+        );
+        assert!(refused.contains("NoSuchTheme"), "{refused}");
+        assert!(refused.contains("Edel"), "{refused}");
+        assert!(theme("Edel").unwrap().contains("icon_theme = \"Edel\""));
+        assert_eq!(icon_theme_in(None, None), "Edel");
+        assert_eq!(icon_theme_or_default(Some("")), "Edel");
+        assert_eq!(icon_theme_or_default(Some("a/b")), "Edel");
+        assert_eq!(icon_theme_or_default(Some(".x")), "Edel");
+        assert_eq!(icon_theme_or_default(Some("Papirus")), "Papirus");
+        let file = "format = 1\n[appearance]\nicon_theme = \"Papirus\"\n";
+        let person = "format = 1\n[appearance]\nicon_theme = \"Breeze\"\n";
+        assert_eq!(icon_theme_in(Some(file), None), "Papirus");
+        assert_eq!(icon_theme_in(Some(file), Some(person)), "Breeze");
     }
 
     #[test]

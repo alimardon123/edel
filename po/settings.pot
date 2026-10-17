@@ -425,9 +425,6 @@ msgstr ""
 msgid "The panel's icons and the app icons in the bar and the dock"
 msgstr ""
 
-msgid "The pointer's look in every app that starts after this"
-msgstr ""
-
 msgid "Your choice"
 msgstr ""
 
@@ -444,6 +441,12 @@ msgid "Cursor and icons"
 msgstr ""
 
 msgid "The pointer and the icons. Apps already open keep their cursor until they start again"
+msgstr ""
+
+msgid "The pointer's look in every app that starts after this"
+msgstr ""
+
+msgid "The apps' icons in the panel, the dock, the launcher and the title bars"
 msgstr ""
 
 msgid "Automatic"
@@ -1335,6 +1338,9 @@ msgid "Cursor size"
 msgstr ""
 
 msgid "Cursor"
+msgstr ""
+
+msgid "Icons"
 msgstr ""
 
 msgid "Icon size"

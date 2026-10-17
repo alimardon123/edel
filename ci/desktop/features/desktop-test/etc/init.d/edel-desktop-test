@@ -208,6 +208,12 @@ commands() {
 		# at 150 percent, through the machine's file, and back.
 		'cursor big') edel settings set appearance.cursor_size=48 appearance.icon_size=150 ;;
 		'cursor default') edel settings reset appearance.cursor_size appearance.icon_size ;;
+		# The app icon style (M8.21 part g): EdelTest, whose foot icon is a
+		# magenta square, then a theme this machine lacks (refused with the
+		# list), then the release's icons back.
+		'icons test') edel settings set appearance.icon_theme=EdelTest ;;
+		'icons bad') say "icons_bad $(edel settings set appearance.icon_theme=NoSuchTheme 2>&1 | tr '\n' ' ')" ;;
+		'icons default') edel settings reset appearance.icon_theme ;;
 		# The family fontconfig names first for Arabic and for Hindi (M5.12b5
 		# part A), said back as values.
 		'fonts scripts')

@@ -663,6 +663,16 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "appearance.icon_theme",
+        help: n_(
+            "The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's.",
+        ),
+        default: r#""Edel""#,
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
         key: "appearance.icon_size",
         help: n_(
             "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150.",

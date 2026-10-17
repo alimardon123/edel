@@ -4717,7 +4717,28 @@ case_app_windows() {
 		python3 ci/qmp.py key meta_l-q
 		wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot window $n"
 	done
-	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen"
+	# The app icon style (M8.21 part g): EdelTest, the image's test theme,
+	# draws foot as a magenta square, so foot's cell turns magenta once
+	# shell-ui follows appearance.icon_theme; the compositor follows too.
+	# A theme the machine lacks is refused with the ones it has, and Reset
+	# gives Edel's icons back. Kept as icon-theme.png.
+	followed=$(count 'edel-shell-ui: app icons from "EdelTest"')
+	guest 'icons test'
+	wait_more 'edel-shell-ui: app icons from "EdelTest"' "$followed" || fail "shell-ui did not follow appearance.icon_theme = \"EdelTest\""
+	wait_for 'edel-compositor: app icons from "EdelTest"' || fail "the compositor did not follow appearance.icon_theme = \"EdelTest\""
+	shot icon-theme "$cell" 774 ff00ff >/dev/null || fail "foot's cell at $cell,774 is not EdelTest's magenta icon (icon-theme.png)"
+	guest 'icons bad'
+	wait_for 'DESKTOP-TEST: icons_bad ' || fail "icons bad did not run in the VM"
+	bad=$(value icons_bad)
+	case $bad in
+	*'is not an icon theme this machine has'*EdelTest*) ;;
+	*) fail "an unknown icon theme was not refused with the list: $bad" ;;
+	esac
+	followed=$(count 'edel-shell-ui: app icons from "Edel"')
+	guest 'icons default'
+	wait_more 'edel-shell-ui: app icons from "Edel"' "$followed" || fail "shell-ui did not go back to Edel's icons"
+	shot icon-default "$cell" 774 '!ff00ff' >/dev/null || fail "foot's cell stayed magenta after the reset"
+	echo "PASS: Classic's panel lists apps, foot's cell first at $cell; with two foot windows a click on it listed $listed windows (app-windows.png), a click on the second row brought that window forward and closed the list, and Escape closed it again with nothing chosen; EdelTest's icon drew foot's cell magenta (icon-theme.png), NoSuchTheme was refused with the list, and the reset gave it back"
 }
 
 case_taskbar() {
