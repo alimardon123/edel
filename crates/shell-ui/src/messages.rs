@@ -397,6 +397,14 @@ pub fn profile_not_set(why: impl Display) -> String {
     format!("could not set the power profile: {why}; the computer keeps the profile it has")
 }
 
+/// A screenshot an app asked for could not be made (M8.21 part 21f): the app
+/// gets no picture and may ask again.
+pub fn screenshot_not_saved(why: impl Display) -> String {
+    format!(
+        "could not take the screenshot an app asked for: {why}; the app gets no picture and can ask again"
+    )
+}
+
 /// The Access dialog cannot be drawn (M6.3): the question is answered no,
 /// so the app that asked takes no picture.
 pub const ACCESS_NOT_SHOWN: &str = "could not draw the dialog asking whether an app may take a screenshot; the request was cancelled, so no picture is taken";
@@ -680,6 +688,7 @@ mod tests {
             LOCATION_NO_HOME.to_string(),
             location_not_watched("x"),
             location_not_in_use("x"),
+            screenshot_not_saved("x"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");
