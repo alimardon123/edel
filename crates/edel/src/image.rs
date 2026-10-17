@@ -571,7 +571,11 @@ impl Build<'_> {
         let mut chroot = Command::new("chroot");
         chroot
             .arg(root)
-            .args(["fc-cache", "--system-only", "--really-force"]);
+            .args(["fc-cache", "--system-only", "--really-force"])
+            // fc-cache given SOURCE_DATE_EPOCH (M8.6) writes no cache for a
+            // folder newer than that date (1 cache file against 5 in a test
+            // on 2026-10-17), so it runs without it.
+            .env_remove("SOURCE_DATE_EPOCH");
         self.runner.run(&mut chroot)?;
         // fc-cache may still write to the old folder: move its files over,
         // so that folder never exists in the slot.
