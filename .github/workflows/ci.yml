@@ -221,18 +221,38 @@ jobs:
         run: sh ci/initramfs-check.sh
 
       - name: Pack each VM test lane's images
-        # One sparse archive per lane, without the builds' work/ folders,
-        # for the lanes' own runners (ci/vm-tests.sh).
-        run: for lane in $(sh ci/vm-tests.sh lanes); do sh ci/vm-tests.sh pack "$lane"; done
+        # One sparse archive each, without the builds' work/ folders, for
+        # the lanes' own runners (ci/vm-tests.sh). One artifact per archive,
+        # so a lane downloads only its own; changes.sh --self-test checks
+        # there is a step below for each of `vm-tests.sh archives`.
+        run: for name in $(sh ci/vm-tests.sh archives); do sh ci/vm-tests.sh pack "$name"; done
 
-      - name: Hand each lane its images
+      - name: Hand the installed archive to its lanes
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: edel-vm-lanes
+          name: edel-vm-images-installed
           retention-days: 1
-          # Already zstd: zipping them again gains nothing.
+          # Already zstd: zipping it again gains nothing.
           compression-level: 0
-          path: out/vm-*.tar.zst
+          path: out/vm-installed.tar.zst
+
+      - name: Hand the system archive to its lanes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-vm-images-system
+          retention-days: 1
+          # Already zstd: zipping it again gains nothing.
+          compression-level: 0
+          path: out/vm-system.tar.zst
+
+      - name: Hand the live archive to its lanes
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-vm-images-live
+          retention-days: 1
+          # Already zstd: zipping it again gains nothing.
+          compression-level: 0
+          path: out/vm-live.tar.zst
 
       - name: List the desktop image to try
         # The image the live lane boots as a USB stick in desktop-test live
@@ -316,16 +336,18 @@ jobs:
         # As the build job numbered it: boot-test wants the version.
         run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
 
-      - name: Take the lanes' images
+      - name: Name this lane's archive
+        id: archive
+        run: echo "name=$(sh ci/vm-tests.sh archive ${{ matrix.lane }})" >> "$GITHUB_OUTPUT"
+
+      - name: Take this lane's images
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: edel-vm-lanes
+          name: edel-vm-images-${{ steps.archive.outputs.name }}
           path: out
 
       - name: Unpack this lane's images
-        run: |
-          sh ci/vm-tests.sh unpack ${{ matrix.lane }}
-          rm -f out/vm-*.tar.zst
+        run: sh ci/vm-tests.sh unpack ${{ steps.archive.outputs.name }}
 
       - name: Enable KVM
         run: |

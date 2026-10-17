@@ -150,7 +150,7 @@ docker run --rm --privileged -e EDEL_VERSION -v "$PWD:/src" -w /src alpine:3.24 
 cargo build --release --locked -p edel --bin edel && EDEL=target/release/edel sh ci/sign.sh
 sh ci/container-test.sh
 sh ci/initramfs-check.sh
-sh ci/vm-tests.sh    # the VM tests' lanes, installed beside system then live; CI runs each lane on its own runner
+sh ci/vm-tests.sh    # the VM tests' lanes, installed beside system, live and fresh; CI runs each lane on its own runner
 sh ci/sizes.sh
 sh ci/desktop-part.sh floating titlebar ...   # one of CI's four "Desktop part" jobs, after build.sh desktop-test
 ```

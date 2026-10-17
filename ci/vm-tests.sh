@@ -9,17 +9,21 @@
 #              `desktop-test.sh rollback`, which restarts the desktop VM
 #   live       `desktop-test.sh live`, which starts the released desktop
 #              image as a USB stick
+#   fresh      `desktop-test.sh fresh`, the released image as a computer's
+#              own disk with nobody on it; it reads live's archive
 # Each lane runs its tests in order and stops at the first failure.
 #
 #   sh ci/vm-tests.sh             every lane on this machine: installed beside
-#                                 system then live, which share no file, port
-#                                 or disk; exits 1 if any failed
+#                                 system, live and fresh, which share no file,
+#                                 port or disk; exits 1 if any failed
 #   sh ci/vm-tests.sh LANE        one lane, as each CI job runs it
 #   sh ci/vm-tests.sh lanes       the lanes' names, one per line
-#   sh ci/vm-tests.sh pack LANE   what LANE needs from out/ into
-#                                 out/vm-LANE.tar.zst (sparse, without the
+#   sh ci/vm-tests.sh archives    the archives the build packs, one per line
+#   sh ci/vm-tests.sh archive LANE  the archive LANE reads
+#   sh ci/vm-tests.sh pack NAME   what archive NAME holds from out/ into
+#                                 out/vm-NAME.tar.zst (sparse, without the
 #                                 builds' work/ folders)
-#   sh ci/vm-tests.sh unpack LANE that archive back into out/
+#   sh ci/vm-tests.sh unpack NAME that archive back into out/
 #
 # Budget boots are not here: sizes.sh measures them in the build job, alone,
 # so other VMs do not slow the boots it times.
@@ -43,7 +47,20 @@ run_lane() {
 	installed) lane install-test.sh ab-test.sh apps-test.sh ;;
 	system) lane boot-test.sh system-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
+	fresh) lane 'desktop-test.sh fresh' ;;
 	*) no_lane "$1" ;;
+	esac
+}
+
+# archive LANE: the archive holding what the lane reads; fresh needs
+# only the desktop image, which live's carries, so it is not packed twice.
+archive() {
+	case "$1" in
+	fresh) echo live ;;
+	*)
+		files "$1" >/dev/null
+		echo "$1"
+		;;
 	esac
 }
 
@@ -58,7 +75,7 @@ files() {
 }
 
 no_lane() {
-	echo "vm-tests.sh: there is no lane $1; the lanes are installed, system and live" >&2
+	echo "vm-tests.sh: there is no lane $1; the lanes are installed, system, live and fresh" >&2
 	exit 2
 }
 
@@ -67,6 +84,15 @@ lanes)
 	echo installed
 	echo system
 	echo live
+	echo fresh
+	;;
+archives)
+	for name in $(sh "$0" lanes); do
+		if [ "$(archive "$name")" = "$name" ]; then echo "$name"; fi
+	done
+	;;
+archive)
+	archive "$2"
 	;;
 pack)
 	# sudo: the builds' work/ folders are root's, and tar walks past them.
@@ -81,13 +107,13 @@ unpack)
 	;;
 '')
 	mkdir -p out
-	{ run_lane system && run_lane live; } >out/lane-other.log 2>&1 &
+	{ run_lane system && run_lane live && run_lane fresh; } >out/lane-other.log 2>&1 &
 	other=$!
 	run_lane installed
 	installed=$?
 	wait "$other"
 	other=$?
-	echo "== the other lanes: system, then live"
+	echo "== the other lanes: system, live, then fresh"
 	cat out/lane-other.log
 	[ "$installed" = 0 ] && [ "$other" = 0 ]
 	;;

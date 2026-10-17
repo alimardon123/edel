@@ -87,10 +87,21 @@ self_test() {
 	try "yes yes" ".github/workflows/ci.yml" ".github/workflows/ci.yml"
 	try "yes yes" "Cargo.lock" "Cargo.lock"
 	try "no no" "" "empty input"
+	# Each archive vm-tests.sh packs has its own artifact in the workflow,
+	# which the lanes reading it download by name.
+	for name in $(sh ci/vm-tests.sh archives); do
+		count=$((count + 1))
+		if grep -q "name: edel-vm-images-$name\$" .github/workflows/ci.yml; then
+			echo "PASS: the workflow uploads the archive $name"
+		else
+			echo "FAIL: .github/workflows/ci.yml has no step uploading edel-vm-images-$name, which vm-tests.sh packs"
+			fails=$((fails + 1))
+		fi
+	done
 	if [ "$fails" -gt 0 ]; then
 		exit 1
 	fi
-	echo "PASS: changes.sh classifies $count lists"
+	echo "PASS: changes.sh made $count checks"
 }
 
 if [ "${1:-}" = --self-test ]; then
