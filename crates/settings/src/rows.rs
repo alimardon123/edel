@@ -760,6 +760,10 @@ mod tests {
     /// and a retired key needs neither either.
     const NO_ROW: &[(&str, &str)] = &[
         (
+            "addons.installed",
+            "the Add-ons page, a switch for each add-on, comes with M7.2b, when one chosen there arrives at the next boot; until then edel settings set addons.installed+=NAME, and it arrives with the next update",
+        ),
+        (
             "users.*.ssh_keys",
             "a key is pasted on the command line or written in the file, as a server's administrator does",
         ),

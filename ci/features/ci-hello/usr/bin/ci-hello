@@ -1,0 +1,3 @@
+#!/bin/sh
+# The A/B test's add-on program (M7.2a).
+sed -n 's/^greeting=//p' /etc/ci-hello.conf

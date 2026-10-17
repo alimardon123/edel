@@ -13,6 +13,10 @@ pub const REBOOT: &str = "/sbin/reboot";
 pub const POWEROFF: &str = "/sbin/poweroff";
 /// The program that suspends the machine to memory, run as root (M5.10c).
 pub const SUSPEND: &str = "/usr/sbin/zzz";
+/// The one program the base's small tools are links to (busybox's
+/// applets). A package an add-on brings may replace such a link with a
+/// program of its own; the add-on then keeps the base's (M7.2a).
+pub const APPLETS: &str = "busybox";
 
 /// Puts `service` into `runlevel`, so it starts at every boot.
 pub fn add_to_runlevel(service: &str, runlevel: &str) -> Command {

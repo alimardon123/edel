@@ -195,10 +195,19 @@ fn overlay_etc() -> Result<()> {
     fs::create_dir_all(&work)?;
     for file in ACCOUNT_FILES {
         let machine_path = upper.join(file);
+        // The mounted add-ons' users and groups (M7.2a) join the slot's;
+        // a machine without its own copy gets one, from the slot's.
+        let addons = crate::addons::account_lines(file);
+        if !addons.is_empty() && !machine_path.exists() {
+            run(Command::new("cp")
+                .arg("-a")
+                .arg(Path::new("/etc").join(file))
+                .arg(&machine_path))?;
+        }
         let Ok(machine) = fs::read_to_string(&machine_path) else {
             continue;
         };
-        let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default();
+        let slot = fs::read_to_string(Path::new("/etc").join(file)).unwrap_or_default() + &addons;
         if let Some(merged) = merge_accounts(&slot, &machine) {
             replace_keeping_mode(&machine_path, &merged)?;
             println!("edel-data: added the slot's new entries to /etc/{file}");
@@ -275,7 +284,9 @@ fn developer_layer() -> Result<()> {
         );
         return Ok(());
     }
-    if !is_mounted("/usr")? {
+    // Mounted once a start: `/run` is new each start, and an add-ons'
+    // overlay may already be on /usr below the layer.
+    if fs::read_to_string(now).unwrap_or_default().trim() != "on" {
         fs::create_dir_all(layer)?;
         fs::create_dir_all(work)?;
         let _ = Command::new("modprobe").arg("overlay").status();
@@ -360,6 +371,14 @@ fn bind_home_and_var() -> Result<()> {
                 .arg("-a")
                 .arg(Path::new("/var").join(&rel))
                 .arg(dest.parent().unwrap_or(data)))?;
+        }
+        // What the mounted add-ons keep in /var (M7.2a), wherever this
+        // machine lacks it; nothing of the machine's is replaced.
+        for dir in crate::addons::var_dirs() {
+            run(Command::new("cp")
+                .args(["-a", "-n"])
+                .arg(format!("{}/.", dir.display()))
+                .arg(data.join("var")))?;
         }
         // Flatpak hands apps the first fonts' cache folder that exists, and
         // this one would be stale after an update, so the slot's cache
@@ -478,6 +497,8 @@ pub fn mount_data() -> Result<()> {
     // must not also leave /home, /var and /tmp off /data.
     let mut first_error = None;
     for (step, result) in [
+        ("add-ons", crate::addons::mount_all()),
+        // After the add-ons, so the layer goes over their overlay too.
         ("developer mode", developer_layer()),
         ("/etc", overlay_etc()),
         ("/home, /var and /root", bind_home_and_var()),

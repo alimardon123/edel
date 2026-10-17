@@ -1,0 +1,11 @@
+# Printing (M7.2a, M7.6): CUPS and its filters, as an add-on for the
+# machines that print.
+format = 1
+summary = "Printing: CUPS, with drivers for most printers"
+why = "Printing is a basic for office work, and CUPS is the one print system Linux apps and the GTK print dialog talk to. cups-filters turns documents into what printers take, and with CUPS's driverless IPP most printers of the last ten years need no driver of their own. Its daemon, cupsd, runs only on machines whose person added printing, and is switchable, so it can be turned off without taking the add-on out (ADR-008)."
+packages = ["cups", "cups-openrc", "cups-filters"]
+switchable = true
+addon = true
+
+[services]
+default = ["cupsd"]

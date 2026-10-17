@@ -1,0 +1,7 @@
+#!/sbin/openrc-run
+# The A/B test's add-on service (M7.2a): says the greeting in /run.
+description="Says hello, for CI's A/B test"
+
+start() {
+	/usr/bin/ci-hello >/run/ci-hello
+}
