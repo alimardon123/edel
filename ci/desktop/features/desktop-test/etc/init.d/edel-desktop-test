@@ -354,6 +354,29 @@ commands() {
 			say "device_power pci=$pci_auto/$pci_all sata=${sata:-none} hda=$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo none) nmi=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)"
 			say "wifi_power $(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi.powersave=//p' | tail -n 1)"
 			;;
+		# The screens (M7.16b): each connected screen's DPMS, the state file's
+		# screens_off and each CRTC's active flag from the kernel's atomic state
+		# (debugfs, mounted here when it is not).
+		'screens')
+			mountpoint -q /sys/kernel/debug 2>/dev/null || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+			dpms=$(for c in /sys/class/drm/card*-*; do
+				[ "$(cat "$c/status" 2>/dev/null)" = connected ] || continue
+				cat "$c/dpms" 2>/dev/null
+			done | sort -u | tr '\n' ',' | sed 's/,$//')
+			active=$(sed -n 's/^[[:space:]]*active=\([01]\)[[:space:]]*$/\1/p' /sys/kernel/debug/dri/*/state 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
+			say "screens dpms=$dpms off=$(sed -n 's/^screens_off = //p' "$state_file") active=$active"
+			;;
+		# The screens go off after one minute without input (M7.16b), as ci's
+		# setting; reset puts the default back.
+		'screen off soon') as_ci "edel settings set power.screen_off_minutes=1" ;;
+		'screen off reset') as_ci "edel settings reset power.screen_off_minutes" ;;
+		# The frames for 5 s after the screens came back on, as weston's
+		# presentation times give them, the first presented frame left out:
+		# it carries the modeset.
+		'frames after wake')
+			as_ci timeout -s INT 5 weston-presentation-shm >/tmp/frames-wake.txt 2>&1
+			say "frame_wake_p99_ms $(awk '{ for (i = 1; i < NF; i++) if ($i == "p2p" && $(i + 1) > 0) print $(i + 1) }' /tmp/frames-wake.txt | tail -n +2 | sort -n | awk '{ t[NR] = $1 } END { if (NR) printf "%.1f", t[int(NR * 99 / 100 + 0.999)] / 1000 }')"
+			;;
 		# An update that waits for a game (M7.7c): it has no release file, so
 		# once it may go on it fails at once, and its log says both.
 		'update during game')

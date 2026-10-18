@@ -5479,6 +5479,54 @@ case_device_power() {
 	echo "PASS: $auto of $all PCI devices may sleep (power/control auto), SATA links $sata, the sound chip sleeps after $hda s, the NMI watchdog is off, Wi-Fi's power save is $wifi"
 }
 
+case_screen_off() {
+	# Screens off (M7.16b): with power.screen_off_minutes at 1, shell-ui asks
+	# the compositor to turn every screen off after a minute without input.
+	# The state file says screens_off and the kernel's CRTCs are all
+	# inactive (DPMS is printed, not required). A key press turns them on again
+	# within 10 s, and the frames for 5 s after that hold the frame budget
+	# (the first presented frame carries the modeset, so it is left out).
+	screens_line() {
+		n=$(count 'DESKTOP-TEST: screens ')
+		guest 'screens'
+		wait_more 'DESKTOP-TEST: screens ' "$n" 20 || fail "the service did not read the screens"
+		value screens
+	}
+	guest 'screen off soon'
+	wait_for 'DESKTOP-TEST: ran screen off soon: 0' 20 || fail "the service did not set power.screen_off_minutes to 1"
+	i=0
+	while :; do
+		line=$(screens_line)
+		case "$line" in
+		*off=true*active=0) break ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 17 ] || fail "the screens did not go off after a minute idle (${line:-none})"
+		sleep 5
+	done
+	python3 ci/qmp.py key shift
+	i=0
+	while :; do
+		line=$(screens_line)
+		case "$line" in
+		*off=false*active=*1*) break ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "the screens did not come back on at a key press (${line:-none})"
+		sleep 1
+	done
+	n=$(count 'DESKTOP-TEST: frame_wake_p99_ms ')
+	guest 'frames after wake'
+	wait_more 'DESKTOP-TEST: frame_wake_p99_ms ' "$n" 30 || fail "the service did not time the frames after the screens came back on"
+	p99=$(value frame_wake_p99_ms)
+	limit=$(budget frame_p99_ms)
+	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "the frames for 5 s after the screens came back on took ${p99:-none} ms at p99, over the budget of $limit ms"
+	guest 'screen off reset'
+	wait_for 'DESKTOP-TEST: ran screen off reset: 0' 20 || fail "the service did not reset power.screen_off_minutes"
+	echo "PASS: the screens went off after a minute without input (the CRTCs inactive, the state file's screens_off true), a key press turned them on again (a CRTC active), and the frames for 5 s after waking had p99 $p99 ms, within the budget of $limit ms"
+}
+
 case_clipboard() {
 	# Clipboard history (M7.13): the test client clip copies a text on the
 	# key 1 and another on 2, which shell-ui keeps in memory; Super+V opens
@@ -8338,7 +8386,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power screen-off profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

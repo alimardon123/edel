@@ -110,6 +110,10 @@ struct Screen {
     /// Kept as the window and the reason, so a frame compares them and
     /// formats the line only when it changes.
     direct: Option<(smithay::desktop::Window, Option<&'static str>)>,
+    /// Turned off for nobody's use (M7.16b): its CRTC is cleared, no frame
+    /// is drawn and no frame callback goes to its windows, until the
+    /// next input.
+    off: bool,
 }
 
 /// Opens the seat, trying for up to 10 s: at boot greetd may start a
@@ -791,6 +795,7 @@ impl Gpu {
                 vrr,
                 feedbacks,
                 direct: None,
+                off: false,
             },
         );
         Ok(())
@@ -825,8 +830,37 @@ impl Gpu {
             return;
         }
         let now = self.started.elapsed();
+        let mut cleared = 0;
         for screen in self.screens.values_mut() {
-            if !screen.dirty || screen.pending {
+            // A frame still on its way is shown first, then the screen is
+            // cleared here (`clear` drops only what is not queued).
+            if screen.pending {
+                continue;
+            }
+            // Asked to be off (M7.16b): the screen is cleared once, then
+            // nothing is drawn for it. A lock is confirmed here too, as a
+            // screen off shows nothing to lock; the lock's frame comes
+            // with the next input.
+            if state.screens_off {
+                if !screen.off {
+                    screen.off = true;
+                    match screen.compositor.clear() {
+                        Ok(()) => cleared += 1,
+                        Err(e) => eprintln!(
+                            "edel-compositor: {}",
+                            messages::screens_not_off(&screen.output.name(), e)
+                        ),
+                    }
+                }
+                if state.locked.is_some() {
+                    state.lock_drawn(&screen.output.name());
+                }
+                continue;
+            }
+            if std::mem::take(&mut screen.off) {
+                screen.dirty = true;
+            }
+            if !screen.dirty {
                 continue;
             }
             screen.dirty = false;
@@ -882,6 +916,9 @@ impl Gpu {
             crate::layers::send_frames(&screen.output, now, only);
             state.lock_frames(&screen.output, now);
             state.cursor_frame(&screen.output, now);
+        }
+        if cleared > 0 {
+            eprintln!("edel-compositor: screens off, {cleared} cleared");
         }
         // While a window opens, closes or slides, the screens draw again
         // one refresh later (M5.11b): animations step with the display,
