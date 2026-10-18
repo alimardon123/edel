@@ -1377,12 +1377,7 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     let mut read = settings::read_on_machine(path)?;
     // The profiles the file names give what it leaves out (M7.6), so apply
     // and diff act on them; the file itself still names only the profiles.
-    // The slot's default add-ons are laid under first, while the file names
-    // none of its own (M8.17c), as applying the profiles loses that.
-    let default = edel::addon_state::running_default();
-    if read.file.addons.installed.is_none() && !default.is_empty() {
-        read.file.addons.installed = Some(edel::addon_state::installed(&read.file, &default));
-    }
+    lay_default_addons(&mut read.file);
     read.file = edel::profiles::applied(&read.file);
     for problem in &read.problems {
         println!(
@@ -1471,12 +1466,25 @@ pub fn import(file: &Path) -> Result<()> {
     apply_file(Some(file), false)
 }
 
-/// The boot's apply on a machine with no settings file: only the
-/// services, as an empty file asks for them (M8.17).
+/// Lays the slot's default add-ons under a file that names none of its
+/// own (M8.17c), before the profiles are applied, as applying them loses
+/// that the list was absent.
+fn lay_default_addons(file: &mut SettingsFile) {
+    let default = edel::addon_state::running_default();
+    if file.addons.installed.is_none() && !default.is_empty() {
+        file.addons.installed = Some(edel::addon_state::installed(file, &default));
+    }
+}
+
+/// The boot's apply on a machine with no settings file: the default
+/// add-ons' links, then the services, as an empty file asks for them
+/// (M8.17, M8.17c); the desktop's services are the add-on's.
 fn boot_services() -> Result<()> {
-    let file = SettingsFile::default();
+    let mut file = SettingsFile::default();
+    lay_default_addons(&mut file);
     let (changes, _) = plan(&file, &Machine::read(&file)?);
-    for change in changes.iter().filter(|c| matches!(c, Change::Service(_))) {
+    let boot_change = |c: &&Change| matches!(c, Change::Service(_) | Change::Addons { .. });
+    for change in changes.iter().filter(boot_change) {
         match execute(change, true) {
             Ok(()) => println!("edel settings: {change}"),
             Err(err) => eprintln!(
