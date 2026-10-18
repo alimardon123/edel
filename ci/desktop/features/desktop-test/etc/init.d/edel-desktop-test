@@ -1320,6 +1320,24 @@ commands() {
 			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >>/tmp/standin.log 2>&1
 			say "gaming_standin_off $? $(as_ci 'flatpak --user list --columns=application' </dev/null 2>&1 | tr '\n' ';')"
 			;;
+		# Containers as the admin (M7.6b part 4): our own container image,
+		# which the runner serves (ci/build.sh's out/desktop-container), a
+		# root file system's archive, imported as edel:ci for ci, as
+		# container-test.sh's docker import takes it, then run as ci.
+		'podman run')
+			rm -f /tmp/edel-container.tar.gz
+			wget -q -O /tmp/edel-container.tar.gz http://10.0.2.2:8002/edel-container.tar.gz >/tmp/podman.log 2>&1
+			chmod 644 /tmp/edel-container.tar.gz
+			as_ci 'podman import /tmp/edel-container.tar.gz edel:ci' </dev/null >>/tmp/podman.log 2>&1
+			out=$(as_ci 'podman run --rm edel:ci echo ok' </dev/null 2>>/tmp/podman.log)
+			status=$?
+			say "podman_run $status ${out:-none} $(tail -n 5 /tmp/podman.log | tr '\n' ';')"
+			;;
+		'podman clean')
+			as_ci 'podman rmi -f edel:ci' </dev/null >/dev/null 2>&1
+			rm -f /tmp/edel-container.tar.gz
+			say "podman_clean $(as_ci 'podman images -q' </dev/null 2>/dev/null | wc -l)"
+			;;
 		'flatpak apps')
 			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&
 				edel settings apply >>/tmp/flatpak-apply.log 2>&1

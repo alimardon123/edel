@@ -72,6 +72,10 @@ const SEAT_GROUP: &str = "seat";
 const GREETER: &str = "greetd";
 /// The most of a user's `authorized_keys` apply and export read.
 const KEYS_MAX: u64 = 1 << 20;
+/// The first subordinate id a person's range starts from, and how many ids
+/// each range holds (rootless containers, M7.6b).
+const SUBID_FIRST: u32 = 100000;
+const SUBID_COUNT: u32 = 65536;
 /// Writes `~/.ssh/authorized_keys` from standard input. It runs as the
 /// user, so nothing in the user's home can send it elsewhere.
 const WRITE_KEYS: &str = "umask 077 && mkdir -p \"$HOME/.ssh\" && chmod 700 \"$HOME/.ssh\" && \
@@ -303,6 +307,12 @@ enum Change {
         make: Vec<(String, String)>,
         remove: Vec<String>,
     },
+    /// `/etc/subuid` and `/etc/subgid`, each written whole when `Some`: the
+    /// id ranges rootless containers map each person's ids into (M7.6b)
+    SubIds {
+        uid: Option<String>,
+        gid: Option<String>,
+    },
 }
 
 impl fmt::Display for Change {
@@ -371,6 +381,10 @@ impl fmt::Display for Change {
             Change::MimeDefaults(_) => {
                 write!(f, "write {} (the default apps)", places::MIME_DEFAULTS)
             }
+            Change::SubIds { .. } => write!(
+                f,
+                "write /etc/subuid and /etc/subgid: subordinate ids for rootless containers"
+            ),
         }
     }
 }
@@ -413,6 +427,9 @@ struct Machine {
     mime_defaults: Option<String>,
     /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
     first_passwords: Option<String>,
+    /// `/etc/subuid` and `/etc/subgid` as they are, on a machine with
+    /// newuidmap for rootless containers (M7.6b); None without it
+    subids: Option<(String, String)>,
 }
 
 impl Machine {
@@ -469,6 +486,12 @@ impl Machine {
             addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
+            subids: Path::new("/usr/bin/newuidmap").exists().then(|| {
+                (
+                    fs::read_to_string("/etc/subuid").unwrap_or_default(),
+                    fs::read_to_string("/etc/subgid").unwrap_or_default(),
+                )
+            }),
         })
     }
 }
@@ -714,6 +737,15 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
             }
         }
     }
+    // Rootless containers map each person's ids through /etc/subuid and
+    // /etc/subgid (M7.6b). Each person the file names gets a range once.
+    if let Some((uid, gid)) = &machine.subids {
+        let uid = subid_text(uid, &seat);
+        let gid = subid_text(gid, &seat);
+        if uid.is_some() || gid.is_some() {
+            changes.push(Change::SubIds { uid, gid });
+        }
+    }
     // The default apps (M6.10). A file this release did not write is the
     // administrator's: never overwritten or removed. Ours is rewritten
     // when it differs, and removed when the file sets no MIME type.
@@ -801,6 +833,40 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         }
     }
     (changes, notes)
+}
+
+/// `text`, an `/etc/subuid` or `/etc/subgid`, with a range of
+/// `SUBID_COUNT` ids added for each of `names` that has none, each after
+/// the highest range there, so no two people share ids (M7.6b). Lines
+/// that do not parse are skipped. None when every name has a range.
+fn subid_text(text: &str, names: &[String]) -> Option<String> {
+    let mut have: BTreeSet<&str> = BTreeSet::new();
+    let mut next = SUBID_FIRST;
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if let [name, start, count] = fields[..] {
+            if let (Ok(start), Ok(count)) = (start.parse::<u32>(), count.parse::<u32>()) {
+                have.insert(name);
+                next = next.max(start.saturating_add(count));
+            }
+        }
+    }
+    let mut added = String::new();
+    for name in names {
+        if have.insert(name.as_str()) {
+            added.push_str(&format!("{name}:{next}:{SUBID_COUNT}\n"));
+            next = next.saturating_add(SUBID_COUNT);
+        }
+    }
+    if added.is_empty() {
+        return None;
+    }
+    let mut out = text.to_string();
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&added);
+    Some(out)
 }
 
 fn keys_text(keys: &[String]) -> String {
@@ -1042,6 +1108,16 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
                 write_whole(path, text.as_bytes())?;
                 fs::set_permissions(path, fs::Permissions::from_mode(0o644))
                     .with_context(|| could_not_write(path))?;
+            }
+        }
+        Change::SubIds { uid, gid } => {
+            for (path, text) in [("/etc/subuid", uid), ("/etc/subgid", gid)] {
+                if let Some(text) = text {
+                    let path = Path::new(path);
+                    write_whole(path, text.as_bytes())?;
+                    fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+                        .with_context(|| could_not_write(path))?;
+                }
             }
         }
     }
@@ -2843,6 +2919,7 @@ mod tests {
             addon_links: Default::default(),
             mime_defaults: None,
             first_passwords: None,
+            subids: None,
         }
     }
 
@@ -3218,6 +3295,59 @@ mod tests {
         // A server has no seat group, so nobody joins one.
         let (changes, _) = plan(&file, &machine());
         assert!(!changes.iter().any(|c| matches!(c, Change::Seat(_))));
+    }
+
+    #[test]
+    fn subordinate_ids_follow_the_highest_range_and_skip_what_is_there() {
+        let ci = ["ci".to_string()];
+        assert_eq!(subid_text("", &ci).as_deref(), Some("ci:100000:65536\n"));
+        let both = ["ali".to_string(), "ci".to_string()];
+        assert_eq!(
+            subid_text("ali:100000:65536\n", &both).as_deref(),
+            Some("ali:100000:65536\nci:165536:65536\n")
+        );
+        assert_eq!(
+            subid_text("ali:100000:65536\nci:165536:65536\n", &both),
+            None
+        );
+        // A line that does not parse is skipped, and a missing final
+        // newline is added before the new range.
+        assert_eq!(
+            subid_text("junk\nali:200000:65536", &ci).as_deref(),
+            Some("junk\nali:200000:65536\nci:265536:65536\n")
+        );
+    }
+
+    #[test]
+    fn plans_subordinate_ids_for_the_people_once() {
+        let file = settings::read("format = 1\n[users.ci]\n[users.sshd]\n[users.new]\n")
+            .unwrap()
+            .file;
+        let subids = |changes: &[Change]| {
+            changes
+                .iter()
+                .filter(|c| matches!(c, Change::SubIds { .. }))
+                .count()
+        };
+        // Without newuidmap there is nothing to write.
+        let (changes, _) = plan(&file, &machine());
+        assert_eq!(subids(&changes), 0);
+        let mut ids = machine();
+        ids.subids = Some((String::new(), "ali:100000:65536\n".into()));
+        let (changes, _) = plan(&file, &ids);
+        assert_eq!(subids(&changes), 1);
+        assert!(changes.contains(&Change::SubIds {
+            uid: Some("ci:100000:65536\nnew:165536:65536\n".into()),
+            gid: Some("ali:100000:65536\nci:165536:65536\nnew:231072:65536\n".into()),
+        }));
+        // Both files already hold every person: nothing to write.
+        let mut done = machine();
+        done.subids = Some((
+            "ci:100000:65536\nnew:165536:65536\n".into(),
+            "ci:100000:65536\nnew:165536:65536\n".into(),
+        ));
+        let (changes, _) = plan(&file, &done);
+        assert_eq!(subids(&changes), 0);
     }
 
     /// A home in a temporary directory, owned by whoever runs the tests.

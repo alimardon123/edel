@@ -317,6 +317,10 @@
 #   profile-gaming  a stand-in for Steam served as ci's Flathub: the gaming
 #               profile's apply installs it, the launcher starts it and its
 #               window maps; the compositor offers tearing control (M7.6b)
+#   profile-developer  the developer profile, VSCodium left out: apply
+#               ends 0, the diff is empty, and podman runs our own
+#               container image, imported as edel:ci, as ci, an admin,
+#               printing ok (M7.6b)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -8425,6 +8429,30 @@ case_profile_gaming() {
 	echo "PASS: with the gaming profile, edel settings apply installed the stand-in for Steam from ci's Flathub (this host), the diff was then empty, the launcher started it with flatpak run and its window mapped (profile-gaming.png), the compositor offers tearing control, and the reset and clean-up left ci without it"
 }
 
+case_profile_developer() {
+	# Developer (M7.6b part 4): the profile brings the containers add-on,
+	# built into this image; VSCodium, its app, is left out, so nothing
+	# comes from Flathub. As ci, an admin, podman imports our own container
+	# image as edel:ci and runs echo ok in it; the diff is empty.
+	profile_get developer addons.installed | grep -qx containers || fail "profiles/developer.toml does not bring the containers add-on"
+	[ -s out/desktop-container/edel-container-x86_64.tar.gz ] || fail "out/desktop-container/edel-container-x86_64.tar.gz is missing; ci/build.sh desktop-test builds it"
+	# shellcheck disable=SC2046 # one assignment a word
+	profile_on developer $(without developer)
+	asked=$(count 'DESKTOP-TEST: podman_run ')
+	guest 'podman run'
+	wait_more 'DESKTOP-TEST: podman_run ' "$asked" 180 || fail "podman did not answer within 180 s"
+	ran=$(value podman_run)
+	case "$ran" in
+	'0 ok '*) ;;
+	*) fail "podman run --rm edel:ci echo ok as ci, an admin, did not print ok: $ran" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: podman_clean ')
+	guest 'podman clean'
+	wait_more 'DESKTOP-TEST: podman_clean ' "$asked" 60 || fail "the service did not remove edel:ci"
+	profile_off
+	echo "PASS: with the developer profile applied (VSCodium left out), edel settings diff was empty and podman run --rm edel:ci echo ok, our own container image, printed ok as ci, an admin"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -8464,7 +8492,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles profile-office profile-creative profile-gaming flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -8984,12 +9012,15 @@ fi
 
 # The profile cases (M7.6b) take what a machine would download from this
 # host, the guest's 10.0.2.2, on a port of its own (rollback has 8001):
-# profile-gaming a stand-in for Steam from the test apps' repository.
+# profile-gaming a stand-in for Steam from the test apps' repository;
+# profile-developer our own container image (ci/build.sh's
+# out/desktop-container).
 case " $* " in
-*' profile-gaming '*)
+*' profile-gaming '* | *' profile-developer '*)
 	rm -rf "$dir/serve"
 	mkdir -p "$dir/serve"
 	ln -s "$PWD/out/apps-repo" "$dir/serve/apps"
+	ln -s "$PWD/out/desktop-container/edel-container-x86_64.tar.gz" "$dir/serve/edel-container.tar.gz"
 	python3 -m http.server 8002 --bind 127.0.0.1 --directory "$dir/serve" >out/desktop-serve.log 2>&1 &
 	served=$!
 	trap 'kill "$served" 2>/dev/null || true; rm -f "$grown"' EXIT
