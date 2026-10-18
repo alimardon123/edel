@@ -14,7 +14,7 @@ features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion",
 off = ["ssh"]
 # Built beside the image from its root, signed in its release, and
 # mounted on a machine whose settings file names them (M7.2a).
-addons = ["fonts-cjk", "orca", "printing", "containers", "virtualization"]
+addons = ["fonts-cjk", "orca", "printing", "containers", "virtualization", "graphics-nvidia"]
 
 [vm]
 kernel = "lts"

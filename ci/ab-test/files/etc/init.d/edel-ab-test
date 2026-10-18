@@ -20,7 +20,8 @@
 #      slot.cfg under slot A's loader (M6.17), and its tagged boot loader
 #      replaced slot A's on the ESP once the slot was confirmed. The
 #      add-on ci-hello is mounted, its /etc file and service linked and its
-#      service ran (M7.2a). Restart into slot B once more.
+#      service ran (M7.2a), and `edel status` names ci-hang's hardware
+#      pack and not ci-hello's (M7.11). Restart into slot B once more.
 #  2b. Slot B runs a second time. Nothing is applied, as the add-on's
 #      links already stand, and OpenRC read the services before the /etc
 #      layer came: the greeting shows edel-data had it read them again
@@ -96,6 +97,16 @@ ab_expect() {
 	for line in "$@"; do
 		echo "$slots" | grep -q "^$line" || {
 			ab_end "FAIL: step $step expected \"$line\""
+			return 1
+		}
+	done
+}
+
+# ab_absent LINE...: no line of `edel status` starts with LINE.
+ab_absent() {
+	for line in "$@"; do
+		echo "$slots" | grep -q "^$line" && {
+			ab_end "FAIL: step $step expected no \"$line\""
 			return 1
 		}
 	done
@@ -320,6 +331,11 @@ start() {
 		ab_check "the add-on's /etc file linked" test -L /etc/ci-hello.conf || return 0
 		ab_check "the add-on's service in the runlevel" test -L /etc/runlevels/default/ci-hello || return 0
 		ab_check "the add-on's service's greeting" greeted || return 0
+		# The hardware packs file (M7.11), written at this boot: ci-hang's
+		# pack serves the VM's virtio devices and is not chosen, so
+		# `edel status` names it; ci-hello is chosen and mounted, so not.
+		ab_expect "hardware: add-on ci-hang serves this computer's hardware" || return 0
+		ab_absent "hardware: add-on ci-hello" || return 0
 		ab_next 2b
 		;;
 	2b)

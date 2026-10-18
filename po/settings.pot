@@ -92,6 +92,9 @@ msgstr ""
 msgid "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart."
 msgstr ""
 
+msgid "Serves this computer's hardware"
+msgstr ""
+
 msgid "This version of Edel OS has no add-ons to choose."
 msgstr ""
 

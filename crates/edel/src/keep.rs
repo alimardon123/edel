@@ -80,19 +80,10 @@ pub fn check(keep: &Keep) -> Result<()> {
 }
 
 /// Whether `name` matches `pattern`: `*` is any run of characters but `/`,
-/// `?` one such character; everything else stands for itself.
+/// `?` one such character; everything else stands for itself. The glob is
+/// written once, in `hardware` (M7.11).
 pub fn matches(pattern: &str, name: &str) -> bool {
-    fn go(p: &[u8], n: &[u8]) -> bool {
-        match p.split_first() {
-            None => n.is_empty(),
-            Some((b'*', rest)) => (0..=n.len())
-                .take_while(|&i| i == 0 || n[i - 1] != b'/')
-                .any(|i| go(rest, &n[i..])),
-            Some((b'?', rest)) => n.first().is_some_and(|&c| c != b'/') && go(rest, &n[1..]),
-            Some((c, rest)) => n.first() == Some(c) && go(rest, &n[1..]),
-        }
-    }
-    go(pattern.as_bytes(), name.as_bytes())
+    crate::hardware::glob(pattern, name, true)
 }
 
 /// A versioned file's family and version: `iwlwifi-so-a0-gf-a0-89.ucode.zst`
