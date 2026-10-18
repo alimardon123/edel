@@ -1,0 +1,10 @@
+# The people at the machine play with their controllers (roadmap M7.6b):
+# steam-devices' rules (60-steam-input.rules, 60-steam-vr.rules) mark the
+# controllers' and VR headsets' hidraw and USB devices, and /dev/uinput,
+# where Steam Input makes the pad games see, for uaccess, which only logind
+# acts on; Edel OS has none, so group seat, which the seat feature holds
+# them in, takes its place, as for sound and scanners.
+TAG=="uaccess", SUBSYSTEM=="hidraw|usb|misc", GROUP="seat", MODE="0660"
+# A controller's own input device, which games read through SDL, as logind
+# would give it; only joysticks, never a keyboard.
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_JOYSTICK}=="1", ENV{ID_INPUT_KEYBOARD}!="1", GROUP="seat", MODE="0660"

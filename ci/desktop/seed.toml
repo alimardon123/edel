@@ -12,3 +12,9 @@ admin = false
 # the resolution key too.
 [displays.Virtual-2]
 resolution = "1024x768"
+
+# Low latency (M7.6b): the compositor links ci's PipeWire drop-in before
+# it starts PipeWire; the sound case reads the quantum with pw-metadata,
+# then resets the key.
+[sound]
+low_latency = true

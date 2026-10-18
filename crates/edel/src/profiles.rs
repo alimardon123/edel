@@ -55,7 +55,10 @@ pub fn about(name: &str) -> String {
     match name {
         "office" => tr(n_("LibreOffice, printing and scanning")).to_string(),
         "developer" => tr(n_("Podman containers and the VSCodium editor")).to_string(),
-        "creative" => tr(n_("Krita for drawing and GIMP for photos")).to_string(),
+        "creative" => tr(n_(
+            "Krita for drawing, GIMP for photos and low-latency sound",
+        ))
+        .to_string(),
         "gaming" => tr(n_("Steam, and game mode for every fullscreen game")).to_string(),
         _ => String::new(),
     }
@@ -281,6 +284,20 @@ mod tests {
     #[test]
     fn every_add_on_a_profile_names_is_one() {
         let features = concat!(env!("CARGO_MANIFEST_DIR"), "/../../features");
+        // The add-ons the one image builds beside itself (M7.6b, M8.17): a
+        // profile's add-on must be one of them, or the machine never has it.
+        let image = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../images/edel.toml"
+        ))
+        .unwrap();
+        let image: toml::Table = toml::from_str(&image).unwrap();
+        let built: Vec<String> = image["addons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
         for name in NAMES {
             let named = applied(&file(&format!(
                 "format = 1\n[system]\nprofiles = [\"{name}\"]\n"
@@ -292,8 +309,18 @@ mod tests {
                     text.contains("addon = true"),
                     "{name}: {addon} is no add-on"
                 );
+                assert!(
+                    built.contains(&addon.to_string()),
+                    "{name}: images/edel.toml does not build add-on {addon}"
+                );
             }
         }
+    }
+
+    #[test]
+    fn gaming_brings_the_controllers_add_on() {
+        let gaming = applied(&file("format = 1\n[system]\nprofiles = [\"gaming\"]\n"));
+        assert_eq!(gaming.addons.installed.unwrap(), ["gaming"]);
     }
 
     #[test]
@@ -389,5 +416,15 @@ mod tests {
         assert_eq!(item_title("com.vscodium.codium"), "Codium");
         assert_eq!(item_title("printing"), "printing");
         assert_eq!(without_words(&file("format = 1\n")), None);
+    }
+
+    #[test]
+    fn creative_brings_sound_with_little_delay() {
+        let creative = applied(&file("format = 1\n[system]\nprofiles = [\"creative\"]\n"));
+        assert_eq!(creative.sound.low_latency, Some(true));
+        let own = applied(&file(
+            "format = 1\n[system]\nprofiles = [\"creative\"]\n[sound]\nlow_latency = false\n",
+        ));
+        assert_eq!(own.sound.low_latency, Some(false));
     }
 }

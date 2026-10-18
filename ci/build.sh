@@ -60,6 +60,9 @@ desktop_test_image() {
 	sh ci/apps/make-repo.sh out/apps-repo
 	build "$version" ci/desktop/vm.toml --files out/desktop-seed --health-timeout 30 --public-key out/keys/ci-1.pub \
 		--app org.edel.TestA --apps-from "file://$PWD/out/apps-repo" --no-compress --out out/desktop-test
+	# Our own container image (M7.6b), which the profile-developer case
+	# imports as edel:ci and runs with podman, served from the runner.
+	build "$version" images/container.toml --out out/desktop-container
 }
 
 # This container runs as root. Hand the finished images back to whoever
@@ -76,7 +79,7 @@ hand_back() {
 
 if [ "$what" = desktop-test ]; then
 	desktop_test_image
-	hand_back out out/desktop-test out/keys
+	hand_back out out/desktop-test out/desktop-container out/keys
 	exit 0
 fi
 
@@ -254,5 +257,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
+	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test

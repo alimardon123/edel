@@ -8,6 +8,9 @@
 //! page and the command line are one level (ADR-008). The list is whatever
 //! PipeWire reports, not only local cards (ADR-011). The page follows the
 //! sound system while it is open, so a change made elsewhere shows here.
+//! The page's one key is low latency (M7.6b), the only line of the file it
+//! writes: the compositor links PipeWire's low-latency file in for the next
+//! login.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -19,9 +22,27 @@ use gtk::prelude::*;
 
 use edel::firmware;
 use edel::i18n::{n_, tr, trf};
+use edel::settings::{LOW_LATENCY, Source};
 use edel::sound::{self, Device, Devices, Kind};
 
-use crate::widgets;
+use crate::files::Files;
+use crate::{choice_row, rows, widgets};
+
+/// What the Low latency row says under its title (M7.6b).
+const LATENCY_WHAT: &str = n_(
+    "Sound arrives within about 5 ms, for music and recording; it takes a little more power while sound plays, from the next login",
+);
+
+/// The Low latency switch (M7.6b), the page's one key: on links
+/// PipeWire's low-latency file in for the next login.
+struct Latency {
+    switch: gtk::Switch,
+    row: widgets::Row,
+    /// Set while the page itself moves the switch, so that is no choice.
+    quiet: Cell<bool>,
+    /// Kept so the row follows the files while the page is open.
+    monitors: Vec<gio::FileMonitor>,
+}
 
 const INTRO: &str = n_("Where sound plays, what listens, and how loud.");
 
@@ -68,6 +89,8 @@ struct Ui {
     sides: [Side; 2],
     /// Said when no sound device is listed at all.
     nothing: gtk::Box,
+    /// The Music and recording group's switch (M7.6b).
+    latency: Latency,
     /// Names the sound firmware the kernel asked for and lacks, under
     /// `nothing`, when the kernel log says so (M6.15).
     firmware: gtk::Label,
@@ -109,10 +132,12 @@ pub fn page() -> gtk::Widget {
     widgets::text_row(&group, sound::no_devices());
     let firmware = widgets::output_row(&group);
     content.append(&nothing);
+    let latency = latency_row(&content);
     let ui = Rc::new(Ui {
         page: page.clone(),
         sides: [output, input],
         nothing,
+        latency,
         firmware,
         firmware_read: Cell::new(false),
         problem,
@@ -120,6 +145,43 @@ pub fn page() -> gtk::Widget {
     for side in &ui.sides {
         wire(&ui, side);
     }
+    show_latency(&ui);
+    for monitor in &ui.latency.monitors {
+        let weak = Rc::downgrade(&ui);
+        monitor.connect_changed(move |_, _, _, _| {
+            if let Some(ui) = weak.upgrade() {
+                show_latency(&ui);
+            }
+        });
+    }
+    let weak = Rc::downgrade(&ui);
+    ui.latency.switch.connect_active_notify(move |switch| {
+        let Some(ui) = weak.upgrade() else { return };
+        if !ui.latency.quiet.get() {
+            // Off is what applies without the key, so it is taken out.
+            let files = Files::here();
+            let without = files.low_latency_without_mine().to_string();
+            choice_row::report(
+                &ui.problem,
+                files.choose_over(LOW_LATENCY, &switch.is_active().to_string(), Some(&without)),
+            );
+            show_latency(&ui);
+        }
+    });
+    let weak = Rc::downgrade(&ui);
+    ui.latency.row.reset.connect_clicked(move |_| {
+        if let Some(ui) = weak.upgrade() {
+            choice_row::report(&ui.problem, Files::here().set(LOW_LATENCY, None));
+            show_latency(&ui);
+        }
+    });
+    ui.latency.row.copy.connect_clicked(move |button| {
+        let value = Files::here().low_latency().to_string();
+        button
+            .clipboard()
+            .set_text(&rows::command(&[(LOW_LATENCY, value)]));
+        widgets::copied(button);
+    });
     // Follow the sound system while the page is on screen, and only then.
     let timer: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
     {
@@ -142,6 +204,44 @@ pub fn page() -> gtk::Widget {
         }
     });
     page
+}
+
+/// The Music and recording group and its Low latency switch (M7.6b).
+fn latency_row(content: &gtk::Box) -> Latency {
+    widgets::heading(content, tr("Music and recording"));
+    let group = widgets::group(content);
+    let switch = gtk::Switch::builder().valign(gtk::Align::Center).build();
+    let row = widgets::row(
+        &group,
+        rows::title(LOW_LATENCY),
+        &switch.clone().upcast::<gtk::Widget>(),
+    );
+    Latency {
+        switch,
+        row,
+        quiet: Cell::new(false),
+        monitors: choice_row::watch_files(&Files::here()),
+    }
+}
+
+/// Shows what the files say about low latency now: the switch, its line
+/// under the title and whether Reset has anything to take out (M7.6b).
+fn show_latency(ui: &Ui) {
+    let files = Files::here();
+    let on = files.low_latency();
+    let latency = &ui.latency;
+    latency.quiet.set(true);
+    latency.switch.set_active(on);
+    latency.quiet.set(false);
+    let source = files.source(LOW_LATENCY);
+    let note = rows::note(&source, false)
+        .or_else(|| (on && matches!(source, Source::Release)).then(|| tr("From the profile")));
+    let line = match note {
+        Some(note) => format!("{} · {note}", tr(LATENCY_WHAT)),
+        None => tr(LATENCY_WHAT).to_string(),
+    };
+    latency.row.subtitle.set_label(&line);
+    latency.row.reset.set_visible(rows::resettable(&source));
 }
 
 /// The heading and card of one side, with its rows: the device, the volume

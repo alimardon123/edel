@@ -27,3 +27,10 @@ addon = true
 
 [services]
 default = ["cupsd"]
+
+# The basics checklist (M6.7): moved here from the flatpak feature
+# (M7.6b), as printing is this feature's.
+
+[[basics]]
+name = "Printing"
+test = "profile-office"
