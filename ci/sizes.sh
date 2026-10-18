@@ -2,7 +2,8 @@
 # Checks the budgets in ci/budgets.toml (roadmap M3.2) and writes them, with
 # the image sizes, as Markdown tables to the run summary. Boot time, memory
 # in use and root size are the median of three boots of the one image
-# (images/edel.toml, M8.17) with no screen (`-vga none`), read from the line
+# (images/edel.toml, M8.17) with no screen (`-vga none`) and without the
+# add-ons its disk carries (M8.17c), read from the line
 # edel-boot-ok prints; the image sizes are the container's and the update
 # image's. Fails the job when a measurement is
 # over its budget; CI runs it even after a failure, and then it only
@@ -39,9 +40,25 @@ check() {
 
 if [ -e "$container" ] && [ -e "$vm" ]; then
 	rm -f out/budgets.txt
+	# The slot alone (M8.17c): a copy of the disk whose data partition
+	# (partition 4) no longer holds the add-ons it carries, as a server's
+	# has none, so the budgets measure what a server runs.
+	. ci/names.sh
+	alone=out/budget-alone.img
+	cp --sparse=always "$vm" "$alone"
+	part=$(sfdisk -d "$alone" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
+	dd if="$alone" of=out/budget-data.img bs=512 skip="${part% *}" count="${part#* }" status=none
+	for addon in $(debugfs -R "ls -p $addons_dir_on_data" out/budget-data.img 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
+		for file in $(debugfs -R "ls -p $addons_dir_on_data/$addon" out/budget-data.img 2>/dev/null | awk -F/ '$6 ~ /\.ext4$/ { print $6 }'); do
+			debugfs -w -R "rm $addons_dir_on_data/$addon/$file" out/budget-data.img
+			echo "budget boots: without the carried add-on $addon/$file"
+		done
+	done
+	dd if=out/budget-data.img of="$alone" bs=512 seek="${part% *}" conv=notrunc status=none
+	rm -f out/budget-data.img
 	for n in 1 2 3; do
 		vm_stamp=1 run_vm "out/budget-boot-$n.log" 'Started in [0-9.]+ s' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
-			-vga none -drive if=none,id=disk0,format=raw,file="$vm" \
+			-vga none -drive if=none,id=disk0,format=raw,file="$alone" \
 			-device virtio-blk-pci,drive=disk0,bootindex=0
 		line=$(tr -d '\r' <"out/budget-boot-$n.log" |
 			sed -n 's/.*Started in \([0-9.]*\) s, \([0-9]*\) MiB of memory in use, \([0-9]*\) MiB used on the root.*/\1 \2 \3/p' | tail -n 1)
@@ -52,6 +69,7 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 		echo "boot $n: $line"
 		echo "$line" >>out/budgets.txt
 	done
+	rm -f "$alone"
 	check 'Container image (tar.gz)' "$(awk -v b="$(stat -c %s "$container")" 'BEGIN { printf "%.1f", b / 1048576 }')" container_mib MiB
 	# What a person downloads to update the system (M5.10c4c): its slot's
 	# image, compressed, the wallpapers and the fonts included.

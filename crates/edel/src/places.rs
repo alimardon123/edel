@@ -351,6 +351,15 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
         ("addons_dir", ADDONS_DIR.to_string()),
+        // The same folder on the data partition itself (M8.17c), for a
+        // script that reads the partition with debugfs.
+        (
+            "addons_dir_on_data",
+            ADDONS_DIR
+                .strip_prefix(DATA_MOUNT)
+                .unwrap_or(ADDONS_DIR)
+                .to_string(),
+        ),
         ("first_passwords", FIRST_PASSWORDS.to_string()),
         ("installed_mark", INSTALLED.to_string()),
         ("greeter_dir", GREETER_DIR.to_string()),
