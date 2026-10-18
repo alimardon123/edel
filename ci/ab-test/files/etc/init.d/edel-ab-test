@@ -51,7 +51,8 @@
 #      drivers, as on a machine that has none.
 #   5. (hang) With no watchdog, the guard restarted slot B itself (M1.10),
 #      so slot A runs and slot B is off. Install it again with a service
-#      that freezes the kernel with panic reboots switched off.
+#      that freezes the kernel with panic reboots switched off, once the
+#      guard pets the hardware watchdog.
 #   6. (freeze) Only the hardware watchdog can restart a frozen kernel:
 #      slot A runs again and slot B is off. Install it again with its own
 #      health check, network, which a service writes once a default route
@@ -425,7 +426,10 @@ start() {
 		;;
 	5)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
-		ab_break_b freeze 'echo 0 >/proc/sys/kernel/panic; echo c >/proc/sysrq-trigger' || return 0
+		# Frozen once the guard pets the hardware watchdog (state active,
+		# not softdog's): udev loads i6300esb late in the boot, after
+		# this service may run, and a frozen kernel never fires softdog.
+		ab_break_b freeze 'for i in $(seq 300); do for w in /sys/class/watchdog/watchdog*; do [ "$(cat "$w/state")" = active ] && [ "$(cat "$w/identity")" != "Software Watchdog" ] && break 2; done; sleep 0.1; done; echo 0 >/proc/sys/kernel/panic; echo c >/proc/sysrq-trigger' || return 0
 		ab_next 6
 		;;
 	6)
