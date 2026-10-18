@@ -189,14 +189,17 @@ sed 's/^expires = .*$/expires = "2020-01-01"/' "$update/release.toml" >"$update/
 build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
 
 # The desktop test image here too, for desktop-test.sh rollback, which
-# runs in the VM test lane: its own update image, signed, is the update
-# that case installs and breaks (roadmap M4.8).
+# runs in the VM test lane: its own update image and desktop add-on,
+# signed, are the update that case installs and breaks (roadmap M4.8,
+# M8.17c).
 desktop_test_image
 update=out/desktop-test/update
 rm -rf "$update"
 mkdir -p "$update"
 ln out/desktop-test/edel-desktop-x86_64.ext4.gz "$update/"
-./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-desktop-x86_64.ext4.gz"
+ln out/desktop-test/edel-desktop-x86_64.desktop.ext4.gz out/desktop-test/edel-desktop-x86_64.desktop.toml "$update/"
+./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" \
+	--addon "$update/edel-desktop-x86_64.desktop.ext4.gz" "$update/edel-desktop-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
 
 # The default apps' test (roadmap M6.2, ci/apps-test.sh): the CI VM image (ci/vm/vm.toml) with
