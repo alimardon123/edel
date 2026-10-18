@@ -390,9 +390,9 @@ struct Shell {
     screencopy: Option<ZwlrScreencopyManagerV1>,
     shots: Vec<screenshot::Shot>,
     next_shot: u64,
-    /// The power profile last asked of `edel`, until the kernel shows it
-    /// (M7.8).
-    profile_asked: Option<String>,
+    /// The power profile and the charger's word last asked of `edel`, until
+    /// the computer has what it asks for (M7.8, M7.16c).
+    profile_asked: Option<(String, Option<bool>)>,
     exit: bool,
 }
 

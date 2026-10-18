@@ -32,7 +32,7 @@ use crate::{actions, cmd};
 const NO_LIMIT: &str = n_("This laptop offers no charge limit, so it always charges to 100%.");
 
 /// What the Charge fully once row says.
-const ONCE: &str = n_("For a trip: charges to 100% until it is unplugged and sleeps, or restarts.");
+const ONCE: &str = n_("For a trip: charges to 100% until it is unplugged, or restarts.");
 
 /// The group's widgets and state.
 pub struct Care {

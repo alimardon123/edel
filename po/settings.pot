@@ -215,7 +215,7 @@ msgstr ""
 msgid "This laptop offers no charge limit, so it always charges to 100%."
 msgstr ""
 
-msgid "For a trip: charges to 100% until it is unplugged and sleeps, or restarts."
+msgid "For a trip: charges to 100% until it is unplugged, or restarts."
 msgstr ""
 
 msgid "Charge fully"

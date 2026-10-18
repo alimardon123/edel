@@ -99,19 +99,41 @@ pub fn run(action: Action) -> Result<()> {
     Ok(())
 }
 
-/// `edel power profile [NAME]` (M7.8): without NAME, shows the power profile
-/// the kernel uses and the ones it offers; with NAME, one of
-/// `power.on_battery`'s values, sets it. Setting needs root: anyone else runs
-/// the same command as root through doas, which the login feature's rule
-/// lets the people at the machine run with no password.
+/// `edel power profile [NAME]` (M7.8, M7.16c): without NAME, shows the power
+/// profile the kernel uses, the ones it offers and the processor's hint; with
+/// NAME, one of `power.on_battery`'s values, sets the platform profile and the
+/// processor's hint, and ends a trip's full charge once the computer is
+/// unplugged. Setting needs root: anyone else runs the same command as root
+/// through doas, which the login feature's rule lets the people at the
+/// machine run with no password.
 pub fn profile(name: Option<&str>) -> Result<()> {
     let Some(name) = name else {
-        match profile::now() {
-            Some((now, offered)) => println!("profile: {now} (offered: {})", offered.join(" ")),
-            None => println!(
+        let platform = profile::now();
+        let processor = profile::processor_now();
+        if platform.is_none() && processor.is_none() {
+            println!(
                 "{}",
-                tr("this computer has no power profiles, so there is none to show")
-            ),
+                tr(
+                    "this computer has no power profiles and no processor hints, so there is none to show"
+                )
+            );
+            return Ok(());
+        }
+        if let Some((now, offered)) = platform {
+            println!("profile: {now} (offered: {})", offered.join(" "));
+        }
+        if let Some((file, value, offered)) = processor {
+            println!(
+                "{}",
+                trf(
+                    "processor: {file} {value} (offered: {offered})",
+                    &[
+                        ("file", &file),
+                        ("value", &value),
+                        ("offered", &offered.join(" ")),
+                    ]
+                )
+            );
         }
         return Ok(());
     };
@@ -125,15 +147,7 @@ pub fn profile(name: Option<&str>) -> Result<()> {
         ));
     }
     if users::current() == Some(0) {
-        let kernel = profile::set(name)?;
-        println!(
-            "{}",
-            trf(
-                "power profile {name} ({kernel})",
-                &[("name", name), ("kernel", &kernel)]
-            )
-        );
-        return Ok(());
+        return set_profile(name);
     }
     let argv = [
         places::AS_ROOT,
@@ -164,11 +178,67 @@ pub fn profile(name: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Sets the profile `name` as root (M7.16c): the trip's full charge ends first
+/// when the computer is unplugged, so a machine with no profile still ends
+/// it; then the platform profile and the processor's hint are written. The
+/// line says what was written. With no profile to write, the trip's end is
+/// all that is done, and that succeeds; with nothing done at all, it fails.
+fn set_profile(name: &str) -> Result<()> {
+    let ended = end_trip_charge();
+    let plan = profile::plan(name);
+    if plan.platform.is_none() && plan.processor.is_none() {
+        if let Some(percent) = ended {
+            println!(
+                "{}",
+                trf(
+                    "the charge limit is back: {percent} percent",
+                    &[("percent", &percent.to_string())]
+                )
+            );
+            return Ok(());
+        }
+    }
+    let plan = profile::apply(name)?;
+    let mut parts = Vec::new();
+    if let Some(kernel) = &plan.platform {
+        parts.push(trf("platform {kernel}", &[("kernel", kernel)]));
+    }
+    if let Some((_, value)) = &plan.processor {
+        parts.push(trf("processor {value}", &[("value", value)]));
+    }
+    println!(
+        "{}",
+        trf(
+            "power profile {name} ({what})",
+            &[("name", name), ("what", &parts.join(", "))]
+        )
+    );
+    Ok(())
+}
+
+/// Ends a trip's full charge when the computer is unplugged (M7.16c), as
+/// `edel boot battery-care` does. Its limit is returned, or none when nothing
+/// ended; a failure is a warning on stderr, not the command's failure.
+fn end_trip_charge() -> Option<u32> {
+    let mark = Path::new(places::CHARGE_FULL_ONCE);
+    if !mark.exists() || battery_care::plugged_in(Path::new(battery_care::POWER_SUPPLY)) {
+        return None;
+    }
+    match care_now() {
+        Ok(percent) => percent,
+        Err(err) => {
+            eprintln!("warning: {err:#}");
+            None
+        }
+    }
+}
+
 /// `edel power charge-full` (M7.16e): charges to 100 percent once, for a
 /// trip. The mark it leaves stops battery care's limit until the computer is
-/// unplugged after a sleep, or the next start. Setting the limit needs root:
-/// anyone else runs the same command as root through doas, which the login
-/// feature's rule lets the people at the machine run with no password.
+/// unplugged, or the next start (shell-ui's next profile call ends it, M7.16c).
+/// Setting the limit needs root: anyone else runs the same command as root
+/// through doas, which the login feature's rule lets the people at the
+/// machine run with no password.
 pub fn charge_full() -> Result<()> {
     let dir = Path::new(battery_care::POWER_SUPPLY);
     if !battery_care::offered(dir) {
@@ -226,18 +296,16 @@ pub fn charge_full() -> Result<()> {
     println!(
         "{}",
         tr(
-            "charging to 100 percent once; the charge limit comes back after a sleep once unplugged, or at the next start"
+            "charging to 100 percent once; the charge limit comes back once it is unplugged, or at the next start"
         )
     );
     Ok(())
 }
 
-/// `edel boot battery-care` (M7.16e): sets the charge limit the settings
-/// want, as zzz runs it after every resume (some laptops forget the limit
-/// when they sleep) and at boot. Once the computer is unplugged, a trip's
-/// full charge is over, so its mark goes. Always one line: the limit it set,
-/// or that this computer offers none.
-pub fn battery_care() -> Result<()> {
+/// Sets the charge limit the settings want (M7.16e), after a trip's mark is
+/// taken away once the computer is unplugged. Returns the limit it set, or
+/// None when no battery offers one.
+fn care_now() -> Result<Option<u32>> {
     let dir = Path::new(battery_care::POWER_SUPPLY);
     let mark = Path::new(places::CHARGE_FULL_ONCE);
     if mark.exists() && !battery_care::plugged_in(dir) {
@@ -255,21 +323,32 @@ pub fn battery_care() -> Result<()> {
         }
     }
     if !battery_care::offered(dir) {
-        println!(
-            "{}",
-            tr("edel boot battery-care: this computer offers no charge limit")
-        );
-        return Ok(());
+        return Ok(None);
     }
     let percent = battery_care::wanted(machine::battery_care_on(), mark.exists());
     battery_care::set(dir, percent).map_err(anyhow::Error::msg)?;
-    println!(
-        "{}",
-        trf(
-            "edel boot battery-care: charge limit {percent} percent",
-            &[("percent", &percent.to_string())]
-        )
-    );
+    Ok(Some(percent))
+}
+
+/// `edel boot battery-care` (M7.16e): sets the charge limit the settings
+/// want, as zzz runs it after every resume (some laptops forget the limit
+/// when they sleep) and at boot. Once the computer is unplugged, a trip's
+/// full charge is over, so its mark goes. Always one line: the limit it set,
+/// or that this computer offers none.
+pub fn battery_care() -> Result<()> {
+    match care_now()? {
+        Some(percent) => println!(
+            "{}",
+            trf(
+                "edel boot battery-care: charge limit {percent} percent",
+                &[("percent", &percent.to_string())]
+            )
+        ),
+        None => println!(
+            "{}",
+            tr("edel boot battery-care: this computer offers no charge limit")
+        ),
+    }
     Ok(())
 }
 
