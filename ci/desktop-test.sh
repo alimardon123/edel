@@ -305,6 +305,18 @@
 #   profiles    /dev/uinput is group seat's (M7.6b), then, with gaming
 #               named, `edel settings set apps.installed-=` Steam leaves it out (system.profiles_without), apply ends 0 and
 #               the diff no longer installs it; reset takes the key out (M7.6c)
+#   profile-office  the office profile, its apps left out and printing on
+#               (built into this image, shipped off): apply ends 0, the
+#               diff is empty, lpstat -r as ci says the scheduler is
+#               running, and the reset stops cupsd; basics-test's printing
+#               row (M7.6b)
+#   profile-creative  with the seed's sound.low_latency reset, the creative
+#               profile links ci's PipeWire drop-in again, the ScreenCast
+#               portal gives a 1280x800 stream, and the compositor offers
+#               zwp_tablet_manager_v2 for pens (M7.6b)
+#   profile-gaming  a stand-in for Steam served as ci's Flathub: the gaming
+#               profile's apply installs it, the launcher starts it and its
+#               window maps; the compositor offers tearing control (M7.6b)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -8199,6 +8211,52 @@ case_web_app() {
 	echo "PASS: edel web-app add made example.org an app (its desktop file runs Firefox with --name edel-web-example-org, StartupWMClass and X-Edel-Web-App=https://example.org), the launcher offered $after apps against $before before, typing example.com showed the Install row (web-app-row.png), and edel web-app remove took the file out again, the launcher back at $gone apps"
 }
 
+# profile_get NAME KEY: KEY (dotted, such as apps.installed) of
+# profiles/NAME.toml, a list one item a line, a boolean as true or false,
+# nothing when the profile lacks it; the profile cases read what each
+# profile brings from the profile itself (M7.6b).
+profile_get() {
+	python3 -I - "profiles/$1.toml" "$2" <<-'EOF'
+		import sys, tomllib
+		value = tomllib.load(open(sys.argv[1], "rb"))
+		for part in sys.argv[2].split("."):
+		    value = value.get(part) if isinstance(value, dict) else None
+		if isinstance(value, list):
+		    for item in value:
+		        print(item)
+		elif isinstance(value, bool):
+		    print("true" if value else "false")
+		elif value is not None:
+		    print(value)
+	EOF
+}
+
+# without NAME: the assignments that leave out every app profiles/NAME.toml
+# brings (apps.installed-=ID, M7.6c), so a case downloads nothing.
+without() {
+	profile_get "$1" apps.installed | sed 's/^/apps.installed-=/' | tr '\n' ' '
+}
+
+# profile_on NAME [ASSIGNMENT...]: names profile NAME with ci an admin and
+# the ASSIGNMENTs, through the test service, and applies; fails unless
+# both end 0 and edel settings diff is then empty.
+profile_on() {
+	asked=$(count 'DESKTOP-TEST: profile_diff ')
+	guest "profile on $*"
+	wait_more 'DESKTOP-TEST: profile_diff ' "$asked" 300 || fail "the service did not name the $1 profile and apply it"
+	[ "$(value profile_on | cut -d' ' -f1-2)" = "$1 0" ] || fail "naming the $1 profile or applying it failed: $(value profile_on)"
+	[ -z "$(value profile_diff)" ] || fail "with the $1 profile applied, edel settings diff still has changes: $(value profile_diff)"
+}
+
+# profile_off [KEY...]: resets the profile, ci's admin and the KEYs, and
+# applies; fails unless that ends 0.
+profile_off() {
+	asked=$(count 'DESKTOP-TEST: profile_off ')
+	guest "profile off${*:+ $*}"
+	wait_more 'DESKTOP-TEST: profile_off ' "$asked" 120 || fail "the service did not reset the profile"
+	[ "$(value profile_off | cut -d' ' -f1)" = 0 ] || fail "resetting the profile or applying failed: $(value profile_off)"
+}
+
 case_profiles() {
 	# First, the gaming feature's /dev/uinput is the seat group's, mode 660,
 	# and ci may write it (M7.6b). Then leave out what a profile brings
@@ -8256,6 +8314,117 @@ case_office_fonts() {
 	echo "PASS: fc-match drew Calibri with Carlito, and Arial, Times New Roman and Courier New with Liberation Sans, Serif and Mono"
 }
 
+case_profile_office() {
+	# Office (M7.6b part 3): the profile brings the printing add-on, built
+	# into this image and shipped off (ci/desktop/vm.toml), so the other
+	# cases' VMs run no cupsd; services.printing = true stands where
+	# mounting the add-on turns it on. Its apps are left out, so nothing
+	# comes from Flathub. lpstat -r as ci says the scheduler is running,
+	# and the reset stops cupsd. It is the printing row of basics-test.
+	profile_get office addons.installed | grep -qx printing || fail "profiles/office.toml does not bring the printing add-on"
+	# shellcheck disable=SC2046 # one assignment a word
+	profile_on office $(without office) services.printing=true
+	asked=$(count 'DESKTOP-TEST: printing_status ')
+	guest 'printing status'
+	wait_more 'DESKTOP-TEST: printing_status ' "$asked" || fail "the service did not ask lpstat"
+	running=$(value printing_status)
+	case "$running" in
+	*'scheduler is running'*'cupsd runs'*) ;;
+	*) fail "with the office profile and printing on, lpstat -r as ci does not say the scheduler is running: $running" ;;
+	esac
+	profile_off services.printing
+	asked=$(count 'DESKTOP-TEST: printing_status ')
+	guest 'printing status'
+	wait_more 'DESKTOP-TEST: printing_status ' "$asked" || fail "the service did not ask lpstat after the reset"
+	case "$(value printing_status)" in
+	*'no cupsd'*) ;;
+	*) fail "after the office profile and printing were reset, cupsd still runs: $(value printing_status)" ;;
+	esac
+	echo "PASS: with the office profile applied (its apps left out) and printing on, edel settings diff was empty and lpstat -r as ci said: $running; the reset stopped cupsd"
+}
+
+case_profile_creative() {
+	# Creative (M7.6b part 3): with the seed's own sound.low_latency reset,
+	# the profile's key, laid under the file, makes the compositor link
+	# ci's PipeWire drop-in again (the sound case reads its quantum);
+	# screen capture is the ScreenCast portal, which gives a stream of the
+	# screen's size; pens reach apps through zwp_tablet_manager_v2, which
+	# gives each tablet plugged in its zwp_tablet_v2 (the VM has none, so a
+	# pen stays the seat feature's hardware row). Its apps are left out.
+	[ "$(profile_get creative sound.low_latency)" = true ] || fail "profiles/creative.toml does not set sound.low_latency = true"
+	off=$(count 'edel-compositor: low latency off')
+	guest 'sound latency off'
+	wait_more 'edel-compositor: low latency off' "$off" || fail "resetting the seed's sound.low_latency did not take ci's low-latency link out"
+	on=$(count 'edel-compositor: low latency on')
+	# shellcheck disable=SC2046 # one assignment a word
+	profile_on creative $(without creative)
+	wait_more 'edel-compositor: low latency on' "$on" || fail "with the creative profile named, the compositor did not link ci's PipeWire drop-in to the low-latency file"
+	asked=$(count 'DESKTOP-TEST: sound_latency_link ')
+	guest 'sound latency'
+	wait_more 'DESKTOP-TEST: sound_latency_link ' "$asked" 10 || fail "the service did not read the low-latency link"
+	[ "$(value sound_latency_ours)" = yes ] || fail "with the creative profile, ci's PipeWire drop-in is not linked to the low-latency file: $(value sound_latency_link)"
+	asked=$(count 'DESKTOP-TEST: capture_screencast ')
+	guest 'capture screencast'
+	wait_more 'DESKTOP-TEST: capture_screencast ' "$asked" 60 || fail "the service did not hear back from the ScreenCast portal"
+	stream=$(value capture_screencast | sed -n 's/.*screencast stream \([0-9][0-9]*\) \([0-9]*x[0-9]*\).*/\1 \2/p')
+	[ -n "$stream" ] || fail "with the creative profile, the ScreenCast portal gave no stream: $(value capture_screencast)"
+	[ "${stream#* }" = 1280x800 ] || fail "the screencast's stream is ${stream#* }, not the screen's 1280x800"
+	case " $(value globals) " in
+	*" zwp_tablet_manager_v2 "*) ;;
+	*) fail "the compositor does not offer zwp_tablet_manager_v2, through which pens reach apps; wayland-info listed: $(value globals)" ;;
+	esac
+	off=$(count 'edel-compositor: low latency off')
+	profile_off
+	wait_more 'edel-compositor: low latency off' "$off" || fail "resetting the creative profile did not take ci's low-latency link out"
+	echo "PASS: with the seed's key reset, the creative profile (its apps left out, the diff empty) linked ci's PipeWire drop-in to the low-latency file, the ScreenCast portal gave stream ${stream% *} of ${stream#* }, the compositor offers zwp_tablet_manager_v2, and the reset took the link out"
+}
+
+case_profile_gaming() {
+	# Gaming (M7.6b part 3): a stand-in for Steam, the test client as
+	# com.valvesoftware.Steam (ci/apps/make-repo.sh), which this host
+	# serves as ci's Flathub, is installed by edel settings apply as the
+	# profile asks, shows in the launcher, starts from it and maps its
+	# window; the compositor offers tearing control. The gaming add-on's
+	# devices are the profiles case's.
+	app=$(profile_get gaming apps.installed)
+	[ "$app" = com.valvesoftware.Steam ] || fail "profiles/gaming.toml brings $app, not Steam alone, which the stand-in stands for"
+	profile_get gaming addons.installed | grep -qx gaming || fail "profiles/gaming.toml does not bring the gaming add-on"
+	asked=$(count 'DESKTOP-TEST: gaming_standin ')
+	guest 'gaming standin'
+	wait_more 'DESKTOP-TEST: gaming_standin ' "$asked" || fail "the service did not point ci's Flathub at the stand-in"
+	[ "$(value gaming_standin | cut -d' ' -f1)" = 0 ] || fail "adding the stand-in's remote for ci failed: $(value gaming_standin)"
+	profile_on gaming
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	launched=$(count 'edel-shell-ui: launched Steam')
+	opened=$(count 'edel-compositor: mapped window steam')
+	python3 ci/qmp.py type steam
+	python3 ci/qmp.py key ret
+	wait_more 'edel-shell-ui: launched Steam' "$launched" || fail "the launcher did not list the stand-in for Steam that edel settings apply installed"
+	case "$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Steam' | tail -n 1)" in
+	*flatpak*com.valvesoftware.Steam*) ;;
+	*) fail "the stand-in was not started through flatpak run: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Steam' | tail -n 1)" ;;
+	esac
+	wait_more 'edel-compositor: mapped window steam' "$opened" 60 || fail "the stand-in for Steam did not map a window within 60 s"
+	python3 ci/qmp.py screendump "$dir/profile-gaming.png"
+	closed=$(count 'edel-compositor: unmapped window steam')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window steam' "$closed" || fail "Super+Q did not close the stand-in for Steam"
+	case " $(value globals) " in
+	*" wp_tearing_control_manager_v1 "*) ;;
+	*) fail "the compositor does not offer wp_tearing_control_manager_v1; wayland-info listed: $(value globals)" ;;
+	esac
+	profile_off
+	asked=$(count 'DESKTOP-TEST: gaming_standin_off ')
+	guest 'gaming standin off'
+	wait_more 'DESKTOP-TEST: gaming_standin_off ' "$asked" 60 || fail "the service did not take the stand-in out"
+	case "$(value gaming_standin_off)" in
+	*Steam*) fail "the stand-in for Steam is still installed for ci: $(value gaming_standin_off)" ;;
+	esac
+	echo "PASS: with the gaming profile, edel settings apply installed the stand-in for Steam from ci's Flathub (this host), the diff was then empty, the launcher started it with flatpak run and its window mapped (profile-gaming.png), the compositor offers tearing control, and the reset and clean-up left ci without it"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -8295,7 +8464,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles profile-office profile-creative profile-gaming flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -8812,6 +8981,20 @@ if [ "$*" = rollback ]; then
 	server=$!
 	trap 'kill "$server" 2>/dev/null || true; rm -f "$grown"' EXIT
 fi
+
+# The profile cases (M7.6b) take what a machine would download from this
+# host, the guest's 10.0.2.2, on a port of its own (rollback has 8001):
+# profile-gaming a stand-in for Steam from the test apps' repository.
+case " $* " in
+*' profile-gaming '*)
+	rm -rf "$dir/serve"
+	mkdir -p "$dir/serve"
+	ln -s "$PWD/out/apps-repo" "$dir/serve/apps"
+	python3 -m http.server 8002 --bind 127.0.0.1 --directory "$dir/serve" >out/desktop-serve.log 2>&1 &
+	served=$!
+	trap 'kill "$served" 2>/dev/null || true; rm -f "$grown"' EXIT
+	;;
+esac
 
 keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \

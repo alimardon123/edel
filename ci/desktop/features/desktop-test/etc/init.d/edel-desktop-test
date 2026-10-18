@@ -1266,6 +1266,60 @@ commands() {
 			edel settings reset system.profiles users.ci.admin >/tmp/profile.log 2>&1
 			say "profile_default $? $(edel settings get system.profiles_without 2>&1 | tr '\n' ' ')"
 			;;
+		# The profiles proved in the VM (M7.6b part 3): `profile on NAME
+		# [ASSIGNMENT...]` names profile NAME with ci an admin, as apps
+		# install for admins only, then sets each ASSIGNMENT the case gives
+		# (the apps it leaves out, apps.installed-=ID, so nothing comes from
+		# Flathub, and services.printing=true), applies, and says the status
+		# with the log's last lines, then edel settings diff's output.
+		'profile on '*)
+			rest=${command#profile on }
+			name=${rest%% *}
+			if [ "$rest" = "$name" ]; then rest=''; else rest=${rest#* }; fi
+			edel settings set "system.profiles=[\"$name\"]" users.ci.admin=true </dev/null >/tmp/profile-on.log 2>&1
+			status=$?
+			for assignment in $rest; do
+				[ "$status" = 0 ] || break
+				edel settings set "$assignment" </dev/null >>/tmp/profile-on.log 2>&1
+				status=$?
+			done
+			if [ "$status" = 0 ]; then
+				edel settings apply </dev/null >>/tmp/profile-on.log 2>&1
+				status=$?
+			fi
+			say "profile_on $name $status $(tail -n 5 /tmp/profile-on.log | tr '\n' ';')"
+			say "profile_diff $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		# `profile off [KEY...]`: the profile, ci's admin and each KEY reset
+		# (system.profiles_without goes with the profile, M7.6c), applied.
+		'profile off'*)
+			keys=${command#profile off}
+			edel settings reset system.profiles users.ci.admin $keys </dev/null >/tmp/profile-off.log 2>&1 &&
+				edel settings apply </dev/null >>/tmp/profile-off.log 2>&1
+			say "profile_off $? $(tail -n 3 /tmp/profile-off.log | tr '\n' ';')"
+			;;
+		# Printing (M7.6b part 3): what lpstat -r says as ci, and whether
+		# cupsd runs.
+		'printing status')
+			if pgrep -x cupsd >/dev/null; then cupsd='cupsd runs'; else cupsd='no cupsd'; fi
+			say "printing_status $(as_ci 'lpstat -r' </dev/null 2>&1 | tr '\n' ' ')/ $cupsd"
+			;;
+		# A stand-in for Steam (M7.6b part 3): ci's Flathub remote points at
+		# the test apps' repository the runner serves (ci/apps/make-repo.sh
+		# builds com.valvesoftware.Steam there, the test client), so edel
+		# settings apply's own `flatpak --user install flathub ID` installs
+		# it with no download; `gaming standin off` takes ci's apps, their
+		# runtime and the remote out again.
+		'gaming standin')
+			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >/dev/null 2>&1
+			as_ci 'flatpak --user remote-add --no-gpg-verify flathub http://10.0.2.2:8002/apps' </dev/null >/tmp/standin.log 2>&1
+			say "gaming_standin $? $(tr '\n' ';' </tmp/standin.log)"
+			;;
+		'gaming standin off')
+			as_ci 'flatpak --user uninstall --noninteractive -y --all' </dev/null >/tmp/standin.log 2>&1
+			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >>/tmp/standin.log 2>&1
+			say "gaming_standin_off $? $(as_ci 'flatpak --user list --columns=application' </dev/null 2>&1 | tr '\n' ';')"
+			;;
 		'flatpak apps')
 			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&
 				edel settings apply >>/tmp/flatpak-apply.log 2>&1
