@@ -30,6 +30,7 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
@@ -359,9 +360,11 @@ const LOCKUP_PANICS: &str = "/proc/sys/kernel";
 fn calm_lockups(kernel: &Path) {
     for name in ["softlockup_panic", "hardlockup_panic", "nmi_watchdog"] {
         let path = kernel.join(name);
-        if path.exists()
-            && let Err(err) = fs::write(&path, "0\n")
-        {
+        // A kernel without the detector shows its file read-only (a
+        // virtual machine's nmi_watchdog, with no performance counter),
+        // or not at all: nothing there to calm.
+        let writable = fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o200 != 0);
+        if writable && let Err(err) = fs::write(&path, "0\n") {
             eprintln!(
                 "warning: edel guard: could not write {}: {err}",
                 path.display()
@@ -583,6 +586,11 @@ mod tests {
             assert_eq!(fs::read_to_string(dir.join(name)).unwrap(), "0\n");
         }
         assert!(!dir.join("hardlockup_panic").exists());
+        // Read-only, as a virtual machine shows nmi_watchdog: left alone.
+        fs::write(dir.join("nmi_watchdog"), "1\n").unwrap();
+        fs::set_permissions(dir.join("nmi_watchdog"), fs::Permissions::from_mode(0o444)).unwrap();
+        calm_lockups(&dir);
+        assert_eq!(fs::read_to_string(dir.join("nmi_watchdog")).unwrap(), "1\n");
         fs::remove_dir_all(&dir).unwrap();
         assert!(crate::boot::WATCHDOG_ARGS.contains("softlockup_panic=1 nmi_watchdog=panic"));
     }

@@ -246,6 +246,9 @@ start() {
 	echo "$slots"
 
 	# ci/ab-test.sh serves the signed update on the host, 10.0.2.2.
+	# NetworkManager brings eth0 up after it starts, so the downloads
+	# wait for the default route (up to 60 s).
+	for i in $(seq 60); do ip route | grep -q '^default' && break; sleep 1; done
 	update=http://10.0.2.2:8000/release.toml
 
 	case "$step" in
