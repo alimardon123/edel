@@ -796,8 +796,10 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching the panel editor's bus: {e}"))?;
     }
     // shell-ui's own notices (M5.9e): a fallback record shown once for each
-    // person, and the update check on a timer, from a person's session only.
+    // person, a hardware pack named once (M7.11), and the update check on a
+    // timer, from a person's session only.
     shell.tell_fallback();
+    shell.tell_hardware();
     check_updates(&event_loop.handle());
     // What plays (M5.9d): read over MPRIS only while quick settings is open,
     // its news reaching the loop over a channel as the tray's does.

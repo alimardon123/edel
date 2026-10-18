@@ -1718,7 +1718,10 @@ msgstr ""
 msgid "{person}'s last desktop session ended without closing; its log is {log}, and edel report gathers it with the rest"
 msgstr ""
 
-msgid "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a later release brings the hardware packs that hold them"
+msgid "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a hardware: line names a pack that holds them when this release has one"
+msgstr ""
+
+msgid "add-on {name} serves this computer's hardware ({summary}); to add it: edel settings set addons.installed+={name}, then edel settings apply; it starts at the next restart"
 msgstr ""
 
 msgid "the language {language} needs {script} fonts, which this system does not carry; text in it shows as boxes until a later release brings them"

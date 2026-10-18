@@ -202,6 +202,10 @@ pub const DISKS_BY_ID: &str = "/dev/disk/by-id";
 /// Where an add-on is mounted while the slot's root is built or started
 /// (M7.2a), one folder per add-on.
 pub const ADDONS_RUN: &str = run!("/addons");
+/// The hardware packs this machine's devices match and it has not chosen,
+/// written at each start (M7.11): one line per pack, its name, a tab and its
+/// summary.
+pub const PACKS_FILE: &str = run!("/hardware-packs");
 /// The pending add-ons this boot tried (M7.2b), one name a line, which the
 /// guard's confirmation moves beside the others.
 pub const ADDONS_TRIED: &str = run!("/addons-tried");

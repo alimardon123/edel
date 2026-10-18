@@ -4,6 +4,9 @@ format = 1
 summary = "Hangs the boot, for CI's A/B test"
 why = "A test add-on whose service blocks for ever, so the A/B test sees a boot that tries a new add-on and hangs come back without it, with the failure recorded."
 addon = true
+# It is also the test's hardware pack (M7.11), as ci-hello is: `edel status`
+# names it in step 2, before it is chosen.
+hardware = ["pci:v00001AF4d*"]
 
 [services]
 default = ["ci-hang"]
