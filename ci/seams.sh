@@ -21,7 +21,7 @@
 #                    allowed() below, with the reason its write is not the
 #                    settings file's
 #   the base         the base's tools (rc-update, rc-service, adduser,
-#                    addgroup, delgroup, cryptpw, chpasswd, mdev, zzz,
+#                    addgroup, delgroup, cryptpw, chpasswd, mdev, udevadm, zzz,
 #                    reboot and poweroff by path) are named only in
 #                    edel::base (crates/edel/src/base.rs), so the base
 #                    stays replaceable (ADR-010, roadmap M6.17)
@@ -192,7 +192,7 @@ check_base() {
 	files=$(cd "$1" && find crates -name '*.rs' -type f | sort)
 	for file in $files; do
 		[ "$file" = crates/edel/src/base.rs ] && continue
-		named=$(code_of "$1/$file" | grep -oE '(^|[^A-Za-z0-9_-])(rc-update|rc-service|adduser|addgroup|delgroup|cryptpw|chpasswd|mdev|zzz|/sbin/reboot|/sbin/poweroff)([^A-Za-z0-9_-]|$)' | sed 's/^[^A-Za-z0-9/]*//; s/[^A-Za-z0-9-]*$//' | sort -u | tr '\n' ' ' || true)
+		named=$(code_of "$1/$file" | grep -oE '(^|[^A-Za-z0-9_-])(rc-update|rc-service|adduser|addgroup|delgroup|cryptpw|chpasswd|mdev|udevadm|zzz|/sbin/reboot|/sbin/poweroff)([^A-Za-z0-9_-]|$)' | sed 's/^[^A-Za-z0-9/]*//; s/[^A-Za-z0-9-]*$//' | sort -u | tr '\n' ' ' || true)
 		[ -n "$named" ] || continue
 		fail "$file names the base's tool ${named% }; only edel::base (crates/edel/src/base.rs) names the base's tools (ADR-010), so call its function, or add one there"
 	done

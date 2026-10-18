@@ -1,13 +1,15 @@
 # CI only (roadmap M4.1, M4.2b): the desktop image plus the desktop test,
 # which logs user ci in to the compositor at once and measures it
 # (ci/desktop-test.sh).
+# The gaming add-on is built in here (M7.6b), as the desktop test mounts
+# no add-ons, so the profiles case sees its controllers' rule and uinput.
 # Release images never use it.
 format = 2
 name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "sound", "network", "bluetooth", "power", "capture", "location", "desktop-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "sound", "network", "bluetooth", "power", "capture", "location", "gaming", "desktop-test"]
 off = ["ssh"]
 
 [vm]

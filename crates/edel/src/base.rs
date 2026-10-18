@@ -123,6 +123,27 @@ pub fn scan_devices() -> Command {
     command
 }
 
+/// udev's control socket, there while udevd runs (the `udev` feature); an
+/// image with mdev has none.
+pub const DEVICE_EVENTS_SOCKET: &str = "/run/udev/control";
+
+/// Has udev read its rules again, as it read them before the add-ons'
+/// layer was over `/usr` (M7.6b).
+pub fn reread_device_rules() -> Command {
+    let mut command = Command::new("udevadm");
+    command.args(["control", "--reload"]);
+    command
+}
+
+/// Has udev announce every device again as a change, which sets their
+/// owners and modes by the rules it has now and runs no rule kept for a
+/// device's arrival (M7.6b).
+pub fn replay_device_events() -> Command {
+    let mut command = Command::new("udevadm");
+    command.args(["trigger", "--action=change"]);
+    command
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +204,13 @@ mod tests {
         );
         assert_eq!(line(&set_hashed_passwords()), ["chpasswd", "-e"]);
         assert_eq!(line(&scan_devices()), ["mdev", "-s"]);
+        assert_eq!(
+            line(&reread_device_rules()),
+            ["udevadm", "control", "--reload"]
+        );
+        assert_eq!(
+            line(&replay_device_events()),
+            ["udevadm", "trigger", "--action=change"]
+        );
     }
 }

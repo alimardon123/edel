@@ -281,6 +281,20 @@ mod tests {
     #[test]
     fn every_add_on_a_profile_names_is_one() {
         let features = concat!(env!("CARGO_MANIFEST_DIR"), "/../../features");
+        // The add-ons the desktop image builds beside itself (M7.6b): a
+        // profile's add-on must be one of them, or the machine never has it.
+        let image = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../images/desktop.toml"
+        ))
+        .unwrap();
+        let image: toml::Table = toml::from_str(&image).unwrap();
+        let built: Vec<String> = image["addons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect();
         for name in NAMES {
             let named = applied(&file(&format!(
                 "format = 1\n[system]\nprofiles = [\"{name}\"]\n"
@@ -292,8 +306,18 @@ mod tests {
                     text.contains("addon = true"),
                     "{name}: {addon} is no add-on"
                 );
+                assert!(
+                    built.contains(&addon.to_string()),
+                    "{name}: images/desktop.toml does not build add-on {addon}"
+                );
             }
         }
+    }
+
+    #[test]
+    fn gaming_brings_the_controllers_add_on() {
+        let gaming = applied(&file("format = 1\n[system]\nprofiles = [\"gaming\"]\n"));
+        assert_eq!(gaming.addons.installed.unwrap(), ["gaming"]);
     }
 
     #[test]
