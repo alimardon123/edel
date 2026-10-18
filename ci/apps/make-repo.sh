@@ -93,4 +93,8 @@ app org.edel.TestB test-b 'Test B' 33aa66
 # profile-gaming case installs it from this repository, which the runner
 # serves as ci's Flathub, so nothing is downloaded.
 app com.valvesoftware.Steam steam Steam 1b2838 'A stand-in for Steam, for the gaming profile (M7.6b)'
-echo "ci/apps/make-repo.sh: $repo holds org.edel.TestPlatform//1, org.edel.TestA//stable, org.edel.TestB//stable and com.valvesoftware.Steam//stable"
+# Stand-ins for the AI agents add-on's apps (M7.9): the ai-agents case
+# installs them from this repository through edel settings apply.
+app com.jeffser.Alpaca alpaca Alpaca 4a86c8 'A stand-in for Alpaca, for the AI agents add-on (M7.9)'
+app io.github.qwersyk.Newelle newelle Newelle 6b4fa0 'A stand-in for Newelle, for the AI agents add-on (M7.9)'
+echo "ci/apps/make-repo.sh: $repo holds org.edel.TestPlatform//1, org.edel.TestA//stable, org.edel.TestB//stable, com.valvesoftware.Steam//stable, com.jeffser.Alpaca//stable and io.github.qwersyk.Newelle//stable"

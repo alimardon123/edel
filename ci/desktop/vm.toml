@@ -1,19 +1,20 @@
 # CI only (roadmap M4.1, M4.2b): the desktop image plus the desktop test,
 # which logs user ci in to the compositor at once and measures it
 # (ci/desktop-test.sh).
-# The gaming, printing and containers add-ons are built in here (M7.6b),
+# The gaming, printing, containers and ai-agents add-ons are built in here (M7.6b, M7.9),
 # as the desktop test mounts no add-ons, so the profiles case sees the
 # gaming add-on's controllers' rule and uinput, profile-office runs CUPS
 # and profile-developer runs podman. Printing ships off (off), so no other
 # case's VM runs cupsd; the case turns it on with services.printing, as
 # mounting the add-on would.
+# ai-agents brings its apps only while addons.installed names it, which the ai-agents case does.
 # Release images never use them.
 format = 2
 name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "sound", "network", "firewall", "bluetooth", "power", "capture", "location", "gaming", "printing", "containers", "desktop-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "sound", "network", "firewall", "bluetooth", "power", "capture", "location", "gaming", "printing", "containers", "ai-agents", "desktop-test"]
 off = ["ssh", "printing"]
 
 [vm]

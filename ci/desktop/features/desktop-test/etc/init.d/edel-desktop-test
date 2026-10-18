@@ -1432,6 +1432,49 @@ commands() {
 			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >>/tmp/standin.log 2>&1
 			say "gaming_standin_off $? $(as_ci 'flatpak --user list --columns=application' </dev/null 2>&1 | tr '\n' ';')"
 			;;
+		# AI agents (M7.9): the add-on named with ci an admin, as apps
+		# install for admins only; the plan before apply, then apply and
+		# the diff after it.
+		'agents on')
+			edel settings set addons.installed+=ai-agents users.ci.admin=true </dev/null >/tmp/agents.log 2>&1
+			status=$?
+			say "agents_plan $(edel settings diff 2>&1 | tr '\n' ';')"
+			if [ "$status" = 0 ]; then
+				edel settings apply </dev/null >>/tmp/agents.log 2>&1
+				status=$?
+			fi
+			say "agents_on $status $(tail -n 5 /tmp/agents.log | tr '\n' ';')"
+			say "agents_diff $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		# A stand-in agent (M7.9): what an agent ci started does to the
+		# system, as ci, through the commands everyone uses: a key set with
+		# doas edel settings set, which the diff then shows, then reset.
+		'agent standin')
+			as_ci 'doas edel settings set region.timezone=Asia/Tashkent' </dev/null >/tmp/agent.log 2>&1
+			say "agent_set $? $(edel settings diff 2>&1 | tr '\n' ';') $(tail -n 3 /tmp/agent.log | tr '\n' ';')"
+			as_ci 'doas edel settings reset region.timezone' </dev/null >>/tmp/agent.log 2>&1
+			say "agent_reset $? $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		# Which of the add-on's apps run (M7.9), as Flatpak lists ci's
+		# running sandboxes; the case asks once while Newelle's window is
+		# up, so the check is seen to find one.
+		'agents processes')
+			procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+			say "agents_processes ${procs:-none}"
+			;;
+		# The add-on dropped (M7.9), the way the Add-ons switch drops it,
+		# and ci's admin reset, applied; the diff, any file of it in /etc
+		# or /usr/lib/edel, and any process of its apps.
+		'agents off')
+			edel settings set addons.installed-=ai-agents </dev/null >/tmp/agents.log 2>&1 &&
+				edel settings reset users.ci.admin </dev/null >>/tmp/agents.log 2>&1 &&
+				edel settings apply </dev/null >>/tmp/agents.log 2>&1
+			say "agents_off $? $(tail -n 3 /tmp/agents.log | tr '\n' ';')"
+			say "agents_left $(edel settings diff 2>&1 | tr '\n' ';')"
+			say "agents_files $(find /etc /usr/lib/edel -name '*ai-agents*' 2>/dev/null | tr '\n' ' ')"
+			procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+			say "agents_processes ${procs:-none}"
+			;;
 		# Containers as the admin (M7.6b part 4): our own container image,
 		# which the runner serves (ci/build.sh's out/desktop-container), a
 		# root file system's archive, imported as edel:ci for ci, as

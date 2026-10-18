@@ -417,8 +417,12 @@ impl ImageDef {
             [] => bail!("no feature names the Alpine branch; list the base feature first"),
         };
 
+        // An add-on's apps (M7.9) are installed by edel settings apply for
+        // the people who chose it, never baked into an image, even where
+        // the add-on is built in.
         let apps: Vec<String> = listed
             .iter()
+            .filter(|l| !l.feature.addon)
             .flat_map(|l| l.feature.flatpak.iter().cloned())
             .collect();
         let apps_dropped: Vec<String> = listed
@@ -625,11 +629,10 @@ pub fn check_addon(image: &ImageDef, listed: &Listed) -> Result<()> {
         || !feature.health.is_empty()
         || !feature.modules.is_empty()
         || !feature.initramfs.is_empty()
-        || !feature.flatpak.is_empty()
         || !feature.flatpak_dropped.is_empty()
         || feature.alpine.is_some()
     {
-        bail!("add-on {name}: an add-on brings packages, services and files only");
+        bail!("add-on {name}: an add-on brings packages, services, files and Flatpak apps only");
     }
     if feature
         .keep
@@ -1059,14 +1062,14 @@ mod tests {
                     &ADDON.replace("[services]", "programs = [\"hello\"]\n[services]"),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services and files only",
+                "an add-on brings packages, services, files and Flatpak apps only",
             ),
             (
                 with_addon(
                     &ADDON.replace("[services]", "health = [\"network\"]\n[services]"),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services and files only",
+                "an add-on brings packages, services, files and Flatpak apps only",
             ),
             (
                 with_addon(
@@ -1076,7 +1079,7 @@ mod tests {
                     ),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services and files only",
+                "an add-on brings packages, services, files and Flatpak apps only",
             ),
             (
                 with_addon(
@@ -1086,7 +1089,7 @@ mod tests {
                     ),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services and files only",
+                "an add-on brings packages, services, files and Flatpak apps only",
             ),
             (
                 with_addon(
@@ -1095,7 +1098,7 @@ mod tests {
                     ),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services and files only",
+                "an add-on brings packages, services, files and Flatpak apps only",
             ),
             (
                 with_addon(
@@ -1123,6 +1126,30 @@ mod tests {
             let err = result.unwrap_err();
             assert!(format!("{err:#}").contains(message), "{err:#}");
         }
+    }
+
+    #[test]
+    fn an_addons_flatpak_apps_are_never_baked_in() {
+        let with_apps = ADDON.replace(
+            "addon = true",
+            "addon = true\nflatpak = [\"org.example.App\"]",
+        );
+        // Accepted as an add-on (M7.9), and not among the image's apps.
+        let def = with_addon(&with_apps, r#"["hello"]"#).unwrap();
+        assert!(
+            !def.apps.iter().any(|a| a == "org.example.App"),
+            "{:?}",
+            def.apps
+        );
+        // Built in, as CI's desktop image builds its add-ons: still not.
+        let mut found = found();
+        found.insert("hello".into(), listed("hello", &with_apps));
+        let def = ImageDef::merge(&VM.replace(r#""ssh"]"#, r#""ssh", "hello"]"#), found).unwrap();
+        assert!(
+            !def.apps.iter().any(|a| a == "org.example.App"),
+            "{:?}",
+            def.apps
+        );
     }
 
     /// The repository's definitions, merged from the repository's

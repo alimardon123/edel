@@ -55,7 +55,8 @@ pub struct Feature {
     /// fonts.
     #[serde(default)]
     pub keep: Vec<crate::keep::Keep>,
-    /// The default apps (M6.2); only the `apps` feature has them.
+    /// The default apps of the `apps` feature (M6.2), or an add-on's apps,
+    /// which apply installs for the people who chose it (M7.9).
     #[serde(default)]
     pub flatpak: Vec<String>,
     /// Default apps a release dropped, kept for those who used them.
@@ -220,8 +221,13 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
             bail!("{field} entry {m:?} may only use a-z, 0-9, '_' and '-'");
         }
     }
-    if name != "apps" && !(feature.flatpak.is_empty() && feature.flatpak_dropped.is_empty()) {
-        bail!("only the apps feature lists flatpak apps");
+    // An add-on lists the apps it brings (M7.9); only the apps feature
+    // drops apps.
+    if name != "apps" && !feature.addon && !feature.flatpak.is_empty() {
+        bail!("only the apps feature and add-ons list flatpak apps");
+    }
+    if name != "apps" && !feature.flatpak_dropped.is_empty() {
+        bail!("only the apps feature lists flatpak_dropped");
     }
     if let Some(problem) = basic_problems(name, &feature.basics).first() {
         bail!("{problem}");
@@ -540,6 +546,11 @@ mod tests {
         );
         assert!(check("ssh", &text).is_err());
         assert!(check("apps", &text).is_ok());
+        // An add-on lists its apps too (M7.9), but never flatpak_dropped.
+        let addon = text.replace("switchable", "addon = true\nswitchable");
+        assert!(check("ssh", &addon).is_ok());
+        let dropped = addon.replace("flatpak = ", "flatpak_dropped = ");
+        assert!(check("ssh", &dropped).is_err());
         let bad = text.replace("org.gnome.Calculator", "calculator");
         let err = check("apps", &bad).unwrap_err().to_string();
         assert!(
