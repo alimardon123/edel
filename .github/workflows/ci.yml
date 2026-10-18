@@ -317,7 +317,7 @@ jobs:
         # it with its size.
         run: |
           mkdir -p out/try
-          ln -f out/edel-desktop-x86_64.img.gz out/try/
+          ln -f out/edel-x86_64.img.gz out/try/
           (cd out/try && sha256sum *.img.gz >SHA256SUMS)
           {
             echo "### Images to try"
@@ -469,7 +469,7 @@ jobs:
               fallback switcher presets own-presets buttons styles scroll sandbox everyday scale
           - part: B
             cases: >-
-              titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard
+              titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness
               keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper
               settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome display
               sound network power updates portal own-bars capture tray
@@ -479,7 +479,7 @@ jobs:
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid
           - part: D
-            cases: one-screen wakeups device-power screen-off memory language settings-tour theme office-fonts
+            cases: one-screen wakeups device-power screen-off memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

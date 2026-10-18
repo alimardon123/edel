@@ -524,10 +524,22 @@ impl Build<'_> {
             self.def.stem(),
             self.def.health.join(" ")
         );
+        if !self.def.health_screen.is_empty() {
+            keys.push_str(&format!(
+                "EDEL_HEALTH_SCREEN=\"{}\"\n",
+                self.def.health_screen.join(" ")
+            ));
+        }
         if !self.def.off.is_empty() {
             keys.push_str(&format!(
                 "EDEL_SERVICES_OFF=\"{}\"\n",
                 self.def.off.join(" ")
+            ));
+        }
+        if !self.def.headless.is_empty() {
+            keys.push_str(&format!(
+                "EDEL_SERVICES_HEADLESS=\"{}\"\n",
+                self.def.headless.join(" ")
             ));
         }
         if let Some(hostname) = &self.def.hostname {

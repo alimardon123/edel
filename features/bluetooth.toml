@@ -10,6 +10,10 @@ why = "Headphones, speakers, mice and keyboards are a basic (principle 6), and B
 packages = ["bluez", "bluez-openrc", "dbus", "dbus-openrc", "pipewire-spa-bluez"]
 switchable = true
 
+# The desktop's (M8.17): off without a graphics card unless the settings
+# file says services.bluetooth = true.
+screen = true
+
 [services]
 default = ["dbus", "bluetooth"]
 

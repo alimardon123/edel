@@ -295,6 +295,12 @@ pub const ROWS: &[Row] = &[
         key: "displays.*.enabled",
         title: n_("On"),
     },
+    // The Sound page's one key (M7.6b); the volume and the devices are the
+    // sound system's own state.
+    Row {
+        key: edel::settings::LOW_LATENCY,
+        title: n_("Low latency"),
+    },
     // The Power page (M7.8): the lid, the power button, the screen lock and
     // the battery's profile, in the page's order.
     Row {
@@ -1000,6 +1006,12 @@ mod tests {
         let titles: Vec<&str> = on_page("displays").map(|r| r.title).collect();
         assert_eq!(titles, ["Resolution", "Scale", "Position", "On"]);
         assert_eq!(title("displays.*.scale"), "Scale");
+    }
+
+    #[test]
+    fn the_sound_page_has_its_one_row() {
+        let titles: Vec<&str> = on_page("sound").map(|r| r.title).collect();
+        assert_eq!(titles, ["Low latency"]);
     }
 
     #[test]

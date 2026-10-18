@@ -1,9 +1,10 @@
 #!/bin/sh
 # Checks that the images build the same twice from one commit (roadmap M8.6).
-# ci/build.sh builds the container image and the VM once more into out/repro/,
+# ci/build.sh builds the container image once more into out/repro/, and the
+# CI VM image twice, into out/repro/first/ and out/repro/,
 # with SOURCE_DATE_EPOCH from the commit, and this compares the two by sha256.
 # The container image must match byte for byte, or its bytes depend on the
-# clock or on the order the file system lists files in. The VM's slot is
+# clock or on the order the file system lists files in. The CI VM image's slot is
 # compared and reported, but not required yet (its ext4 still needs a fixed
 # hash seed and UUID). Writes a table to the run summary when GitHub sets one.
 #
@@ -16,7 +17,7 @@ container=edel-container-x86_64.tar.gz
 slot=edel-vm-x86_64.ext4
 
 missing=
-for file in "$first/$container" "$second/$container" "$first/$slot" "$second/$slot"; do
+for file in "$first/$container" "$second/$container" "$second/first/$slot" "$second/$slot"; do
 	if [ ! -f "$file" ]; then
 		echo "FAIL: $file is missing; run ci/build.sh first" >&2
 		missing=yes
@@ -56,7 +57,7 @@ pair() {
 
 pair container "$first/$container" "$second/$container" differs
 container_same=$same
-pair vm "$first/$slot" "$second/$slot" "differs (not required yet)"
+pair vm "$second/first/$slot" "$second/$slot" "differs (not required yet)"
 
 if [ "$container_same" != yes ]; then
 	echo "FAIL: the container image differs between two builds of one commit" >&2

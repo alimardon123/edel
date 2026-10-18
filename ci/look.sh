@@ -61,7 +61,7 @@ done
 # Every feature file of the desktop image, as the image keeps them, since
 # Settings shows a page only where its feature is.
 mkdir -p "$share_dir/features"
-for f in $(sed -n 's/^features = \[\(.*\)\]$/\1/p' images/desktop.toml | tr -d '",'); do
+for f in $(sed -n 's/^features = \[\(.*\)\]$/\1/p' images/edel.toml | tr -d '",'); do
 	cp "features/$f.toml" "$share_dir/features/"
 done
 fc-cache -f >/dev/null

@@ -1366,6 +1366,22 @@ pub fn mount_all() -> Result<()> {
         "edel-data: {}",
         trf("add-ons mounted: {names}", &[("names", &names.join(", "))])
     );
+    // udev read its rules and announced the devices present at boot
+    // before this layer was there (edel-data runs after udev-settle), so
+    // an add-on's rules (printing's scanners, gaming's controllers,
+    // M7.6b) would reach only devices plugged in later, and maybe not even
+    // those. udev reads them again and announces every device once more;
+    // only where udev runs, and a failure never stops the boot.
+    if brings_device_rules(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
+        let taken = run(&mut edel::base::reread_device_rules())
+            .and_then(|()| run(&mut edel::base::replay_device_events()));
+        match taken {
+            Ok(()) => println!("edel-data: udev took the add-ons' device rules"),
+            Err(err) => eprintln!(
+                "warning: edel-data: udev could not take the add-ons' device rules, so a device plugged in before this start may need plugging in again: {err:#}"
+            ),
+        }
+    }
     if !tried.is_empty() {
         println!(
             "edel-data: {}",
@@ -1449,6 +1465,18 @@ pub fn has_services() -> bool {
     fs::read_dir(places::ADDON_INIT_DIR)
         .map(|mut entries| entries.next().is_some())
         .unwrap_or(false)
+}
+
+/// Where an add-on's rules for udev are, relative to its mount, as
+/// printing's scanners and gaming's controllers ship them (M7.6b).
+const DEVICE_RULES: &str = "usr/lib/udev/rules.d";
+
+/// Whether one of the add-ons mounted at `mounts` brings rules for udev,
+/// which udev read before the add-ons' layer was over `/usr`.
+pub fn brings_device_rules(mounts: &[PathBuf]) -> bool {
+    mounts.iter().any(|mount| {
+        fs::read_dir(mount.join(DEVICE_RULES)).is_ok_and(|mut entries| entries.next().is_some())
+    })
 }
 
 impl Links {
@@ -1660,6 +1688,24 @@ mod tests {
     use std::process;
 
     use super::*;
+
+    #[test]
+    fn only_an_add_on_with_device_rules_has_udev_read_them_again() {
+        let root = std::env::temp_dir().join(format!("edel-device-rules-{}", process::id()));
+        let (with, without, empty) = (
+            root.join("gaming"),
+            root.join("orca"),
+            root.join("printing"),
+        );
+        fs::create_dir_all(with.join(DEVICE_RULES)).unwrap();
+        fs::write(with.join(DEVICE_RULES).join("90-edel-gaming.rules"), "").unwrap();
+        fs::create_dir_all(without.join("usr/bin")).unwrap();
+        fs::create_dir_all(empty.join(DEVICE_RULES)).unwrap();
+        assert!(brings_device_rules(&[without.clone(), with]));
+        assert!(!brings_device_rules(&[without, empty]));
+        assert!(!brings_device_rules(&[]));
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     fn file(size: u64) -> Stamp {
         Stamp {

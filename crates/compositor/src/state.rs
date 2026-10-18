@@ -769,6 +769,10 @@ impl Edel {
                 crate::session::follow_input_method(&handle, self);
             }
         }
+        // The low-latency PipeWire file follows sound.low_latency (M7.6b).
+        if old.low_latency != new.low_latency {
+            crate::session::follow_low_latency(self);
+        }
         // Shell-ui reads the files again too (M5.9h), as the tray's list.
         self.tell_settings();
     }

@@ -10,6 +10,7 @@
 # console. Snapshot mode keeps the installed disk as it was.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 
 dir=out/ab-test
 log=out/ab-test.log
@@ -57,6 +58,18 @@ if ! tr -d '\r' <"$log" | grep -q 'edel guard: this slot is not healthy after [0
 	exit 1
 fi
 if [ "$found" = 1 ] && grep -q 'AB-TEST: PASS' "$log"; then
+	# The walks a newcomer takes (M8.15a): the guest timed each one, the
+	# update and the rollback across restarts, and the broken update's fall
+	# back, which the guest's clock alone measures (docs/REVIEW-experience.md).
+	walks=ok
+	for w in update rollback broken-update; do
+		set -- $(tr -d '\r' <"$log" | sed -n "s/.*AB-TEST: walk $w //p" | tail -n 1)
+		walk "$w" "seconds=${1:-}" "steps=${2:-}" || walks=over
+	done
+	if [ "$walks" != ok ]; then
+		echo "FAIL: a walk of the A/B test is over its budget or was not timed (docs/REVIEW-experience.md)"
+		exit 1
+	fi
 	echo "PASS: the installed disk booted as ci-installed with its own host key; update, restart and automatic fallback work, with no watchdog too, with no root and on an image's own health check, and with no try left the machine stayed up (${waited}s)"
 else
 	echo "FAIL: see the serial log above"
