@@ -387,20 +387,19 @@ fn bind_home_and_var() -> Result<()> {
         fs::create_dir_all(data.join(dir))?;
     }
     if !is_mounted("/var")? {
-        for rel in missing_var_entries(Path::new("/var"), &data.join("var"))? {
-            let dest = data.join("var").join(&rel);
-            run(Command::new("cp")
-                .arg("-a")
-                .arg(Path::new("/var").join(&rel))
-                .arg(dest.parent().unwrap_or(data)))?;
-        }
-        // What the mounted add-ons keep in /var (M7.2a), wherever this
-        // machine lacks it; nothing of the machine's is replaced.
-        for dir in crate::addons::var_dirs() {
-            run(Command::new("cp")
-                .args(["-a", "-n"])
-                .arg(format!("{}/.", dir.display()))
-                .arg(data.join("var")))?;
+        // The slot's /var, then what the mounted add-ons keep there
+        // (M7.2a), wherever this machine lacks it; nothing of the
+        // machine's is replaced. Entry by entry, as busybox's `cp -n`
+        // skips a folder that exists without looking inside it.
+        let sources = std::iter::once(PathBuf::from("/var")).chain(crate::addons::var_dirs());
+        for source in sources {
+            for rel in missing_var_entries(&source, &data.join("var"))? {
+                let dest = data.join("var").join(&rel);
+                run(Command::new("cp")
+                    .arg("-a")
+                    .arg(source.join(&rel))
+                    .arg(dest.parent().unwrap_or(data)))?;
+            }
         }
         // Flatpak hands apps the first fonts' cache folder that exists, and
         // this one would be stale after an update, so the slot's cache
