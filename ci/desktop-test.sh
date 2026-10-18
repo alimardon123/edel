@@ -8690,6 +8690,14 @@ if [ "$*" = live ]; then
 	echo "$installed" | grep -q '^admin = true' || fail "ali is not an administrator in the installed settings file"
 	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
 	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
+	# The desktop add-on the stick runs goes straight beside the new slot,
+	# in its version's folder, not to be tried (M8.17c).
+	carried=''
+	for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
+		debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | grep -q '/desktop\.ext4/' && carried=$version
+	done
+	[ -n "$carried" ] || fail "the installed disk has no desktop add-on beside its slot"
+	echo "PASS: the installed disk holds the desktop add-on in $addons_dir/$carried"
 	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
 	# plugged in, and Settings, opened again, finds it and gives the keys
