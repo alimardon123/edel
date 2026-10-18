@@ -1635,9 +1635,14 @@ commands() {
 		# The font caches (M6.2a): how many the image bakes into the
 		# fontconfig cache folder, whether /var/cache/fontconfig exists (it
 		# would make Flatpak hand apps its stale cache), and how many caches
-		# ci's own fontconfig built when it listed the fonts.
+		# ci's own fontconfig built when it listed the fonts, and the
+		# folders those are for.
 		'font cache')
-			say "font_cache $(ls "$font_cache_dir" 2>/dev/null | grep -c '\.cache-') $( [ -d /var/cache/fontconfig ] && echo var-cache || echo no-var-cache ) $(as_ci "fc-list >/dev/null 2>&1; ls \$HOME/.cache/fontconfig 2>/dev/null | grep -c '\.cache-'")"
+			own=$(as_ci "fc-list >/dev/null 2>&1; ls \$HOME/.cache/fontconfig 2>/dev/null | grep -c '\.cache-'")
+			own_dirs=$(for f in /home/ci/.cache/fontconfig/*.cache-*; do
+				[ -e "$f" ] && fc-cat -v "$f" 2>/dev/null | sed -n 's/^Directory: //p' | head -n 1
+			done | tr '\n' ' ')
+			say "font_cache $(ls "$font_cache_dir" 2>/dev/null | grep -c '\.cache-') $( [ -d /var/cache/fontconfig ] && echo var-cache || echo no-var-cache ) $own $own_dirs"
 			;;
 		# What the baked cache saves (M6.2a): fc-list as ci with the slot's
 		# cache, then with a fontconfig file naming the same fonts and an

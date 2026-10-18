@@ -4021,7 +4021,8 @@ case_default_apps() {
 	[ "${baked:-0}" -gt 0 ] || fail "the slot carries no fonts' cache: the check said \"$fonts\""
 	[ "$varcache" != var-cache ] ||
 		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
-	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, so the slot's cache was stale"
+	own_dirs=$(echo "$fonts" | cut -d' ' -f4-)
+	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, for $own_dirs, so the slot's cache was stale for those folders"
 	# What it saves (M6.2a): the same fonts listed five times with the
 	# baked cache and five times with none, as each app's first start did
 	# before. Reported, and the cache must win: a cache that saves nothing
