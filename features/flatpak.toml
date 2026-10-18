@@ -11,7 +11,3 @@ packages = ["flatpak", "bubblewrap", "xdg-desktop-portal-gtk"]
 [[basics]]
 name = "Apps from Flathub"
 test = "flatpak"
-
-[[basics]]
-name = "Printing"
-needs = "M7.6"
