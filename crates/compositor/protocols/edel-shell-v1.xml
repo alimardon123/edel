@@ -76,6 +76,15 @@
       <arg name="on" type="uint" summary="1 on the battery, 0 on the charger or with no battery"/>
     </request>
 
+    <request name="screens_off">
+      <description summary="turn every screen off until the next input">
+        Nobody has used the machine for power.screen_off_minutes (M7.16b):
+        the compositor turns every screen off, its CRTC inactive and no
+        frame drawn, and turns them all on again at the first input of any
+        kind. Nothing while a game plays on some screen.
+      </description>
+    </request>
+
     <event name="launcher">
       <description summary="show or hide the launcher">
         The launcher's key was pressed (Super, tapped alone, unless

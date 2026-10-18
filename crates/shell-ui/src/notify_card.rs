@@ -20,6 +20,7 @@
 //! person's settings file, read at each notification and written with
 //! `edel::settings::write`, as Settings and `edel settings set` do.
 
+use edel::hardware;
 use edel::i18n::tr;
 use edel::presets::Edge;
 use edel::{places, settings};
@@ -220,6 +221,30 @@ impl Shell {
             eprintln!(
                 "edel-shell-ui: {}",
                 messages::stamp_not_kept(telling::FALLBACK_SEEN, e)
+            );
+        }
+    }
+
+    /// At start: the hardware packs `edel::places::PACKS_FILE` names (M7.11)
+    /// are told once, as the list's notice; the stamp keeps their names, so
+    /// a later start that finds the same packs says nothing more.
+    pub fn tell_hardware(&mut self) {
+        let Ok(text) = std::fs::read_to_string(places::PACKS_FILE) else {
+            return;
+        };
+        let Some((key, n)) = telling::hardware(&hardware::read_packs(&text)) else {
+            return;
+        };
+        if telling::read_stamp(telling::HARDWARE_SEEN).as_deref() == Some(key.as_str()) {
+            eprintln!("edel-shell-ui: hardware notice already seen");
+            return;
+        }
+        self.notified(n);
+        eprintln!("edel-shell-ui: hardware notice shown");
+        if let Err(e) = telling::write_stamp(telling::HARDWARE_SEEN, &key) {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::stamp_not_kept(telling::HARDWARE_SEEN, e)
             );
         }
     }

@@ -782,6 +782,12 @@ msgstr ""
 msgid "How many minutes without input before the screen locks, 0 for never."
 msgstr ""
 
+msgid "Minutes without use before the screens turn off; the backlight dims 30 seconds before. 0 never turns them off."
+msgstr ""
+
+msgid "Minutes without use on battery before the computer sleeps. 0 never sleeps on its own."
+msgstr ""
+
 msgid "What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing."
 msgstr ""
 
@@ -1613,16 +1619,7 @@ msgstr ""
 msgid "the password was not given; nothing was changed"
 msgstr ""
 
-msgid "this computer has no power profiles: {path} is missing, so the power profile is not changed"
-msgstr ""
-
-msgid "could not read {path}: {why}; the power profile is not changed"
-msgstr ""
-
-msgid "this computer offers no power profiles, so the power profile is not changed"
-msgstr ""
-
-msgid "this computer has no power profile for {ours} (it offers {offers}), so the power profile is not changed"
+msgid "this computer offers no power profiles and no processor hints, so nothing is changed"
 msgstr ""
 
 msgid "could not set the power profile through {path}; this changes the system, so run it as root with doas"
@@ -1727,7 +1724,10 @@ msgstr ""
 msgid "{person}'s last desktop session ended without closing; its log is {log}, and edel report gathers it with the rest"
 msgstr ""
 
-msgid "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a later release brings the hardware packs that hold them"
+msgid "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a hardware: line names a pack that holds them when this release has one"
+msgstr ""
+
+msgid "add-on {name} serves this computer's hardware ({summary}); to add it: edel settings set addons.installed+={name}, then edel settings apply; it starts at the next restart"
 msgstr ""
 
 msgid "the language {language} needs {script} fonts, which this system does not carry; text in it shows as boxes until a later release brings them"
@@ -2390,19 +2390,31 @@ msgstr ""
 msgid "could not suspend: {program} exited with {status}"
 msgstr ""
 
-msgid "this computer has no power profiles, so there is none to show"
+msgid "this computer has no power profiles and no processor hints, so there is none to show"
+msgstr ""
+
+msgid "processor: {file} {value} (offered: {offered})"
 msgstr ""
 
 msgid "unknown power profile {name}; use one of: {list}"
-msgstr ""
-
-msgid "power profile {name} ({kernel})"
 msgstr ""
 
 msgid "could not set the power profile: {why}"
 msgstr ""
 
 msgid "could not set the power profile: edel exited with {status}"
+msgstr ""
+
+msgid "the charge limit is back: {percent} percent"
+msgstr ""
+
+msgid "platform {kernel}"
+msgstr ""
+
+msgid "processor {value}"
+msgstr ""
+
+msgid "power profile {name} ({what})"
 msgstr ""
 
 msgid "this laptop offers no charge limit, so it always charges to 100 percent"
@@ -2420,16 +2432,16 @@ msgstr ""
 msgid "could not write {path}; run as root"
 msgstr ""
 
-msgid "charging to 100 percent once; the charge limit comes back after a sleep once unplugged, or at the next start"
+msgid "charging to 100 percent once; the charge limit comes back once it is unplugged, or at the next start"
 msgstr ""
 
 msgid "could not remove {path}; run as root"
 msgstr ""
 
-msgid "edel boot battery-care: this computer offers no charge limit"
+msgid "edel boot battery-care: charge limit {percent} percent"
 msgstr ""
 
-msgid "edel boot battery-care: charge limit {percent} percent"
+msgid "edel boot battery-care: this computer offers no charge limit"
 msgstr ""
 
 msgid "the theme file has data after its end; copy it again"
@@ -2894,13 +2906,13 @@ msgstr ""
 msgid "power: how hard the machine works, its power profile; shell-ui sets it on battery and on the charger, as power.on_battery says"
 msgstr ""
 
-msgid "Show the power profile the kernel uses and the ones it offers, or set it: power-saver, balanced or performance"
+msgid "Show the power profile and the processor's hint, or set both: power-saver, balanced or performance"
 msgstr ""
 
 msgid "The profile to set, as power.on_battery names them"
 msgstr ""
 
-msgid "Charge to 100 percent once, for a trip: the charge limit comes back after a sleep once unplugged, or at the next start"
+msgid "Charge to 100 percent once, for a trip: the charge limit comes back once it is unplugged, or at the next start"
 msgstr ""
 
 msgid "Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings"

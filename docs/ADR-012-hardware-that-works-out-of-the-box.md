@@ -23,7 +23,7 @@ M5.30's firmware list, one owner file in `features/`, keeps in the image the fir
 
 ### 3. Hardware packs
 
-A hardware pack is a signed add-on (ADR-007, level 2), one per firmware family (`firmware-sof` for Intel's sound processors, say), built with each release from the same Alpine packages and signed with the release key. Each pack lists the hardware IDs it serves (the kernel's modalias and DMI fields). An installed pack lives on `/data`, where the kernel finds it through `firmware_class.path`, never in a slot, so the slots stay byte-identical on every machine (M1.12). A pack has the version of its release; an update brings the matching packs with it, and a rollback goes back to the packs of that version.
+A hardware pack is a signed add-on (ADR-007, level 2), one per firmware family (`firmware-sof` for Intel's sound processors, say), built with each release from the same Alpine packages and signed with the release key. Each pack lists the hardware IDs it serves (the kernel's modalias and DMI fields). An installed pack lives on `/data` as an add-on, its files coming in through the add-on's overlay on `/usr`, so the kernel finds them at `/usr/lib/firmware` with no `firmware_class.path`, never in a slot, so the slots stay byte-identical on every machine (M1.12). A device that found no driver because its firmware was missing is started again once the packs are mounted, after the device manager (udev or mdev) has loaded the drivers; a device whose driver started without its firmware, such as a graphics card from Turing or Ampere, keeps running as it started, because its driver loads before the data partition is mounted at every start. A pack has the version of its release; an update brings the matching packs with it, and a rollback goes back to the packs of that version.
 
 ### 4. Offline by default, online when chosen
 
@@ -31,7 +31,7 @@ The stick carries every pack of its release beside its slots, never inside them.
 
 ### 5. A device that arrives later
 
-A device plugged in after installing (a dock, a USB Wi-Fi stick, a headset) whose pack is missing is named by `edel status`, by Settings and by one notification, with the pack that serves it and one button or one command (`edel addon add NAME`) to install it. Nothing is installed without the person's word.
+A device plugged in after installing (a dock, a USB Wi-Fi stick, a headset) whose pack is missing is named by `edel status`, by Settings and by one notification, with the pack that serves it and one button or one line (`edel settings set addons.installed+=NAME`) to install it. Nothing is installed without the person's word.
 
 ### 6. Matching stays on the machine
 
