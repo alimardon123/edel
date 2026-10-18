@@ -188,6 +188,14 @@ pub fn frame_not_drawn(why: impl Display) -> String {
     format!("could not draw a frame: {why}; the screen keeps the one before")
 }
 
+/// A game's smoothness record could not be kept (M7.7d): `edel report`
+/// shows the one before.
+pub fn game_record_not_kept(why: impl Display) -> String {
+    format!(
+        "could not keep the game's smoothness record: {why}; edel report shows the one before, and the log line above has this one"
+    )
+}
+
 /// A frame cannot be sent to the screen.
 pub fn frame_not_shown(why: impl Display) -> String {
     format!("could not show a frame: {why}; the screen keeps the one before")

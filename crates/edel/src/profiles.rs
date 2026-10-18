@@ -284,11 +284,11 @@ mod tests {
     #[test]
     fn every_add_on_a_profile_names_is_one() {
         let features = concat!(env!("CARGO_MANIFEST_DIR"), "/../../features");
-        // The add-ons the desktop image builds beside itself (M7.6b): a
+        // The add-ons the one image builds beside itself (M7.6b, M8.17): a
         // profile's add-on must be one of them, or the machine never has it.
         let image = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../images/desktop.toml"
+            "/../../images/edel.toml"
         ))
         .unwrap();
         let image: toml::Table = toml::from_str(&image).unwrap();
@@ -311,7 +311,7 @@ mod tests {
                 );
                 assert!(
                     built.contains(&addon.to_string()),
-                    "{name}: images/desktop.toml does not build add-on {addon}"
+                    "{name}: images/edel.toml does not build add-on {addon}"
                 );
             }
         }

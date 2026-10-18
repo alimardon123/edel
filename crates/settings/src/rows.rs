@@ -323,6 +323,11 @@ pub const ROWS: &[Row] = &[
         key: edel::settings::GAME_MODE,
         title: n_("Game mode"),
     },
+    // Battery care, its own group under the battery's card (M7.16e).
+    Row {
+        key: edel::settings::BATTERY_CARE,
+        title: n_("Battery care"),
+    },
     // The Notifications page (M5.9b).
     Row {
         key: edel::settings::DO_NOT_DISTURB,

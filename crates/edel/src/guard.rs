@@ -14,7 +14,7 @@
 //! become healthy later (M6.17).
 //!
 //! Early in boot the only watchdog is often softdog, a kernel timer that a
-//! frozen kernel never fires, or none at all (linux-virt has no softdog).
+//! frozen kernel never fires, or none at all (a kernel built without it).
 //! A hardware watchdog (a laptop's iTCO_wdt or sp5100_tco, QEMU's
 //! i6300esb) loads later, from hwdrivers, so the guard takes the first one
 //! that appears and stops softdog. Until the slot is confirmed, the
@@ -23,10 +23,14 @@
 //! kernel that locks up before the guard runs, or with no hardware
 //! watchdog, costs a try instead of hanging for ever. Once the slot is
 //! confirmed, or the guard stands down, [`calm_lockups`] turns that off,
-//! so a running machine only logs a lockup, as before (M6.17).
+//! so a running machine only logs a lockup, as before (M6.17), and turns
+//! the NMI watchdog off: its hard-lockup detector holds a performance
+//! counter of every processor, which keeps them from resting as deep, while
+//! soft lockups are still logged (M7.16d, as powertop advises).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::thread::sleep;
@@ -73,25 +77,61 @@ pub fn health_file(name: &str) -> Option<PathBuf> {
     }
 }
 
+/// What the guard waits for, from os-release.
+struct HealthPlan {
+    /// The health files every machine waits for.
+    files: Vec<PathBuf>,
+    /// The desktop's, only a machine with a screen waits for
+    /// (`EDEL_HEALTH_SCREEN`, M8.17): a server or a virtual machine with no
+    /// graphics card starts no desktop, so nothing would ever write them.
+    screen_files: Vec<PathBuf>,
+    timeout: u64,
+    /// Names that are no health name, skipped.
+    unknown: Vec<String>,
+}
+
 /// The health files to wait for and the timeout, from os-release. A name
 /// that is no name is skipped and returned.
-fn health_plan(os_release: &str) -> (Vec<PathBuf>, u64, Vec<String>) {
-    let mut files = Vec::new();
-    let mut unknown = Vec::new();
-    for name in os_release_value(os_release, "EDEL_HEALTH")
-        .unwrap_or_default()
-        .split([' ', ','])
-        .filter(|n| !n.is_empty())
-    {
-        match health_file(name) {
-            Some(file) => files.push(file),
-            None => unknown.push(name.to_string()),
+fn health_plan(os_release: &str) -> HealthPlan {
+    let names = |key| -> Vec<String> {
+        os_release_value(os_release, key)
+            .unwrap_or_default()
+            .split([' ', ','])
+            .filter(|n| !n.is_empty())
+            .map(String::from)
+            .collect()
+    };
+    let screen = names("EDEL_HEALTH_SCREEN");
+    let mut plan = HealthPlan {
+        files: Vec::new(),
+        screen_files: Vec::new(),
+        timeout: os_release_value(os_release, "EDEL_HEALTH_TIMEOUT")
+            .and_then(|t| t.parse().ok())
+            .unwrap_or(DEFAULT_TIMEOUT),
+        unknown: Vec::new(),
+    };
+    for name in names("EDEL_HEALTH") {
+        match health_file(&name) {
+            Some(file) if screen.contains(&name) => plan.screen_files.push(file),
+            Some(file) => plan.files.push(file),
+            None => plan.unknown.push(name),
         }
     }
-    let timeout = os_release_value(os_release, "EDEL_HEALTH_TIMEOUT")
-        .and_then(|t| t.parse().ok())
-        .unwrap_or(DEFAULT_TIMEOUT);
-    (files, timeout, unknown)
+    plan
+}
+
+impl HealthPlan {
+    /// The files this boot waits for: the desktop's too only while the
+    /// machine has a screen, asked only once the others are there, so by
+    /// then the kernel has found its graphics card (udev settles in
+    /// sysinit, before the default runlevel's health).
+    fn wanted(&self, has_screen: impl FnOnce() -> bool) -> Vec<PathBuf> {
+        let mut wanted = self.files.clone();
+        if !self.screen_files.is_empty() && (!healthy(&self.files) || has_screen()) {
+            wanted.extend(self.screen_files.iter().cloned());
+        }
+        wanted
+    }
 }
 
 fn healthy(files: &[PathBuf]) -> bool {
@@ -180,8 +220,9 @@ fn take_hardware(watchdog: &mut Option<File>, on_hardware: &mut bool) {
 /// Waits for the slot to become healthy, then confirms it.
 pub fn guard() -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let (files, timeout, unknown) = health_plan(&os_release);
-    for name in unknown {
+    let plan = health_plan(&os_release);
+    let timeout = plan.timeout;
+    for name in &plan.unknown {
         eprintln!(
             "warning: edel guard: {name:?} in EDEL_HEALTH is not a health name (a-z, 0-9 and '-'), so it is skipped"
         );
@@ -202,7 +243,19 @@ pub fn guard() -> Result<()> {
     }
     let start = Instant::now();
     let mut stood_down = false;
+    let mut said_no_screen = false;
     loop {
+        let files = plan.wanted(edel::services::screen_now);
+        if !said_no_screen
+            && files.len() == plan.files.len()
+            && healthy(&files)
+            && !plan.screen_files.is_empty()
+        {
+            said_no_screen = true;
+            println!(
+                "edel guard: this machine has no screen, so the desktop does not start and the guard does not wait for it"
+            );
+        }
         // Once it stood down, no watchdog is taken again.
         if !stood_down {
             take_hardware(&mut watchdog, &mut on_hardware);
@@ -300,14 +353,18 @@ pub fn guard() -> Result<()> {
 const LOCKUP_PANICS: &str = "/proc/sys/kernel";
 
 /// Turns off the lockup detectors' panic the command line turned on, in
-/// `kernel` (`/proc/sys/kernel`): a running machine logs a lockup and goes
-/// on, as before. A kernel without a detector has no file, which is fine.
+/// `kernel` (`/proc/sys/kernel`): a running machine logs a soft lockup and
+/// goes on, as before. The NMI watchdog goes off too, so the processors
+/// rest deeper (M7.16d). A kernel without a detector has no file, which is
+/// fine.
 fn calm_lockups(kernel: &Path) {
-    for name in ["softlockup_panic", "hardlockup_panic"] {
+    for name in ["softlockup_panic", "hardlockup_panic", "nmi_watchdog"] {
         let path = kernel.join(name);
-        if path.exists()
-            && let Err(err) = fs::write(&path, "0\n")
-        {
+        // A kernel without the detector shows its file read-only (a
+        // virtual machine's nmi_watchdog, with no performance counter),
+        // or not at all: nothing there to calm.
+        let writable = fs::metadata(&path).is_ok_and(|m| m.permissions().mode() & 0o200 != 0);
+        if writable && let Err(err) = fs::write(&path, "0\n") {
             eprintln!(
                 "warning: edel guard: could not write {}: {err}",
                 path.display()
@@ -420,7 +477,12 @@ mod tests {
 
     #[test]
     fn reads_health_names_and_timeout_and_skips_what_is_no_name() {
-        let (files, timeout, unknown) = health_plan(OS_RELEASE);
+        let HealthPlan {
+            files,
+            timeout,
+            unknown,
+            ..
+        } = health_plan(OS_RELEASE);
         assert_eq!(
             files,
             [
@@ -435,9 +497,37 @@ mod tests {
             Some(PathBuf::from(places::READY_FILE))
         );
         assert!(is_built_in("compositor") && !is_built_in("network"));
-        let (files, timeout, _) = health_plan("NAME=x\n");
-        assert!(files.is_empty());
-        assert_eq!(timeout, DEFAULT_TIMEOUT);
+        let plan = health_plan("NAME=x\n");
+        assert!(plan.files.is_empty() && plan.screen_files.is_empty());
+        assert_eq!(plan.timeout, DEFAULT_TIMEOUT);
+    }
+
+    #[test]
+    fn a_machine_without_a_screen_does_not_wait_for_the_desktop() {
+        let dir = std::env::temp_dir().join(format!("edel-guard-screen-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let reached = dir.join("default-reached");
+        let ready = dir.join("ready");
+        let plan = HealthPlan {
+            files: vec![reached.clone()],
+            screen_files: vec![ready.clone()],
+            timeout: 30,
+            unknown: Vec::new(),
+        };
+        // Before the default runlevel the screen is not asked about.
+        assert_eq!(
+            plan.wanted(|| panic!("asked too early")),
+            [reached.clone(), ready.clone()]
+        );
+        fs::write(&reached, "").unwrap();
+        assert_eq!(plan.wanted(|| true), [reached.clone(), ready.clone()]);
+        assert_eq!(plan.wanted(|| false), vec![reached.clone()]);
+        let split = health_plan(
+            "EDEL_HEALTH=\"default-runlevel compositor\"\nEDEL_HEALTH_SCREEN=\"compositor\"\n",
+        );
+        assert_eq!(split.files, [PathBuf::from(places::DEFAULT_REACHED)]);
+        assert_eq!(split.screen_files, [PathBuf::from(places::READY_FILE)]);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -489,13 +579,18 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("edel-lockups-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("softlockup_panic"), "1\n").unwrap();
+        fs::write(dir.join("nmi_watchdog"), "1\n").unwrap();
         // No hardlockup_panic: a kernel without that detector.
         calm_lockups(&dir);
-        assert_eq!(
-            fs::read_to_string(dir.join("softlockup_panic")).unwrap(),
-            "0\n"
-        );
+        for name in ["softlockup_panic", "nmi_watchdog"] {
+            assert_eq!(fs::read_to_string(dir.join(name)).unwrap(), "0\n");
+        }
         assert!(!dir.join("hardlockup_panic").exists());
+        // Read-only, as a virtual machine shows nmi_watchdog: left alone.
+        fs::write(dir.join("nmi_watchdog"), "1\n").unwrap();
+        fs::set_permissions(dir.join("nmi_watchdog"), fs::Permissions::from_mode(0o444)).unwrap();
+        calm_lockups(&dir);
+        assert_eq!(fs::read_to_string(dir.join("nmi_watchdog")).unwrap(), "1\n");
         fs::remove_dir_all(&dir).unwrap();
         assert!(crate::boot::WATCHDOG_ARGS.contains("softlockup_panic=1 nmi_watchdog=panic"));
     }
@@ -540,7 +635,7 @@ mod tests {
         fs::create_dir_all(run.join("openrc")).unwrap();
         fs::create_dir_all(run.join("edel/health")).unwrap();
         // The plan's files, under this test's directory in place of /run.
-        let (files, _, _) = health_plan(OS_RELEASE);
+        let files = health_plan(OS_RELEASE).files;
         let files: Vec<PathBuf> = files
             .iter()
             .map(|f| run.join(f.strip_prefix("/run").unwrap()))

@@ -1,0 +1,4 @@
+#!/bin/sh
+# zzz runs this after every resume: some laptops forget their charge limit
+# when they sleep, so battery care sets it again (M7.16e).
+exec /usr/bin/edel boot battery-care

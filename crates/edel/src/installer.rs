@@ -33,7 +33,7 @@ use crate::update::{self, Lock, run};
 /// The external tools a real install runs, and the package each comes
 /// from; busybox's `mount`, `umount`, `blkid` and `tar` (which copies the
 /// default apps, M6.2) come with the base. A test
-/// holds `images/vm.toml` to this list.
+/// holds `images/edel.toml` to this list.
 pub const TOOLS: &[(&str, &str)] = &[
     ("sfdisk", "sfdisk"),
     ("mkfs.vfat", "dosfstools"),
@@ -1185,13 +1185,13 @@ mod tests {
 
     #[test]
     fn every_bootable_image_has_every_tool_install_runs() {
-        let images = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../images");
-        for name in ["vm", "desktop"] {
-            let def = crate::def::ImageDef::load(&images.join(format!("{name}.toml"))).unwrap();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        for name in ["images/edel", "ci/vm/vm"] {
+            let def = crate::def::ImageDef::load(&root.join(format!("{name}.toml"))).unwrap();
             for (tool, package) in TOOLS {
                 assert!(
                     def.packages.iter().any(|p| p == package),
-                    "{tool} needs {package} in a feature of images/{name}.toml"
+                    "{tool} needs {package} in a feature of {name}.toml"
                 );
             }
         }

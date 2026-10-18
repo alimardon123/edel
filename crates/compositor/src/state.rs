@@ -926,6 +926,7 @@ impl Edel {
                 }
             );
         }
+        self.follow_game_record();
         self.state_file.send(self.state_toml());
         self.sync_toplevels();
         self.sync_shell();
@@ -1171,6 +1172,7 @@ impl CompositorHandler for Edel {
 
     fn commit(&mut self, surface: &WlSurface) {
         smithay::backend::renderer::utils::on_commit_buffer_handler::<Self>(surface);
+        self.game.committed(surface);
         self.popups.commit(surface);
         if !is_sync_subsurface(surface) {
             let mut root = surface.clone();

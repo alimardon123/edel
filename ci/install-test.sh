@@ -14,6 +14,7 @@
 # same file over plain http must be refused.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 . ci/names.sh
 
 target=out/install-target.img
@@ -106,5 +107,8 @@ if grep -q edel-ci-tty out/install-tty.log; then
 fi
 tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1 >out/install-live-key
 [ -s out/install-live-key ] || fail "$log" "the live image printed no ssh host key"
+# The install walk (M8.15a): the guest times `edel install --yes` itself.
+set -- $(value 'walk install')
+walk install "seconds=${1:-}" "steps=${2:-}" || fail "$log" "edel install is over its budget (walk install, docs/REVIEW-experience.md)"
 cat "$log"
 echo "PASS: install refused its settings file over plain http, took it over https from a server its own authority vouched for, showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only, the profile picked among them (${waited}s)"

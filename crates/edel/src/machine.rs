@@ -18,6 +18,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Context, Result, bail};
 use edel::apps::{self, FLATHUB_REMOTE};
 use edel::base;
+use edel::battery_care;
 use edel::i18n::{tr, trf};
 use edel::key_help::{self, DecidedBy};
 use edel::location;
@@ -264,6 +265,8 @@ enum Change {
     GeolocationNone,
     /// Turn GeoClue's Wi-Fi lookup on or off, by its drop-in (M6.14c)
     LocationOnline(bool),
+    /// Set the battery's charge limit to this percent (M7.16e)
+    BatteryCare(u32),
     AddUser {
         name: String,
         shell: String,
@@ -332,6 +335,9 @@ impl fmt::Display for Change {
             Change::GeolocationNone => write!(f, "location.place: none, so apps get no place"),
             Change::LocationOnline(on) => {
                 write!(f, "location.online: {}", if *on { "on" } else { "off" })
+            }
+            Change::BatteryCare(percent) => {
+                write!(f, "power.battery_care: limit {percent} percent")
             }
             Change::AddUser { name, shell } => write!(f, "users.{name}: add, with shell {shell}"),
             Change::Shell { name, shell } => write!(f, "users.{name}.login_shell: set to {shell}"),
@@ -416,9 +422,12 @@ struct Machine {
     /// The features this machine has, for `[services]` (M6.10)
     features: Vec<(String, edel::features::Feature)>,
     /// The features the image left off (`EDEL_SERVICES_OFF`)
-    services_off: Vec<String>,
+    services_off: services::Defaults,
     /// The services in OpenRC's runlevels now
     runlevels: BTreeSet<services::Entry>,
+    /// Whether the kernel shows a graphics card (`services::has_screen`):
+    /// without one, the desktop's services stay off (M8.17).
+    screen: bool,
     /// The add-ons mounted now, by name (M7.2a)
     addons: Vec<String>,
     /// Their files and the links to them in `/etc`
@@ -430,6 +439,12 @@ struct Machine {
     /// `/etc/subuid` and `/etc/subgid` as they are, on a machine with
     /// newuidmap for rootless containers (M7.6b); None without it
     subids: Option<(String, String)>,
+    /// The charge limit the battery has now, None when no battery offers
+    /// one (M7.16e)
+    battery_limit: Option<u32>,
+    /// Whether `edel power charge-full` made a trip's full charge that is
+    /// still pending (M7.16e)
+    charge_full_once: bool,
 }
 
 impl Machine {
@@ -478,10 +493,11 @@ impl Machine {
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
             features,
-            services_off: services::off_by_default(
+            services_off: services::Defaults::read(
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
+            screen: services::screen_now(),
             addons: edel::addon_state::mounted(),
             addon_links: crate::addons::Links::read(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
@@ -492,6 +508,8 @@ impl Machine {
                     fs::read_to_string("/etc/subgid").unwrap_or_default(),
                 )
             }),
+            battery_limit: battery_care::limit_now(Path::new(battery_care::POWER_SUPPLY)),
+            charge_full_once: Path::new(places::CHARGE_FULL_ONCE).exists(),
         })
     }
 }
@@ -616,6 +634,29 @@ fn plan_location(
     }
 }
 
+/// The charge limit change of battery care (M7.16e): the limit the settings
+/// want (`power.battery_care`, or a trip's full charge) against the one the
+/// battery has now. Planned only where a battery offers a limit, and only
+/// when they differ, so apply writes nothing on a machine that matches.
+fn plan_battery_care(file: &SettingsFile, machine: &Machine, changes: &mut Vec<Change>) {
+    let Some(now) = machine.battery_limit else {
+        return;
+    };
+    let wanted = battery_care::wanted(settings::battery_care_on(file), machine.charge_full_once);
+    if now != wanted {
+        changes.push(Change::BatteryCare(wanted));
+    }
+}
+
+/// Whether the machine's settings ask for battery care (M7.16e), read the way
+/// apply reads them, without apply's notes; off when the file cannot be read,
+/// as the release default is.
+pub fn battery_care_on() -> bool {
+    settings::read_on_machine(&machine_file())
+        .map(|read| settings::battery_care_on(&edel::profiles::applied(&read.file)))
+        .unwrap_or(settings::BATTERY_CARE_DEFAULT)
+}
+
 /// The zone a link to `target` names: the target without the zone files'
 /// folder in front of it, None when it is not inside that folder.
 fn zone_of_target(target: &Path) -> Option<String> {
@@ -647,6 +688,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     if let Some(state) = &machine.location {
         plan_location(file, state, &mut changes, &mut notes);
     }
+    plan_battery_care(file, machine, &mut changes);
     let all = accounts(&machine.passwd);
     let mut admin_group = members(&machine.group, ADMIN_GROUP).is_some();
     let seated = members(&machine.group, SEAT_GROUP);
@@ -816,6 +858,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         &machine.features,
         &file.services,
         &machine.services_off,
+        machine.screen,
         &machine.runlevels,
     ) {
         changes.push(Change::Service(step));
@@ -1017,6 +1060,13 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
                 Err(err) => return Err(err).with_context(|| could_not_write(&upper)),
             }
             let _ = fs::write("/proc/sys/vm/drop_caches", "2");
+        }
+        Change::BatteryCare(percent) => {
+            // The limit is the firmware's own, so it is set at once; a
+            // refusal leaves the rest of the settings applied (M7.16e).
+            if let Err(err) = battery_care::set(Path::new(battery_care::POWER_SUPPLY), *percent) {
+                eprintln!("warning: {err}");
+            }
         }
         Change::LocationOnline(on) => {
             // GeoClue reads its drop-ins when it starts and runs only while
@@ -1403,6 +1453,29 @@ pub fn import(file: &Path) -> Result<()> {
     apply_file(Some(file), false)
 }
 
+/// The boot's apply on a machine with no settings file: only the
+/// services, as an empty file asks for them (M8.17).
+fn boot_services() -> Result<()> {
+    let file = SettingsFile::default();
+    let (changes, _) = plan(&file, &Machine::read(&file)?);
+    for change in changes.iter().filter(|c| matches!(c, Change::Service(_))) {
+        match execute(change, true) {
+            Ok(()) => println!("edel settings: {change}"),
+            Err(err) => eprintln!(
+                "edel settings: {}",
+                trf(
+                    "could not apply {change}: {why}",
+                    &[
+                        ("change", &change.to_string()),
+                        ("why", &format!("{err:#}"))
+                    ]
+                )
+            ),
+        }
+    }
+    Ok(())
+}
+
 fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     let _lock = Lock::take("settings", "edel settings")?;
     // A file by a former name is renamed first, so it is read and kept by
@@ -1410,8 +1483,14 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     if let Err(err) = settle_names() {
         eprintln!("warning: {err:#}");
     }
+    if boot {
+        // Once per boot, after udev settled, for every later reader (M8.17).
+        services::decide_screen();
+    }
     let Some(read) = load(file, true)? else {
-        return Ok(());
+        // With no settings file the boot still switches the services, so
+        // a machine with no screen starts no desktop service (M8.17).
+        return if boot { boot_services() } else { Ok(()) };
     };
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
     for note in &notes {
@@ -2913,13 +2992,16 @@ mod tests {
             developer: false,
             flatpak: BTreeMap::new(),
             features: Vec::new(),
-            services_off: Vec::new(),
+            services_off: services::Defaults::default(),
             runlevels: BTreeSet::new(),
+            screen: true,
             addons: Vec::new(),
             addon_links: Default::default(),
             mime_defaults: None,
             first_passwords: None,
             subids: None,
+            battery_limit: None,
+            charge_full_once: false,
         }
     }
 
@@ -3123,6 +3205,56 @@ mod tests {
             c,
             Change::Geolocation { .. } | Change::GeolocationNone | Change::LocationOnline(_)
         )));
+    }
+
+    /// A machine whose battery offers a charge limit, now at `limit`, and
+    /// whether a trip's full charge is pending.
+    fn battery(limit: u32, charge_full_once: bool) -> Machine {
+        let mut machine = machine();
+        machine.battery_limit = Some(limit);
+        machine.charge_full_once = charge_full_once;
+        machine
+    }
+
+    #[test]
+    fn plans_the_charge_limit_the_setting_wants_once() {
+        let care = settings::read("format = 1\n[power]\nbattery_care = true\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&care, &battery(100, false));
+        assert!(changes.contains(&Change::BatteryCare(80)));
+        assert!(
+            changes
+                .iter()
+                .any(|c| c.to_string() == "power.battery_care: limit 80 percent")
+        );
+        let (changes, _) = plan(&care, &battery(80, false));
+        assert!(!changes.iter().any(|c| matches!(c, Change::BatteryCare(_))));
+    }
+
+    #[test]
+    fn a_trip_charges_to_full_and_care_comes_back_after_it() {
+        let care = settings::read("format = 1\n[power]\nbattery_care = true\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&care, &battery(80, true));
+        assert!(changes.contains(&Change::BatteryCare(100)));
+        let (changes, _) = plan(&care, &battery(100, true));
+        assert!(!changes.iter().any(|c| matches!(c, Change::BatteryCare(_))));
+    }
+
+    #[test]
+    fn absent_care_is_off_and_no_limit_is_planned_without_a_battery_limit() {
+        let absent = settings::read("format = 1\n").unwrap().file;
+        let (changes, _) = plan(&absent, &battery(80, false));
+        assert!(changes.contains(&Change::BatteryCare(100)));
+        let (changes, _) = plan(&absent, &battery(100, false));
+        assert!(!changes.iter().any(|c| matches!(c, Change::BatteryCare(_))));
+        let care = settings::read("format = 1\n[power]\nbattery_care = true\n")
+            .unwrap()
+            .file;
+        let (changes, _) = plan(&care, &machine());
+        assert!(!changes.iter().any(|c| matches!(c, Change::BatteryCare(_))));
     }
 
     #[test]

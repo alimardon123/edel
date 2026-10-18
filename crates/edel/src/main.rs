@@ -5,6 +5,7 @@
 //! learn. The settings file parser is the library half (`edel::settings`).
 
 mod addons;
+mod battery_report;
 mod bom;
 mod boot;
 mod completion;
@@ -217,6 +218,11 @@ enum Commands {
         /// instead, where any computer can read it from the disk or stick
         #[arg(long)]
         esp: bool,
+        /// Also measure the battery for MINUTES (5 or more) with the computer
+        /// left alone and unplugged: watts drawn, how long the processor
+        /// rested, what woke it, and how deep the last sleep went
+        #[arg(long, value_name = "MINUTES")]
+        battery: Option<u64>,
     },
     /// settings: this machine's settings (its configuration), the same
     /// as in the Settings app; alone, it lists the pages
@@ -338,6 +344,9 @@ enum PowerCommands {
         #[arg(value_name = "NAME")]
         name: Option<String>,
     },
+    /// Charge to 100 percent once, for a trip: the charge limit comes back
+    /// after a sleep once unplugged, or at the next start
+    ChargeFull,
 }
 
 #[derive(Subcommand)]
@@ -456,6 +465,9 @@ enum BootCommands {
     /// Give this laptop's speakers their tuning profile, when one matches
     /// its model
     Speakers,
+    /// Set the battery's charge limit again after a resume, as some laptops
+    /// forget it
+    BatteryCare,
 }
 
 #[derive(Subcommand)]
@@ -514,14 +526,14 @@ enum ImageCommands {
     Build(Box<BuildArgs>),
     /// Check an image definition without building it
     Check {
-        /// Image definition, for example images/vm.toml
+        /// Image definition, for example images/edel.toml
         definition: PathBuf,
     },
 }
 
 #[derive(clap::Args)]
 struct BuildArgs {
-    /// Image definition, for example images/vm.toml
+    /// Image definition, for example images/edel.toml
     definition: PathBuf,
     /// Directory for the finished images and the work area
     #[arg(long, default_value = "out")]
@@ -856,6 +868,7 @@ fn run(command: Commands) -> Result<()> {
             BootCommands::MarkGood => update::mark_good(),
             BootCommands::Live => live::live(),
             BootCommands::Speakers => speaker_boot::speakers(),
+            BootCommands::BatteryCare => system_power::battery_care(),
         },
         Commands::Release { command } => match command {
             ReleaseCommands::Keygen { dir, name } => release::keygen(&dir, &name),
@@ -937,6 +950,7 @@ fn run(command: Commands) -> Result<()> {
         } => installer::unattended(),
         Commands::Power { command } => match command {
             PowerCommands::Profile { name } => system_power::profile(name.as_deref()),
+            PowerCommands::ChargeFull => system_power::charge_full(),
         },
         Commands::Install { list: true, .. } => installer::list(),
         Commands::Install {
@@ -963,7 +977,7 @@ fn run(command: Commands) -> Result<()> {
                 new_password_stdin,
             )
         }
-        Commands::Report { esp } => report::report(esp),
+        Commands::Report { esp, battery } => report::report(esp, battery),
         Commands::Settings { command } => match command {
             None => {
                 machine::pages();
@@ -1198,7 +1212,7 @@ mod tests {
                 "s.toml",
                 "--plan",
             ],
-            &["edel", "image", "build", "images/vm.toml", "--plan"],
+            &["edel", "image", "build", "images/edel.toml", "--plan"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok(), "{args:?}");
         }

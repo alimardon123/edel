@@ -131,6 +131,27 @@ msgstr ""
 msgid "Screen"
 msgstr ""
 
+msgid "could not write {path}: {err}; run as root"
+msgstr ""
+
+msgid "this computer has no battery, so only the processor's rest and wakeups are measured"
+msgstr ""
+
+msgid "it was plugged in, so no drain was measured; unplug it and measure again"
+msgstr ""
+
+msgid "it drew {watts} W on battery over {minutes} minutes"
+msgstr ""
+
+msgid "its charge could not be read, so no drain was measured"
+msgstr ""
+
+msgid "measure for {min} minutes or more: the battery's charge is updated only every minute or so"
+msgstr ""
+
+msgid "measuring the battery for {minutes} minutes; leave the computer alone, unplugged, with its screen on"
+msgstr ""
+
 msgid "this machine has no {program}, so it has no Bluetooth; the bluetooth feature brings BlueZ"
 msgstr ""
 
@@ -768,6 +789,9 @@ msgid "How hard the machine works on battery: power-saver, balanced or performan
 msgstr ""
 
 msgid "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out."
+msgstr ""
+
+msgid "Stop charging at 80 percent where the laptop offers a limit, so the battery keeps more of its health over the years."
 msgstr ""
 
 msgid "Turns one switchable feature, such as ssh or bluetooth, on or off by its name."
@@ -2381,6 +2405,33 @@ msgstr ""
 msgid "could not set the power profile: edel exited with {status}"
 msgstr ""
 
+msgid "this laptop offers no charge limit, so it always charges to 100 percent"
+msgstr ""
+
+msgid "could not charge fully: {why}"
+msgstr ""
+
+msgid "could not charge fully: edel exited with {status}"
+msgstr ""
+
+msgid "could not make {path}; run as root"
+msgstr ""
+
+msgid "could not write {path}; run as root"
+msgstr ""
+
+msgid "charging to 100 percent once; the charge limit comes back after a sleep once unplugged, or at the next start"
+msgstr ""
+
+msgid "could not remove {path}; run as root"
+msgstr ""
+
+msgid "edel boot battery-care: this computer offers no charge limit"
+msgstr ""
+
+msgid "edel boot battery-care: charge limit {percent} percent"
+msgstr ""
+
 msgid "the theme file has data after its end; copy it again"
 msgstr ""
 
@@ -2849,6 +2900,9 @@ msgstr ""
 msgid "The profile to set, as power.on_battery names them"
 msgstr ""
 
+msgid "Charge to 100 percent once, for a trip: the charge limit comes back after a sleep once unplugged, or at the next start"
+msgstr ""
+
 msgid "Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings"
 msgstr ""
 
@@ -2880,6 +2934,9 @@ msgid "Print what an issue about this machine needs, as TOML: the release, kerne
 msgstr ""
 
 msgid "Write it to /EFI/edel/report.toml on the EFI system partition instead, where any computer can read it from the disk or stick"
+msgstr ""
+
+msgid "Also measure the battery for MINUTES (5 or more) with the computer left alone and unplugged: watts drawn, how long the processor rested, what woke it, and how deep the last sleep went"
 msgstr ""
 
 msgid "settings: this machine's settings (its configuration), the same as in the Settings app; alone, it lists the pages"
@@ -2936,7 +2993,7 @@ msgstr ""
 msgid "Build an image from its definition file (run as root on Alpine)"
 msgstr ""
 
-msgid "Image definition, for example images/vm.toml"
+msgid "Image definition, for example images/edel.toml"
 msgstr ""
 
 msgid "Directory for the finished images and the work area"

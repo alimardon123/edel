@@ -923,6 +923,16 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "power.battery_care",
+        help: n_(
+            "Stop charging at 80 percent where the laptop offers a limit, so the battery keeps more of its health over the years.",
+        ),
+        default: "false",
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
         key: "services.*",
         help: n_("Turns one switchable feature, such as ssh or bluetooth, on or off by its name."),
         default: "the image's",

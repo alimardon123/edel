@@ -31,7 +31,8 @@ use edel::users::{self, ADMIN_GROUP};
 
 use crate::machine;
 use crate::{
-    Commands, ImageCommands, PresetCommands, ReleaseCommands, SettingsCommands, ThemeCommands,
+    BootCommands, Commands, ImageCommands, PresetCommands, ReleaseCommands, SettingsCommands,
+    ThemeCommands,
 };
 
 /// The terminal a person types a password on, when there is one.
@@ -81,8 +82,14 @@ pub fn need(command: &Commands) -> Need {
         // machine (group seat) set it with no password, so no administrator
         // is asked for it (M7.8).
         Commands::Power { .. } => Need::Anyone,
+        // zzz runs it after a resume as whoever suspended, through doas,
+        // and it only sets again the limit the machine's settings already
+        // chose (M7.16e).
+        Commands::Boot {
+            command: BootCommands::BatteryCare,
+        } => Need::Anyone,
         Commands::Boot { .. } => Need::Admin,
-        Commands::Report { esp } => {
+        Commands::Report { esp, .. } => {
             if *esp {
                 Need::Admin
             } else {
@@ -520,6 +527,7 @@ mod tests {
             (&["edel", "boot", "guard"], Need::Admin),
             (&["edel", "report"], Need::Anyone),
             (&["edel", "report", "--esp"], Need::Admin),
+            (&["edel", "report", "--battery", "5"], Need::Anyone),
             (
                 &["edel", "release", "verify", "--keys", "k", "f"],
                 Need::Anyone,
@@ -556,13 +564,18 @@ mod tests {
                 ],
                 Need::Admin,
             ),
-            (&["edel", "image", "check", "images/vm.toml"], Need::Anyone),
-            (&["edel", "image", "build", "images/vm.toml"], Need::Admin),
+            (
+                &["edel", "image", "check", "images/edel.toml"],
+                Need::Anyone,
+            ),
+            (&["edel", "image", "build", "images/edel.toml"], Need::Admin),
             (&["edel", "theme", "list"], Need::Anyone),
             (&["edel", "theme", "save", "mine"], Need::Admin),
             (&["edel", "theme", "export", "mine"], Need::Admin),
             (&["edel", "power", "profile"], Need::Anyone),
             (&["edel", "power", "profile", "balanced"], Need::Anyone),
+            (&["edel", "power", "charge-full"], Need::Anyone),
+            (&["edel", "boot", "battery-care"], Need::Anyone),
             (&["edel", "preset", "list"], Need::Anyone),
             (&["edel", "preset", "delete", "mine"], Need::Admin),
             (&["edel", "web-app", "add", "example.org"], Need::Anyone),

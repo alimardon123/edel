@@ -72,8 +72,8 @@ archive() {
 files() {
 	case "$1" in
 	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test ;;
-	system) echo out/edel-vm-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
-	live) echo out/edel-desktop-x86_64.img out/install-file.img ;;
+	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
+	live) echo out/edel-x86_64.img out/install-file.img ;;
 	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img ;;
 	*) no_lane "$1" ;;
 	esac

@@ -40,6 +40,9 @@ has() {
 
 start() {
 	. /usr/share/edel/places.sh
+	# NetworkManager brings eth0 up after it starts, so the downloads
+	# wait for the default route (up to 60 s).
+	for i in $(seq 60); do ip route | grep -q '^default' && break; sleep 1; done
 	marker="$data_dir/apps-test-step"
 	step=$(cat "$marker" 2>/dev/null || echo 1)
 	release=http://10.0.2.2:8003/release.toml

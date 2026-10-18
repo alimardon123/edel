@@ -191,6 +191,17 @@
       <arg name="on" type="uint" summary="1 while a game plays, 0 when it ended"/>
     </event>
 
+    <event name="game">
+      <description summary="a game plays on some screen, or on none">
+        A game plays on at least one screen (M7.7b), as playing says for
+        every screen: shell-ui asks for the performance power profile on
+        the charger while one does, and gives the rules' profile back when
+        it ends. Sent when it changes, and when shell-ui binds while one
+        plays.
+      </description>
+      <arg name="on" type="uint" summary="1 while a game plays on a screen, 0 when none does"/>
+    </event>
+
     <event name="clipboard">
       <description summary="the clipboard history's key was pressed">
         Super+V, unless [shortcuts] says otherwise (M7.13): shell-ui

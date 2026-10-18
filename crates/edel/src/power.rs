@@ -89,6 +89,9 @@ pub struct Device {
     /// How full it can be now against its design capacity, in percent
     /// (the battery's health); none when the battery does not say
     pub capacity: Option<f64>,
+    /// How many times it has been charged through, when the battery says
+    /// (M7.16e); many say `N/A` or 0, which is none
+    pub cycles: Option<u32>,
     /// Minutes until it is empty (discharging) or full (charging)
     pub minutes: Option<u32>,
     /// For a power cable: whether it carries power
@@ -169,6 +172,15 @@ impl Snapshot {
         })
     }
 
+    /// How many times the machine's first battery that says has been
+    /// charged through (M7.16e); the display device never says.
+    pub fn cycles(&self) -> Option<u32> {
+        self.devices
+            .iter()
+            .filter(|d| d.is_battery() && d.present && !d.is_display())
+            .find_map(|d| d.cycles)
+    }
+
     /// Whether the machine is plugged in: the daemon's word when it gave
     /// it, else whether a power cable carries power; a machine with no
     /// battery is plugged in, whatever else.
@@ -240,6 +252,7 @@ pub fn parse(dump: &str) -> Snapshot {
                 state: State::Unknown,
                 percent: None,
                 capacity: None,
+                cycles: None,
                 minutes: None,
                 online: None,
             });
@@ -294,6 +307,7 @@ pub fn parse(dump: &str) -> Snapshot {
             "capacity" => {
                 device.capacity = value.trim_end_matches('%').trim().parse::<f64>().ok();
             }
+            "charge-cycles" => device.cycles = value.parse::<u32>().ok().filter(|&n| n > 0),
             "time to empty" | "time to full" => device.minutes = minutes(value),
             _ => {}
         }
@@ -644,6 +658,7 @@ Device: /org/freedesktop/UPower/devices/battery_BAT0
     time to full:        1.2 hours
     percentage:          82%
     capacity:            95.5%
+    charge-cycles:       312
     icon-name:          'battery-good-charging-symbolic'
   History (charge):
     1759932326	82.000	charging
@@ -832,6 +847,7 @@ Daemon:
             state,
             percent,
             capacity: None,
+            cycles: None,
             minutes,
             online: None,
         };
@@ -870,6 +886,9 @@ Daemon:
         assert_eq!(snapshot.devices[1].capacity, Some(95.5));
         assert_eq!(snapshot.battery().unwrap().capacity, None);
         assert_eq!(snapshot.health(), Some(96), "95.5 rounds up");
+        assert_eq!(snapshot.devices[1].cycles, Some(312));
+        assert_eq!(snapshot.cycles(), Some(312));
+        assert_eq!(parse(&LAPTOP.replace("312", "N/A")).devices[1].cycles, None);
         let worn = parse(&LAPTOP.replace("capacity:            95.5%", "capacity: 140%"));
         assert_eq!(worn.health(), Some(100), "clamped");
         let unknown = parse(&LAPTOP.replace("    capacity:            95.5%\n", ""));

@@ -1,23 +1,20 @@
 #!/bin/sh
 # Checks the budgets in ci/budgets.toml (roadmap M3.2) and writes them, with
 # the image sizes, as Markdown tables to the run summary. Boot time, memory
-# in use and root size are the median of three boots of the VM image, read
-# from the line edel-boot-ok prints; the image sizes are the container's
-# and the desktop's update image. Fails the job when a measurement is
+# in use and root size are the median of three boots of the one image
+# (images/edel.toml, M8.17) with no screen (`-vga none`), read from the line
+# edel-boot-ok prints; the image sizes are the container's and the update
+# image's. Fails the job when a measurement is
 # over its budget; CI runs it even after a failure, and then it only
 # reports what was built.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 
 summary=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 container=out/edel-container-x86_64.tar.gz
-vm=out/edel-vm-x86_64.img
-desktop=out/edel-desktop-x86_64.ext4.gz
-
-# budget KEY: the number KEY has in ci/budgets.toml.
-budget() {
-	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
-}
+vm=out/edel-x86_64.img
+update=out/edel-x86_64.ext4.gz
 
 # median: the middle of three numbers on standard input.
 median() {
@@ -44,7 +41,7 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 	rm -f out/budgets.txt
 	for n in 1 2 3; do
 		vm_stamp=1 run_vm "out/budget-boot-$n.log" 'Started in [0-9.]+ s' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
-			-drive if=none,id=disk0,format=raw,file="$vm" \
+			-vga none -drive if=none,id=disk0,format=raw,file="$vm" \
 			-device virtio-blk-pci,drive=disk0,bootindex=0
 		line=$(tr -d '\r' <"out/budget-boot-$n.log" |
 			sed -n 's/.*Started in \([0-9.]*\) s, \([0-9]*\) MiB of memory in use, \([0-9]*\) MiB used on the root.*/\1 \2 \3/p' | tail -n 1)
@@ -56,14 +53,14 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 		echo "$line" >>out/budgets.txt
 	done
 	check 'Container image (tar.gz)' "$(awk -v b="$(stat -c %s "$container")" 'BEGIN { printf "%.1f", b / 1048576 }')" container_mib MiB
-	# What a person downloads to update the desktop (M5.10c4c): its slot's
+	# What a person downloads to update the system (M5.10c4c): its slot's
 	# image, compressed, the wallpapers and the fonts included.
-	if [ -e "$desktop" ]; then
-		check 'Desktop update image (ext4.gz)' "$(awk -v b="$(stat -c %s "$desktop")" 'BEGIN { printf "%.1f", b / 1048576 }')" desktop_image_mib MiB
+	if [ -e "$update" ]; then
+		check 'Update image (ext4.gz)' "$(awk -v b="$(stat -c %s "$update")" 'BEGIN { printf "%.1f", b / 1048576 }')" update_image_mib MiB
 	fi
-	check 'VM root used' "$(cut -d' ' -f3 out/budgets.txt | median)" vm_root_mib MiB
-	check 'VM boot to confirmed slot' "$(cut -d' ' -f1 out/budgets.txt | median)" vm_boot_seconds s
-	check 'VM memory in use after boot' "$(cut -d' ' -f2 out/budgets.txt | median)" vm_memory_mib MiB
+	check 'One image with no screen: root used' "$(cut -d' ' -f3 out/budgets.txt | median)" headless_root_mib MiB
+	check 'One image with no screen: boot to confirmed slot' "$(cut -d' ' -f1 out/budgets.txt | median)" headless_boot_seconds s
+	check 'One image with no screen: memory in use after boot' "$(cut -d' ' -f2 out/budgets.txt | median)" headless_memory_mib MiB
 	{
 		echo "### Budgets"
 		echo

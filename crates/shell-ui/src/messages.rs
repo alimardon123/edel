@@ -413,6 +413,12 @@ pub fn profile_not_set(why: impl Display) -> String {
     format!("could not set the power profile: {why}; the computer keeps the profile it has")
 }
 
+/// A game plays on the charger, but the kernel offers no power profiles
+/// (M7.7b), as in a VM: nothing is asked, and the game runs as it is.
+pub fn no_profile_for_game() -> String {
+    "a game is playing on the charger, but this computer has no power profiles, so the power profile is not changed".into()
+}
+
 /// A screenshot an app asked for could not be made (M8.21 part 21f): the app
 /// gets no picture and may ask again.
 pub fn screenshot_not_saved(why: impl Display) -> String {

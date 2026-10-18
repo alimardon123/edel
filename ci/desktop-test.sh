@@ -266,6 +266,11 @@
 #               Super+V lists them, Down and Return paste the first into it
 #               (Ctrl+V from the compositor); with clipboard.history off the
 #               list stays empty, and after a lock and unlock it is empty (M7.13)
+#   smoothness  a fullscreen game stand-in in game mode times 300 frames as
+#               the screen presented them: the slowest 1 percent (p99) under
+#               game_frame_p99_ms and the share that went straight to the
+#               screen at least game_direct_percent_floor; one more run when
+#               the first is over (M7.7e)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -278,13 +283,14 @@
 #               its agreety starts ci's compositor again; last, as it
 #               ends the first session
 #   live        alone (CI runs it in the VM test lane, as it boots another
-#               image): the desktop image as released, out/edel-desktop-
-#               x86_64.img, started as a removable USB stick (QEMU's
+#               image): the one image as released, out/edel-x86_64.img
+#               (images/edel.toml), started as a removable USB stick (QEMU's
 #               usb-storage, removable=on) on a plain screen (-vga std),
 #               with no seed and no test service; edel boot live says the
 #               stick logs live in, the slot is confirmed, and the panel
 #               lies along the bottom in the token colour, so the desktop
-#               showed with nobody logging in (M3.6); and the checks the
+#               showed with nobody logging in (M3.6), timed as the try walk
+#               and the install-page walk (M8.15a); and the checks the
 #               laptop stick had in boot-test: /data, the hardware
 #               watchdog, the report on the EFI system partition, ssh off
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
@@ -338,6 +344,7 @@
 # their budgets stay honest.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 
 dir=out/desktop-test
 log=out/desktop-test.log
@@ -395,11 +402,6 @@ matches() {
 	!*) [ "$1" != "${2#!}" ] ;;
 	*) case "|$2|" in *"|$1|"*) true ;; *) false ;; esac ;;
 	esac
-}
-
-# budget KEY: the number KEY has in ci/budgets.toml.
-budget() {
-	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
 # token KEY [TABLE]: the colour KEY has in design/tokens.toml's
@@ -727,6 +729,13 @@ case_suspend() {
 	guest 'suspend log'
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
+	# Battery care (M7.16e): zzz runs the resume hook edel-battery-care,
+	# which runs edel boot battery-care and prints its line. zzz inherits
+	# edel suspend's output, which is /tmp/suspend.log that `suspend log`
+	# prints, so the line shows the hook ran; the VM has no battery, so the
+	# line says this computer offers no charge limit.
+	value suspend_log | grep -q 'edel boot battery-care: this computer offers no charge limit' ||
+		fail "the resume hook did not run edel boot battery-care after the wakeup: $(value suspend_log)"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
 }
 
@@ -5377,6 +5386,10 @@ case_fullscreen() {
 	# desktop's CPU over 30 s and the busy window's frames show it.
 	wait_for 'edel-compositor: a game is playing; the desktop steps aside' || fail "the compositor did not say a game plays"
 	wait_for 'edel-shell-ui: a game is playing; the timers stop' || fail "shell-ui did not stop its timers for the game"
+	# Full power for the game (M7.7b): the VM counts as plugged in and its
+	# kernel offers no power profiles, so shell-ui says it asks for none.
+	wait_for 'edel-shell-ui: a game is playing on the charger, but this computer has no power profiles' ||
+		fail "shell-ui did not say the VM has no power profile for the game"
 	state_now && grep -q '^playing = true' "$dir/state-now.toml" || fail "the state file does not say playing = true"
 	n=$(count 'DESKTOP-TEST: busy_frames ')
 	guest 'desktop cpu'
@@ -5440,10 +5453,84 @@ case_fullscreen() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
 	guest 'busy close'
+	# Each game's smoothness (M7.7d): a fullscreen window that draws on
+	# every frame plays for 15 s in game mode; when it closes the
+	# compositor logs its record and edel report shows its frames, within
+	# 2 percent of the ones it drew at the screen's size.
+	opened=$(count 'edel-compositor: window game fullscreen')
+	guest 'game window'
+	wait_more 'edel-compositor: window game fullscreen' "$opened" || fail "the window game did not go fullscreen"
+	sleep 15
+	kept=$(count 'edel-compositor: game edel.test.game: ')
+	guest 'game close'
+	wait_more 'edel-compositor: game edel.test.game: ' "$kept" || fail "the compositor logged no record of the game"
+	n=$(count 'DESKTOP-TEST: game_frames ')
+	guest 'game report'
+	wait_more 'DESKTOP-TEST: game_frames ' "$n" || fail "game report did not answer"
+	set -- $(value game_frames)
+	shown=${1:-0} drawn=${2:-0}
+	awk -v s="$shown" -v d="$drawn" 'BEGIN { x = s - d; if (x < 0) x = -x; exit !(d > 0 && x <= d * 0.02) }' ||
+		fail "edel report shows $shown frames of the game, and it drew $drawn at the screen's size, more than 2 percent apart"
+	record=$(tr -d '\r' <"$log" | grep -o 'edel-compositor: game edel.test.game: .*' | tail -n 1)
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "A game's smoothness (M7.7d): ${record#edel-compositor: }; edel report shows $shown frames, the game drew $drawn." >>"$GITHUB_STEP_SUMMARY"
 		echo "Behind a fullscreen game (M7.7c): the compositor and shell-ui used $percent percent of a CPU over 30 s in game mode, $percent_off percent with it off; the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game; a game's record (M7.7d) showed $shown frames in edel report against the $drawn it drew"
+}
+
+case_wakeups() {
+	# Idle wakeups (M7.16a): with the desktop idle, the compositor and
+	# shell-ui together wake the processor at most desktop_idle_wakeups_per_second
+	# times a second, counted as voluntary context switches over 60 s (a close
+	# proxy: every wakeup takes the processor out of its deepest rest). Runs
+	# right after one-screen, with no window open. The service answers
+	# each part's number and the total last.
+	n=$(count 'DESKTOP-TEST: desktop_wakeups_per_second ')
+	guest 'wakeups'
+	wait_more 'DESKTOP-TEST: desktop_wakeups_per_second ' "$n" 90 || fail "wakeups did not answer within 90 s"
+	comp=$(value wakeups_compositor)
+	shell=$(value wakeups_shell_ui)
+	total=$(value desktop_wakeups_per_second)
+	limit=$(budget desktop_idle_wakeups_per_second)
+	awk -v p="$total" -v b="$limit" 'BEGIN { exit !(p != "" && p <= b) }' ||
+		fail "the desktop woke the processor $total times a second while idle (compositor ${comp:-?}, shell-ui ${shell:-?}), over the budget of $limit"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Idle wakeups (M7.16a): the compositor woke the processor $comp times a second and shell-ui $shell, $total together, over 60 s with the desktop idle (budget $limit)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: with the desktop idle for 60 s the compositor woke the processor $comp times a second and shell-ui $shell, $total together, within the budget of $limit a second"
+}
+
+case_device_power() {
+	# Devices save power (M7.16d): PCI devices may sleep (graphics and the
+	# management engine are left to their drivers), the SATA links rest
+	# between commands where the controller offers it (the VM's AHCI does
+	# not, so its hosts say unsupported, and a rule that did not run still
+	# shows the old policy), the sound
+	# chip sleeps after 10 s of silence, the NMI watchdog is off, and
+	# Wi-Fi rests between packets (power save 3). The service reads them
+	# from /sys, /proc and NetworkManager's config and prints them, so a
+	# change to features/power or features/network that drops one shows here.
+	n=$(count 'DESKTOP-TEST: device_power ')
+	m=$(count 'DESKTOP-TEST: wifi_power ')
+	guest 'device power'
+	wait_more 'DESKTOP-TEST: device_power ' "$n" 20 || fail "the service did not read the devices' power settings"
+	wait_more 'DESKTOP-TEST: wifi_power ' "$m" 20 || fail "the service did not read Wi-Fi's power save"
+	power=$(value device_power)
+	wifi=$(value wifi_power)
+	set -- $power
+	pci=${1#pci=} sata=${2#sata=} hda=${3#hda=} nmi=${4#nmi=}
+	auto=${pci%%/*} all=${pci#*/}
+	[ "$auto" = "$all" ] && [ "$all" -gt 0 ] ||
+		fail "not every PCI device may sleep: $auto of $all have power/control auto ($power)"
+	case "$sata" in
+	none | med_power_with_dipm | unsupported | med_power_with_dipm,unsupported) ;;
+	*) fail "a SATA link has the policy $sata, not med_power_with_dipm ($power)" ;;
+	esac
+	[ "$hda" = 10 ] || fail "the sound chip's power_save is $hda, not 10 s ($power)"
+	[ "$nmi" = 0 ] || fail "the NMI watchdog is on ($power)"
+	[ "$wifi" = 3 ] || fail "Wi-Fi's power save is ${wifi:-none}, not 3"
+	echo "PASS: $auto of $all PCI devices may sleep (power/control auto), SATA links $sata, the sound chip sleeps after $hda s, the NMI watchdog is off, Wi-Fi's power save is $wifi"
 }
 
 case_clipboard() {
@@ -5522,6 +5609,57 @@ case_clipboard() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window clip' "$closed" || fail "Super+Q did not close clip"
 	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
+}
+
+case_smoothness() {
+	# The smoothness gate (M7.7e): a game stand-in, fullscreen and drawing on
+	# every frame, with game mode on (the VM has no battery), times 300 frames
+	# as the screen presented them. Its slowest 1 percent must stay within
+	# game_frame_p99_ms, and the share of frames that went straight to the
+	# screen must not fall below game_direct_percent_floor. A shared runner
+	# can stall one run, so a run over the budget is measured once more and
+	# the better run counts. No screenshot is taken while frames are timed,
+	# as one stalls the VM.
+	limit=$(budget game_frame_p99_ms)
+	floor=$(budget game_direct_percent_floor)
+	best=''
+	for run in 1 2; do
+		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
+		ended=$(count 'edel-compositor: the game ended; the desktop is back')
+		n=$(count 'DESKTOP-TEST: smooth ')
+		guest 'smooth game'
+		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
+			fail "the game stand-in did not play as a game (run $run)"
+		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
+		line=$(value smooth)
+		case $line in
+		frames=*) ;;
+		*) fail "the game stand-in failed (run $run): $line" ;;
+		esac
+		wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 ||
+			fail "the desktop did not come back after the game stand-in ended (run $run)"
+		frames=$(echo "$line" | sed -n 's/.*frames=\([0-9]*\).*/\1/p')
+		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
+		slowest=$(echo "$line" | sed -n 's/.*slowest_ms=\([0-9.]*\).*/\1/p')
+		direct=$(echo "$line" | sed -n 's/.*direct=\([0-9]*\).*/\1/p')
+		discarded=$(echo "$line" | sed -n 's/.*discarded=\([0-9]*\).*/\1/p')
+		[ -n "$frames" ] && [ -n "$p99" ] && [ -n "$direct" ] || fail "the game stand-in's line lacks a number (run $run): $line"
+		share=$(awk -v d="$direct" -v f="$frames" 'BEGIN { printf "%.1f", d * 100 / (f + 1) }')
+		echo "smoothness run $run: p99 $p99 ms, slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded"
+		# The better run: the lower p99.
+		if [ -z "$best" ] || awk -v p="$p99" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$p99 $slowest $share $discarded"
+		fi
+		set -- $best
+		awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' && break
+	done
+	set -- $best
+	awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' ||
+		fail "a game's slowest frames or its frames straight to the screen are worse than their budgets in both runs: the better run's p99 $1 ms (budget $limit ms), $3 percent straight to the screen (floor $floor percent)"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Smoothness (M7.7e): a game's frames p99 $1 ms (budget $limit ms), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: a fullscreen game stand-in in game mode presented its frames with p99 $1 ms (budget $limit ms), slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
 }
 
 case_portal() {
@@ -8492,7 +8630,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -8525,7 +8663,7 @@ if [ "$*" = live ]; then
 	# A sparse copy rather than -snapshot, so a failure can show what the
 	# stick wrote on its data partition (M5.28a).
 	stick="$dir/stick.img"
-	cp --sparse=always out/edel-desktop-x86_64.img "$stick"
+	cp --sparse=always out/edel-x86_64.img "$stick"
 	# stick_logs: the session's, greetd's and the system's logs from the
 	# stick's data partition (partition 4), which /home and /var live on.
 	stick_logs() {
@@ -8580,6 +8718,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
+	started=$(tr -d '\r' <"$log" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
@@ -8598,6 +8737,7 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	walk try "seconds=$started" || fail "starting the stick took longer than its budget (walk try, docs/REVIEW-experience.md)"
 	# The first start (M6.12): live's session opens Settings' Welcome,
 	# which on a stick asks Try or Install first, Install taking Return.
 	# Return opens Settings on its installer page and closes the Welcome,
@@ -8614,7 +8754,8 @@ if [ "$*" = live ]; then
 	done
 	sleep 3
 	python3 ci/qmp.py screendump "$dir/welcome-stick.png"
-	python3 ci/qmp.py key ret
+	walk_steps=0
+	press key ret
 	i=0
 	until stick_session | grep -qa 'edel-settings: install page shown'; do
 		i=$((i + 5))
@@ -8654,7 +8795,7 @@ if [ "$*" = live ]; then
 		done
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
-	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
+	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
 	# The browser offline (M6.2): Super, "firefox" and Return start the
 	# default apps' Firefox from the stick's own installation with no
 	# network beyond the VM, and its window must map within 180 s, which
@@ -8757,17 +8898,17 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py key ret
 	sleep 25
 	python3 ci/qmp.py screendump "$dir/install-page.png"
-	python3 ci/qmp.py type ali
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-install-test
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-install-test
-	python3 ci/qmp.py key ret
+	press type ali
+	press key ret
+	press type edel-install-test
+	press key ret
+	press type edel-install-test
+	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	sleep 1
-	python3 ci/qmp.py key ret
+	press key ret
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -8778,6 +8919,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
 	target_data || fail "the installed disk has no data partition"
@@ -8876,7 +9018,8 @@ fi
 # accepts each page's suggestion and the account is typed; Start using
 # Edel OS makes cleo with edel settings first-boot, as root through
 # doas, and restarts, which ends this VM (-no-reboot). The disk's next
-# start leaves the login to the greeter.
+# start leaves the login to the greeter. It times the first-setup walk
+# (M8.15a): the Welcome's presses, and the second boot's `Started in`.
 # It runs apart from live, on a runner of its own in CI (ci/vm-tests.sh).
 if [ "$*" = fresh ]; then
 	. ci/names.sh
@@ -8885,7 +9028,7 @@ if [ "$*" = fresh ]; then
 	mkdir -p "$dir"
 	rm -f "$QMP"
 	fresh="$dir/fresh.img"
-	cp --sparse=always out/edel-desktop-x86_64.img "$fresh"
+	cp --sparse=always out/edel-x86_64.img "$fresh"
 	fresh_log=out/desktop-fresh.log
 	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
 	# for debugfs, its journal replayed on the copy.
@@ -8917,33 +9060,34 @@ if [ "$*" = fresh ]; then
 		fail "the released image on a computer's own disk with nobody on it did not log live in by itself"
 	fresh_wait 'edel-settings: welcome page language' 120
 	sleep 3
-	python3 ci/qmp.py key ret
+	walk_steps=0
+	press key ret
 	fresh_wait 'edel-settings: welcome page keyboard' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page account' 30
 	sleep 2
-	python3 ci/qmp.py type cleo
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-welcome-test
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-welcome-test
+	press type cleo
+	press key ret
+	press type edel-welcome-test
+	press key ret
+	press type edel-welcome-test
 	python3 ci/qmp.py screendump "$dir/welcome-account.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page timezone' 30
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-timezone.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page layout' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page style' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page done' 30
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-fresh-done.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	# The restart ends QEMU; up to 180 s for the account and the restart.
 	i=0
 	while kill -0 "$qemu" 2>/dev/null; do
@@ -8987,6 +9131,8 @@ if [ "$*" = fresh ]; then
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$fresh" "$dir/fresh-data.img"
+	greeter=$(tr -d '\r' <"$fresh_log.2" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	walk first-setup "seconds=$greeter" "steps=$walk_steps" || fail "the first setup on a new computer is over its budget (walk first-setup, docs/REVIEW-experience.md)"
 	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
