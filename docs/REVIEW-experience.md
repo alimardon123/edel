@@ -41,7 +41,19 @@ A walk that must grow (a new page in the Welcome, a new question in the installe
 
 ## First numbers
 
-Written from the first full CI run of the step's pull request.
+Measured on 2026-10-18 by the step's pull request, in CI's VMs with KVM; each budget is the number plus 20 percent, rounded up to a whole second, and the steps exactly.
+
+| Walk | Seconds | Steps |
+|---|---|---|
+| `try` | 11.95 | |
+| `install-page` | | 9 |
+| `install` | 12 | 1 |
+| `first-setup` | 3.88 | 12 |
+| `update` | 14 | 2 |
+| `rollback` | 12 | 2 |
+| `broken-update` | 51 | 1 |
+
+The broken update is the slowest walk: 30 of its 51 seconds are the test image's wait for the new system to prove it is healthy before falling back (`--health-timeout 30`), and two starts make the rest. A game stand-in's frames measured p99 12.9 ms on one runner and 14.8 to 14.9 ms on another (M7.7e).
 
 ## Principles check
 
