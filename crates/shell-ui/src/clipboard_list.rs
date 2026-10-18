@@ -326,6 +326,7 @@ pub fn nodes(view: &View, layout: &Layout) -> (Vec<Item>, Option<usize>) {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     }];
     let mut focus = None;
     for (i, (line, row)) in view.lines.iter().zip(&layout.rows).enumerate() {
@@ -372,6 +373,7 @@ fn plain(role: Role, label: String, bounds: AkRect) -> Item {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     }
 }
 

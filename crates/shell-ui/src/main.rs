@@ -1273,11 +1273,13 @@ impl Shell {
                         toggled: None,
                         value: None,
                         value_text: None,
+                        disabled: false,
                     })
                     .collect(),
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             })
             .collect();
         let size = (

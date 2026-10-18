@@ -90,6 +90,7 @@ pub fn nodes(view: &View, tokens: &Tokens) -> (Vec<Item>, Option<usize>) {
                 toggled: Some(i == view.chosen),
                 value: None,
                 value_text: None,
+                disabled: false,
             }
         })
         .collect();

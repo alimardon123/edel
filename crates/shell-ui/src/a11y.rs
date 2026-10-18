@@ -32,6 +32,9 @@ pub struct Item {
     /// What a text field holds, read as its value; its label is its name
     /// (M6.9, the launcher's search line).
     pub value_text: Option<String>,
+    /// Whether it cannot be used now, announced as disabled (M8.21 part 21k2,
+    /// a colour swatch that does not read over its wallpaper).
+    pub disabled: bool,
 }
 
 /// The panel itself, the tree's root.
@@ -89,6 +92,9 @@ fn add(nodes: &mut Vec<(NodeId, Node)>, item: &Item) -> NodeId {
     node.set_bounds(item.bounds);
     if let Some(on) = item.toggled {
         node.set_toggled(accesskit::Toggled::from(on));
+    }
+    if item.disabled {
+        node.set_disabled();
     }
     if let Some((now, least, most)) = item.value {
         node.set_numeric_value(now);
@@ -191,6 +197,7 @@ mod tests {
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             },
             Item {
                 role: Role::Label,
@@ -200,6 +207,7 @@ mod tests {
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             },
         ];
         let update = tree((1280.0, 52.0), &items);
@@ -227,6 +235,7 @@ mod tests {
             toggled: None,
             value: None,
             value_text: None,
+            disabled: false,
         };
         let items = [
             Item {
@@ -237,6 +246,7 @@ mod tests {
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             },
             Item {
                 role: Role::Label,
@@ -246,6 +256,7 @@ mod tests {
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             },
         ];
         let update = tree((1280.0, 52.0), &items);

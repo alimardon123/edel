@@ -164,6 +164,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
         toggled: None,
         value,
         value_text: None,
+        disabled: false,
     };
     vec![
         item(role, first, at(l.track), value),

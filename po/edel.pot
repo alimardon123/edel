@@ -1016,6 +1016,12 @@ msgstr ""
 msgid "the {part} does not stand on the desktop; the desktop takes {names}"
 msgstr ""
 
+msgid "the {part} takes no colour, so take colour out"
+msgstr ""
+
+msgid "the {part}'s colour {value} is not a colour; choose accent, {choices} or a colour such as \"#e8b04a\""
+msgstr ""
+
 msgid "the {part} has a face; only the clock has one, so take face out"
 msgstr ""
 
@@ -2531,6 +2537,33 @@ msgstr ""
 msgid "a time zone such as Europe/Berlin or Asia/Tashkent"
 msgstr ""
 
+msgid "Blue"
+msgstr ""
+
+msgid "Purple"
+msgstr ""
+
+msgid "Pink"
+msgstr ""
+
+msgid "Red"
+msgstr ""
+
+msgid "Orange"
+msgstr ""
+
+msgid "Yellow"
+msgstr ""
+
+msgid "Green"
+msgstr ""
+
+msgid "Teal"
+msgstr ""
+
+msgid "Graphite"
+msgstr ""
+
 msgid "accent {name} is not an accent or a colour; the release's is used"
 msgstr ""
 
@@ -2745,6 +2778,12 @@ msgid "Message"
 msgstr ""
 
 msgid "Picture"
+msgstr ""
+
+msgid "large text"
+msgstr ""
+
+msgid "the {part}'s colour {value} is {fg} on its wallpaper {bg} and reads at {reads}:1; {what} needs {need}:1, such as {fix}"
 msgstr ""
 
 msgid "The Edel OS system tool"
