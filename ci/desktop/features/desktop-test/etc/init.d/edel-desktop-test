@@ -1378,9 +1378,9 @@ commands() {
 			say "profile_off $? $(tail -n 3 /tmp/profile-off.log | tr '\n' ';')"
 			;;
 		# Printing (M7.6b part 3): what lpstat -r says as ci, and whether
-		# cupsd runs.
+		# cupsd runs (OpenRC started it, or a process has its name).
 		'printing status')
-			if pgrep -x cupsd >/dev/null; then cupsd='cupsd runs'; else cupsd='no cupsd'; fi
+			if [ -e /run/openrc/started/cupsd ] || pidof cupsd >/dev/null; then cupsd='cupsd runs'; else cupsd='no cupsd'; fi
 			say "printing_status $(as_ci 'lpstat -r' </dev/null 2>&1 | tr '\n' ' ')/ $cupsd"
 			;;
 		# A stand-in for Steam (M7.6b part 3): ci's Flathub remote points at
