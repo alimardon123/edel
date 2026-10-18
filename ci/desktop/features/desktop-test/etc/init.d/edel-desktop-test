@@ -286,6 +286,17 @@ commands() {
 				say "busy_frames $frames_before $frames_after"
 			) &
 			;;
+		# A game stand-in for the smoothness gate (M7.7e): fullscreen, drawing
+		# on every frame, it times 300 frames as the screen presented them and
+		# says its line once done. In the background, so the reader of
+		# commands is not held.
+		'smooth game')
+			(
+				as_ci edel-testclient --fullscreen --busy --smooth 300 --size 300x200 --colour 7a3fb0 --title game </dev/null >/tmp/smooth.log 2>&1
+				line=$(grep '^smooth ' /tmp/smooth.log | tail -n 1)
+				say "${line:-smooth none: $(grep -v '^frames ' /tmp/smooth.log | tail -n 3 | tr '\n' ';')}"
+			) &
+			;;
 		# An update that waits for a game (M7.7c): it has no release file, so
 		# once it may go on it fails at once, and its log says both.
 		'update during game')

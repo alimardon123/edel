@@ -64,10 +64,14 @@ if [ "$before" = "$after" ]; then
 else
 	say "exit code $code without --yes, disk CHANGED"
 fi
+# The install walk (M8.15a) is timed here, in the guest, so the host's
+# polling never counts; the guest's clock is the host's through QEMU's RTC.
+began=$(date +%s)
 if ! edel install /dev/vdb --settings "$file" --yes </dev/null; then
 	say "FAIL: edel install --yes failed"
 	exit 1
 fi
+say "walk install $(($(date +%s) - began)) 1"
 sync
 
 # M6.6b: with no arguments, edel install asks its questions on a
