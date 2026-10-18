@@ -406,10 +406,10 @@ commands() {
 			active=$(sed -n 's/^[[:space:]]*active=\([01]\)[[:space:]]*$/\1/p' /sys/kernel/debug/dri/*/state 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
 			say "screens dpms=$dpms off=$(sed -n 's/^screens_off = //p' "$state_file") active=$active"
 			;;
-		# The screens go off after one minute without input (M7.16b), as ci's
-		# setting; reset puts the default back.
-		'screen off soon') as_ci "edel settings set power.screen_off_minutes=1" ;;
-		'screen off reset') as_ci "edel settings reset power.screen_off_minutes" ;;
+		# The screens go off after one minute without input (M7.16b). [power] is
+		# the machine's section, so root sets it; reset puts the default back.
+		'screen off soon') edel settings set power.screen_off_minutes=1 ;;
+		'screen off reset') edel settings reset power.screen_off_minutes ;;
 		# The frames for 5 s after the screens came back on, as weston's
 		# presentation times give them, the first presented frame left out:
 		# it carries the modeset.
