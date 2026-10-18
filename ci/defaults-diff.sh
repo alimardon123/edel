@@ -4,9 +4,11 @@
 # tokens and icons (design/), the presets (presets/) and every key's
 # default (docs/defaults.md, generated from edel::key_help) against the
 # last kept release, the newest tag vVERSION (docs/RELEASE.md: kept
-# forever). Before the first one, a pull request is compared with main,
-# and the section says so. A record for the reviewer, as M3.1's package
-# diff is, never a gate: it always exits 0 once it has written.
+# forever). On a tag run the tag being built is skipped, so the release
+# before it is the one compared with (M8.7). Before the first one, a pull
+# request is compared with main, and the section says so. A record for the
+# reviewer, as M3.1's package diff is, never a gate: it always exits 0 once
+# it has written.
 set -eu
 
 summary=${GITHUB_STEP_SUMMARY:-/dev/stdout}
@@ -14,7 +16,11 @@ summary=${GITHUB_STEP_SUMMARY:-/dev/stdout}
 most=300
 
 git fetch --quiet --force --tags origin 2>/dev/null || true
-tag=$(git tag --list 'v[0-9]*' --sort=-v:refname | head -n 1)
+tags=$(git tag --list 'v[0-9]*' --sort=-v:refname)
+if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+	tags=$(printf '%s\n' "$tags" | grep -vxF "${GITHUB_REF_NAME:-}" || true)
+fi
+tag=$(printf '%s\n' "$tags" | head -n 1)
 if [ -n "$tag" ]; then
 	base=$tag
 	against="the kept release $tag"

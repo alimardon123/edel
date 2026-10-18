@@ -10,7 +10,10 @@
 # channel's manifest; publishing that draft is Alimardon's step, and then
 # .github/workflows/release.yml copies channel.toml to gh-pages. Publishing
 # needs gh with GH_TOKEN allowed to write contents, and a release signed
-# with the release key, never a throwaway one (docs/RELEASE.md).
+# with the release key, never a throwaway one (docs/RELEASE.md). A tag's
+# draft waits for the release checklist (M8.7): publish makes no draft until
+# ci/release-checklist.sh gather has made its ready file, attaches the preset
+# pictures and defaults.diff, and opens the checklist issue.
 set -eu
 mode=${1:-} tag=${2:-}
 case "$mode" in
@@ -20,6 +23,17 @@ dry-run | publish) ;;
 	exit 2
 	;;
 esac
+checklist=${EDEL_CHECKLIST_OUT:-out/release-checklist}
+if [ "$mode" = publish ]; then
+	case "$tag" in
+	v*)
+		[ -e "$checklist/ready" ] || {
+			echo "FAIL: the release checklist is not ready (ci/release-checklist.sh gather): no draft release is made"
+			exit 1
+		}
+		;;
+	esac
+fi
 # The lists come from ci/build.sh; their signatures from ci/sign.sh, in a
 # job of its own after the build (M3.7), so a dry run in the build checks
 # the lists without them and only publish needs them.
@@ -96,8 +110,15 @@ v*)
 	}
 	would "make the draft release $tag ($version) with: $assets"
 	would "leave the stable channel alone until the draft is published (release.yml)"
+	if [ -e "$checklist/ready" ]; then
+		would "attach the preset pictures and defaults.diff and open the issue Release $tag: checklist"
+	else
+		echo "dry run, would wait for the release checklist (ci/release-checklist.sh gather)"
+	fi
 	if [ "$mode" = publish ]; then
-		gh release create "$tag" --draft --title "Edel OS $version" --notes-file docs/TRY-IT.md out/release/*
+		gh release create "$tag" --draft --title "Edel OS $version" --notes-file docs/TRY-IT.md out/release/* \
+			"$checklist"/pictures/*.png "$checklist"/defaults.diff
+		sh ci/release-checklist.sh open "$tag"
 	fi
 	;;
 *)

@@ -62,6 +62,9 @@
 #   one-screen  the second screen off and the pointer in the middle, as
 #               outputs leaves them, for a part of
 #               the cases that does not run outputs (M6.17)
+#   release-pictures  every preset in light and dark, at scale 1 and 2,
+#               a screendump of each as release-PRESET-SCHEME-SCALE.png
+#               for the release checklist (M8.7); no window is opened
 #   xwayland    no X11 process at first; xclock, an X11 app, starts XWayland
 #               through xwayland-satellite and opens with our title bar,
 #               whose close button closes it
@@ -7882,6 +7885,65 @@ case_one_screen() {
 	echo "PASS: displays.Virtual-2.enabled = false turned the second screen off, and the pointer is in the middle of the first"
 }
 
+# release-pictures (M8.7): every layout preset in light and dark, at
+# scale 1 and 2, one screendump each as release-PRESET-SCHEME-SCALE.png
+# for the release checklist to attach to a draft release. The presets
+# are the files in presets/, Classic first and the rest sorted, so a new
+# preset file needs no edit here, only its `preset NAME` line in the
+# test service (edel-desktop-test). No window is opened, and everything is
+# put back to Classic, light and scale 1 at the end.
+case_release_pictures() {
+	presets=$(for f in presets/*.toml; do basename "$f" .toml; done | grep -vx classic | sort)
+	cur_preset=classic cur_scheme=light cur_scale=1
+	pictures=0
+	# use_preset NAME: layout.preset = NAME (Classic is preset default),
+	# and shell-ui's follow line when it changes.
+	use_preset() {
+		[ "$1" != "$cur_preset" ] || return 0
+		said=$(count "edel-shell-ui: follows the settings: the preset is now $1")
+		if [ "$1" = classic ]; then guest 'preset default'; else guest "preset $1"; fi
+		wait_more "edel-shell-ui: follows the settings: the preset is now $1" "$said" ||
+			fail "shell-ui did not follow the $1 preset"
+		cur_preset=$1
+	}
+	# use_scheme NAME: appearance.mode = dark, or reset for light, and the
+	# compositor's colour scheme line when it changes.
+	use_scheme() {
+		[ "$1" != "$cur_scheme" ] || return 0
+		said=$(count "edel-compositor: colour scheme $1")
+		if [ "$1" = dark ]; then guest 'scheme dark'; else guest 'scheme default'; fi
+		wait_more "edel-compositor: colour scheme $1" "$said" ||
+			fail "the compositor did not give the $1 scheme"
+		cur_scheme=$1
+	}
+	# use_scale N: displays.Virtual-1.scale = N (1 is reset), and the
+	# compositor's output line when it changes.
+	use_scale() {
+		[ "$1" != "$cur_scale" ] || return 0
+		said=$(count "edel-compositor: output Virtual-1 scale $1\$")
+		if [ "$1" = 1 ]; then guest 'scale default'; else guest "scale $1"; fi
+		wait_more "edel-compositor: output Virtual-1 scale $1\$" "$said" ||
+			fail "the compositor did not follow displays.Virtual-1.scale = $1"
+		cur_scale=$1
+	}
+	for p in classic $presets; do
+		use_preset "$p"
+		for s in light dark; do
+			use_scheme "$s"
+			for k in 1 2; do
+				use_scale "$k"
+				sleep 2
+				python3 ci/qmp.py screendump "$dir/release-$p-$s-$k.png"
+				pictures=$((pictures + 1))
+			done
+		done
+	done
+	use_preset classic
+	use_scheme light
+	use_scale 1
+	echo "PASS: the release's pictures: every preset in light and dark at scale 1 and 2, $pictures screendumps (release-PRESET-SCHEME-SCALE.png)"
+}
+
 case_outputs() {
 	n=$(tr -d '\r' <"$log" | grep -c 'DESKTOP-TEST: screen output Virtual-[12] [0-9]*x[0-9]* ready' || true)
 	[ "$n" = 2 ] || fail "$n screens showed a first frame, not 2: $(grep 'DESKTOP-TEST: screen' "$log" | tr -d '\r')"
@@ -8391,7 +8453,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -2,13 +2,16 @@ name: Release
 
 # When Alimardon publishes a draft release made from a v* tag, the stable
 # channel moves to it (roadmap M3.4, docs/RELEASE.md): ci/channel.sh copies
-# the release's channel.toml to channels/stable/ on gh-pages.
+# the release's channel.toml to channels/stable/ on gh-pages. The channel
+# moves only once every box of the release's checklist issue is ticked (M8.7);
+# re-run the workflow after ticking.
 on:
   release:
     types: [published]
 
 permissions:
   contents: write
+  issues: read
 
 jobs:
   channel:
@@ -17,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Every box of the release's checklist is ticked (M8.7)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: sh ci/release-checklist.sh verify "$TAG"
       - name: Copy channel.toml to gh-pages
         env:
           GH_TOKEN: ${{ github.token }}

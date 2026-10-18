@@ -1,6 +1,6 @@
 # Releases
 
-**Date:** 2026-10-02 (roadmap M3.4)
+**Date:** 2026-10-02 (roadmap M3.4), amended 2026-10-18 (the release checklist, M8.7)
 
 How Edel OS is published, what is kept, and the two steps only Alimardon takes. The reasons are in ADR-003 (releases), ADR-005 (old releases kept for the compatibility promise) and ADR-006 (signed updates).
 
@@ -11,10 +11,14 @@ Every run of "Build and boot images" makes a release in `out/release/`: the upda
 | Event | What happens once every test passed |
 |---|---|
 | A merge to `main` | The `preview` pre-release gets this build's files, replacing the last ones, unless the preview there is newer |
-| A tag `vVERSION` (numbers joined by dots) | A draft release `vVERSION` with the same files plus `channel.toml`; nothing is public yet |
-| Alimardon publishes that draft | `.github/workflows/release.yml` copies `channel.toml` to `channels/stable/release.toml` on the `gh-pages` branch, so the stable channel moves to it |
+| A tag `vVERSION` (numbers joined by dots) | A draft release `vVERSION` with the same files plus `channel.toml`, the preset pictures and `defaults.diff`, and the checklist issue opens; nothing is public yet |
+| Alimardon publishes that draft | `.github/workflows/release.yml` copies `channel.toml` to `channels/stable/release.toml` on the `gh-pages` branch, so the stable channel moves to it, and only once every box of that issue is ticked; else the workflow fails, and it is re-run after ticking |
 
 What is published is what the job built and tested: the publish job takes the files from the tested job, never from a second build. GitHub Releases hold the images (2 GiB per file); GitHub Pages holds only the small channel manifests.
+
+## The release checklist (M8.7)
+
+The tag's CI run is the gate for a fresh install, a rollback, the hang cases, the budgets and the basics: every job of the run passes before the draft exists. The upgrade from every kept release joins that gate with M3.5. What only hardware and a person can check is in the checklist, `.github/ISSUE_TEMPLATE/release-checklist.md`: the hardware items and the Defaults reviewed box, which Alimardon ticks in the issue `Release vVERSION: checklist` that `ci/release-checklist.sh` opens with the draft. The draft also holds the preset pictures (every preset in light and dark, at scale 1 and 2) and `defaults.diff` against the last kept release, which the desktop tests gather. `ci/release.sh` makes no draft for a tag without them, and the stable channel does not move until the box is ticked.
 
 ## Kept forever
 
