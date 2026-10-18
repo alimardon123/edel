@@ -79,11 +79,10 @@ desktop_behind_game_cpu_percent = 1
 # milliseconds, and the share of its frames that went straight to the
 # screen, in percent, which must not fall below the floor. A change that
 # makes either more than 10 percent worse does not merge, so each is the
-# first CI measurement made 10 percent worse. No CI run has measured them
-# yet: these are first values, set from the first CI measurement before
-# the step merges. CI's VM gives the client shared memory buffers, which
+# first CI measurement made 10 percent worse: p99 12.9 ms, slowest 19.8 ms
+# and 0 percent straight to the screen on 2026-10-18 (PR #403). CI's VM gives the client shared memory buffers, which
 # cannot go straight to the screen, so the floor stays 0 there.
-game_frame_p99_ms = 50
+game_frame_p99_ms = 14.2
 game_direct_percent_floor = 0
 
 # What Settings holds of its own while open (desktop-test settings,
