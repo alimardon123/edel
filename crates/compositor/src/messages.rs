@@ -178,6 +178,11 @@ pub fn screens_lost(why: impl Display) -> String {
     )
 }
 
+/// A screen cannot be turned off: it stays on until the next input.
+pub fn screens_not_off(screen: &str, why: impl Display) -> String {
+    format!("could not turn screen {screen} off: {why}; it stays on and turns on at the next input")
+}
+
 /// Switching to another terminal fails.
 pub fn terminal_switch(vt: impl Display, why: impl Display) -> String {
     format!("could not switch to terminal {vt}: {why}")
@@ -432,6 +437,7 @@ mod tests {
             SCREEN_LIST.to_string(),
             INPUT_LOST.to_string(),
             screens_lost("x"),
+            screens_not_off("x", "x"),
             terminal_switch(2, "x"),
             frame_not_drawn("x"),
             frame_not_shown("x"),
