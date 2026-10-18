@@ -11,10 +11,19 @@
 //! which WirePlumber remembers for each person, so no key of the settings
 //! file holds them. `wpctl` is the one command line to this; a machine
 //! without it (no `sound` feature) has no devices, and says so.
+//!
+//! No key of the settings file holds the volume or the devices. The one key
+//! is `sound.low_latency` (M7.6b), which the compositor follows: it links
+//! the low-latency PipeWire file into the person's drop-in folder before
+//! PipeWire starts, with the link helpers here, which the boot's speaker
+//! profile (`edel boot speakers`) shares.
 
+use std::fs;
+use std::os::unix::fs::symlink;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::i18n::{tr, trf};
 
@@ -57,6 +66,65 @@ pub struct Device {
     /// Its volume in percent; none when `wpctl` shows none
     pub volume: Option<u32>,
     pub muted: bool,
+}
+
+/// What a link of ours in another program's drop-in folder should
+/// become (the speaker profile, M6.15; low latency, M7.6b), given what is
+/// there now and the file wanted there.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LinkStep {
+    /// Leave it: it is right, or it is not ours
+    Keep,
+    /// Make the link to this file, replacing ours
+    Link(PathBuf),
+    /// Take our link out
+    Remove,
+}
+
+/// The step for `now` (a link's target, `Some(None)` for a file that is
+/// not a link, `None` for nothing) and `wanted`: a plain file is
+/// someone's own and is kept.
+pub fn link_step(now: Option<Option<&Path>>, wanted: Option<&Path>) -> LinkStep {
+    match (now, wanted) {
+        // A plain file is someone's own tuning.
+        (Some(None), _) => LinkStep::Keep,
+        (Some(Some(target)), Some(wanted)) if target == wanted => LinkStep::Keep,
+        (_, Some(wanted)) => LinkStep::Link(wanted.to_path_buf()),
+        (Some(Some(_)), None) => LinkStep::Remove,
+        (None, None) => LinkStep::Keep,
+    }
+}
+
+/// What is at `link`: its target for a link, `Some(None)` for anything
+/// else, `None` for nothing.
+pub fn link_now(link: &Path) -> Option<Option<PathBuf>> {
+    match fs::symlink_metadata(link) {
+        Ok(meta) if meta.file_type().is_symlink() => Some(fs::read_link(link).ok()),
+        Ok(_) => Some(None),
+        Err(_) => None,
+    }
+}
+
+/// Does `step` at `link`: makes its folder and the link (replacing our
+/// old link), or takes our link out.
+pub fn take_link_step(link: &Path, step: &LinkStep) -> Result<()> {
+    match step {
+        LinkStep::Keep => Ok(()),
+        LinkStep::Link(target) => {
+            if let Some(parent) = link.parent() {
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("could not make {}", parent.display()))?;
+            }
+            if fs::symlink_metadata(link).is_ok() {
+                fs::remove_file(link)
+                    .with_context(|| format!("could not replace {}", link.display()))?;
+            }
+            symlink(target, link).with_context(|| format!("could not write {}", link.display()))
+        }
+        LinkStep::Remove => {
+            fs::remove_file(link).with_context(|| format!("could not remove {}", link.display()))
+        }
+    }
 }
 
 /// What `wpctl status` lists.
@@ -364,5 +432,58 @@ Settings
         let devices = parse(STATUS);
         assert_eq!(devices.of(Kind::Sink).len(), 2);
         assert_eq!(devices.of(Kind::Source).len(), 1);
+    }
+
+    #[test]
+    fn links_the_profile_once_takes_ours_out_and_leaves_a_file_alone() {
+        let profile = Path::new("/usr/share/edel/speakers/ci-test.conf");
+        let other = Path::new("/usr/share/edel/speakers/old.conf");
+        assert_eq!(
+            link_step(None, Some(profile)),
+            LinkStep::Link(profile.into())
+        );
+        assert_eq!(
+            link_step(Some(Some(profile)), Some(profile)),
+            LinkStep::Keep
+        );
+        assert_eq!(
+            link_step(Some(Some(other)), Some(profile)),
+            LinkStep::Link(profile.into())
+        );
+        assert_eq!(link_step(Some(Some(other)), None), LinkStep::Remove);
+        assert_eq!(link_step(None, None), LinkStep::Keep);
+        assert_eq!(
+            link_step(Some(None), Some(profile)),
+            LinkStep::Keep,
+            "an administrator's file"
+        );
+        assert_eq!(link_step(Some(None), None), LinkStep::Keep);
+    }
+
+    #[test]
+    fn taking_a_step_makes_the_folder_the_link_and_takes_it_out() {
+        let dir = std::env::temp_dir().join(format!("edel-sound-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let link = dir.join("pipewire/pipewire.conf.d/90-test.conf");
+        let target = Path::new("/nowhere/low-latency.conf");
+        let other = Path::new("/nowhere/other.conf");
+        assert_eq!(link_now(&link), None);
+        let step = link_step(None, Some(target));
+        take_link_step(&link, &step).unwrap();
+        assert_eq!(link_now(&link), Some(Some(target.to_path_buf())));
+        let step = link_step(link_now(&link).as_ref().map(|n| n.as_deref()), Some(other));
+        take_link_step(&link, &step).unwrap();
+        assert_eq!(link_now(&link), Some(Some(other.to_path_buf())));
+        let step = link_step(link_now(&link).as_ref().map(|n| n.as_deref()), None);
+        take_link_step(&link, &step).unwrap();
+        assert_eq!(link_now(&link), None);
+        fs::create_dir_all(link.parent().unwrap()).unwrap();
+        fs::write(&link, "# the person's own\n").unwrap();
+        assert_eq!(link_now(&link), Some(None));
+        assert_eq!(
+            link_step(link_now(&link).as_ref().map(|n| n.as_deref()), Some(target)),
+            LinkStep::Keep
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

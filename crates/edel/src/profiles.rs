@@ -55,7 +55,10 @@ pub fn about(name: &str) -> String {
     match name {
         "office" => tr(n_("LibreOffice, printing and scanning")).to_string(),
         "developer" => tr(n_("Podman containers and the VSCodium editor")).to_string(),
-        "creative" => tr(n_("Krita for drawing and GIMP for photos")).to_string(),
+        "creative" => tr(n_(
+            "Krita for drawing, GIMP for photos and low-latency sound",
+        ))
+        .to_string(),
         "gaming" => tr(n_("Steam, and game mode for every fullscreen game")).to_string(),
         _ => String::new(),
     }
@@ -413,5 +416,15 @@ mod tests {
         assert_eq!(item_title("com.vscodium.codium"), "Codium");
         assert_eq!(item_title("printing"), "printing");
         assert_eq!(without_words(&file("format = 1\n")), None);
+    }
+
+    #[test]
+    fn creative_brings_sound_with_little_delay() {
+        let creative = applied(&file("format = 1\n[system]\nprofiles = [\"creative\"]\n"));
+        assert_eq!(creative.sound.low_latency, Some(true));
+        let own = applied(&file(
+            "format = 1\n[system]\nprofiles = [\"creative\"]\n[sound]\nlow_latency = false\n",
+        ));
+        assert_eq!(own.sound.low_latency, Some(false));
     }
 }

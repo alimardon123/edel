@@ -281,6 +281,22 @@ pub fn wallpaper_not_read(path: &Path, why: &str) -> String {
     )
 }
 
+/// `sound.low_latency` is on but this system has no low-latency file (M7.6b).
+pub fn low_latency_missing(path: &Path) -> String {
+    format!(
+        "sound.low_latency is on, but there is no {}, so PipeWire keeps its own delay; the sound feature brings the file",
+        path.display()
+    )
+}
+
+/// The person's low-latency link could not be made or taken out (M7.6b).
+pub fn low_latency_not_linked(link: &Path, why: impl Display) -> String {
+    format!(
+        "could not change the low-latency sound link {}: {why}; PipeWire keeps the delay it has, and the link is tried again when sound.low_latency changes or at the next login",
+        link.display()
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -439,6 +455,8 @@ mod tests {
             session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
             input_method_missing("fcitx5"),
             input_method_ended("fcitx5", "ended (exit status: 1)"),
+            low_latency_missing(Path::new("/usr/share/edel/sound/low-latency.conf")),
+            low_latency_not_linked(Path::new("/home/ci/.config/pipewire/x.conf"), "x"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");
@@ -447,5 +465,16 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn low_latency_says_what_sound_keeps() {
+        assert_eq!(
+            low_latency_not_linked(
+                Path::new("/home/ci/.config/pipewire/pipewire.conf.d/90-edel-low-latency.conf"),
+                "Permission denied (os error 13)"
+            ),
+            "could not change the low-latency sound link /home/ci/.config/pipewire/pipewire.conf.d/90-edel-low-latency.conf: Permission denied (os error 13); PipeWire keeps the delay it has, and the link is tried again when sound.low_latency changes or at the next login"
+        );
     }
 }

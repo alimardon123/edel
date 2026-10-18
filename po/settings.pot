@@ -1379,6 +1379,9 @@ msgstr ""
 msgid "On"
 msgstr ""
 
+msgid "Low latency"
+msgstr ""
+
 msgid "When the lid closes"
 msgstr ""
 
@@ -1703,6 +1706,9 @@ msgstr ""
 msgid "Already used by {action}"
 msgstr ""
 
+msgid "Sound arrives within about 5 ms, for music and recording; it takes a little more power while sound plays, from the next login"
+msgstr ""
+
 msgid "Where sound plays, what listens, and how loud."
 msgstr ""
 
@@ -1731,6 +1737,12 @@ msgid "What listens"
 msgstr ""
 
 msgid "Level"
+msgstr ""
+
+msgid "Music and recording"
+msgstr ""
+
+msgid "From the profile"
 msgstr ""
 
 msgid "This computer's sound needs firmware it does not have: {files}. Run edel report and send it with your issue, so the firmware can be added."
