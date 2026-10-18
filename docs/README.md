@@ -37,6 +37,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [INSTALL.md](INSTALL.md) | Every way into Edel OS, each ending in one settings file: checking the download, writing the stick, the boot menu, `edel install` with questions, a file or an https address | Guide |
 | [FLEET.md](FLEET.md) | Fleet images from merged settings files, and a stick that installs itself (`[install]`) | Guide |
 | [TRY-IT.md](TRY-IT.md) | Trying a preview in a VM or on a laptop, and sending a hardware report | Guide |
+| [hardware.md](hardware.md) | The machines that sent a report, their start, memory and frame times and which basics work, written from docs/hardware/*.toml | Generated |
 | [index.md](index.md) | The docs site's front page: what Edel OS is and where to start (M8.10a) | Guide |
 | [guide/how-it-works.md](guide/how-it-works.md) | How the whole system works, from the disk and updates to the settings file and the desktop | Guide |
 | [guide/developer-mode.md](guide/developer-mode.md) | Developer mode: a writable `/usr`, `apk`, your own services, safe starts and reset | Guide |

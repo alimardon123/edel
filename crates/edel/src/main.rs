@@ -16,6 +16,7 @@ mod device_key;
 mod first_boot;
 mod grubenv;
 mod guard;
+mod hardware_table;
 mod image;
 mod installer;
 mod live;
