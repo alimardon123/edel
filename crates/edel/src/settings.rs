@@ -623,6 +623,7 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
     now(GAME_MODE, Kind::OneOf(&["plugged-in", "always", "off"])),
+    now(BATTERY_CARE, Kind::Flag),
     now("services.*", Kind::Flag),
     // The release lists `edel update` takes (M3.8); absent, the image's.
     now("updates.channel", Kind::Channel),
@@ -1493,6 +1494,10 @@ pub struct Power {
     /// When a fullscreen game gets variable refresh (M7.7)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<String>,
+    /// Stop charging at 80 percent where the laptop offers a limit (M7.16e);
+    /// absent is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_care: Option<bool>,
 }
 
 /// The clipboard history (M7.13), shown on the Shortcuts page beside its
@@ -1702,6 +1707,8 @@ pub fn check(text: &str) -> Result<Vec<String>> {
     lines.extend(look_problem(&read.file).map(|m| format!("lock_screen.look: {m}")));
     // Across keys: the colours name colour tokens and keep every pair readable (M5.12b1).
     lines.extend(colour_problems(&read.file));
+    // Across keys: each widget's colour reads over what lies behind it (M5.33d).
+    lines.extend(widget_colour_problems(&read.file));
     // Across keys: each theme is a name of its own that no built-in takes,
     // and the theme in use is one of them (M5.12b6a).
     lines.extend(crate::themes::problems(&read.file));
@@ -1814,6 +1821,104 @@ fn colour_problems(file: &SettingsFile) -> Vec<String> {
                 lines.push(line);
             }
         }
+    }
+    lines
+}
+
+/// The problems the widgets' colours cause (M5.33d), one line each, the key
+/// first: each colour that reads on the desktop's widgets, the lock
+/// screen's, and each of the person's own looks' (`lock_screen.looks`), over
+/// what lies behind it. An accent that the wallpaper gives is skipped, since
+/// its colour is not known until the picture is read.
+fn widget_colour_problems(file: &SettingsFile) -> Vec<String> {
+    use crate::lock_screen::{Background, MOST_DIM, applied, default_dim, parse_background};
+    use crate::tokens::{Scheme, Tokens};
+    use crate::widgets::{ACCENT, Behind, Surface, behind, desktop_of, problem};
+    let scheme = file
+        .appearance
+        .mode
+        .as_deref()
+        .and_then(Scheme::parse)
+        .unwrap_or_default();
+    let tokens = Tokens::built_in_scheme(scheme)
+        .with_appearance(
+            file.appearance.accent.as_deref(),
+            file.appearance.colours.as_ref(),
+            scheme,
+            None,
+        )
+        .0;
+    let accent_is_wallpaper =
+        file.appearance.accent.as_deref() == Some(crate::tokens::WALLPAPER_ACCENT);
+    let desktop = desktop_of(crate::wallpapers::value_for(
+        file.appearance.wallpaper.as_deref(),
+        file.appearance.wallpaper_dark.as_deref(),
+        scheme == Scheme::Dark,
+    ));
+    // The checker reads no pictures (the CLI has no `pictures` feature).
+    let no_picture = |_: &std::path::Path| None;
+    let mut lines = Vec::new();
+    let mut add = |key: String, parts: &[crate::lock_screen::Placed], behind: Behind| {
+        for p in parts {
+            let Some(colour) = p.colour.as_deref() else {
+                continue;
+            };
+            if accent_is_wallpaper && colour == ACCENT {
+                continue;
+            }
+            if let Some(message) = problem(p.part.widget(), colour, &tokens, behind.surface) {
+                lines.push(format!("{key}: {message}"));
+            }
+        }
+    };
+    if let Some(parts) = &file.appearance.widgets {
+        let on_desktop = behind(
+            Surface::Desktop,
+            &Background::Sharp,
+            0,
+            &desktop,
+            &tokens,
+            no_picture,
+        );
+        add("appearance.widgets".into(), parts, on_desktop);
+    }
+    if let Some(parts) = &file.lock_screen.parts {
+        let lock = applied(&file.lock_screen, false);
+        let on_lock = behind(
+            Surface::LockScreen,
+            &lock.background,
+            lock.dim,
+            &desktop,
+            &tokens,
+            no_picture,
+        );
+        add("lock_screen.widgets".into(), parts, on_lock);
+    }
+    for (name, own) in file.lock_screen.looks.iter().flatten() {
+        let background = own
+            .background
+            .as_deref()
+            .and_then(parse_background)
+            .unwrap_or(Background::Blurred);
+        let dim = file
+            .lock_screen
+            .dim
+            .or(own.dim)
+            .unwrap_or_else(|| default_dim(&background))
+            .min(MOST_DIM);
+        let on_look = behind(
+            Surface::LockScreen,
+            &background,
+            dim,
+            &desktop,
+            &tokens,
+            no_picture,
+        );
+        add(
+            format!("lock_screen.looks: the look {name:?}"),
+            &own.parts,
+            on_look,
+        );
     }
     lines
 }
@@ -2024,6 +2129,20 @@ pub const GAME_MODE: &str = "power.game_mode";
 /// When game mode is on when the file does not say (M7.7): while the
 /// machine is plugged in, or has no battery.
 pub const GAME_MODE_DEFAULT: &str = "plugged-in";
+
+/// The key battery care is kept under (M7.16e): on stops charging at 80
+/// percent where the firmware offers a limit (`battery_care`).
+pub const BATTERY_CARE: &str = "power.battery_care";
+
+/// Battery care when the file does not say (M7.16e): off, so the battery
+/// charges to 100 percent as it always has.
+pub const BATTERY_CARE_DEFAULT: bool = false;
+
+/// Whether battery care is on: the file's choice, else
+/// [`BATTERY_CARE_DEFAULT`] (M7.16e).
+pub fn battery_care_on(file: &SettingsFile) -> bool {
+    file.power.battery_care.unwrap_or(BATTERY_CARE_DEFAULT)
+}
 
 /// Whether shell-ui keeps the last texts and pictures copied, in memory
 /// only, for Super+V (M7.13); absent is on.
@@ -2287,6 +2406,16 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
     // A colour names a colour token and keeps every pair readable (M5.12b1).
     if key == "appearance.accent" || key.starts_with("appearance.colours") {
         let lines = colour_problems(&read(&text)?.file);
+        if !lines.is_empty() {
+            bail!("{}", lines.join("; "));
+        }
+    }
+    // A widget's colour reads over what lies behind it (M5.33d).
+    if matches!(
+        key,
+        "lock_screen.widgets" | "lock_screen.looks" | "appearance.widgets"
+    ) {
+        let lines = widget_colour_problems(&read(&text)?.file);
         if !lines.is_empty() {
             bail!("{}", lines.join("; "));
         }
@@ -3341,7 +3470,7 @@ fn wallpaper_problem(value: &str) -> String {
 
 /// The accents a person may choose, as an accent's message names them: the
 /// release's names in the file's order, then `wallpaper` (M5.12b1).
-fn accent_choices() -> String {
+pub(crate) fn accent_choices() -> String {
     let mut names: Vec<String> = crate::tokens::accents()
         .into_iter()
         .map(|(name, _, _)| name)
@@ -5178,5 +5307,62 @@ version = "1.2"
         assert!(!is_by_id("/dev/disk/by-id/"));
         assert!(!is_by_id("/dev/disk/by-id/a/b"));
         assert!(is_by_id("/dev/disk/by-id/ata-X"));
+    }
+
+    /// A widget's colour is checked against what lies behind it (M5.33d):
+    /// set refuses the clock in the accent over the classic look, a
+    /// wallpaper set alone is not refused, and the same clock is accepted
+    /// over black. A colour the wallpaper gives is accepted.
+    #[test]
+    fn a_widgets_colour_is_checked_against_what_lies_behind_it() {
+        let clock = r#"[{ widget = "person", at = "centre" }, { widget = "clock", at = "top_left", colour = "accent" }]"#;
+        let error = set("format = 1\n", "lock_screen.widgets", clock).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("lock_screen.widgets: the clock's colour \"accent\""),
+            "{error}"
+        );
+        let black = set("format = 1\n", "lock_screen.wallpaper", "#000000").unwrap();
+        assert!(set(&black, "lock_screen.widgets", clock).is_ok());
+        let wallpaper = set("format = 1\n", "appearance.accent", "wallpaper").unwrap();
+        assert!(set(&wallpaper, "lock_screen.widgets", clock).is_ok());
+    }
+
+    /// The desktop's widgets are checked on the desktop's wallpaper (M5.33d):
+    /// a white desktop with a yellow date is refused under `appearance.widgets`,
+    /// and `check` lists the same line for the file.
+    #[test]
+    fn a_desktop_widgets_colour_is_checked_on_the_desktop() {
+        let date = r##"[{ widget = "date", at = "top_right", colour = "#ffff00" }]"##;
+        let white = set("format = 1\n", "appearance.wallpaper", "#ffffff").unwrap();
+        let error = set(&white, "appearance.widgets", date).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .starts_with("appearance.widgets: the date's colour"),
+            "{error}"
+        );
+        let file = format!("{white}widgets = {date}\n");
+        let lines = check(&file).unwrap();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("appearance.widgets: the date's colour")),
+            "{lines:?}"
+        );
+    }
+
+    /// A look's own widgets are named by the look (M5.33d).
+    #[test]
+    fn a_looks_widgets_colour_names_its_look() {
+        let file = "format = 1\n[lock_screen.looks.home]\nwallpaper = \"#ffffff\"\nwidgets = [{ widget = \"person\", at = \"centre\" }, { widget = \"clock\", at = \"top_left\", colour = \"#ffff00\" }]\n";
+        let lines = check(file).unwrap();
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.starts_with("lock_screen.looks: the look \"home\": the clock's colour")),
+            "{lines:?}"
+        );
     }
 }

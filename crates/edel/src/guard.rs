@@ -23,7 +23,10 @@
 //! kernel that locks up before the guard runs, or with no hardware
 //! watchdog, costs a try instead of hanging for ever. Once the slot is
 //! confirmed, or the guard stands down, [`calm_lockups`] turns that off,
-//! so a running machine only logs a lockup, as before (M6.17).
+//! so a running machine only logs a lockup, as before (M6.17), and turns
+//! the NMI watchdog off: its hard-lockup detector holds a performance
+//! counter of every processor, which keeps them from resting as deep, while
+//! soft lockups are still logged (M7.16d, as powertop advises).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
@@ -349,10 +352,12 @@ pub fn guard() -> Result<()> {
 const LOCKUP_PANICS: &str = "/proc/sys/kernel";
 
 /// Turns off the lockup detectors' panic the command line turned on, in
-/// `kernel` (`/proc/sys/kernel`): a running machine logs a lockup and goes
-/// on, as before. A kernel without a detector has no file, which is fine.
+/// `kernel` (`/proc/sys/kernel`): a running machine logs a soft lockup and
+/// goes on, as before. The NMI watchdog goes off too, so the processors
+/// rest deeper (M7.16d). A kernel without a detector has no file, which is
+/// fine.
 fn calm_lockups(kernel: &Path) {
-    for name in ["softlockup_panic", "hardlockup_panic"] {
+    for name in ["softlockup_panic", "hardlockup_panic", "nmi_watchdog"] {
         let path = kernel.join(name);
         if path.exists()
             && let Err(err) = fs::write(&path, "0\n")
@@ -571,12 +576,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("edel-lockups-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("softlockup_panic"), "1\n").unwrap();
+        fs::write(dir.join("nmi_watchdog"), "1\n").unwrap();
         // No hardlockup_panic: a kernel without that detector.
         calm_lockups(&dir);
-        assert_eq!(
-            fs::read_to_string(dir.join("softlockup_panic")).unwrap(),
-            "0\n"
-        );
+        for name in ["softlockup_panic", "nmi_watchdog"] {
+            assert_eq!(fs::read_to_string(dir.join(name)).unwrap(), "0\n");
+        }
         assert!(!dir.join("hardlockup_panic").exists());
         fs::remove_dir_all(&dir).unwrap();
         assert!(crate::boot::WATCHDOG_ARGS.contains("softlockup_panic=1 nmi_watchdog=panic"));

@@ -30,7 +30,7 @@ use edel::presets::Edge;
 use edel::settings::{self, LockScreen};
 use edel::tokens::Tokens;
 use edel::wallpapers::Wallpaper;
-use edel::widgets::Surface;
+use edel::widgets::{self, Behind, Surface};
 use smithay_client_toolkit::compositor::FrameCallbackData;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_shm};
@@ -304,7 +304,7 @@ fn add(le: &mut LockEditor, part: Part) {
 /// holds as many of (M5.10c7g): the focus goes to it and its card opens when
 /// the part has one (`open_card`), logging `lock editor: KIND is on the lock,
 /// chosen`. A kind with no card (now playing, battery) only gets the focus.
-fn choose_full(le: &mut LockEditor, part: Part, from_keys: bool) {
+fn choose_full(le: &mut LockEditor, part: Part, from_keys: bool, behind: Behind, tokens: &Tokens) {
     let Some(index) = le.view.parts.iter().position(|p| p.part == part) else {
         return;
     };
@@ -314,13 +314,13 @@ fn choose_full(le: &mut LockEditor, part: Part, from_keys: bool) {
         part.name()
     );
     focus_to(le, Some(Focus::Part(index)));
-    open_card(le, index, from_keys);
+    open_card(le, index, from_keys, behind, tokens);
 }
 
 /// Opens the card of the part at `index` beside it (M5.10c6c2), logging
 /// `lock editor card NAME shown`. Nothing for a part with no card, or while a
 /// card is open. `from_keys` (Return) focuses the card's first line.
-fn open_card(le: &mut LockEditor, index: usize, from_keys: bool) {
+fn open_card(le: &mut LockEditor, index: usize, from_keys: bool, behind: Behind, tokens: &Tokens) {
     let Some(placed) = le.view.parts.get(index).cloned() else {
         return;
     };
@@ -334,6 +334,7 @@ fn open_card(le: &mut LockEditor, index: usize, from_keys: bool) {
     );
     le.card_before = Some(placed.clone());
     let mut card = part_card::open(index, placed.clone());
+    card.swatches = part_card::swatches_for(placed.part, tokens, behind);
     // Docked in the right panel on a wide screen (M5.10c7f), and a clock
     // after the first is numbered in its heading.
     card.docked = le.view.screen.0 >= lock_editor::WIDE;
@@ -1068,7 +1069,8 @@ impl Shell {
     /// not added; else it is added at the screen's middle (`add`).
     fn add_from_drawer(&mut self, le: &mut LockEditor, part: Part) {
         if lock_editor::full(&le.view.parts, le.battery, part, le.view.on) {
-            choose_full(le, part, true);
+            let behind = self.behind_now(le);
+            choose_full(le, part, true, behind, &self.tokens);
         } else if part == Part::Picture {
             self.open_lock_page();
             eprintln!(
@@ -1200,8 +1202,48 @@ impl Shell {
                 }
             }
             part_card::Step::Close => end_card(le),
+            part_card::Step::Every => self.colour_every(le),
             part_card::Step::Nothing => {}
         }
+    }
+
+    /// What lies behind the edit's parts (M8.21 part 21k2): the lock's
+    /// wallpaper with its dim, or the desktop's, as the edit is on.
+    fn behind_now(&self, le: &LockEditor) -> Behind {
+        lock::behind_of(
+            le.view.on,
+            &le.view.background,
+            le.view.dim,
+            &self.wallpaper,
+            &self.tokens,
+        )
+    }
+
+    /// Gives the open card's colour to every part that takes one (M8.21 part
+    /// 21k2, `lock_screen::coloured`), where it reads over what lies behind
+    /// the part; the others keep theirs. Logs `lock editor colour NAME on every
+    /// widget`.
+    fn colour_every(&self, le: &mut LockEditor) {
+        let Some(card) = le.view.card.as_ref() else {
+            return;
+        };
+        let (colour, index) = (card.placed.colour.clone(), card.index);
+        let surface = self.behind_now(le).surface;
+        let tokens = &self.tokens;
+        le.view.parts = lock_screen::coloured(&le.view.parts, colour.as_deref(), |p| {
+            p.colour
+                .as_deref()
+                .is_none_or(|v| widgets::problem(p.part.widget(), v, tokens, surface).is_none())
+        });
+        if let (Some(card), Some(part)) = (le.view.card.as_mut(), le.view.parts.get(index)) {
+            card.placed = part.clone();
+        }
+        eprintln!(
+            "edel-shell-ui: {} colour {} on every widget",
+            lock_editor::log_name(le.view.on),
+            colour.as_deref().unwrap_or("automatic")
+        );
+        parts_moved(le);
     }
 
     /// The pointer while a part's card is open (M5.10c6c2): a press on the
@@ -1339,7 +1381,10 @@ impl Shell {
                         );
                     }
                     Step::Undo => self.undo_lock_editor(&mut le),
-                    Step::Open(i) => open_card(&mut le, i, true),
+                    Step::Open(i) => {
+                        let behind = self.behind_now(&le);
+                        open_card(&mut le, i, true, behind, &self.tokens);
+                    }
                     Step::Preview => self.start_preview(&mut le),
                     Step::Back => self.end_preview(&mut le),
                     Step::Done | Step::Close | Step::Nothing => {}
@@ -1505,7 +1550,8 @@ impl Shell {
                                         le.view.on,
                                     ) =>
                                 {
-                                    choose_full(le, part, false);
+                                    let behind = self.behind_now(le);
+                                    choose_full(le, part, false, behind, &self.tokens);
                                 }
                                 Some(part) => {
                                     le.view.drag = Some(Drag {
@@ -1603,7 +1649,8 @@ impl Shell {
         }
         if let (false, From::Part(i)) = (drag.moving, drag.from) {
             // A press and release that did not move open the part's card.
-            open_card(le, i, false);
+            let behind = self.behind_now(le);
+            open_card(le, i, false, behind, &self.tokens);
         }
         le.view.drag = None;
         le.view.guides.clear();

@@ -105,12 +105,13 @@ pub fn on_button(rules: &Rules, edel_here: bool) -> Do {
 }
 
 /// The power profile the machine should use now: on battery the rules'
-/// choice; plugged in, Performance when that is the choice, else Balanced.
-/// With no word on the power, the machine counts as plugged in.
-pub fn profile(rules: &Rules, on_battery: Option<bool>) -> &str {
+/// choice; plugged in, Performance while a game plays (`game`, M7.7b) or
+/// when that is the choice, else Balanced. With no word on the power, the
+/// machine counts as plugged in.
+pub fn profile(rules: &Rules, on_battery: Option<bool>, game: bool) -> &str {
     match on_battery {
         Some(true) => &rules.on_battery,
-        _ if rules.on_battery == "performance" => "performance",
+        _ if game || rules.on_battery == "performance" => "performance",
         _ => "balanced",
     }
 }
@@ -211,18 +212,38 @@ mod tests {
     #[test]
     fn the_profile_follows_the_power_and_the_choice_for_battery() {
         let balanced = Rules::read(None, None);
-        assert_eq!(profile(&balanced, Some(true)), "balanced");
-        assert_eq!(profile(&balanced, Some(false)), "balanced");
-        assert_eq!(profile(&balanced, None), "balanced");
+        assert_eq!(profile(&balanced, Some(true), false), "balanced");
+        assert_eq!(profile(&balanced, Some(false), false), "balanced");
+        assert_eq!(profile(&balanced, None, false), "balanced");
         let saver = rules("[power]\non_battery = \"power-saver\"\n");
-        assert_eq!(profile(&saver, Some(true)), "power-saver");
-        assert_eq!(profile(&saver, Some(false)), "balanced");
+        assert_eq!(profile(&saver, Some(true), false), "power-saver");
+        assert_eq!(profile(&saver, Some(false), false), "balanced");
         let fast = rules("[power]\non_battery = \"performance\"\n");
-        assert_eq!(profile(&fast, Some(true)), "performance");
+        assert_eq!(profile(&fast, Some(true), false), "performance");
         assert_eq!(
-            profile(&fast, Some(false)),
+            profile(&fast, Some(false), false),
             "performance",
             "plugged in, Performance when chosen"
+        );
+    }
+
+    #[test]
+    fn a_game_on_the_charger_asks_for_full_power_and_battery_still_decides() {
+        let balanced = Rules::read(None, None);
+        assert_eq!(profile(&balanced, Some(false), true), "performance");
+        assert_eq!(
+            profile(&balanced, None, true),
+            "performance",
+            "a machine with no battery counts as plugged in"
+        );
+        assert_eq!(profile(&balanced, Some(true), true), "balanced");
+        let saver = rules("[power]\non_battery = \"power-saver\"\n");
+        assert_eq!(profile(&saver, Some(true), true), "power-saver");
+        assert_eq!(profile(&saver, Some(false), true), "performance");
+        assert_eq!(
+            profile(&saver, Some(false), false),
+            "balanced",
+            "the rules' profile comes back when the game ends"
         );
     }
 

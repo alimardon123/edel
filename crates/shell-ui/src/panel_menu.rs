@@ -483,6 +483,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Node> {
         toggled,
         value: None,
         value_text: None,
+        disabled: false,
     };
     view.rows
         .iter()

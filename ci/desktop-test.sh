@@ -708,6 +708,13 @@ case_suspend() {
 	guest 'suspend log'
 	wait_for 'DESKTOP-TEST: suspend_log ' || fail "the service did not read the suspend log"
 	wait_for 'DESKTOP-TEST: suspend_dmesg ' || fail "the service did not read the kernel's PM lines"
+	# Battery care (M7.16e): zzz runs the resume hook edel-battery-care,
+	# which runs edel boot battery-care and prints its line. zzz inherits
+	# edel suspend's output, which is /tmp/suspend.log that `suspend log`
+	# prints, so the line shows the hook ran; the VM has no battery, so the
+	# line says this computer offers no charge limit.
+	value suspend_log | grep -q 'edel boot battery-care: this computer offers no charge limit' ||
+		fail "the resume hook did not run edel boot battery-care after the wakeup: $(value suspend_log)"
 	echo "PASS: edel suspend as ci suspended the VM to memory (QEMU said suspended), system_wakeup woke it, and the desktop drew a new window after (suspend.png); kernel: $(value suspend_dmesg); edel suspend said: $(value suspend_log)"
 }
 
@@ -5325,6 +5332,10 @@ case_fullscreen() {
 	# desktop's CPU over 30 s and the busy window's frames show it.
 	wait_for 'edel-compositor: a game is playing; the desktop steps aside' || fail "the compositor did not say a game plays"
 	wait_for 'edel-shell-ui: a game is playing; the timers stop' || fail "shell-ui did not stop its timers for the game"
+	# Full power for the game (M7.7b): the VM counts as plugged in and its
+	# kernel offers no power profiles, so shell-ui says it asks for none.
+	wait_for 'edel-shell-ui: a game is playing on the charger, but this computer has no power profiles' ||
+		fail "shell-ui did not say the VM has no power profile for the game"
 	state_now && grep -q '^playing = true' "$dir/state-now.toml" || fail "the state file does not say playing = true"
 	n=$(count 'DESKTOP-TEST: busy_frames ')
 	guest 'desktop cpu'
@@ -5388,10 +5399,84 @@ case_fullscreen() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot"
 	guest 'busy close'
+	# Each game's smoothness (M7.7d): a fullscreen window that draws on
+	# every frame plays for 15 s in game mode; when it closes the
+	# compositor logs its record and edel report shows its frames, within
+	# 2 percent of the ones it drew at the screen's size.
+	opened=$(count 'edel-compositor: window game fullscreen')
+	guest 'game window'
+	wait_more 'edel-compositor: window game fullscreen' "$opened" || fail "the window game did not go fullscreen"
+	sleep 15
+	kept=$(count 'edel-compositor: game edel.test.game: ')
+	guest 'game close'
+	wait_more 'edel-compositor: game edel.test.game: ' "$kept" || fail "the compositor logged no record of the game"
+	n=$(count 'DESKTOP-TEST: game_frames ')
+	guest 'game report'
+	wait_more 'DESKTOP-TEST: game_frames ' "$n" || fail "game report did not answer"
+	set -- $(value game_frames)
+	shown=${1:-0} drawn=${2:-0}
+	awk -v s="$shown" -v d="$drawn" 'BEGIN { x = s - d; if (x < 0) x = -x; exit !(d > 0 && x <= d * 0.02) }' ||
+		fail "edel report shows $shown frames of the game, and it drew $drawn at the screen's size, more than 2 percent apart"
+	record=$(tr -d '\r' <"$log" | grep -o 'edel-compositor: game edel.test.game: .*' | tail -n 1)
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "A game's smoothness (M7.7d): ${record#edel-compositor: }; edel report shows $shown frames, the game drew $drawn." >>"$GITHUB_STEP_SUMMARY"
 		echo "Behind a fullscreen game (M7.7c): the compositor and shell-ui used $percent percent of a CPU over 30 s in game mode, $percent_off percent with it off; the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game"
+	echo "PASS: full asked for fullscreen and covered the screen, panel too; Super+G turned game mode off and on, shown in the pop-up; Super+F took it out and back; foot went fullscreen and back with Super+F; behind a fullscreen game (M7.7c) the compositor and shell-ui used $percent percent of a CPU over 30 s, $percent_off percent with game mode off, the hidden window got $((on_after - on_before)) frames, $((off_after - off_before)) with it off, and edel update waited for the game; a game's record (M7.7d) showed $shown frames in edel report against the $drawn it drew"
+}
+
+case_wakeups() {
+	# Idle wakeups (M7.16a): with the desktop idle, the compositor and
+	# shell-ui together wake the processor at most desktop_idle_wakeups_per_second
+	# times a second, counted as voluntary context switches over 60 s (a close
+	# proxy: every wakeup takes the processor out of its deepest rest). Runs
+	# right after one-screen, with no window open. The service answers
+	# each part's number and the total last.
+	n=$(count 'DESKTOP-TEST: desktop_wakeups_per_second ')
+	guest 'wakeups'
+	wait_more 'DESKTOP-TEST: desktop_wakeups_per_second ' "$n" 90 || fail "wakeups did not answer within 90 s"
+	comp=$(value wakeups_compositor)
+	shell=$(value wakeups_shell_ui)
+	total=$(value desktop_wakeups_per_second)
+	limit=$(budget desktop_idle_wakeups_per_second)
+	awk -v p="$total" -v b="$limit" 'BEGIN { exit !(p != "" && p <= b) }' ||
+		fail "the desktop woke the processor $total times a second while idle (compositor ${comp:-?}, shell-ui ${shell:-?}), over the budget of $limit"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Idle wakeups (M7.16a): the compositor woke the processor $comp times a second and shell-ui $shell, $total together, over 60 s with the desktop idle (budget $limit)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: with the desktop idle for 60 s the compositor woke the processor $comp times a second and shell-ui $shell, $total together, within the budget of $limit a second"
+}
+
+case_device_power() {
+	# Devices save power (M7.16d): PCI devices may sleep (graphics and the
+	# management engine are left to their drivers), the SATA links rest
+	# between commands where the controller offers it (the VM's AHCI does
+	# not, so its hosts say unsupported, and a rule that did not run still
+	# shows the old policy), the sound
+	# chip sleeps after 10 s of silence, the NMI watchdog is off, and
+	# Wi-Fi rests between packets (power save 3). The service reads them
+	# from /sys, /proc and NetworkManager's config and prints them, so a
+	# change to features/power or features/network that drops one shows here.
+	n=$(count 'DESKTOP-TEST: device_power ')
+	m=$(count 'DESKTOP-TEST: wifi_power ')
+	guest 'device power'
+	wait_more 'DESKTOP-TEST: device_power ' "$n" 20 || fail "the service did not read the devices' power settings"
+	wait_more 'DESKTOP-TEST: wifi_power ' "$m" 20 || fail "the service did not read Wi-Fi's power save"
+	power=$(value device_power)
+	wifi=$(value wifi_power)
+	set -- $power
+	pci=${1#pci=} sata=${2#sata=} hda=${3#hda=} nmi=${4#nmi=}
+	auto=${pci%%/*} all=${pci#*/}
+	[ "$auto" = "$all" ] && [ "$all" -gt 0 ] ||
+		fail "not every PCI device may sleep: $auto of $all have power/control auto ($power)"
+	case "$sata" in
+	none | med_power_with_dipm | unsupported | med_power_with_dipm,unsupported) ;;
+	*) fail "a SATA link has the policy $sata, not med_power_with_dipm ($power)" ;;
+	esac
+	[ "$hda" = 10 ] || fail "the sound chip's power_save is $hda, not 10 s ($power)"
+	[ "$nmi" = 0 ] || fail "the NMI watchdog is on ($power)"
+	[ "$wifi" = 3 ] || fail "Wi-Fi's power save is ${wifi:-none}, not 3"
+	echo "PASS: $auto of $all PCI devices may sleep (power/control auto), SATA links $sata, the sound chip sleeps after $hda s, the NMI watchdog is off, Wi-Fi's power save is $wifi"
 }
 
 case_clipboard() {
@@ -5917,6 +6002,48 @@ case_lock() {
 		fail "the locked screen with the parts at 640,790 is not the lock's #$deep"
 	guest 'lock parts reset'
 	wait_for 'DESKTOP-TEST: ran lock parts reset: 0' || fail "ci's lock parts could not be reset"
+	# The widgets' colour (M5.33d): ci unlocks, `lock colour` sets the wallpaper
+	# to black and a clock at the top left in the accent, the screen locks again,
+	# and the clock's box holds more than 100 pixels of the accent token and fewer
+	# than 20 of the text colour. Kept as lock-colour.png. `lock colour reset`
+	# takes both out again while this lock holds, before the look below unlocks.
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" ||
+		fail "ci's password did not unlock the screen before the lock's colour"
+	guest 'lock colour'
+	wait_for 'DESKTOP-TEST: ran lock colour: 0' || fail "ci's lock colour could not be set"
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	compositor_locked=$(count 'edel-compositor: screen locked$')
+	placed=$(count 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-compositor: screen locked$' "$compositor_locked" ||
+		fail "Super+L did not lock the screen with the colour"
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" ||
+		fail "shell-ui did not put up the lock screen with the colour"
+	wait_more 'edel-shell-ui: lock places .*, power [0-9]*[+][0-9]*[+][0-9]*x[0-9][0-9]' "$placed" ||
+		fail "shell-ui did not say where the lock's parts lie with the colour"
+	places=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: lock places .*, power [0-9]*+[0-9]*+[0-9]*x[0-9][0-9]' | tail -n 1)
+	clock=$(echo "$places" | sed -n 's/.*, clock \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+	[ -n "$clock" ] || fail "shell-ui did not say where the lock's clock lies: $places"
+	set -- $clock
+	accent=$(token accent)
+	ink=$(token backdrop_text)
+	i=0
+	while :; do
+		python3 ci/qmp.py screendump "$dir/lock-colour.png"
+		drawn=$(python3 ci/qmp.py where "$dir/lock-colour.png" "$1" "$2" "$3" "$4" "$accent" | awk '{print $3}')
+		[ "${drawn:-0}" -gt 100 ] && break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] ||
+			fail "the lock's clock at $1,$2 ${3}x$4 has ${drawn:-0} pixels of the accent #$accent (lock-colour.png)"
+		sleep 1
+	done
+	text=$(python3 ci/qmp.py where "$dir/lock-colour.png" "$1" "$2" "$3" "$4" "$ink" | awk '{print $3}')
+	[ "${text:-0}" -lt 20 ] ||
+		fail "the lock's clock at $1,$2 ${3}x$4 has ${text} pixels of the text colour #$ink, not the accent (lock-colour.png)"
+	guest 'lock colour reset'
+	wait_for 'DESKTOP-TEST: ran lock colour reset: 0' || fail "ci's lock colour could not be reset"
 	# The lock's look (M5.10c5c): ci unlocks, `lock look` sets the minimal
 	# look over the blurred wallpaper, and the screen locks again: shell-ui
 	# logs a blurred backdrop, the last places line has no count (the look
@@ -6063,7 +6190,7 @@ case_lock() {
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the magazine lock"
 	guest 'lock magazine reset'
 	wait_for 'DESKTOP-TEST: ran lock magazine reset: 0' || fail "ci's lock look could not be reset"
-	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it"
+	echo "PASS: Super+L locked the screen with #$deep where the panel was, the power button opened a menu of three rows that Escape closed, a list of widgets put the clock at the top left and a message at the bottom, the test player's card showed on the lock and its play button paused the player, a click reached no window, a wrong password was refused and ci's own, typed and sent by a click on the go button, unlocked it; the minimal look over the blurred wallpaper showed a blurred backdrop with no count; Settings' Lock screen page chose Magazine (lock_screen.look = \"magazine\"), and the next lock drew the wallpaper blurred behind it; the clock of a list took the accent over black and no text colour, and lock colour reset took both out (lock-colour.png)"
 }
 
 # editor_places: the lock screen's edit mode's last whole places line,
@@ -8211,7 +8338,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

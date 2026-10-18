@@ -851,7 +851,13 @@ impl Build<'_> {
 
         let shadow_path = root.join("etc/shadow");
         let shadow = fs::read_to_string(&shadow_path).context("reading /etc/shadow")?;
-        fs::write(&shadow_path, lock_root(&shadow)?)?;
+        let mut shadow = lock_root(&shadow)?;
+        if let Some(seconds) =
+            source_date_epoch(std::env::var("SOURCE_DATE_EPOCH").ok().as_deref())?
+        {
+            shadow = date_shadow(&shadow, seconds);
+        }
+        fs::write(&shadow_path, shadow)?;
 
         if let Some(hostname) = &self.def.hostname {
             fs::write(root.join("etc/hostname"), format!("{hostname}\n"))?;
@@ -1680,6 +1686,24 @@ fn lock_root(shadow: &str) -> Result<String> {
     Ok(out)
 }
 
+/// Dates every account's last password change in `/etc/shadow` by the
+/// epoch's day (M8.6): busybox's `adduser` writes the day it runs there, so
+/// two builds either side of midnight made different images. An empty field
+/// stays empty.
+fn date_shadow(shadow: &str, epoch: u64) -> String {
+    let day = (epoch / 86_400).to_string();
+    let mut out = String::with_capacity(shadow.len() + 1);
+    for line in shadow.lines() {
+        let mut fields: Vec<&str> = line.split(':').collect();
+        if fields.get(2).is_some_and(|field| !field.is_empty()) {
+            fields[2] = &day;
+        }
+        out.push_str(&fields.join(":"));
+        out.push('\n');
+    }
+    out
+}
+
 /// Whether an apk cache already holds a package index.
 fn has_index(cache: &Path) -> bool {
     fs::read_dir(cache).is_ok_and(|entries| {
@@ -2032,6 +2056,17 @@ mod tests {
         assert_eq!(
             lock_root(shadow).unwrap(),
             "rootless::0:::::\nroot:*:0:::::\n"
+        );
+    }
+
+    #[test]
+    fn dates_every_password_change_by_the_epoch() {
+        // 1792281034 is 2026-10-17 23:50:34, day 20743; a build after
+        // midnight once wrote 20744 for klogd.
+        let shadow = "root:*:0:0:::::\nklogd:!:20744:0:99999:7:::\nbin:!::0:::::\n";
+        assert_eq!(
+            date_shadow(shadow, 1_792_281_034),
+            "root:*:20743:0:::::\nklogd:!:20743:0:99999:7:::\nbin:!::0:::::\n"
         );
     }
 

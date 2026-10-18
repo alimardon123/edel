@@ -8,7 +8,8 @@
 #   sh ci/changes.sh               decide for this checkout (CI's first job)
 #   sh ci/changes.sh --self-test   check the classification on fixed lists
 #
-# Reads EVENT, DRAFT and FULL_CI from the environment. Prints images=,
+# Reads EVENT, DRAFT and FULL_CI from the environment, and for a pull
+# request BASE_REF, ACTION, BEFORE, AFTER and REPO (GH_TOKEN for gh). Prints images=,
 # desktop=, lanes= and a reason line. Appends the first three to
 # $GITHUB_OUTPUT, and a short Markdown section to $GITHUB_STEP_SUMMARY,
 # when those variables are set and not empty.
@@ -104,6 +105,25 @@ self_test() {
 	echo "PASS: changes.sh made $count checks"
 }
 
+# proven: true when a push to a pull request (BEFORE to AFTER) changed only
+# paths that cannot affect the heavy jobs, and the run on BEFORE passed with
+# the image build and every desktop part run, not skipped (faster PRs,
+# 2026-10-17): a merge of main that only brought the roadmap's log, say.
+# Anything it cannot read makes it false, so everything runs.
+proven() {
+	[ "${ACTION:-}" = synchronize ] && [ -n "${BEFORE:-}" ] && [ -n "${AFTER:-}" ] && [ -n "${REPO:-}" ] || return 1
+	git fetch -q --depth=1 origin "$BEFORE" "$AFTER" 2>/dev/null || return 1
+	git diff --name-only "$BEFORE" "$AFTER" >"$tmp" || return 1
+	decide <"$tmp"
+	[ "$images" = no ] && [ "$desktop" = no ] || return 1
+	run=$(gh api "repos/$REPO/actions/runs?head_sha=$BEFORE&event=pull_request" \
+		--jq '[.workflow_runs[] | select(.name == "CI" and .conclusion == "success")][0].id // empty' 2>/dev/null) || return 1
+	[ -n "$run" ] || return 1
+	ran=$(gh api "repos/$REPO/actions/runs/$run/jobs?per_page=100" \
+		--jq '[.jobs[] | select(.name == "Build images" or (.name | startswith("Desktop part")))] | (length > 1 and all(.conclusion == "success"))' 2>/dev/null) || return 1
+	[ "$ran" = true ]
+}
+
 if [ "${1:-}" = --self-test ]; then
 	self_test
 	exit 0
@@ -124,6 +144,14 @@ elif [ "${DRAFT:-}" = true ] && [ "${FULL_CI:-}" != true ]; then
 	images=no
 	desktop=no
 	reason="a draft runs Rust checks only; mark it ready, or add the label full-ci and push, for the rest"
+elif [ -n "${BASE_REF:-}" ] && [ "$BASE_REF" != main ]; then
+	images=no
+	desktop=no
+	reason="a step into the lane branch $BASE_REF runs Rust checks only; the lane's pull request to main runs the rest"
+elif proven; then
+	images=no
+	desktop=no
+	reason="only paths that cannot affect them changed since $BEFORE, whose full run passed"
 elif ! git rev-parse --verify -q HEAD^1 >/dev/null; then
 	images=yes
 	desktop=yes

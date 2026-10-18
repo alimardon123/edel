@@ -176,6 +176,10 @@ pub const STARTED: &str = run!("/started");
 /// restart, and gone at the next boot, as `/run` is memory (M5.10c): the
 /// lock screen's power menu marks Restart while it exists.
 pub const RESTART_PENDING: &str = run!("/restart-pending");
+/// Written by `edel power charge-full` for a trip (M7.16e): battery care's
+/// limit is off while it exists, and `edel boot battery-care` takes it away
+/// once the computer is unplugged; gone at the next boot, as `/run` is memory.
+pub const CHARGE_FULL_ONCE: &str = run!("/charge-full-once");
 /// One updater at a time (M1.1).
 pub const UPDATE_LOCK: &str = run!("/update.lock");
 /// The account a stick logs in by itself (M3.6), which may also run
@@ -246,6 +250,10 @@ pub const STATE_IN_HOME: &str = ".local/state/edel";
 pub const SESSION_LOG: &str = "session.log";
 /// The session before's log, beside it: two sessions are kept.
 pub const SESSION_LOG_BEFORE: &str = "session.old.log";
+/// Each game's smoothness, the last time it played (M7.7d,
+/// `edel::smoothness`), in a person's state directory: the compositor
+/// writes it when a game ends, `edel report` reads it.
+pub const GAMES: &str = "games.toml";
 /// foot's theme in a person's state directory, `dark` or `light` (M6.13):
 /// shell-ui writes it, and foot's config includes it, so a new window
 /// starts in the desktop's scheme.

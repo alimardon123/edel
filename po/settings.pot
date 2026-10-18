@@ -212,6 +212,21 @@ msgstr ""
 msgid "Wrong password. Type it again."
 msgstr ""
 
+msgid "This laptop offers no charge limit, so it always charges to 100%."
+msgstr ""
+
+msgid "For a trip: charges to 100% until it is unplugged and sleeps, or restarts."
+msgstr ""
+
+msgid "Charge fully"
+msgstr ""
+
+msgid "Charge fully once"
+msgstr ""
+
+msgid "Charging fully"
+msgstr ""
+
 msgid "Headphones, speakers, mice and keyboards. Pairings stay on this computer."
 msgstr ""
 
@@ -342,33 +357,6 @@ msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
 msgstr ""
 
 msgid "Strong edges and the plainest colours, for text that is easy to read"
-msgstr ""
-
-msgid "Blue"
-msgstr ""
-
-msgid "Purple"
-msgstr ""
-
-msgid "Pink"
-msgstr ""
-
-msgid "Red"
-msgstr ""
-
-msgid "Orange"
-msgstr ""
-
-msgid "Yellow"
-msgstr ""
-
-msgid "Green"
-msgstr ""
-
-msgid "Teal"
-msgstr ""
-
-msgid "Graphite"
 msgstr ""
 
 msgid "From wallpaper"
@@ -1199,6 +1187,9 @@ msgstr ""
 msgid "Now"
 msgstr ""
 
+msgid "{count} cycles"
+msgstr ""
+
 msgid "Power information is not available"
 msgstr ""
 
@@ -1416,6 +1407,9 @@ msgid "Lock the screen after"
 msgstr ""
 
 msgid "Game mode"
+msgstr ""
+
+msgid "Battery care"
 msgstr ""
 
 msgid "Do not disturb"

@@ -21,9 +21,18 @@
 //! told, so a clock on another monitor never stops). The battery is
 //! shell-ui's to read: it says so over `on_battery` (`battery_changed`);
 //! the compositor reads it once, at start, for the starting effects tier.
+//!
+//! Each game's smoothness is recorded (M7.7d): while a window plays, each
+//! of its commits that reaches its screen is one frame (`committed`, then
+//! `game_frame_shown` from the backend's page flip), kept in
+//! `edel::smoothness::Frames`; when it stops playing, its record replaces
+//! its app's in the person's `games.toml`, which `edel report` shows, and
+//! the log says it in one line.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::path::Path;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use smithay::desktop::Window;
 use smithay::output::Output;
@@ -39,6 +48,7 @@ use smithay::reexports::wayland_server::{
 };
 use smithay::wayland::compositor::with_states;
 
+use edel::smoothness::Frames;
 use edel_compositor::game::{GameMode, When};
 
 use crate::state::Edel;
@@ -54,12 +64,46 @@ pub struct Game {
     /// Whether a game played at the last state change, so the log says
     /// when one starts and when it ends (M7.7c).
     pub stepped_aside: Cell<bool>,
+    /// The game that plays now and its frames (M7.7d).
+    recording: RefCell<Option<Recording>>,
+}
+
+/// A game's frames while it plays (M7.7d).
+struct Recording {
+    window: Window,
+    surface: WlSurface,
+    app: String,
+    /// The screen it plays on.
+    output: String,
+    /// Whether it committed since its last frame reached the screen.
+    fresh: bool,
+    frames: Frames,
 }
 
 impl Game {
     /// Whether game mode is on now.
     pub fn on(&self) -> bool {
         self.mode.on(|| self.on_battery)
+    }
+
+    /// A surface committed (M7.7d): when it is the game's, its next page
+    /// flip shows a frame of it.
+    pub fn committed(&self, surface: &WlSurface) {
+        if let Some(recording) = self.recording.borrow_mut().as_mut() {
+            if &recording.surface == surface {
+                recording.fresh = true;
+            }
+        }
+    }
+
+    /// A frame reached the screen named `output` at `at`, a monotonic time
+    /// (M7.7d): one of the game's when it plays there and committed since.
+    pub fn frame_shown(&self, output: &str, at: Duration) {
+        if let Some(recording) = self.recording.borrow_mut().as_mut() {
+            if recording.output == output && std::mem::take(&mut recording.fresh) {
+                recording.frames.shown(at);
+            }
+        }
     }
 }
 
@@ -142,6 +186,39 @@ impl Edel {
             .any(|output| self.playing_on(output).is_some())
     }
 
+    /// Starts or ends a game's record when the window that plays changes
+    /// (M7.7d): the first screen's that plays, from its next commit. Run at
+    /// each state change.
+    pub fn follow_game_record(&self) {
+        let playing = self.space.outputs().find_map(|output| {
+            self.playing_on(output)
+                .map(|window| (window.clone(), output.name()))
+        });
+        let mut recording = self.game.recording.borrow_mut();
+        let same = match (recording.as_ref(), playing.as_ref()) {
+            (Some(now), Some((window, output))) => &now.window == window && &now.output == output,
+            (None, None) => true,
+            _ => false,
+        };
+        if same {
+            return;
+        }
+        if let Some(ended) = recording.take() {
+            keep_record(&ended);
+        }
+        *recording = playing.and_then(|(window, output)| {
+            let surface = window.toplevel()?.wl_surface().clone();
+            Some(Recording {
+                app: crate::decoration::app_id(&window),
+                window,
+                surface,
+                output,
+                fresh: false,
+                frames: Frames::default(),
+            })
+        });
+    }
+
     /// Whether a game plays on every screen, and there is one (M7.7c).
     pub fn playing_everywhere(&self) -> bool {
         self.space.outputs().next().is_some()
@@ -167,6 +244,47 @@ impl Edel {
                 .iter()
                 .all(|output| self.playing_on(output).is_some_and(|top| top != window))
     }
+}
+
+/// Logs a game's record and keeps it in the person's games file (M7.7d);
+/// a game too short for one keeps nothing.
+fn keep_record(ended: &Recording) {
+    let Some(record) = ended.frames.record() else {
+        return;
+    };
+    let app = if ended.app.is_empty() {
+        "unknown"
+    } else {
+        ended.app.as_str()
+    };
+    eprintln!(
+        "edel-compositor: game {app}: {} frames in {} s, average {} fps, slowest 1% {} ms, slowest 0.1% {} ms",
+        record.frames,
+        record.seconds,
+        record.average_fps,
+        record.slowest_1_percent_ms,
+        record.slowest_0_1_percent_ms
+    );
+    let Some(dir) = edel::places::person_state_dir() else {
+        return;
+    };
+    if let Err(e) = write_record(&dir, app, record) {
+        eprintln!(
+            "edel-compositor: {}",
+            crate::messages::game_record_not_kept(e)
+        );
+    }
+}
+
+/// Replaces `app`'s record in the games file in `dir`, through a new file
+/// renamed over it.
+fn write_record(dir: &Path, app: &str, record: edel::smoothness::Record) -> std::io::Result<()> {
+    let path = dir.join(edel::places::GAMES);
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let new = dir.join(format!("{}.new", edel::places::GAMES));
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(&new, edel::smoothness::with(&text, app, record))?;
+    std::fs::rename(&new, &path)
 }
 
 pub fn create_global(display: &DisplayHandle) {

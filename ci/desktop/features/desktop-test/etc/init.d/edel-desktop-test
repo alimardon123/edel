@@ -258,7 +258,21 @@ commands() {
 		'busy window')
 			as_ci edel-testclient --busy --size 300x200 --colour 3a8fc0 --title busy </dev/null >/tmp/busy.log 2>&1 &
 			;;
-		'busy close') pkill -f 'edel-testclient --busy' ;;
+		'busy close') pkill -f 'edel-testclient --busy --size' ;;
+		# A game (M7.7d): a fullscreen window that draws on every frame, its
+		# frames in /tmp/game.log; `game close` ends it, and `game report`
+		# says the frames edel report shows for it and the ones it drew at
+		# the screen's size.
+		'game window')
+			as_ci edel-testclient --busy --fullscreen --app-id edel.test.game --size 300x200 --colour 9a5ac8 --title game </dev/null >/tmp/game.log 2>&1 &
+			;;
+		'game close') pkill -f 'edel-testclient --busy --fullscreen' ;;
+		'game report')
+			edel report >/tmp/game-report.toml 2>/dev/null
+			shown=$(awk '/^\[\[games\]\]/ { g = 1 } g && /^app = "edel.test.game"/ { a = 1 } a && /^frames = / { print $3; exit }' /tmp/game-report.toml)
+			drawn=$(grep -c ' 1280x800$' /tmp/game.log)
+			say "game_frames ${shown:-0} $drawn"
+			;;
 		# The desktop's CPU over 30 s, and the busy window's frames before and
 		# after (M7.7c). It runs in the background, so the reader of commands
 		# is not held for the 30 s.
@@ -285,6 +299,60 @@ commands() {
 				say "desktop_cpu_percent $percent"
 				say "busy_frames $frames_before $frames_after"
 			) &
+			;;
+		# The desktop's wakeups while idle (M7.16a): every wakeup takes the
+		# processor out of its deepest rest, so an idle desktop should almost
+		# never wake it. A voluntary context switch is a thread giving up the
+		# processor to wait, a close proxy for a wakeup; a nonvoluntary one
+		# is the processor taken away, which is not counted. Over 60 s, in the
+		# background, as `desktop cpu` is; the total comes last.
+		'wakeups')
+			(
+				comp=$(sed -n 's/^pid = //p' "$state_file")
+				shell=$(pidof edel-shell-ui | cut -d' ' -f1)
+				switches() {
+					cat /proc/"$1"/task/*/status 2>/dev/null | awk '/^voluntary_ctxt_switches:/ { n += $2 } END { print n + 0 }'
+				}
+				comp_before=$(switches "$comp")
+				shell_before=$(switches "$shell")
+				sleep 60
+				comp_after=$(switches "$comp")
+				shell_after=$(switches "$shell")
+				comp_rate=$(awk -v t="$((comp_after - comp_before))" 'BEGIN { printf "%.2f", t / 60 }')
+				shell_rate=$(awk -v t="$((shell_after - shell_before))" 'BEGIN { printf "%.2f", t / 60 }')
+				say "wakeups_compositor $comp_rate"
+				say "wakeups_shell_ui $shell_rate"
+				say "desktop_wakeups_per_second $(awk -v a="$comp_rate" -v b="$shell_rate" 'BEGIN { printf "%.2f", a + b }')"
+			) &
+			;;
+		# The devices' power saving (M7.16d), read from /sys and /proc and the
+		# Wi-Fi setting NetworkManager has: PCI devices that may sleep (graphics
+		# and the management engine left to their drivers), the SATA link
+		# policies (none when the VM has no SATA host), the sound chip's
+		# power_save, the NMI watchdog, and Wi-Fi's power save.
+		'device power')
+			pci_auto=0 pci_all=0
+			for d in /sys/bus/pci/devices/*; do
+				class=$(cat "$d/class" 2>/dev/null) || continue
+				case "$class" in 0x03* | 0x0780*) continue ;; esac
+				pci_all=$((pci_all + 1))
+				if [ "$(cat "$d/power/control" 2>/dev/null)" = auto ]; then
+					pci_auto=$((pci_auto + 1))
+				fi
+			done
+			# A host whose controller offers no link power management (QEMU's
+			# AHCI) refuses the policy, so the rule cannot set it; trying the
+			# write tells that apart from a rule that did not run.
+			sata=$(for f in /sys/class/scsi_host/host*/link_power_management_policy; do
+				[ -e "$f" ] || continue
+				policy=$(cat "$f" 2>/dev/null)
+				if [ "$policy" != med_power_with_dipm ] && ! echo med_power_with_dipm 2>/dev/null >"$f"; then
+					policy=unsupported
+				fi
+				echo "$policy"
+			done | sort -u | tr '\n' ',' | sed 's/,$//')
+			say "device_power pci=$pci_auto/$pci_all sata=${sata:-none} hda=$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo none) nmi=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)"
+			say "wifi_power $(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi.powersave=//p' | tail -n 1)"
 			;;
 		# An update that waits for a game (M7.7c): it has no release file, so
 		# once it may go on it fails at once, and its log says both.
@@ -1147,6 +1215,10 @@ commands() {
 		# at the bottom, read when the screen locks; reset after the check.
 		'lock parts') edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre", y = 0.21 }, { widget = "clock", at = "top_left" }, { widget = "message", at = "bottom", text = "If found, call 555 0100" }, { widget = "player", at = "bottom_left" }]' ;;
 		'lock parts reset') edel settings reset lock_screen.widgets ;;
+		# The widgets' colour (M5.33d): black behind the lock and a clock at the
+		# top left in the accent, read when the screen locks; reset after the check.
+		'lock colour') edel settings set 'lock_screen.wallpaper="#000000"' && edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre", y = 0.21 }, { widget = "clock", at = "top_left", colour = "accent" }]' ;;
+		'lock colour reset') edel settings reset lock_screen.widgets lock_screen.wallpaper ;;
 		# The lines the lock screen's edit mode wrote to ci's own file
 		# (M5.10c6b, M5.10c6c3): the look, the widgets and the wallpaper under
 		# [lock_screen], taken out again.

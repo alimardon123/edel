@@ -274,6 +274,11 @@ pub struct Placed {
     /// with a zone is the zone's city, absent without one there is none
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    /// A widget's colour (M5.33d): `accent`, a named accent such as `blue`,
+    /// `wallpaper` or `#rrggbb`; absent is automatic, the text colour that
+    /// reads over what lies behind it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub colour: Option<String>,
 }
 
 /// Offsets are f64, as TOML's floats are, so a value read and written back
@@ -515,6 +520,24 @@ pub fn desktop_default() -> Vec<Placed> {
 /// date's `show` checked. The message names the part and says what to do.
 fn check_options(p: &Placed) -> Result<(), String> {
     let part = p.part.name();
+    if p.colour.is_some() && !p.part.widget().takes(crate::widgets::COLOUR) {
+        return Err(trf(
+            "the {part} takes no colour, so take colour out",
+            &[("part", part)],
+        ));
+    }
+    if let Some(colour) = &p.colour {
+        if !crate::widgets::is_colour(colour) {
+            return Err(trf(
+                "the {part}'s colour {value} is not a colour; choose accent, {choices} or a colour such as \"#e8b04a\"",
+                &[
+                    ("part", part),
+                    ("value", &format!("{colour:?}")),
+                    ("choices", &crate::settings::accent_choices()),
+                ],
+            ));
+        }
+    }
     if p.face.is_some() && !p.part.widget().takes("face") {
         return Err(trf(
             "the {part} has a face; only the clock has one, so take face out",
@@ -611,6 +634,29 @@ fn check_options(p: &Placed) -> Result<(), String> {
     Ok(())
 }
 
+/// The parts with `colour` written on each one that takes a colour and reads
+/// with it (M5.33d, the editor's "Use on every widget"): `reads` says whether
+/// a part reads with the colour on it. The others are left as they are.
+pub fn coloured(
+    parts: &[Placed],
+    colour: Option<&str>,
+    reads: impl Fn(&Placed) -> bool,
+) -> Vec<Placed> {
+    parts
+        .iter()
+        .map(|p| {
+            if !p.part.widget().takes(crate::widgets::COLOUR) {
+                return p.clone();
+            }
+            let next = Placed {
+                colour: colour.map(str::to_string),
+                ..p.clone()
+            };
+            if reads(&next) { next } else { p.clone() }
+        })
+        .collect()
+}
+
 /// A part at `at` with an offset down the screen of `y` (and none across).
 fn part_at(part: Part, at: Anchor, y: f64) -> Placed {
     Placed {
@@ -628,6 +674,7 @@ fn part_at(part: Part, at: Anchor, y: f64) -> Placed {
         style: None,
         zone: None,
         label: None,
+        colour: None,
     }
 }
 
@@ -1850,6 +1897,7 @@ mod tests {
                     "style" => placed.style = Some(DateStyle::Long),
                     "text" => placed.text = Some("Hi".into()),
                     "path" => placed.path = Some("/a.png".into()),
+                    "colour" => placed.colour = Some("accent".into()),
                     other => panic!("no value for the option {other}"),
                 }
                 // The person stands alone; the others stand beside one.
@@ -3261,5 +3309,42 @@ mod tests {
         assert_eq!(desktop_line(&[], Some(&machine)), Ok(Some("[]".into())));
         let person = [part_at(Part::Person, Anchor::Centre, 0.0)];
         assert!(desktop_line(&person, None).is_err());
+    }
+
+    /// A widget's colour (M5.33d): a count takes none, and a colour that is
+    /// no accent, wallpaper or hex is refused with the accents named.
+    #[test]
+    fn a_colour_is_refused_on_a_part_that_takes_none_and_on_a_non_colour() {
+        let mut count = part_at(Part::Count, Anchor::TopRight, 0.0);
+        count.colour = Some("accent".into());
+        let message = check(&[person(false), count]).unwrap_err();
+        assert_eq!(message, "the count takes no colour, so take colour out");
+        let mut clock = part_at(Part::Clock, Anchor::Top, 0.0);
+        clock.colour = Some("navy".into());
+        let message = check(&[person(false), clock]).unwrap_err();
+        assert!(
+            message.starts_with("the clock's colour \"navy\" is not a colour; choose accent, blue"),
+            "{message}"
+        );
+        let mut clock = part_at(Part::Clock, Anchor::Top, 0.0);
+        clock.colour = Some("#e8b04a".into());
+        assert!(check(&[person(false), clock]).is_ok());
+    }
+
+    /// `coloured` writes a colour only where the part takes one and reads
+    /// with it: the person and an unreadable clock stay as they were.
+    #[test]
+    fn coloured_writes_the_colour_only_where_the_part_reads_with_it() {
+        let parts = vec![
+            part_at(Part::Clock, Anchor::Top, 0.0),
+            part_at(Part::Date, Anchor::TopLeft, 0.0),
+            part_at(Part::Person, Anchor::Centre, 0.2),
+        ];
+        let out = coloured(&parts, Some("accent"), |p| p.part != Part::Date);
+        assert_eq!(out[0].colour.as_deref(), Some("accent"));
+        assert_eq!(out[1].colour, None);
+        assert_eq!(out[2].colour, None);
+        let automatic = coloured(&out, None, |_| true);
+        assert_eq!(automatic[0].colour, None);
     }
 }
