@@ -339,6 +339,13 @@ pub const ADDON_VAR_DIR: &str = "/usr/lib/edel/var";
 /// The folder of an add-on's account lines (`passwd`, `group`, `shadow`),
 /// one folder per add-on, merged into the slot's files at boot (M7.2a).
 pub const ADDON_ACCOUNTS_DIR: &str = "/usr/lib/edel/accounts";
+/// The firewall's rules, which edel-firewall loads when the machine starts
+/// (M8.14): plain nft text, so it names [`FIREWALL_DIR`] itself, and a
+/// test checks the two agree. Under `/usr`, so an update brings it.
+pub const FIREWALL_RULES: &str = "/usr/lib/edel/firewall/edel.nft";
+/// The folder of the firewall's drop-ins, one `NAME.nft` a feature that
+/// listens on the network ships, which the rules include (M8.14).
+pub const FIREWALL_DIR: &str = "/usr/lib/edel/firewall.d";
 
 /// The places shell scripts use, as `NAME=VALUE` lines: `ci/names.sh` for
 /// CI and `/usr/share/edel/places.sh` in every image, both written from
@@ -365,6 +372,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("greeter_dir", GREETER_DIR.to_string()),
         ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
+        ("firewall_rules", FIREWALL_RULES.to_string()),
         ("esp_dir", ESP_DIR.to_string()),
         // Inside a person's home (M5.28a).
         ("home_session_log", format!("{STATE_IN_HOME}/{SESSION_LOG}")),
@@ -689,6 +697,34 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
         assert!(is_settings_name(SETTINGS) && is_settings_name(FORMER_SETTINGS[0]));
         assert!(!is_settings_name("state.toml"));
+    }
+
+    /// The firewall's rules include the drop-ins by the path
+    /// [`FIREWALL_DIR`] names, and the drop-ins of ssh and printing sit in
+    /// that folder (M8.14). The rules are plain nft text, so they cannot
+    /// read this module and the test is what keeps the two equal.
+    #[test]
+    fn the_firewall_rules_include_the_drop_ins_folder() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let rules_path = root
+            .join("features/firewall")
+            .join(FIREWALL_RULES.trim_start_matches('/'));
+        let rules = fs::read_to_string(&rules_path).unwrap();
+        let include = format!("include \"{FIREWALL_DIR}/*.nft\"");
+        assert!(
+            rules.lines().any(|line| line.trim() == include),
+            "{} must include {include}",
+            rules_path.display()
+        );
+        let folder = FIREWALL_DIR.trim_start_matches('/');
+        for feature in ["ssh", "printing"] {
+            let drop_in = root
+                .join("features")
+                .join(feature)
+                .join(folder)
+                .join(format!("{feature}.nft"));
+            assert!(drop_in.is_file(), "{} is missing", drop_in.display());
+        }
     }
 
     /// `ci/names.sh` says what this module says, for CI's shell scripts;

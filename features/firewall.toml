@@ -1,0 +1,22 @@
+# Firewall (roadmap M8.14, part A): nftables, which loads the rules that close
+# inbound connections once, when the machine starts. features/firewall/ holds
+# the init script and the rules; each feature that listens on the network
+# ships a drop-in in /usr/lib/edel/firewall.d/ (ssh's, printing's).
+format = 1
+summary = "A firewall: other computers reach only the services this machine has on"
+why = "Inbound connections are closed where there is a screen, as people there run apps that listen on the network and carry their laptop onto networks they do not own (ADR-009). nftables is the kernel's own filter and Alpine's tool for it, and the one package here is all it needs: its own service would flush every table on stop, so edel-firewall loads and removes only Edel OS's table, and no daemon stays running. The input chain drops what does not answer this machine's own connection, and accepts loopback, the ICMP that ping and IPv6 need, and DHCP's answers. Each feature with a service on the network ships one drop-in in /usr/lib/edel/firewall.d (ssh opens port 22; with ssh off nothing listens there, so the kernel still refuses the connection). The rules are read when edel-firewall starts, so a drop-in an add-on brings (printing's scanner answers) counts from the next start of the service: the next boot, or rc-service edel-firewall restart. On with a screen and off without one, so a server keeps the ports its containers publish; services.firewall decides either way (switchable, ADR-008, ADR-009)."
+packages = ["nftables"]
+switchable = true
+
+# The desktop's, the laptop's and the stick's (M8.17): off without a graphics
+# card unless the settings file says services.firewall = true.
+screen = true
+
+[services]
+default = ["edel-firewall"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Firewall"
+test = "firewall"

@@ -1,0 +1,2 @@
+# Opens port 22 for sshd, which listens there only while services.ssh is on (M8.14).
+add rule inet edel input tcp dport 22 accept comment "ssh"

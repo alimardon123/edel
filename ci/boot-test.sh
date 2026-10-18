@@ -74,7 +74,8 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	! grep -q 'generating new host keys' out/boot.log &&
 	grep -q 'edel guard: using the hardware watchdog' out/boot.log &&
 	grep -q 'edel guard: this machine has no screen' out/boot.log &&
-	! grep -q 'Starting greetd' out/boot.log; then
+	! grep -q 'Starting greetd' out/boot.log &&
+	! grep -q 'Starting edel-firewall' out/boot.log; then
 	echo "PASS: slot A of the one image booted Edel OS ${EDEL_VERSION:-0.1} with no screen and started no desktop, mounted /data, made this device's identity key, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed; its console asked for the first person, made ci an administrator with the key typed there, reached the login prompt in ${waited}s, and ci logged in over ssh"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
