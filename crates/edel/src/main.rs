@@ -694,16 +694,7 @@ fn resolve_addons(
     let known: Vec<String> = found.keys().cloned().collect();
     let mut listed: Vec<def::Listed> = Vec::new();
     for name in names {
-        if image.addons.iter().chain(&listed).any(|l| &l.name == name) {
-            bail!("add-on {name} is listed twice");
-        }
-        let Some(addon) = found.remove(name) else {
-            bail!(
-                "unknown feature {name}; the features are {}",
-                known.join(", ")
-            );
-        };
-        def::check_addon(image, &addon)?;
+        let addon = def::take_addon(image, &listed, name, &mut found, &known)?;
         listed.push(addon);
     }
     Ok(listed)

@@ -418,6 +418,8 @@ struct Machine {
     addons: Vec<String>,
     /// Their files and the links to them in `/etc`
     addon_links: crate::addons::Links,
+    /// The add-ons the slot has while the file names none (M8.17c).
+    default_addons: Vec<String>,
     /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
     mime_defaults: Option<String>,
     /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
@@ -483,6 +485,7 @@ impl Machine {
             screen: services::screen_now(),
             addons: edel::addon_state::mounted(),
             addon_links: crate::addons::Links::read(),
+            default_addons: edel::addon_state::running_default(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
             battery_limit: battery_care::limit_now(Path::new(battery_care::POWER_SUPPLY)),
@@ -784,10 +787,17 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     if !make.is_empty() || !remove.is_empty() {
         changes.push(Change::Addons { make, remove });
     }
+    // An add-on made of features brings their services (M8.17c).
+    let mut from_addons: BTreeSet<&str> = machine.addons.iter().map(String::as_str).collect();
+    for (name, f) in &machine.features {
+        if machine.addons.contains(name) {
+            from_addons.extend(f.features.iter().map(String::as_str));
+        }
+    }
     for (_, feature) in machine
         .features
         .iter()
-        .filter(|(name, f)| !f.switchable && machine.addons.contains(name))
+        .filter(|(name, f)| !f.switchable && from_addons.contains(name.as_str()))
     {
         for (level, service) in feature.services.entries() {
             let entry = (level.to_string(), service.to_string());
@@ -801,7 +811,8 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         }
     }
     let built: BTreeSet<&str> = machine.features.iter().map(|(n, _)| n.as_str()).collect();
-    for name in file.addons.installed.iter().flatten() {
+    let installed = edel::addon_state::installed(file, &machine.default_addons);
+    for name in &installed {
         if !built.contains(name.as_str()) {
             notes.push(trf(
                 "add-on {name} starts at the next restart, once edel settings apply has fetched it",
@@ -810,7 +821,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         }
     }
     for name in &machine.addons {
-        if !file.addons.installed.iter().flatten().any(|n| n == name) {
+        if !installed.contains(name) {
             notes.push(trf(
                 "add-on {name} goes at the next restart",
                 &[("name", name)],
@@ -1289,6 +1300,12 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     let mut read = settings::read_on_machine(path)?;
     // The profiles the file names give what it leaves out (M7.6), so apply
     // and diff act on them; the file itself still names only the profiles.
+    // The slot's default add-ons are laid under first, while the file names
+    // none of its own (M8.17c), as applying the profiles loses that.
+    let default = edel::addon_state::running_default();
+    if read.file.addons.installed.is_none() && !default.is_empty() {
+        read.file.addons.installed = Some(edel::addon_state::installed(&read.file, &default));
+    }
     read.file = edel::profiles::applied(&read.file);
     for problem in &read.problems {
         println!(
@@ -2914,6 +2931,7 @@ mod tests {
             screen: true,
             addons: Vec::new(),
             addon_links: Default::default(),
+            default_addons: Vec::new(),
             mime_defaults: None,
             first_passwords: None,
             battery_limit: None,

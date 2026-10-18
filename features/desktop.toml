@@ -1,0 +1,10 @@
+# The desktop (M8.17c): one add-on made of the features a machine with a
+# screen uses, each still its own file, so a server's slot carries none of
+# them and a desktop mounts them over /usr. The disk image carries it on
+# its data partition (images/edel.toml, `carry`), so the stick and every
+# machine installed from it have the desktop; a server or VM leaves it
+# out with `addons.installed = []` and adds it later with one line.
+format = 1
+summary = "The desktop: the Edel shell, Settings, graphics, sound, fonts and apps"
+addon = true
+features = ["graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "wallpapers", "xwayland", "flatpak", "apps", "sound", "bluetooth", "power", "capture", "location"]

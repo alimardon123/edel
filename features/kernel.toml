@@ -6,3 +6,8 @@ format = 1
 summary = "The long-term kernel and the CPU microcode"
 why = "One image boots every machine (M8.17), so it carries the one kernel that drives real hardware, linux-lts, where linux-virt drives only virtual machines; a VM loads only the few drivers it finds, so the bigger package costs disk, never memory or boot time (measured in CI). CPU microcode (amd-ucode, intel-ucode), which GRUB loads before the initramfs (M3.3a), fixes the processor's own bugs and security holes on servers as on laptops, and a VM ignores it. linux-firmware-none, an empty package, meets linux-lts's need for firmware, so an image takes only the firmware its features list (the laptop feature's), not all of Alpine's."
 packages = ["linux-lts", "amd-ucode", "intel-ucode", "linux-firmware-none"]
+# QEMU's virtual GPU (M4.1) and VirtualBox's and VMware's (VMSVGA, M3.6),
+# so the screen comes up in the initramfs as a laptop's does with kms, and
+# a virtual machine with a screen is found to have one (M8.17) before the
+# desktop add-on mounts (M8.17c).
+modules = ["virtio_gpu", "vmwgfx"]
