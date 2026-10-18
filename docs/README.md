@@ -19,6 +19,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [ADR-012](ADR-012-hardware-that-works-out-of-the-box.md) | Hardware that works out of the box: small profiles in the base, an always list to start and get online, hardware packs on the stick and online, matched on the machine | Proposed |
 | [REVIEW-apps-and-lessons.md](REVIEW-apps-and-lessons.md) | How Windows, macOS, HarmonyOS and Flatpak keep apps working for decades; a 2014 Alpine app run today; why postmarketOS, AerynOS and COSMIC took years | Review |
 | [REVIEW-aerynos.md](REVIEW-aerynos.md) | What we can learn from AerynOS's atomic updates | Review |
+| [REVIEW-experience.md](REVIEW-experience.md) | The paths a newcomer takes, from the stick to a broken update, walked in CI with budgets of time and steps (M8.15) | Review |
 | [REVIEW-shells.md](REVIEW-shells.md) | What we take from Hyprland, niri, the Quickshell shells, GNOME, macOS and Windows 11 to look beautiful and feel instant, and what we skip | Review |
 | [REVIEW-postmarketos.md](REVIEW-postmarketos.md) | What we can learn from postmarketOS (now Nura) and its immutable Duranium | Review |
 | [REVIEW-project-2026-10-13.md](REVIEW-project-2026-10-13.md) | Edel OS itself, by four reviewers: the principles, the base and the desktop as independent parts, three dangers, the fixes (M6.17) | Review |

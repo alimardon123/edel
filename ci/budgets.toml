@@ -73,6 +73,22 @@ shell_ui_own_mib = 1.8
 # first CI measurement, and a later reviewed change may lower it.
 desktop_behind_game_cpu_percent = 1
 
+# The smoothness gate (M7.7e, desktop-test smoothness): a fullscreen game
+# stand-in, edel-testclient --busy --smooth 300, in game mode. The 99th
+# percentile of the time between the frames the screen presented, in
+# milliseconds, and the share of its frames that went straight to the
+# screen, in percent, which must not fall below the floor. A change that
+# makes either more than 10 percent worse does not merge, so each is the
+# first CI measurements made 10 percent worse. On 2026-10-18 (PR #403)
+# two runners measured p99 12.9 ms on one and 14.8 to 14.9 ms in four
+# runs on the other, slowest 19.8 to 23.8 ms, none straight to the
+# screen; 10 percent over the slower runner is 16.4 ms, under one frame
+# at 60 Hz, as 10 percent over the faster failed on the slower. CI's VM
+# gives the client shared memory buffers, which cannot go straight to
+# the screen, so the floor stays 0 there.
+game_frame_p99_ms = 16.4
+game_direct_percent_floor = 0
+
 # The compositor's and shell-ui's wakeups per second together, from their
 # voluntary context switches, over 60 s with the desktop idle (desktop-test
 # wakeups, M7.16a). CI's VM draws in software, so its number is not a
@@ -134,3 +150,24 @@ flatpak_cold_ms = 500
 flatpak_warm_ms = 300
 flatpak_app_pss_mib = 6
 portal_readall_ms = 50
+
+# The walks a newcomer takes (M8.15a, docs/REVIEW-experience.md): for
+# each, the seconds the machine makes a person wait, timed by the machine
+# itself (a boot's `Started in`, or the guest's clock across a restart),
+# and the steps a person takes (each key, typed word or click). Seconds
+# are the first CI measurement (2026-10-18, PR #403) plus 20 percent,
+# rounded up to a whole second: try 11.95, first setup 3.88, install 12,
+# update 14, rollback 12, broken update 51; steps are exact. A walk that
+# must grow changes its budget in a reviewed change that says why.
+walk_try_seconds = 15
+walk_install_page_steps = 9
+walk_install_seconds = 15
+walk_install_steps = 1
+walk_first_setup_seconds = 5
+walk_first_setup_steps = 12
+walk_update_seconds = 17
+walk_update_steps = 2
+walk_rollback_seconds = 15
+walk_rollback_steps = 2
+walk_broken_update_seconds = 62
+walk_broken_update_steps = 1

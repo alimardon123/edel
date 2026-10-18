@@ -33,8 +33,11 @@
 //! prints what it did (`clipboard.rs`, M7.13). Its window is titled `clip`
 //! unless `--title` says otherwise. `--busy` draws on every frame the
 //! compositor gives the window, alternating two colours, and prints
-//! `frames N WxH` (the size it draws at, M7.7d) for each, so a test can see whether a window the desktop
-//! hides still gets frames (M7.7c).
+//! `frames N WxH` (the size it draws at, M7.7d) for each, so a test can
+//! see whether a window the desktop hides still gets frames (M7.7c). With
+//! `--smooth N` it also asks for presentation feedback on each frame and
+//! prints one line once N intervals between presented frames are measured
+//! (`smooth.rs`, M7.7e).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -96,6 +99,9 @@ struct Args {
     clipboard: bool,
     /// A window that draws on every frame callback (M7.7c).
     busy: bool,
+    /// How many intervals between presented frames to measure, then exit
+    /// after printing them (M7.7e). Needs `busy`.
+    smooth: Option<usize>,
 }
 
 /// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
@@ -118,6 +124,7 @@ fn args() -> Result<Args> {
     let mut recolour = None;
     let mut clipboard = false;
     let mut busy = false;
+    let mut smooth = None;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -152,6 +159,12 @@ fn args() -> Result<Args> {
             }
             "--title" => title = Some(value),
             "--app-id" => app_id = value,
+            "--smooth" => {
+                smooth = match value.parse::<usize>() {
+                    Ok(frames) if frames > 0 => Some(frames),
+                    _ => bail!("--smooth takes a number of frames, not {value}"),
+                }
+            }
             "--layer" => {
                 layer = Some(match value.as_str() {
                     "top" => Anchor::TOP,
@@ -160,12 +173,15 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy, --smooth and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
             ),
         }
     }
     if size.0 == 0 && layer.is_none() {
         bail!("only a panel (--layer) may have width 0, the screen's");
+    }
+    if smooth.is_some() && !busy {
+        bail!("--smooth measures --busy's frames; add --busy");
     }
     let title =
         title.unwrap_or_else(|| if clipboard { "clip" } else { "edel-testclient" }.to_string());
@@ -182,6 +198,7 @@ fn args() -> Result<Args> {
         recolour,
         clipboard,
         busy,
+        smooth,
     })
 }
 
@@ -224,6 +241,8 @@ struct Client {
     colour: [u8; 4],
     frames: u32,
     waiting: bool,
+    /// `--smooth` (M7.7e): the presentation feedback it measures.
+    smooth: Option<smooth::Smooth>,
 }
 
 /// The wake-up `--recolour`'s watch sends itself once the file exists: a
@@ -248,6 +267,7 @@ mod lid;
 mod mpris;
 mod portal;
 mod sandbox;
+mod smooth;
 mod sni;
 mod toplevels;
 mod workspaces;
@@ -315,6 +335,10 @@ fn main() -> Result<()> {
     } else {
         None
     };
+    let smooth = args
+        .smooth
+        .map(|want| smooth::bind(&globals, &qh, want))
+        .transpose()?;
     // The first commit carries no buffer; the compositor answers with a
     // configure, and the first draw follows it.
     shown.commit();
@@ -335,6 +359,7 @@ fn main() -> Result<()> {
         colour: args.pixel,
         frames: 0,
         waiting: false,
+        smooth,
     };
     let mut recolour = args.recolour;
     if let Some((_, file)) = &recolour {
@@ -365,10 +390,29 @@ fn main() -> Result<()> {
             eprintln!("edel-testclient: the compositor went away: {e}");
             break;
         }
+        if let Some(line) = client
+            .smooth
+            .as_ref()
+            .filter(|smooth| smooth.done())
+            .map(smooth::Smooth::line)
+        {
+            println!("{line}");
+            let _ = std::io::stdout().flush();
+            break;
+        }
         if let Err(e) = clipboard::paste(&connection, &mut queue, &mut client) {
             eprintln!("edel-testclient: {e:#}");
             break;
         }
+    }
+    if let (Some(want), Some(smooth)) = (
+        args.smooth,
+        client.smooth.as_ref().filter(|smooth| !smooth.done()),
+    ) {
+        bail!(
+            "--smooth saw {} of {want} intervals before the window closed",
+            smooth.seen()
+        );
     }
     Ok(())
 }
@@ -399,6 +443,11 @@ impl Client {
         if self.busy && !self.waiting {
             surface.frame(qh, FrameCallbackData(surface.clone()));
             self.waiting = true;
+        }
+        // Not before the first frame callback, so the window's start is
+        // not measured (M7.7e).
+        if let Some(smooth) = self.smooth.as_ref().filter(|_| self.frames > 0) {
+            smooth.ask(surface, qh);
         }
         self.shown.commit();
         Ok(())

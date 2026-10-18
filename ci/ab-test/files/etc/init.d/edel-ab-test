@@ -70,6 +70,13 @@
 # Step 4 proves GRUB's count of three tries. The hang and freeze cases
 # start slot B at its last try, so each proves its own way of failing a
 # try in one boot instead of three (about 170 s less CI per run).
+#
+# Three walks a newcomer takes are timed here, in the guest (M8.15a,
+# docs/REVIEW-experience.md): update starts before step 1's edel update
+# and ends at step 2's start; rollback starts before step 2d's edel
+# rollback and ends at step 3's start; broken-update starts before step
+# 3's restart into the broken slot and ends at step 4's start. The restarts
+# count, and the guest's clock is the host's, so the host's polling never does.
 
 description="Edel OS A/B update test"
 
@@ -219,6 +226,23 @@ ab_next() {
 	(sleep 1 && reboot) &
 }
 
+# walk_begin NAME STEPS: notes on the ESP when a walk a person takes began
+# (M8.15a), as it ends after a restart; the guest's clock is the host's.
+walk_begin() {
+	echo "$1 $2 $(date +%s)" >"$esp/ab-walk"
+	sync
+}
+
+# walk_end: says how long the walk noted on the ESP took, once the next
+# step's boot confirmed its slot (this service needs edel-boot-ok).
+walk_end() {
+	[ -e "$esp/ab-walk" ] || return 0
+	read -r walk_name walk_count walk_began <"$esp/ab-walk"
+	rm -f "$esp/ab-walk"
+	[ -n "${walk_began:-}" ] || return 0
+	ab_say "walk $walk_name $(($(date +%s) - walk_began)) $walk_count"
+}
+
 start() {
 	# A second disk means this is the install test's live boot (M2.5): the
 	# steps run on the disk it installs.
@@ -233,6 +257,7 @@ start() {
 	slots=$(/usr/bin/edel status)
 	ab_say "step $step"
 	echo "$slots"
+	walk_end
 
 	# ci/ab-test.sh serves the signed update on the host, 10.0.2.2.
 	update=http://10.0.2.2:8000/release.toml
@@ -292,6 +317,7 @@ start() {
 		}
 		slots=$(/usr/bin/edel status)
 		ab_expect "running: A" "B: ok=0" || return 0
+		walk_begin update 2
 		out=$(/usr/bin/edel update --allow-http "$update" 2>&1) || { echo "$out"; ab_end "FAIL: installing into slot B"; return 0; }
 		echo "$out"
 		echo "$out" | grep -q 'add-on ci-gone is not in' || {
@@ -373,6 +399,7 @@ start() {
 		ab_check "virtualization still there" test -x /usr/bin/qemu-img || return 0
 		/usr/bin/edel settings set addons.installed-=ci-hang || { ab_end "FAIL: step 2d taking ci-hang out"; return 0; }
 		rm -f "$last_fallback"
+		walk_begin rollback 2
 		/usr/bin/edel rollback || { ab_end "FAIL: rolling back to slot A"; return 0; }
 		ab_next 3
 		;;
@@ -391,6 +418,7 @@ start() {
 		mount "$slot_b" /run/ab-test/slot
 		echo "not an initramfs" >/run/ab-test/slot/boot/initramfs-virt
 		umount /run/ab-test/slot
+		walk_begin broken-update 1
 		ab_next 4
 		;;
 	4)

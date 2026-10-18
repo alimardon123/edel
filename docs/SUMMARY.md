@@ -48,6 +48,7 @@
 - [Review: postmarketOS](REVIEW-postmarketos.md)
 - [Review: this project, 2026-10-13](REVIEW-project-2026-10-13.md)
 - [Review: apps that last, and why new systems take years](REVIEW-apps-and-lessons.md)
+- [Review: everything walked as a newcomer](REVIEW-experience.md)
 - [Spike: Flatpak](SPIKE-flatpak.md)
 
 # Plan

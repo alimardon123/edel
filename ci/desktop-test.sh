@@ -263,6 +263,11 @@
 #               Super+V lists them, Down and Return paste the first into it
 #               (Ctrl+V from the compositor); with clipboard.history off the
 #               list stays empty, and after a lock and unlock it is empty (M7.13)
+#   smoothness  a fullscreen game stand-in in game mode times 300 frames as
+#               the screen presented them: the slowest 1 percent (p99) under
+#               game_frame_p99_ms and the share that went straight to the
+#               screen at least game_direct_percent_floor; one more run when
+#               the first is over (M7.7e)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -281,7 +286,8 @@
 #               with no seed and no test service; edel boot live says the
 #               stick logs live in, the slot is confirmed, and the panel
 #               lies along the bottom in the token colour, so the desktop
-#               showed with nobody logging in (M3.6); and the checks the
+#               showed with nobody logging in (M3.6), timed as the try walk
+#               and the install-page walk (M8.15a); and the checks the
 #               laptop stick had in boot-test: /data, the hardware
 #               watchdog, the report on the EFI system partition, ssh off
 #   rollback    alone (CI runs it in the VM test lane, ci/vm-tests.sh, as
@@ -319,6 +325,7 @@
 # their budgets stay honest.
 set -eu
 . ci/vm.sh
+. ci/budgets.sh
 
 dir=out/desktop-test
 log=out/desktop-test.log
@@ -376,11 +383,6 @@ matches() {
 	!*) [ "$1" != "${2#!}" ] ;;
 	*) case "|$2|" in *"|$1|"*) true ;; *) false ;; esac ;;
 	esac
-}
-
-# budget KEY: the number KEY has in ci/budgets.toml.
-budget() {
-	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
 # token KEY [TABLE]: the colour KEY has in design/tokens.toml's
@@ -5557,6 +5559,57 @@ case_clipboard() {
 	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
 }
 
+case_smoothness() {
+	# The smoothness gate (M7.7e): a game stand-in, fullscreen and drawing on
+	# every frame, with game mode on (the VM has no battery), times 300 frames
+	# as the screen presented them. Its slowest 1 percent must stay within
+	# game_frame_p99_ms, and the share of frames that went straight to the
+	# screen must not fall below game_direct_percent_floor. A shared runner
+	# can stall one run, so a run over the budget is measured once more and
+	# the better run counts. No screenshot is taken while frames are timed,
+	# as one stalls the VM.
+	limit=$(budget game_frame_p99_ms)
+	floor=$(budget game_direct_percent_floor)
+	best=''
+	for run in 1 2; do
+		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
+		ended=$(count 'edel-compositor: the game ended; the desktop is back')
+		n=$(count 'DESKTOP-TEST: smooth ')
+		guest 'smooth game'
+		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
+			fail "the game stand-in did not play as a game (run $run)"
+		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
+		line=$(value smooth)
+		case $line in
+		frames=*) ;;
+		*) fail "the game stand-in failed (run $run): $line" ;;
+		esac
+		wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 ||
+			fail "the desktop did not come back after the game stand-in ended (run $run)"
+		frames=$(echo "$line" | sed -n 's/.*frames=\([0-9]*\).*/\1/p')
+		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
+		slowest=$(echo "$line" | sed -n 's/.*slowest_ms=\([0-9.]*\).*/\1/p')
+		direct=$(echo "$line" | sed -n 's/.*direct=\([0-9]*\).*/\1/p')
+		discarded=$(echo "$line" | sed -n 's/.*discarded=\([0-9]*\).*/\1/p')
+		[ -n "$frames" ] && [ -n "$p99" ] && [ -n "$direct" ] || fail "the game stand-in's line lacks a number (run $run): $line"
+		share=$(awk -v d="$direct" -v f="$frames" 'BEGIN { printf "%.1f", d * 100 / (f + 1) }')
+		echo "smoothness run $run: p99 $p99 ms, slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded"
+		# The better run: the lower p99.
+		if [ -z "$best" ] || awk -v p="$p99" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$p99 $slowest $share $discarded"
+		fi
+		set -- $best
+		awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' && break
+	done
+	set -- $best
+	awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' ||
+		fail "a game's slowest frames or its frames straight to the screen are worse than their budgets in both runs: the better run's p99 $1 ms (budget $limit ms), $3 percent straight to the screen (floor $floor percent)"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Smoothness (M7.7e): a game's frames p99 $1 ms (budget $limit ms), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: a fullscreen game stand-in in game mode presented its frames with p99 $1 ms (budget $limit ms), slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -8426,6 +8479,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
+	started=$(tr -d '\r' <"$log" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
@@ -8444,6 +8498,7 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	walk try "seconds=$started" || fail "starting the stick took longer than its budget (walk try, docs/REVIEW-experience.md)"
 	# The first start (M6.12): live's session opens Settings' Welcome,
 	# which on a stick asks Try or Install first, Install taking Return.
 	# Return opens Settings on its installer page and closes the Welcome,
@@ -8460,7 +8515,8 @@ if [ "$*" = live ]; then
 	done
 	sleep 3
 	python3 ci/qmp.py screendump "$dir/welcome-stick.png"
-	python3 ci/qmp.py key ret
+	walk_steps=0
+	press key ret
 	i=0
 	until stick_session | grep -qa 'edel-settings: install page shown'; do
 		i=$((i + 5))
@@ -8603,17 +8659,17 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py key ret
 	sleep 25
 	python3 ci/qmp.py screendump "$dir/install-page.png"
-	python3 ci/qmp.py type ali
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-install-test
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-install-test
-	python3 ci/qmp.py key ret
+	press type ali
+	press key ret
+	press type edel-install-test
+	press key ret
+	press type edel-install-test
+	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	sleep 1
-	python3 ci/qmp.py key ret
+	press key ret
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -8624,6 +8680,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
 	target_data || fail "the installed disk has no data partition"
@@ -8722,7 +8779,8 @@ fi
 # accepts each page's suggestion and the account is typed; Start using
 # Edel OS makes cleo with edel settings first-boot, as root through
 # doas, and restarts, which ends this VM (-no-reboot). The disk's next
-# start leaves the login to the greeter.
+# start leaves the login to the greeter. It times the first-setup walk
+# (M8.15a): the Welcome's presses, and the second boot's `Started in`.
 # It runs apart from live, on a runner of its own in CI (ci/vm-tests.sh).
 if [ "$*" = fresh ]; then
 	. ci/names.sh
@@ -8763,33 +8821,34 @@ if [ "$*" = fresh ]; then
 		fail "the released image on a computer's own disk with nobody on it did not log live in by itself"
 	fresh_wait 'edel-settings: welcome page language' 120
 	sleep 3
-	python3 ci/qmp.py key ret
+	walk_steps=0
+	press key ret
 	fresh_wait 'edel-settings: welcome page keyboard' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page account' 30
 	sleep 2
-	python3 ci/qmp.py type cleo
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-welcome-test
-	python3 ci/qmp.py key ret
-	python3 ci/qmp.py type edel-welcome-test
+	press type cleo
+	press key ret
+	press type edel-welcome-test
+	press key ret
+	press type edel-welcome-test
 	python3 ci/qmp.py screendump "$dir/welcome-account.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page timezone' 30
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-timezone.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page layout' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page style' 30
 	sleep 2
-	python3 ci/qmp.py key ret
+	press key ret
 	fresh_wait 'edel-settings: welcome page done' 30
 	sleep 2
 	python3 ci/qmp.py screendump "$dir/welcome-fresh-done.png"
-	python3 ci/qmp.py key ret
+	press key ret
 	# The restart ends QEMU; up to 180 s for the account and the restart.
 	i=0
 	while kill -0 "$qemu" 2>/dev/null; do
@@ -8833,6 +8892,8 @@ if [ "$*" = fresh ]; then
 	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$fresh" "$dir/fresh-data.img"
+	greeter=$(tr -d '\r' <"$fresh_log.2" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	walk first-setup "seconds=$greeter" "steps=$walk_steps" || fail "the first setup on a new computer is over its budget (walk first-setup, docs/REVIEW-experience.md)"
 	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
 fi
