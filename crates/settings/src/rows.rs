@@ -310,6 +310,14 @@ pub const ROWS: &[Row] = &[
         title: n_("Lock the screen after"),
     },
     Row {
+        key: edel::settings::SCREEN_OFF_MINUTES,
+        title: n_("Screen off after"),
+    },
+    Row {
+        key: edel::settings::SLEEP_AFTER_MINUTES,
+        title: n_("Sleep on battery after"),
+    },
+    Row {
         key: edel::settings::ON_BATTERY,
         title: n_("On battery"),
     },

@@ -93,6 +93,8 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `startup.apps` | `[]` | release |
 | `power.lid_close` | suspend | release |
 | `power.lock_after_minutes` | `5` | release |
+| `power.screen_off_minutes` | `5` | release |
+| `power.sleep_after_minutes` | `15` | release |
 | `power.power_button` | suspend | release |
 | `power.on_battery` | balanced | release |
 | `power.game_mode` | plugged-in | release |

@@ -376,10 +376,13 @@ struct Shell {
     /// Whether a suspend or a shut down is under way, shared with its thread
     /// for the guard after it (M7.8).
     suspending: Arc<AtomicBool>,
-    /// The compositor's idle notifier, and the notification that locks the
-    /// screen after the lock time (M7.8).
+    /// The compositor's idle notifier, and the notifications of the idle
+    /// ladder, each with its step (M7.8, M7.16b).
     idle_notifier: Option<ExtIdleNotifierV1>,
-    idle_notification: Option<ExtIdleNotificationV1>,
+    idle_notifications: Vec<(power_rules::Stage, ExtIdleNotificationV1)>,
+    /// The light the idle dim turned down, until input brings it back
+    /// (M7.16b).
+    dimmed: Option<power_card::Dimmed>,
     /// The compositor's background-effect manager, when it has one, and
     /// whether it blurs now (its `capabilities` event): the popups' glass
     /// needs both (M8.21 21d).
@@ -620,7 +623,8 @@ fn run() -> Result<()> {
         screencopy: screenshot::bind(&globals, &qh),
         shots: Vec::new(),
         next_shot: 0,
-        idle_notification: None,
+        idle_notifications: Vec::new(),
+        dimmed: None,
         profile_asked: None,
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
