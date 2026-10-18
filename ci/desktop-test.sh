@@ -5450,7 +5450,9 @@ case_wakeups() {
 case_device_power() {
 	# Devices save power (M7.16d): PCI devices may sleep (graphics and the
 	# management engine are left to their drivers), the SATA links rest
-	# between commands (none in the VM, which has no SATA host), the sound
+	# between commands where the controller offers it (the VM's AHCI does
+	# not, so its hosts say unsupported, and a rule that did not run still
+	# shows the old policy), the sound
 	# chip sleeps after 10 s of silence, the NMI watchdog is off, and
 	# Wi-Fi rests between packets (power save 3). The service reads them
 	# from /sys, /proc and NetworkManager's config and prints them, so a
@@ -5468,7 +5470,7 @@ case_device_power() {
 	[ "$auto" = "$all" ] && [ "$all" -gt 0 ] ||
 		fail "not every PCI device may sleep: $auto of $all have power/control auto ($power)"
 	case "$sata" in
-	none | med_power_with_dipm) ;;
+	none | med_power_with_dipm | unsupported | med_power_with_dipm,unsupported) ;;
 	*) fail "a SATA link has the policy $sata, not med_power_with_dipm ($power)" ;;
 	esac
 	[ "$hda" = 10 ] || fail "the sound chip's power_save is $hda, not 10 s ($power)"

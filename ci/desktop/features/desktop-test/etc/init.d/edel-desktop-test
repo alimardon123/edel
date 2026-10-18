@@ -340,7 +340,17 @@ commands() {
 					pci_auto=$((pci_auto + 1))
 				fi
 			done
-			sata=$(cat /sys/class/scsi_host/host*/link_power_management_policy 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
+			# A host whose controller offers no link power management (QEMU's
+			# AHCI) refuses the policy, so the rule cannot set it; trying the
+			# write tells that apart from a rule that did not run.
+			sata=$(for f in /sys/class/scsi_host/host*/link_power_management_policy; do
+				[ -e "$f" ] || continue
+				policy=$(cat "$f" 2>/dev/null)
+				if [ "$policy" != med_power_with_dipm ] && ! echo med_power_with_dipm 2>/dev/null >"$f"; then
+					policy=unsupported
+				fi
+				echo "$policy"
+			done | sort -u | tr '\n' ',' | sed 's/,$//')
 			say "device_power pci=$pci_auto/$pci_all sata=${sata:-none} hda=$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo none) nmi=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)"
 			say "wifi_power $(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi.powersave=//p' | tail -n 1)"
 			;;
