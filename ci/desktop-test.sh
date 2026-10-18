@@ -5447,6 +5447,26 @@ case_wakeups() {
 	echo "PASS: with the desktop idle for 60 s the compositor woke the processor $comp times a second and shell-ui $shell, $total together, within the budget of $limit a second"
 }
 
+case_memory() {
+	# Compressed memory (M7.15): the service fills a tmpfs with text to a
+	# fifth past the memory's size, which only fits by swapping to zram,
+	# while it times 10 s of frames. The fill must finish, zram must hold
+	# some of it, and the frames must hold frame_p99_ms meanwhile, so the
+	# machine stays responsive past its memory.
+	n=$(count 'DESKTOP-TEST: memory_fill ')
+	guest 'fill memory'
+	wait_more 'DESKTOP-TEST: memory_fill ' "$n" 120 || fail "the memory fill did not finish within 120 s"
+	line=$(value memory_fill)
+	set -- $line
+	filled=${1#filled_mib=} mem=${2#mem_mib=} used=${3#zram_used_kib=} p99=${4#frame_p99_ms=}
+	[ "${filled:-0}" -gt "${mem:-0}" ] || fail "the fill wrote ${filled:-no} MiB, not past the memory's ${mem:-unknown} MiB ($line)"
+	[ "${used:-0}" -gt 0 ] || fail "zram held nothing while memory was full ($line)"
+	limit=$(budget frame_p99_ms)
+	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
+		fail "with memory full the frames took ${p99:-none} ms at p99, over the budget of $limit ms ($line)"
+	echo "PASS: ${filled} MiB filled past ${mem} MiB of memory, zram held ${used} KiB, and the frames meanwhile had p99 $p99 ms, within the budget of $limit ms"
+}
+
 case_device_power() {
 	# Devices save power (M7.16d): PCI devices may sleep (graphics and the
 	# management engine are left to their drivers), the SATA links rest
@@ -8386,7 +8406,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power screen-off profiles flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power screen-off memory profiles flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -68,3 +68,6 @@ kernels = ["lts"]
 [INPUT_EVDEV]
 reason = "libinput reads keyboards, mice and touchpads through evdev (M4.1)"
 kernels = ["lts"]
+
+[ZRAM]
+reason = "edel-zram makes compressed memory of half the RAM on every machine (M7.15)"
