@@ -845,6 +845,9 @@ msgstr ""
 msgid "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off."
 msgstr ""
 
+msgid "Sound arrives within about 5 ms, for music and recording, at a little more power while it plays; it applies from the next login."
+msgstr ""
+
 msgid "English (United States)"
 msgstr ""
 
@@ -1173,6 +1176,9 @@ msgid "could not save {path}"
 msgstr ""
 
 msgid "{what} in {path}; {then}"
+msgstr ""
+
+msgid "it applies from the next login"
 msgstr ""
 
 msgid "the desktop follows it at once"
@@ -1616,7 +1622,7 @@ msgstr ""
 msgid "Podman containers and the VSCodium editor"
 msgstr ""
 
-msgid "Krita for drawing and GIMP for photos"
+msgid "Krita for drawing, GIMP for photos and low-latency sound"
 msgstr ""
 
 msgid "Steam, and game mode for every fullscreen game"
@@ -1775,7 +1781,7 @@ msgstr ""
 msgid "Sound"
 msgstr ""
 
-msgid "the output and input devices and their volume"
+msgid "the output and input devices, their volume, and low latency"
 msgstr ""
 
 msgid "Power"

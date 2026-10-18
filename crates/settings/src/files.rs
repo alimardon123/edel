@@ -638,6 +638,22 @@ impl Files {
         .unwrap_or(false)
     }
 
+    /// Whether sound plays with little delay (M7.6b), as the compositor
+    /// reads it: the person's file over the machine's, each with its
+    /// profiles laid under it (`edel::settings::low_latency`).
+    pub fn low_latency(&self) -> bool {
+        settings::low_latency(
+            Self::read(Some(&self.machine)).as_ref(),
+            Self::read(self.person.as_ref()).as_ref(),
+        )
+    }
+
+    /// [`Files::low_latency`] without the person's file: what applies once
+    /// their line is taken out.
+    pub fn low_latency_without_mine(&self) -> bool {
+        settings::low_latency(Self::read(Some(&self.machine)).as_ref(), None)
+    }
+
     /// `key`'s value as the desktop reads it, the person's file over the
     /// machine's; none when neither sets it (`edel::settings::chosen`).
     pub fn chosen(&self, key: &str) -> Option<String> {
@@ -991,6 +1007,63 @@ mod tests {
         assert_eq!(
             refused,
             "notifications.do_not_disturb: expected true or false, not \"maybe\""
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn low_latency_follows_the_profile_and_off_over_it_is_written() {
+        let dir = scratch("latency");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(dir.join("person.toml")),
+        };
+        let read = || std::fs::read_to_string(dir.join("person.toml")).unwrap_or_default();
+        let key = settings::LOW_LATENCY;
+        // Off at first, and no line is written for off.
+        assert!(!files.low_latency());
+        // On, the person's line is written, over what applies without it.
+        files
+            .choose_over(
+                key,
+                "true",
+                Some(&files.low_latency_without_mine().to_string()),
+            )
+            .unwrap();
+        assert!(read().contains("[sound]\nlow_latency = true"), "{}", read());
+        files.set(key, None).unwrap();
+        // The creative profile on the machine turns it on, for the person too.
+        std::fs::write(
+            &files.machine,
+            "format = 1\n[system]\nprofiles = [\"creative\"]\n",
+        )
+        .unwrap();
+        assert!(files.low_latency());
+        assert!(files.low_latency_without_mine());
+        // Off over the profile is written, and then it is off.
+        files
+            .choose_over(
+                key,
+                "false",
+                Some(&files.low_latency_without_mine().to_string()),
+            )
+            .unwrap();
+        assert!(read().contains("low_latency = false"), "{}", read());
+        assert!(!files.low_latency());
+        // On again, which the profile gives, takes the line out.
+        files
+            .choose_over(
+                key,
+                "true",
+                Some(&files.low_latency_without_mine().to_string()),
+            )
+            .unwrap();
+        assert!(!read().contains("low_latency"), "{}", read());
+        assert!(files.low_latency());
+        // A word that is no flag is refused with what to write.
+        assert_eq!(
+            files.set(key, Some("fast")).unwrap_err(),
+            "sound.low_latency: expected true or false, not \"fast\""
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

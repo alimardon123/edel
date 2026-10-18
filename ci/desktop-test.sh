@@ -176,7 +176,10 @@
 #               its Sound page (edel-settings --page sound), the volume
 #               slider holding the keyboard, takes Home and six presses of
 #               Right and wpctl status shows the sink at 0.30; kept as
-#               sound.png
+#               sound.png; the seed's sound.low_latency links ci's PipeWire
+#               drop-in to the low-latency file, and pw-metadata shows its
+#               quantum, a wrong value is refused in words, and reset takes
+#               the link out (M7.6b)
 #   network     NetworkManager and BlueZ (M5.8a): nmcli -t general status
 #               reports connected (the VM's user-mode network, by
 #               NetworkManager's own DHCP), ci, in group seat, may change the
@@ -1442,8 +1445,9 @@ case_sound() {
 	# its sink the one in use; Settings, opened on its Sound page, gives
 	# the keyboard to the volume slider, and Home then six presses of
 	# Right (a step is 5 percent) set the sink to 0.30, which wpctl status
-	# shows. The volume is the sound system's own state, so nothing is
-	# read from a settings file. Kept as sound.png.
+	# shows. The volume is the sound system's own state; the one settings
+	# key it reads is sound.low_latency, checked after the speaker profile
+	# (M7.6b). Kept as sound.png.
 	sink_volume >/dev/null || :
 	for program in pipewire wireplumber; do
 		case " $(value sound_started) " in
@@ -1470,6 +1474,38 @@ case_sound() {
 	*'CI speaker profile'* | *edel-speakers*) ;;
 	*) fail "the speaker profile's filter is not in the sound system: $(value sound_status)" ;;
 	esac
+	# Low latency (M7.6b): the seed sets sound.low_latency, so the
+	# compositor linked ci's PipeWire drop-in to the release's file before
+	# it started PipeWire, and PipeWire's settings carry that file's quantum.
+	asked=$(count 'DESKTOP-TEST: sound_latency_link ')
+	guest 'sound latency'
+	wait_more 'DESKTOP-TEST: sound_latency_link ' "$asked" 10 || fail "the service did not read the low-latency link"
+	quantum=$(value sound_latency_wanted)
+	[ -n "$quantum" ] || fail "the low-latency file names no default.clock.quantum"
+	[ "$(value sound_latency_ours)" = yes ] ||
+		fail "ci's PipeWire drop-in is not linked to the low-latency file: $(value sound_latency_link)"
+	[ "$(value sound_latency_quantum)" = "$quantum" ] ||
+		fail "pw-metadata -n settings 0 clock.quantum says $(value sound_latency_quantum), not the low-latency file's $quantum"
+	[ "$(value sound_latency_max)" = "$quantum" ] ||
+		fail "pw-metadata -n settings 0 clock.max-quantum says $(value sound_latency_max), not the low-latency file's $quantum"
+	asked=$(count 'DESKTOP-TEST: sound_latency_bad ')
+	guest 'sound latency bad'
+	wait_more 'DESKTOP-TEST: sound_latency_bad ' "$asked" 10 || fail "the service did not try a wrong value"
+	case "$(value sound_latency_bad)" in
+	*'sound.low_latency: expected true or false, not "fast"'*) ;;
+	*) fail "edel settings set sound.low_latency=fast did not say what it takes: $(value sound_latency_bad)" ;;
+	esac
+	guest 'sound latency off'
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: sound_latency_link ')
+		guest 'sound latency'
+		wait_more 'DESKTOP-TEST: sound_latency_link ' "$asked" 10 || fail "the service did not read the low-latency link"
+		[ "$(value sound_latency_link)" = none ] && break
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || fail "after edel settings reset sound.low_latency the link is still there: $(value sound_latency_link)"
+		sleep 1
+	done
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'sound window'
 	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Sound page: $(value windows)"
@@ -1497,7 +1533,7 @@ case_sound() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, edel boot speakers gave the VM's model its speaker profile and its filter runs in the sound system, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib))"
+	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, edel boot speakers gave the VM's model its speaker profile and its filter runs in the sound system, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib)), the seed's sound.low_latency linked ci's PipeWire drop-in and pw-metadata showed clock.quantum and clock.max-quantum $quantum, a wrong value was refused in words and reset took the link out"
 }
 
 case_network() {

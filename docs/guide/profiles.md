@@ -6,7 +6,7 @@ A profile is what one kind of work needs, ready made: a few apps, an add-on or t
 |---|---|---|
 | Office | documents, printing and scanning | [profiles/office.toml](https://github.com/alimardon123/edel/blob/main/profiles/office.toml) |
 | Developer | containers and code | [profiles/developer.toml](https://github.com/alimardon123/edel/blob/main/profiles/developer.toml) |
-| Creative | drawing and photos | [profiles/creative.toml](https://github.com/alimardon123/edel/blob/main/profiles/creative.toml) |
+| Creative | drawing and photos, and sound with little delay | [profiles/creative.toml](https://github.com/alimardon123/edel/blob/main/profiles/creative.toml) |
 | Gaming | games and game controllers | [profiles/gaming.toml](https://github.com/alimardon123/edel/blob/main/profiles/gaming.toml) |
 
 Each file is a few lines of the settings file and says in its comment what it brings; the installer and Settings say it in a line under the choice.

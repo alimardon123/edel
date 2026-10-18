@@ -1498,6 +1498,8 @@ struct Written {
     machine: String,
     path: PathBuf,
     desktop: bool,
+    /// Whether a key that applies from the next login was written (M7.6b)
+    next_login: bool,
     newer: Option<i64>,
 }
 
@@ -1512,7 +1514,9 @@ fn report_written(command: &str, what: &str, written: &Written) {
                 ("path", &written.path.display().to_string()),
                 (
                     "then",
-                    if written.desktop {
+                    if written.next_login {
+                        tr("it applies from the next login")
+                    } else if written.desktop {
                         tr("the desktop follows it at once")
                     } else {
                         tr("edel settings apply applies it")
@@ -1608,10 +1612,12 @@ fn write_edit_at(
         .map_err(|err| io_failure(err, &doing))?;
     fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
+    let next_login = keys.contains(&settings::LOW_LATENCY);
     Ok(Written {
         machine: shown,
         path,
         desktop,
+        next_login,
         newer,
     })
 }
@@ -1782,8 +1788,8 @@ fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String
 /// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the clipboard history (M7.13),
 /// the apps the apps widget pins (M5.31d), notifications (M5.9b), default and
 /// startup apps (M6.10), the language, keyboard and input method (M5.24a,
-/// M5.21a), and own themes and presets; `edel settings apply` applies the
-/// rest, from the machine's file.
+/// M5.21a), low latency (M7.6b), and own themes and presets; `edel settings
+/// apply` applies the rest, from the machine's file.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
         || edel::app_permissions::find(key).is_some()
@@ -1799,6 +1805,7 @@ fn desktop_follows(key: &str) -> bool {
             "panels.",
             "workspaces.",
             "displays.",
+            "sound.",
             "appearance.",
             "lock_screen.",
             "shortcuts.",
@@ -2260,7 +2267,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             .collect();
         if mine.is_empty() {
             // A page asked for by name that holds nothing in the file, such
-            // as Sound, whose state is the sound system's own (M5.7b).
+            // as Bluetooth, whose state is BlueZ's own (M5.7b).
             if section == Some(page.section) && settings::no_keys(page.section) {
                 println!(
                     "{}",
@@ -3303,6 +3310,7 @@ mod tests {
             "region.language",
             "region.keyboard",
             "region.input_method",
+            "sound.low_latency",
         ] {
             assert!(desktop_follows(key), "{key}");
         }

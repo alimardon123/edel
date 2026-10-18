@@ -29,6 +29,12 @@ say() {
 	echo "DESKTOP-TEST: $*" >/dev/console
 }
 
+# pw_setting KEY: KEY's value in PipeWire's settings metadata, read as ci
+# with pw-metadata (M7.6b), such as 256 for clock.quantum.
+pw_setting() {
+	as_ci pw-metadata -n settings 0 "$1" 2>&1 | sed -n "s/.*key:'$1' value:'\([0-9]*\)'.*/\1/p" | head -n 1
+}
+
 # The session's D-Bus address, from shell-ui's environment.
 session_bus() {
 	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
@@ -934,6 +940,20 @@ commands() {
 		'sound memory')
 			say "sound_rss_kib $(for p in pipewire wireplumber; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
 			;;
+		# Low latency (M7.6b): the quantum the release's file asks for,
+		# whether ci's PipeWire drop-in is our link to it, what PipeWire's
+		# settings say as ci, and the link itself, last.
+		'sound latency')
+			link=/home/ci/$home_low_latency_link
+			say "sound_latency_wanted $(sed -n 's/^[[:space:]]*default\.clock\.quantum = \([0-9]*\)$/\1/p' "$low_latency")"
+			if [ "$(readlink "$link")" = "$low_latency" ]; then ours=yes; else ours=no; fi
+			say "sound_latency_ours $ours"
+			say "sound_latency_quantum $(pw_setting clock.quantum)"
+			say "sound_latency_max $(pw_setting clock.max-quantum)"
+			say "sound_latency_link $(readlink "$link" || echo none)"
+			;;
+		'sound latency bad') say "sound_latency_bad $(edel settings set sound.low_latency=fast 2>&1 | tr '\n' ' ')" ;;
+		'sound latency off') edel settings reset sound.low_latency ;;
 		# Network and Bluetooth (M5.8a): what nmcli says as ci, who may
 		# change the network (ci, in group seat, may; nobody may not: the
 		# D-Bus policy of the network feature, as there is no polkit),

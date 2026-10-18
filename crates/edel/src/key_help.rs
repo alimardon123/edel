@@ -1158,6 +1158,16 @@ pub const HELP: &[Help] = &[
         belongs: Belongs::Device,
         retired: None,
     },
+    Help {
+        key: "sound.low_latency",
+        help: n_(
+            "Sound arrives within about 5 ms, for music and recording, at a little more power while it plays; it applies from the next login.",
+        ),
+        default: "false",
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
 ];
 
 /// The line for `key`, a concrete key (`users.ali.admin`) or a table path
