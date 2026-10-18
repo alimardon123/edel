@@ -1433,6 +1433,12 @@ impl Build<'_> {
         }
         let after = addons::scan(a_root)?;
         let mut diff = addons::diff(before, &after);
+        // A trigger that writes a file again with the same bytes changes
+        // only its time (the certificates' bundle when a package brings
+        // ca-certificates, the fonts' cache setting the desktop bakes
+        // again, M8.17c): the image's copy stays, so it is no change.
+        diff.changed
+            .retain(|path| !same_entry(&root.join(path), &a_root.join(path)));
         keep_addon(name, &keeps, &mut diff, &after)?;
         let plan = addons::plan_tree(&diff, &after, name, font_cache)?;
         let is_dir = |path: &str| after.get(path).is_some_and(|s| s.dir);
