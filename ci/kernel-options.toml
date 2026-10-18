@@ -68,3 +68,7 @@ kernels = ["lts"]
 [INPUT_EVDEV]
 reason = "libinput reads keyboards, mice and touchpads through evdev (M4.1)"
 kernels = ["lts"]
+
+[INPUT_UINPUT]
+reason = "Steam Input's virtual pads on /dev/uinput, which the gaming add-on loads at boot (M7.6b)"
+kernels = ["lts"]

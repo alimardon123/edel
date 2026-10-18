@@ -1222,6 +1222,12 @@ commands() {
 		'fonts office')
 			say "fonts_office $(for f in Calibri Arial 'Times New Roman' 'Courier New'; do fc-match -f '%{family[0]}' "$f"; printf ';'; done 2>&1)"
 			;;
+		# The gaming feature's controllers (M7.6b): uinput loaded at boot by
+		# its modules-load.d file, its device the seat group's, mode 660,
+		# by its rule, and ci, who is in seat, may write it.
+		'gaming devices')
+			say "gaming_devices $(stat -c '%G %a' /dev/uinput 2>&1) $(as_ci 'test -w /dev/uinput && echo writable || echo refused' 2>&1)"
+			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No
 		# download: the plan alone shows whether Steam would install.
