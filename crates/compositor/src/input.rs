@@ -96,6 +96,8 @@ impl Edel {
         let serial = SERIAL_COUNTER.next_serial();
         // Any input is activity for the idle notifications (M7.8).
         self.idle_notifier.notify_activity(&self.seat);
+        // Input turns the screens on again (M7.16b).
+        self.screens_on();
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;

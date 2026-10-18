@@ -281,6 +281,7 @@ impl Dispatch<EdelShellV1, ()> for Edel {
             edel_shell_v1::Request::ToggleOverview => state.toggle_overview(),
             edel_shell_v1::Request::Paste => state.paste(),
             edel_shell_v1::Request::OnBattery { on } => state.battery_changed(on != 0),
+            edel_shell_v1::Request::ScreensOff => state.screens_off_asked(),
             edel_shell_v1::Request::MoveWorkspace { from, to } => {
                 state.move_workspace(from as usize, to as usize);
             }

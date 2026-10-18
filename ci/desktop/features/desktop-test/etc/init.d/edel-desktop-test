@@ -342,10 +342,33 @@ commands() {
 				say "desktop_wakeups_per_second $(awk -v a="$comp_rate" -v b="$shell_rate" 'BEGIN { printf "%.2f", a + b }')"
 			) &
 			;;
+		# Compressed memory (M7.15): first 10 s of frames with the desktop
+		# idle, then a tmpfs filled with text (at nice 19) to all the memory
+		# and three quarters of the swap that is free, which fits only by
+		# swapping to zram, while 10 s more are timed; then what zram holds,
+		# and the fill is taken away.
+		'fill memory')
+			as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-calm.txt 2>&1
+			mkdir -p /tmp/fill
+			mount -t tmpfs -o size=8g fill /tmp/fill
+			mem_kib=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+			free_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+			fill_kib=$(awk '/^MemAvailable:/ { a = $2 } /^SwapFree:/ { s = $2 } END { printf "%d", a + s * 3 / 4 }' /proc/meminfo)
+			(yes 'Edel OS fills its memory past its size to try compressed memory' |
+				nice -n 19 head -c "$((fill_kib * 1024))" >/tmp/fill/data) &
+			fill=$!
+			as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-fill.txt 2>&1
+			wait "$fill"
+			filled=$(du -m /tmp/fill/data | cut -f1)
+			used=$(awk '$1 == "/dev/zram0" { print $4 }' /proc/swaps)
+			say "memory_fill filled_mib=$filled available_mib=$((free_kib / 1024)) mem_mib=$((mem_kib / 1024)) zram_used_kib=${used:-0} calm_p99_ms=$(frame_ms /tmp/frames-calm.txt 99) full_p99_ms=$(frame_ms /tmp/frames-fill.txt 99)"
+			rm -f /tmp/fill/data
+			umount /tmp/fill
+			;;
 		# The devices' power saving (M7.16d), read from /sys and /proc and the
 		# Wi-Fi setting NetworkManager has: PCI devices that may sleep (graphics
 		# and the management engine left to their drivers), the SATA link
-		# policies (none when the VM has no SATA host), the sound chip's
+		# policies (unsupported where the controller refuses them), the sound chip's
 		# power_save, the NMI watchdog, and Wi-Fi's power save.
 		'device power')
 			pci_auto=0 pci_all=0
@@ -370,6 +393,29 @@ commands() {
 			done | sort -u | tr '\n' ',' | sed 's/,$//')
 			say "device_power pci=$pci_auto/$pci_all sata=${sata:-none} hda=$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo none) nmi=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)"
 			say "wifi_power $(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi.powersave=//p' | tail -n 1)"
+			;;
+		# The screens (M7.16b): each connected screen's DPMS, the state file's
+		# screens_off and each CRTC's active flag from the kernel's atomic state
+		# (debugfs, mounted here when it is not).
+		'screens')
+			mountpoint -q /sys/kernel/debug 2>/dev/null || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+			dpms=$(for c in /sys/class/drm/card*-*; do
+				[ "$(cat "$c/status" 2>/dev/null)" = connected ] || continue
+				cat "$c/dpms" 2>/dev/null
+			done | sort -u | tr '\n' ',' | sed 's/,$//')
+			active=$(sed -n 's/^[[:space:]]*active=\([01]\)[[:space:]]*$/\1/p' /sys/kernel/debug/dri/*/state 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
+			say "screens dpms=$dpms off=$(sed -n 's/^screens_off = //p' "$state_file") active=$active"
+			;;
+		# The screens go off after one minute without input (M7.16b). [power] is
+		# the machine's section, so root sets it; reset puts the default back.
+		'screen off soon') edel settings set power.screen_off_minutes=1 ;;
+		'screen off reset') edel settings reset power.screen_off_minutes ;;
+		# The frames for 5 s after the screens came back on, as weston's
+		# presentation times give them, the first presented frame left out:
+		# it carries the modeset.
+		'frames after wake')
+			as_ci timeout -s INT 5 weston-presentation-shm >/tmp/frames-wake.txt 2>&1
+			say "frame_wake_p99_ms $(awk '{ for (i = 1; i < NF; i++) if ($i == "p2p" && $(i + 1) > 0) print $(i + 1) }' /tmp/frames-wake.txt | tail -n +2 | sort -n | awk '{ t[NR] = $1 } END { if (NR) printf "%.1f", t[int(NR * 99 / 100 + 0.999)] / 1000 }')"
 			;;
 		# An update that waits for a game (M7.7c): it has no release file, so
 		# once it may go on it fails at once, and its log says both.

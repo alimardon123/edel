@@ -45,6 +45,12 @@ pub struct Feature {
     /// the screen reader over the desktop, whose libraries it uses.
     #[serde(default)]
     pub on: Option<String>,
+    /// The hardware a hardware pack serves (M7.11, ADR-012): patterns of the
+    /// kernel's modalias strings, `*` any run of characters and `?` one, as
+    /// `/sys/bus/*/devices/*/modalias` and `/sys/class/dmi/id/modalias` show
+    /// them (`pci:v000010DEd*bc03*`). Only an add-on has it.
+    #[serde(default)]
+    pub hardware: Vec<String>,
     /// Only for a machine with a screen (M8.17): where the kernel shows no
     /// graphics card, its services do not start unless the settings file
     /// switches it on, and its health is not waited for
@@ -211,6 +217,16 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
     for keep in &feature.keep {
         crate::keep::check(keep)?;
     }
+    if !feature.hardware.is_empty() && !feature.addon {
+        bail!(
+            "feature {name} lists hardware but is no add-on; only an add-on can be a hardware pack, so add addon = true or take hardware out"
+        );
+    }
+    if let Some(p) = feature.hardware.iter().find(|p| !is_modalias_pattern(p)) {
+        bail!(
+            "hardware pattern {p:?} in feature {name} is no modalias pattern; write it as the kernel shows it, such as pci:v000010DEd*bc03*"
+        );
+    }
     let mut seen: Vec<&str> = Vec::new();
     for (level, service) in feature.services.entries() {
         if !is_name(service) {
@@ -353,6 +369,12 @@ fn is_package(s: &str) -> bool {
         })
 }
 
+/// A hardware pattern (M7.11): a modalias has a `:` and no `/` or white
+/// space, and a pattern is written as the kernel shows the modalias.
+fn is_modalias_pattern(s: &str) -> bool {
+    !s.is_empty() && s.contains(':') && !s.contains('/') && !s.chars().any(char::is_whitespace)
+}
+
 /// Module and mkinitfs feature names; they are pasted into `grub.cfg` and
 /// `mkinitfs.conf`, so nothing that either would interpret.
 fn is_module(s: &str) -> bool {
@@ -453,6 +475,43 @@ mod tests {
         assert!(err.to_string().contains("why is empty"), "{err}");
         let modules_only = "format = 1\nsummary = \"x\"\nmodules = [\"ext4\"]\n";
         assert!(check("disk", modules_only).is_ok());
+    }
+
+    const PACK: &str = r#"
+        format = 1
+        summary = "NVIDIA graphics"
+        why = "The cards' firmware."
+        packages = ["linux-firmware-nvidia"]
+        addon = true
+        hardware = ["pci:v000010DEd*bc03*"]
+    "#;
+
+    #[test]
+    fn checks_a_hardware_pack() {
+        let pack = check("graphics-nvidia", PACK).unwrap();
+        assert_eq!(pack.hardware, ["pci:v000010DEd*bc03*"]);
+    }
+
+    #[test]
+    fn hardware_needs_an_add_on() {
+        let text = PACK.replace("addon = true", "");
+        let err = check("graphics-nvidia", &text).unwrap_err();
+        assert!(
+            err.to_string().contains("lists hardware but is no add-on"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn a_hardware_pattern_must_be_a_modalias_pattern() {
+        for bad in ["", "pci", "pci:v000010DE/bc03", "pci: v000010DE"] {
+            let text = PACK.replace("\"pci:v000010DEd*bc03*\"", &format!("{bad:?}"));
+            let err = check("graphics-nvidia", &text).unwrap_err();
+            assert!(
+                err.to_string().contains("is no modalias pattern"),
+                "{bad:?}: {err}"
+            );
+        }
     }
 
     #[test]

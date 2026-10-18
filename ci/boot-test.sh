@@ -64,6 +64,10 @@ grep -q 'Nobody can log in to this computer yet' out/boot.log ||
 	{ echo "FAIL: the seedless image's console did not ask for its first person"; exit 1; }
 grep -q 'ci can log in now' out/boot.log ||
 	{ echo "FAIL: the console did not say ci can log in"; exit 1; }
+# Compressed memory on every machine (M7.15): edel-zram says the device is
+# in /proc/swaps once swapon took it.
+grep -q 'edel-zram: /dev/zram0 is in /proc/swaps' out/boot.log ||
+	{ grep 'edel-zram' out/boot.log || :; echo "FAIL: the machine made no compressed memory (no /dev/zram0 in /proc/swaps)"; exit 1; }
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'edel update: slot A confirmed' out/boot.log &&
 	grep -q 'edel-data: mounted /data' out/boot.log &&

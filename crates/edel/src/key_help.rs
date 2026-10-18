@@ -8,7 +8,8 @@
 use crate::i18n::n_;
 use crate::settings::{
     GAME_MODE_DEFAULT, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY_DEFAULT,
-    PAGES, POWER_BUTTON_DEFAULT, page_of,
+    PAGES, POWER_BUTTON_DEFAULT, SCREEN_OFF_MINUTES_DEFAULT_TEXT, SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
+    page_of,
 };
 
 /// Who decides a key's value while the settings file does not set it.
@@ -888,6 +889,26 @@ pub const HELP: &[Help] = &[
         key: "power.lock_after_minutes",
         help: n_("How many minutes without input before the screen locks, 0 for never."),
         default: LOCK_AFTER_MINUTES_DEFAULT_TEXT,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "power.screen_off_minutes",
+        help: n_(
+            "Minutes without use before the screens turn off; the backlight dims 30 seconds before. 0 never turns them off.",
+        ),
+        default: SCREEN_OFF_MINUTES_DEFAULT_TEXT,
+        from: DecidedBy::Release,
+        belongs: Belongs::Device,
+        retired: None,
+    },
+    Help {
+        key: "power.sleep_after_minutes",
+        help: n_(
+            "Minutes without use on battery before the computer sleeps. 0 never sleeps on its own.",
+        ),
+        default: SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,
