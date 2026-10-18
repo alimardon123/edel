@@ -246,6 +246,10 @@ pub const STATE_IN_HOME: &str = ".local/state/edel";
 pub const SESSION_LOG: &str = "session.log";
 /// The session before's log, beside it: two sessions are kept.
 pub const SESSION_LOG_BEFORE: &str = "session.old.log";
+/// Each game's smoothness, the last time it played (M7.7d,
+/// `edel::smoothness`), in a person's state directory: the compositor
+/// writes it when a game ends, `edel report` reads it.
+pub const GAMES: &str = "games.toml";
 /// foot's theme in a person's state directory, `dark` or `light` (M6.13):
 /// shell-ui writes it, and foot's config includes it, so a new window
 /// starts in the desktop's scheme.

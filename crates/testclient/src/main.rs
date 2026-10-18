@@ -33,7 +33,7 @@
 //! prints what it did (`clipboard.rs`, M7.13). Its window is titled `clip`
 //! unless `--title` says otherwise. `--busy` draws on every frame the
 //! compositor gives the window, alternating two colours, and prints
-//! `frames N` for each, so a test can see whether a window the desktop
+//! `frames N WxH` (the size it draws at, M7.7d) for each, so a test can see whether a window the desktop
 //! hides still gets frames (M7.7c).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
@@ -479,7 +479,7 @@ impl CompositorHandler for Client {
     }
 
     /// With `--busy` (M7.7c): each frame callback draws the other colour,
-    /// prints the count and asks for the next callback. Without it, nothing.
+    /// prints the count and the size it draws at (M7.7d) and asks for the next callback. Without it, nothing.
     fn frame(&mut self, _: &Connection, qh: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {
         if !self.busy {
             return;
@@ -491,7 +491,7 @@ impl CompositorHandler for Client {
         } else {
             self.colour.map(|byte| !byte)
         };
-        println!("frames {}", self.frames);
+        println!("frames {} {}x{}", self.frames, self.width, self.height);
         let _ = std::io::stdout().flush();
         if let Err(e) = self.draw(qh) {
             eprintln!("edel-testclient: {e:#}");

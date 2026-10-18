@@ -411,6 +411,80 @@ pub fn slider(pixmap: &mut Pixmap, track: Rect, share: f32, tokens: &Tokens, s: 
     }
 }
 
+/// A colour swatch (M8.21 part 21k2): its circle, logical pixels across, the
+/// ring round the chosen one, and the share of its strength a swatch keeps
+/// when it does not read (it cannot be chosen).
+const SWATCH: f32 = 20.0;
+const SWATCH_CHOSEN: f32 = 28.0;
+const SWATCH_RING: f32 = 2.0;
+const SWATCH_FADE: f32 = 0.35;
+
+/// One swatch of a card's colour grid (M8.21 part 21k2), in Settings' look
+/// (`colours.rs`'s `paint`): a circle of `SWATCH` logical pixels centred in
+/// `cell`, filled with `fill`, or with no fill a ring of the text's ink. The
+/// chosen swatch has a ring of `SWATCH_CHOSEN` round it. A swatch that does not
+/// read is drawn at `SWATCH_FADE` of its strength.
+pub fn swatch(
+    pixmap: &mut Pixmap,
+    cell: Rect,
+    fill_colour: Option<Colour>,
+    chosen: bool,
+    reads: bool,
+    ink: &Inks,
+    s: f32,
+) {
+    let strength = if reads { 1.0 } else { SWATCH_FADE };
+    let centred = |d: f32| {
+        Rect::new(
+            cell.x + (cell.w - d) / 2.0,
+            cell.y + (cell.h - d) / 2.0,
+            d,
+            d,
+        )
+    };
+    let (x, y, w, h) = centred(SWATCH).device(s);
+    match fill_colour {
+        Some(colour) => fill(
+            pixmap,
+            x,
+            y,
+            w,
+            h,
+            SWATCH / 2.0 * s,
+            Colour {
+                a: colour.a * strength,
+                ..colour
+            },
+        ),
+        None => stroke(
+            pixmap,
+            (x, y, w, h),
+            SWATCH / 2.0 * s,
+            SWATCH_RING * s,
+            Colour {
+                a: ink.text.a * strength,
+                ..ink.text
+            },
+            None,
+        ),
+    }
+    if chosen {
+        let (x, y, w, h) = centred(SWATCH_CHOSEN).device(s);
+        let ring = Colour {
+            a: ink.text.a * strength,
+            ..ink.text
+        };
+        stroke(
+            pixmap,
+            (x, y, w, h),
+            SWATCH_CHOSEN / 2.0 * s,
+            SWATCH_RING * s,
+            ring,
+            None,
+        );
+    }
+}
+
 /// A part's outline (M5.10c6c3): `PART_PAD` outside the part `r` (logical
 /// pixels, in the same surface as the rest), its corners `PART_RADIUS`.
 /// `Rest` is a dashed line of the outline colour; `Hover` a fill of the

@@ -286,6 +286,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     };
     let card = Rect::new(0.0, 0.0, l.size.0 as f32, l.size.1 as f32);
     let mut items = vec![item(Role::Dialog, &view.title, at(card))];

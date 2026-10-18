@@ -310,6 +310,9 @@ struct Shell {
     status_tx: channel::Sender<status::Msg>,
     /// Whether a game plays on every screen, as the compositor says (M7.7c).
     playing: bool,
+    /// Whether a game plays on some screen, as the compositor says
+    /// (M7.7b): on the charger the power profile is then Performance.
+    game: bool,
     /// Whether the minute came due while a game played, so its work waits
     /// for the end (M7.7c).
     missed_minute: bool,
@@ -677,6 +680,7 @@ fn run() -> Result<()> {
         status_again: None,
         status_tx,
         playing: false,
+        game: false,
         missed_minute: false,
         battery_told: None,
         in_use: Vec::new(),
@@ -1273,11 +1277,13 @@ impl Shell {
                         toggled: None,
                         value: None,
                         value_text: None,
+                        disabled: false,
                     })
                     .collect(),
                 toggled: None,
                 value: None,
                 value_text: None,
+                disabled: false,
             })
             .collect();
         let size = (

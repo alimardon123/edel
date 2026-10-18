@@ -108,6 +108,7 @@ pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
         toggled: None,
         value: None,
         value_text: None,
+        disabled: false,
     };
     vec![
         item(Role::Label, text, at(l.text)),

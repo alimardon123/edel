@@ -532,6 +532,8 @@ impl Shell {
                 panel.drawn = None;
             }
             self.draw_all();
+            // The widgets' colours that follow the wallpaper change with it (M5.33d).
+            self.desktop_redraw();
         }
         let now = crate::tray_in_panel();
         if now != self.live.tray_in_panel {

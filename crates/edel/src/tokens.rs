@@ -349,7 +349,7 @@ fn opaque_colour(text: &str) -> Option<Colour> {
 }
 
 /// The length of `#rrggbb`, with its `#`.
-const SIX_DIGIT_LEN: usize = 7;
+pub(crate) const SIX_DIGIT_LEN: usize = 7;
 
 /// The accents named in `design/tokens.toml`'s `[accent]` table, in the
 /// file's order, each with its light and its dark shade (M5.12b1). They
@@ -378,6 +378,24 @@ pub fn accent_named(name: &str, scheme: Scheme) -> Option<Colour> {
             Scheme::Light => light,
             Scheme::Dark => dark,
         })
+}
+
+/// An accent's name as people read it, translated (M8.21 part 21k2): the
+/// nine accents `accents` names. None for any other name, which the caller
+/// words itself (the wallpaper's and a custom colour's are Settings').
+pub fn accent_title(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "blue" => tr("Blue"),
+        "purple" => tr("Purple"),
+        "pink" => tr("Pink"),
+        "red" => tr("Red"),
+        "orange" => tr("Orange"),
+        "yellow" => tr("Yellow"),
+        "green" => tr("Green"),
+        "teal" => tr("Teal"),
+        "graphite" => tr("Graphite"),
+        _ => return None,
+    })
 }
 
 /// Whether `value` is an accent a person may choose: a name from
@@ -437,7 +455,7 @@ pub fn contrast(a: Colour, b: Colour) -> f32 {
 const TENTHS: f32 = 10.0;
 
 /// `ratio` rounded down to a tenth.
-fn shown_down(ratio: f32) -> f32 {
+pub(crate) fn shown_down(ratio: f32) -> f32 {
     (ratio * TENTHS).floor() / TENTHS
 }
 
@@ -718,6 +736,9 @@ pub struct Tokens {
     /// foot's colours in this scheme (M6.13), `[colour.terminal]` or
     /// `[colour.light.terminal]`.
     pub terminal: Terminal,
+    /// The scheme these colours are, so a named accent's shade can be found
+    /// again (M8.21 part 21k1).
+    pub scheme: Scheme,
 }
 
 /// Every colour token by its name in `design/tokens.toml` (M5.12b1): one
@@ -1147,6 +1168,7 @@ impl Tokens {
             let table: Table = BUILT_IN.parse().expect("checked by the tests");
             tokens.apply_light(&table, &mut Vec::new());
         }
+        tokens.scheme = scheme;
         tokens
     }
 
@@ -1484,6 +1506,7 @@ pub fn check(text: &str) -> Result<Tokens> {
         monospace: MONOSPACE.to_string(),
         text_percent: 100,
         terminal: Terminal::filled(BLACK),
+        scheme: Scheme::Dark,
     };
     tokens.apply(&table, &mut notes);
     let mut light = tokens.clone();
@@ -1920,6 +1943,13 @@ const BLACK: Colour = Colour {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Each scheme's tokens say which scheme they are (M8.21 part 21k1).
+    #[test]
+    fn tokens_know_their_scheme() {
+        assert_eq!(Tokens::built_in().scheme, Scheme::Dark);
+        assert_eq!(Tokens::built_in_scheme(Scheme::Light).scheme, Scheme::Light);
+    }
 
     /// The apps' stylesheet holds both schemes at both contrasts, each in
     /// its media query, with no accent line and the two header bar rules
@@ -3010,5 +3040,15 @@ mod tests {
             .to_string();
         assert!(error.contains("colour.light.contrast.title_bar"), "{error}");
         assert!(check(BUILT_IN).is_ok());
+    }
+
+    #[test]
+    fn every_accent_has_a_title_and_no_other_name_does() {
+        for (name, _, _) in accents() {
+            assert!(accent_title(&name).is_some(), "{name} has a title");
+        }
+        assert_eq!(accent_title("blue"), Some("Blue"));
+        assert_eq!(accent_title("navy"), None);
+        assert_eq!(accent_title("wallpaper"), None);
     }
 }

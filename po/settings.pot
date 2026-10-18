@@ -359,33 +359,6 @@ msgstr ""
 msgid "Strong edges and the plainest colours, for text that is easy to read"
 msgstr ""
 
-msgid "Blue"
-msgstr ""
-
-msgid "Purple"
-msgstr ""
-
-msgid "Pink"
-msgstr ""
-
-msgid "Red"
-msgstr ""
-
-msgid "Orange"
-msgstr ""
-
-msgid "Yellow"
-msgstr ""
-
-msgid "Green"
-msgstr ""
-
-msgid "Teal"
-msgstr ""
-
-msgid "Graphite"
-msgstr ""
-
 msgid "From wallpaper"
 msgstr ""
 
