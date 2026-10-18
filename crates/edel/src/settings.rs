@@ -614,6 +614,8 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
     ),
     now(LOCK_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(SCREEN_OFF_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(SLEEP_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
     now(
         POWER_BUTTON,
         Kind::OneOf(&["suspend", "poweroff", "ask", "nothing"]),
@@ -1487,6 +1489,12 @@ pub struct Power {
     /// Minutes without input before the screen locks; 0 never locks
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lock_after_minutes: Option<u32>,
+    /// Minutes without input before the screens turn off; 0 never turns them off
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_off_minutes: Option<u32>,
+    /// Minutes without input on battery before the computer sleeps; 0 never sleeps
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sleep_after_minutes: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2095,6 +2103,14 @@ pub const POWER_BUTTON: &str = "power.power_button";
 /// (M7.8), 0 for never.
 pub const LOCK_AFTER_MINUTES: &str = "power.lock_after_minutes";
 
+/// The key the minutes without input before the screens turn off are kept
+/// under (M7.16b), 0 for never; the backlight dims 30 seconds before.
+pub const SCREEN_OFF_MINUTES: &str = "power.screen_off_minutes";
+
+/// The key the minutes without input on battery before the computer sleeps
+/// are kept under (M7.16b), 0 for never.
+pub const SLEEP_AFTER_MINUTES: &str = "power.sleep_after_minutes";
+
 /// The key how hard the machine works on battery is kept under (M7.8); its
 /// values are [`choices`]'. Plugged in, the machine works at Balanced, or at
 /// Performance when this is set to that.
@@ -2114,6 +2130,20 @@ pub const LOCK_AFTER_MINUTES_DEFAULT: u32 = 5;
 
 /// [`LOCK_AFTER_MINUTES_DEFAULT`] as the key table and the docs write it.
 pub const LOCK_AFTER_MINUTES_DEFAULT_TEXT: &str = "5";
+
+/// The minutes without input before the screens turn off when the file does
+/// not say (M7.16b): five.
+pub const SCREEN_OFF_MINUTES_DEFAULT: u32 = 5;
+
+/// [`SCREEN_OFF_MINUTES_DEFAULT`] as the key table and the docs write it.
+pub const SCREEN_OFF_MINUTES_DEFAULT_TEXT: &str = "5";
+
+/// The minutes without input on battery before the computer sleeps when the
+/// file does not say (M7.16b): fifteen.
+pub const SLEEP_AFTER_MINUTES_DEFAULT: u32 = 15;
+
+/// [`SLEEP_AFTER_MINUTES_DEFAULT`] as the key table and the docs write it.
+pub const SLEEP_AFTER_MINUTES_DEFAULT_TEXT: &str = "15";
 
 /// How hard the machine works on battery when the file does not say (M7.8):
 /// balanced.

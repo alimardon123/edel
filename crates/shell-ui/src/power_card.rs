@@ -1,11 +1,12 @@
-//! The power keys, the lid and the idle lock (M7.8): the shell's side of
-//! `power_rules.rs`. The lid and the power button act here, a time without
-//! input locks the screen (`edel-shell-ui: idle for N min, locking`) through
-//! the compositor's ext-idle-notify, and the power profile the charger and
+//! The power keys, the lid and the idle ladder (M7.8, M7.16b): the shell's
+//! side of `power_rules.rs`. The lid and the power button act here; a time
+//! without input dims the light, turns the screens off, locks the screen
+//! (`edel-shell-ui: idle for N min, locking`) and on battery sleeps, each
+//! step through the compositor's ext-idle-notify, and the power profile the charger and
 //! the settings want is asked of `edel power profile`. The commands run on
 //! threads of their own, never the drawing one.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -22,7 +23,8 @@ use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::
 use crate::Shell;
 use crate::messages;
 use crate::power;
-use crate::power_rules::{self, Do};
+use crate::power_rules::{self, Do, Stage};
+use crate::status::Cmd;
 
 /// How long a suspend or a shut down holds the others off after its command
 /// returns: the computer wakes or goes down, and the lid's and the button's
@@ -49,8 +51,8 @@ pub fn bind_idle(globals: &GlobalList, qh: &QueueHandle<Shell>) -> Option<ExtIdl
         .ok()
 }
 
-/// The user data of the idle notifier and of each idle notification, whose
-/// events reach `Shell` (M7.8).
+/// The user data of the idle notifier, whose events reach `Shell` (M7.8).
+/// Each idle notification has its own, `IdleStage`.
 pub struct IdleEvents;
 
 impl Dispatch2<ExtIdleNotifierV1, Shell> for IdleEvents {
@@ -65,7 +67,11 @@ impl Dispatch2<ExtIdleNotifierV1, Shell> for IdleEvents {
     }
 }
 
-impl Dispatch2<ExtIdleNotificationV1, Shell> for IdleEvents {
+/// The user data of one idle notification, which says which step of the
+/// idle ladder it is (M7.16b).
+pub struct IdleStage(pub Stage);
+
+impl Dispatch2<ExtIdleNotificationV1, Shell> for IdleStage {
     fn event(
         &self,
         shell: &mut Shell,
@@ -74,11 +80,24 @@ impl Dispatch2<ExtIdleNotificationV1, Shell> for IdleEvents {
         _: &Connection,
         _: &QueueHandle<Shell>,
     ) {
-        // Resumed needs nothing: the lock waits for the next idle time.
+        // Input came back: whatever dimmed the light gives it back, at any
+        // step. A notification destroyed before its resume sends none, so
+        // `follow_idle` restores the light itself first.
         if let ext_idle_notification_v1::Event::Idled = event {
-            shell.idled();
+            shell.idled(self.0);
+        } else {
+            shell.undim();
         }
     }
+}
+
+/// The light the idle dim turned down, as the kernel counts it, so that
+/// `undim` sets back exactly what was there (M7.16b).
+pub struct Dimmed {
+    /// The screen's raw level.
+    pub screen: u32,
+    /// Each keyboard light and its raw level.
+    pub keyboards: Vec<(PathBuf, u32)>,
 }
 
 impl Shell {
@@ -164,60 +183,127 @@ impl Shell {
         }
     }
 
-    /// The idle time ran out (M7.8): the screen locks, unless it is locked.
-    fn idled(&mut self) {
-        if self.lock.is_some() {
-            return;
+    /// One step of the idle ladder ran out (M7.8, M7.16b): the light dims,
+    /// the screens go off, the screen locks (unless it is locked already),
+    /// or on battery the computer sleeps as the lid's suspend does.
+    fn idled(&mut self, stage: Stage) {
+        match stage {
+            Stage::Dim => self.dim(),
+            Stage::ScreensOff => {
+                eprintln!("edel-shell-ui: idle, screens off");
+                self.link.screens_off();
+            }
+            Stage::Lock => {
+                if self.lock.is_some() {
+                    return;
+                }
+                eprintln!(
+                    "edel-shell-ui: idle for {} min, locking",
+                    self.rules.lock_after()
+                );
+                self.lock_screen();
+            }
+            Stage::Sleep => {
+                if crate::on_path(crate::EDEL) {
+                    eprintln!("edel-shell-ui: idle on battery, sleeping");
+                    self.act_power(Do::Suspend);
+                }
+            }
         }
-        eprintln!(
-            "edel-shell-ui: idle for {} min, locking",
-            self.rules.lock_after()
-        );
-        self.lock_screen();
     }
 
-    /// Makes the idle notification the lock time asks for, on the seat, in
-    /// place of the one before (M7.8): at start, when a seat comes and when
-    /// the lock time changes. None for never.
-    pub fn follow_idle(&mut self) {
-        if let Some(old) = self.idle_notification.take() {
-            old.destroy();
+    /// Turns the backlight down to a third of its level (at least one
+    /// percent) and every keyboard light off, 30 s before the screens go off
+    /// (M7.16b). The raw levels are kept for `undim`. A machine with no
+    /// backlight does nothing. The levels are written on the status thread,
+    /// as the brightness is, never on the one that draws.
+    fn dim(&mut self) {
+        if self.dimmed.is_some() {
+            return;
         }
-        let (Some(notifier), Some(ms), Some(seat)) = (
-            &self.idle_notifier,
-            power_rules::idle_ms(&self.rules),
-            self.seat.seats().next(),
-        ) else {
+        let Some(screen) = edel::backlight::find() else {
             return;
         };
-        self.idle_notification =
-            Some(notifier.get_idle_notification(ms, &seat, &self.qh, IdleEvents));
+        let keyboards: Vec<(PathBuf, u32)> = edel::backlight::keyboard()
+            .into_iter()
+            .filter_map(|led| edel::backlight::keyboard_level(&led).map(|level| (led, level)))
+            .collect();
+        let dim_level = edel::backlight::level_for(screen.max, (screen.percent() / 3).max(1));
+        let off: Vec<(PathBuf, u32)> = keyboards.iter().map(|(led, _)| (led.clone(), 0)).collect();
+        eprintln!("edel-shell-ui: idle, dimming");
+        self.dimmed = Some(Dimmed {
+            screen: screen.now,
+            keyboards,
+        });
+        self.run_and_read(
+            Some(Cmd::Lights {
+                screen: Some(dim_level),
+                keyboards: off,
+            }),
+            false,
+        );
+    }
+
+    /// Sets back the light `dim` turned down, when it did (M7.16b): input
+    /// came back, at any idle step. Nothing when nothing was dimmed.
+    pub fn undim(&mut self) {
+        let Some(saved) = self.dimmed.take() else {
+            return;
+        };
+        eprintln!("edel-shell-ui: light back");
+        self.run_and_read(
+            Some(Cmd::Lights {
+                screen: Some(saved.screen),
+                keyboards: saved.keyboards,
+            }),
+            false,
+        );
+    }
+
+    /// Makes the idle notifications the idle ladder asks for, on the seat,
+    /// in place of the ones before (M7.8, M7.16b): at start, when a seat
+    /// comes, when the rules change, when the charger changes and when a
+    /// game starts or ends. The light comes back first, as a destroyed
+    /// notification sends no resume.
+    pub fn follow_idle(&mut self) {
+        self.undim();
+        for (_, old) in self.idle_notifications.drain(..) {
+            old.destroy();
+        }
+        let (Some(notifier), Some(seat)) = (&self.idle_notifier, self.seat.seats().next()) else {
+            return;
+        };
+        let stages = power_rules::idle_stages(&self.rules, self.live.status.on_battery, self.game);
+        for (ms, stage) in stages {
+            let notification =
+                notifier.get_idle_notification(ms, &seat, &self.qh, IdleStage(stage));
+            self.idle_notifications.push((stage, notification));
+        }
     }
 
     /// The settings files changed (M7.8): the rules are read again, the idle
-    /// notification follows a new lock time and the profile follows the rules.
+    /// ladder follows them and the profile follows the rules.
     pub fn power_changed(&mut self, machine: Option<&str>, person: Option<&str>) {
         let rules = power_rules::Rules::read(machine, person);
         if rules == self.rules {
             return;
         }
-        let idle = rules.lock_after() != self.rules.lock_after();
         self.rules = rules;
-        if idle {
-            self.follow_idle();
-        }
+        self.follow_idle();
         self.follow_profile();
     }
 
     /// A game plays on some screen, or none does any more (M7.7b): on the
     /// charger the profile becomes Performance while it plays, and the
     /// rules' profile comes back when it ends. A machine with no profile
-    /// file says so once per game, as a VM does.
+    /// file says so once per game, as a VM does. The idle ladder follows too:
+    /// while a game plays only the lock is kept (M7.16b).
     pub fn game_changed(&mut self, on: bool) {
         if self.game == on {
             return;
         }
         self.game = on;
+        self.follow_idle();
         if on
             && self.live.status.on_battery != Some(true)
             && crate::on_path(crate::EDEL)

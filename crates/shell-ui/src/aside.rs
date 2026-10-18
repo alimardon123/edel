@@ -36,5 +36,7 @@ impl Shell {
         }
         self.battery_told = Some(on);
         self.link.on_battery(on);
+        // The idle ladder has a sleep only on battery (M7.16b).
+        self.follow_idle();
     }
 }

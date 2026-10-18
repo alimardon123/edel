@@ -122,3 +122,5 @@ clipboard.history
 appearance.icon_theme
 system.profiles_without
 appearance.widgets
+power.screen_off_minutes
+power.sleep_after_minutes

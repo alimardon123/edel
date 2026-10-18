@@ -38,7 +38,8 @@ use edel::power::{self, Bar, Device, Sample, Snapshot, State};
 use edel::settings::{
     GAME_MODE, GAME_MODE_DEFAULT, LID_CLOSE, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES,
     LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY, ON_BATTERY_DEFAULT, POWER_BUTTON,
-    POWER_BUTTON_DEFAULT,
+    POWER_BUTTON_DEFAULT, SCREEN_OFF_MINUTES, SCREEN_OFF_MINUTES_DEFAULT_TEXT, SLEEP_AFTER_MINUTES,
+    SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
 };
 
 use crate::choice_row::{self, ChoiceRow};
@@ -211,6 +212,15 @@ fn minute_values(chosen: Option<&str>) -> Vec<String> {
     values
 }
 
+/// The minutes the three minute rows offer, in their order: the Lock screen
+/// after row, Screen off after and Sleep on battery after (M7.16b).
+fn minutes_of(files: &Files) -> Vec<Vec<String>> {
+    [LOCK_AFTER_MINUTES, SCREEN_OFF_MINUTES, SLEEP_AFTER_MINUTES]
+        .iter()
+        .map(|key| minute_values(files.chosen(key).as_deref()))
+        .collect()
+}
+
 /// What the Lock screen after row shows for a value of minutes: Never for
 /// 0, else the number of minutes.
 fn minute_label(value: &str) -> String {
@@ -223,14 +233,16 @@ fn minute_label(value: &str) -> String {
 }
 
 /// The group under Other batteries with the lid, the power button, the
-/// screen lock and the battery's profile (M7.8). The Lock screen after row
-/// lists the file's own minutes too, so the rows are built again when those
-/// change; the page follows both settings files while it is open.
+/// screen lock, the screen off and sleep times and the battery's profile
+/// (M7.8, M7.16b). The minute rows list the file's own minutes too, so the
+/// rows are built again when those change; the page follows both settings
+/// files while it is open.
 struct Lid {
     group: gtk::Box,
     problem: gtk::Label,
     rows: RefCell<Vec<Rc<ChoiceRow>>>,
-    minutes: RefCell<Vec<String>>,
+    /// The minutes each minute row offers, as [`minutes_of`] gives them.
+    minutes: RefCell<Vec<Vec<String>>>,
     /// Kept so the page follows the files while it is open.
     monitors: RefCell<Vec<gio::FileMonitor>>,
 }
@@ -263,7 +275,7 @@ impl Lid {
     /// the Lock screen after row offers have changed.
     fn update(self: &Rc<Self>) {
         let files = Files::here();
-        let minutes = minute_values(files.chosen(LOCK_AFTER_MINUTES).as_deref());
+        let minutes = minutes_of(&files);
         if minutes != *self.minutes.borrow() {
             self.build(minutes);
         }
@@ -272,10 +284,11 @@ impl Lid {
         }
     }
 
-    /// Builds the four rows in the group, each wired to the files.
-    fn build(self: &Rc<Self>, minutes: Vec<String>) {
+    /// Builds the rows in the group, each wired to the files.
+    fn build(self: &Rc<Self>, minutes: Vec<Vec<String>>) {
         card::clear(&self.group);
-        let labels = minutes.iter().map(|m| minute_label(m)).collect();
+        let labels =
+            |values: &[String]| -> Vec<String> { values.iter().map(|m| minute_label(m)).collect() };
         let specs = vec![
             ChoiceRow::new(
                 &self.group,
@@ -294,8 +307,24 @@ impl Lid {
                 LOCK_AFTER_MINUTES,
                 n_("Without any input; a playing video keeps the screen on"),
                 LOCK_AFTER_MINUTES_DEFAULT_TEXT,
-                minutes.clone(),
-                labels,
+                minutes[0].clone(),
+                labels(&minutes[0]),
+            ),
+            ChoiceRow::with_values(
+                &self.group,
+                SCREEN_OFF_MINUTES,
+                n_("Without any input; the backlight dims 30 seconds before"),
+                SCREEN_OFF_MINUTES_DEFAULT_TEXT,
+                minutes[1].clone(),
+                labels(&minutes[1]),
+            ),
+            ChoiceRow::with_values(
+                &self.group,
+                SLEEP_AFTER_MINUTES,
+                n_("On battery, without any input; a playing video keeps it awake"),
+                SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
+                minutes[2].clone(),
+                labels(&minutes[2]),
             ),
             ChoiceRow::new(
                 &self.group,
@@ -933,6 +962,8 @@ mod tests {
         assert_eq!(rows::title(LID_CLOSE), "When the lid closes");
         assert_eq!(rows::title(POWER_BUTTON), "Power button");
         assert_eq!(rows::title(LOCK_AFTER_MINUTES), "Lock the screen after");
+        assert_eq!(rows::title(SCREEN_OFF_MINUTES), "Screen off after");
+        assert_eq!(rows::title(SLEEP_AFTER_MINUTES), "Sleep on battery after");
         assert_eq!(rows::title(ON_BATTERY), "On battery");
         assert_eq!(rows::title(GAME_MODE), "Game mode");
         assert_eq!(rows::title(edel::settings::BATTERY_CARE), "Battery care");

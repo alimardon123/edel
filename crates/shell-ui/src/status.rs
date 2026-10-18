@@ -14,7 +14,7 @@
 //! when the system bus says NetworkManager or UPower changed something
 //! (`watch.rs`); never on a timer of its own.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use edel::{backlight, bluetooth, network, power, sound};
@@ -236,6 +236,13 @@ pub enum Cmd {
     Output(u32),
     /// The screen's brightness, percent (M5.9c).
     Brightness(u32),
+    /// The raw levels of the screen and of each keyboard light, as the
+    /// kernel counts them, set together (M7.16b: the idle dim turns them
+    /// down and back up); `None` leaves the screen as it is.
+    Lights {
+        screen: Option<u32>,
+        keyboards: Vec<(PathBuf, u32)>,
+    },
 }
 
 impl Cmd {
@@ -253,6 +260,7 @@ impl Cmd {
             Cmd::Mute(on) => format!("{} the sound", if *on { "mute" } else { "unmute" }),
             Cmd::Output(_) => "choose the output".to_string(),
             Cmd::Brightness(p) => format!("set the brightness to {p} percent"),
+            Cmd::Lights { .. } => "set the screen's and the keyboard's light".to_string(),
         }
     }
 
@@ -295,6 +303,19 @@ impl Cmd {
             Cmd::Brightness(percent) => backlight::find()
                 .ok_or_else(|| anyhow::anyhow!("this machine has no backlight to set"))?
                 .set_percent(*percent),
+            Cmd::Lights { screen, keyboards } => {
+                let mut result = match screen {
+                    Some(level) => backlight::find()
+                        .ok_or_else(|| anyhow::anyhow!("this machine has no backlight to set"))
+                        .and_then(|found| found.set_level(*level)),
+                    None => Ok(()),
+                };
+                // A keyboard light is set whether or not the screen was.
+                for (led, level) in keyboards {
+                    result = result.and(backlight::set_keyboard(led, *level));
+                }
+                result
+            }
         }
     }
 }
