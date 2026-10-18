@@ -76,7 +76,8 @@ fi
 	fail "diff after set is not exactly the hostname: $(cat out/system-diff.log)"
 ssh_root edel settings reset network.hostname || fail "edel settings reset failed"
 ssh_root edel settings apply || fail "edel settings apply after reset failed"
-[ "$(ssh_root hostname)" = edel ] || fail "the hostname did not go back to the image's"
+now=$(ssh_root hostname)
+[ "$now" = edel ] || fail "the hostname did not go back to the image's: it is $now"
 final=$(ssh_root cat "/etc/edel/$settings_name")
 printf '%s\n' "$final" | grep -qxF 'future.key = 1' || fail "reset lost future.key"
 printf '%s\n' "$final" | grep -A1 -xF '# The person who runs CI' | grep -qxF '[users.ci]' ||
