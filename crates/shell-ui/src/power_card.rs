@@ -221,7 +221,7 @@ impl Shell {
         if on
             && self.live.status.on_battery != Some(true)
             && crate::on_path(crate::EDEL)
-            && edel::profile::now().is_none()
+            && !edel::profile::offers_any()
         {
             eprintln!("edel-shell-ui: {}", messages::no_profile_for_game());
         }
@@ -229,32 +229,27 @@ impl Shell {
     }
 
     /// Asks `edel power profile` for the profile the rules want now, when
-    /// `edel` is here, the kernel offers one of ours and it is not set yet
-    /// (M7.8). Each change is asked once, and the command writes the file as
-    /// root through doas. Called when a status is read and when the settings
-    /// change; a machine with no profile file does nothing.
+    /// `edel` is here and the computer's profile, processor hint or trip
+    /// charge is not settled yet (M7.8, M7.16c). Each change of the wanted
+    /// profile or of the charger is asked once, and the command writes the
+    /// files as root through doas. Called when a status is read and when the
+    /// settings change; a machine with nothing to set does nothing.
     pub fn follow_profile(&mut self) {
         if !crate::on_path(crate::EDEL) {
             return;
         }
-        let Some((now, offered)) = edel::profile::now() else {
-            return;
-        };
         let want =
             power_rules::profile(&self.rules, self.live.status.on_battery, self.game).to_string();
-        let names: Vec<&str> = offered.iter().map(String::as_str).collect();
-        let Some(kernel) = edel::profile::kernel_profile(&want, &names) else {
-            return;
-        };
-        if kernel == now {
+        if !edel::profile::needs_apply(&want) {
             self.profile_asked = None;
             return;
         }
-        if self.profile_asked.as_deref() == Some(want.as_str()) {
+        let asked = (want.clone(), self.live.status.on_battery);
+        if self.profile_asked.as_ref() == Some(&asked) {
             return;
         }
         eprintln!("edel-shell-ui: power profile {want} asked");
-        self.profile_asked = Some(want.clone());
+        self.profile_asked = Some(asked);
         let spawned = std::thread::Builder::new()
             .name("power-profile".into())
             .spawn(move || {
