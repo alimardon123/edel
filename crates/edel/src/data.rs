@@ -541,6 +541,8 @@ pub fn mount_data() -> Result<()> {
             first_error.get_or_insert(err);
         }
     }
+    // After /etc, so the rules' groups are known (M8.17c).
+    crate::addons::take_device_rules();
     // This device's identity key (M6.12): made once, at the first boot; a
     // failure is said and never stops the boot.
     match crate::device_key::ensure(

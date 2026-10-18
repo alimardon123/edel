@@ -20,7 +20,7 @@ headless = ["ssh"]
 # Built beside the image from its root, signed in its release, and
 # mounted on a machine whose settings file names them (M7.2a). The
 # desktop is one of them (M8.17c), and fonts-cjk and orca are built on it.
-addons = ["desktop", "fonts-cjk", "orca", "printing", "containers", "virtualization"]
+addons = ["desktop", "fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming"]
 
 [vm]
 kernel = "lts"

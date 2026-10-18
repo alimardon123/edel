@@ -62,7 +62,7 @@ sdk=org.edel.TestPlatform/x86_64/1
 META
 flatpak build-export --runtime --arch=x86_64 "$repo" "$work/runtime" 1
 
-# app ID TITLE NAME COLOUR: exports one app of the test client.
+# app ID TITLE NAME COLOUR [COMMENT]: exports one app of the test client.
 app() {
 	dir="$work/$1"
 	mkdir -p "$dir/files/bin" "$dir/files/share/applications"
@@ -71,7 +71,7 @@ app() {
 [Desktop Entry]
 Type=Application
 Name=$3
-Comment=A default app of the tests (M6.2)
+Comment=${5:-A default app of the tests (M6.2)}
 Exec=edel-testclient --title $2 --colour $4 --size 300x200
 DESKTOP
 	cat >"$dir/metadata" <<META
@@ -89,4 +89,8 @@ META
 }
 app org.edel.TestA test-a 'Test A' 3399cc
 app org.edel.TestB test-b 'Test B' 33aa66
-echo "ci/apps/make-repo.sh: $repo holds org.edel.TestPlatform//1, org.edel.TestA//stable and org.edel.TestB//stable"
+# A stand-in for Steam (M7.6b), the app the gaming profile names: the
+# profile-gaming case installs it from this repository, which the runner
+# serves as ci's Flathub, so nothing is downloaded.
+app com.valvesoftware.Steam steam Steam 1b2838 'A stand-in for Steam, for the gaming profile (M7.6b)'
+echo "ci/apps/make-repo.sh: $repo holds org.edel.TestPlatform//1, org.edel.TestA//stable, org.edel.TestB//stable and com.valvesoftware.Steam//stable"

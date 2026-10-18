@@ -100,9 +100,13 @@ Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; 
 | `displays.*.enabled` | `true` or `false` | M4.6 |
 | `displays.*.rotation` | `0`, `90`, `180` or `270` | M9.8 |
 
-## Sound: no section
+## Sound: `[sound]`
 
-The Sound page (M5.7b) has no key. The volume, the mute switch and the device in use are the sound system's own live state, which WirePlumber remembers for each person, so a line of the file would only be a second copy that could disagree. The page and the command line are the same level all the same: each row copies the `wpctl` command that does what it does (`wpctl set-volume @DEFAULT_AUDIO_SINK@ 30%`, `wpctl set-mute @DEFAULT_AUDIO_SINK@ 1`, `wpctl set-default ID`), and `edel settings get sound` says where to look.
+| Key | Value | From |
+|---|---|---|
+| `sound.low_latency` | `true` or `false`; missing is `false`, PipeWire's own timing. `true` gives every app's sound little delay, about 5 ms, for music and recording: the compositor links the sound feature's `low-latency.conf` into your own PipeWire drop-in folder (`~/.config/pipewire/pipewire.conf.d/`), so it applies from the next login, and `pw-metadata -n settings 0 clock.quantum` then shows its quantum; the creative profile sets it | M7.6b |
+
+The volume, the mute switch and the device in use have no key: they are the sound system's own live state, which WirePlumber remembers for each person, so a line of the file would only be a second copy that could disagree. The page and the command line are the same level all the same: each row copies the `wpctl` command that does what it does (`wpctl set-volume @DEFAULT_AUDIO_SINK@ 30%`, `wpctl set-mute @DEFAULT_AUDIO_SINK@ 1`, `wpctl set-default ID`), and `edel settings get sound` says where to look.
 
 ## Appearance: `[appearance]`
 
@@ -359,7 +363,9 @@ This page has no key in the file.
 
 ### `sound`
 
-This page has no key in the file.
+| Key | What it does | Default | Decided by |
+|---|---|---|---|
+| `sound.low_latency` | Sound arrives within about 5 ms, for music and recording, at a little more power while it plays; it applies from the next login. | `false` | release |
 
 ### `power`
 

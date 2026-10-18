@@ -28,3 +28,5 @@ home_session_log=.local/state/edel/session.log
 system_log=/var/log/messages
 font_cache_dir=/usr/lib/fontconfig/cache
 flathub_repo_file=/usr/share/edel/flathub.flatpakrepo
+low_latency=/usr/share/edel/sound/low-latency.conf
+home_low_latency_link=.config/pipewire/pipewire.conf.d/90-edel-low-latency.conf
