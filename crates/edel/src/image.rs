@@ -595,7 +595,8 @@ impl Build<'_> {
 
     /// Writes Edel OS's places as shell variables to `places.sh`, which
     /// the slot's own scripts source, so a path is written once, in
-    /// `edel::places` (ADR-010, M5.27).
+    /// `edel::places` (ADR-010, M5.27), and links `places::ADDON_CONF_DIR`
+    /// to `/etc/conf.d` (M8.17c).
     fn install_places(&self, root: &Path) -> Result<()> {
         self.runner.step(&format!(
             "write Edel OS's places to {}",
@@ -610,6 +611,11 @@ impl Build<'_> {
             file,
             edel::places::shell_file("Edel OS's places, for the slot's own scripts (M5.27)"),
         )?;
+        let conf = root.join(edel::places::ADDON_CONF_DIR.trim_start_matches('/'));
+        if conf.symlink_metadata().is_err() {
+            fs::create_dir_all(conf.parent().unwrap_or(root))?;
+            std::os::unix::fs::symlink(edel::base::SERVICE_CONF_DIR, conf)?;
+        }
         Ok(())
     }
 
@@ -1272,12 +1278,23 @@ impl Build<'_> {
             }
             let before = base.and_then(|b| bases.get(b)).unwrap_or(&image);
             let (mut files, accounts) = self.build_addon(work, &start, addon, before, &cache)?;
+            // An add-on another is built `on` keeps its copy of the root
+            // until that one is built; the others go at once.
+            if !list
+                .iter()
+                .any(|a| a.feature.on.as_deref() == Some(&addon.name))
+            {
+                self.remove_addon_root(&a_root_of(&addon.name))?;
+            }
             // Its copies of the merged caches lie over its base's by design.
             if base.is_some() {
                 files.retain(|path| !addons::is_merged_cache(path) && !addons::is_font_cache(path));
             }
             trees.push((addon.name.clone(), files));
             sets.push((addon.name.clone(), accounts));
+        }
+        for base in bases.keys() {
+            self.remove_addon_root(&a_root_of(base))?;
         }
         let clashes = addons::account_clashes(&sets);
         if !clashes.is_empty() {
@@ -1307,6 +1324,15 @@ impl Build<'_> {
             );
         }
         Ok(())
+    }
+
+    /// Takes an add-on's copy of the root away once its tree is made.
+    fn remove_addon_root(&self, a_root: &Path) -> Result<()> {
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        ensure_nothing_mounted_under(a_root)?;
+        fs::remove_dir_all(a_root).with_context(|| format!("removing {}", a_root.display()))
     }
 
     /// Builds one add-on (see [`Build::build_addons`]) from a copy of
@@ -1409,7 +1435,7 @@ impl Build<'_> {
     /// Makes an add-on's tree (M7.2a): what its copy of the root adds, less
     /// what its `[[keep]]` lists leave out, sorted by `addons::plan_tree`
     /// into the slot's layout. Returns the files it ships and its new
-    /// account lines, then takes its copy of the root away.
+    /// account lines; `build_addons` takes its copy of the root away.
     fn make_addon_tree(
         &self,
         addon: &Listed,
@@ -1540,8 +1566,6 @@ impl Build<'_> {
             accounts.push_str(&new);
         }
 
-        ensure_nothing_mounted_under(a_root)?;
-        fs::remove_dir_all(a_root).with_context(|| format!("removing {}", a_root.display()))?;
         Ok((shipped, accounts))
     }
 
@@ -1624,7 +1648,7 @@ fn container_tar_args(epoch: Option<u64>) -> Vec<String> {
 /// (M7.2a), as the image's own `[[keep]]` does for its packages: under each
 /// folder, the new files a listed pattern matches stay. A pattern that
 /// matches no new file is a mistake, as in the image. The image's own files
-/// are never touched: only `diff.new` changes.
+/// are never touched: the add-on only ships fewer of them.
 fn keep_addon(
     name: &str,
     keeps: &[edel::keep::Keep],
@@ -1665,6 +1689,12 @@ fn keep_addon(
             .collect();
         let kept = total - taken.len();
         diff.new.retain(|p| !taken.contains(p));
+        // A file of the start the packages rewrote below the folder (the
+        // fonts' X index over the desktop, M8.17c) is no file the add-on
+        // keeps either: its start's copy shows, or none where the add-on
+        // under it took that copy out too.
+        diff.changed
+            .retain(|p| !(p.starts_with(&prefix) && !keeps_it(p)));
         println!(
             "add-on {name}: kept {kept} files under /{under}, took out {}",
             taken.len()
@@ -2438,9 +2468,12 @@ mod tests {
         };
         let mut diff = addons::Diff {
             new: after.keys().cloned().collect(),
+            changed: vec!["usr/share/fonts/fonts.scale".into(), "usr/bin/x".into()],
             ..Default::default()
         };
         keep_addon("fonts-cjk", &[keep], &mut diff, &after).unwrap();
+        // The index the packages rewrote below the folder stays out.
+        assert_eq!(diff.changed, ["usr/bin/x"]);
         assert_eq!(
             diff.new,
             [

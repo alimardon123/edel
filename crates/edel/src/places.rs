@@ -334,6 +334,11 @@ pub const SPEAKER_PROFILE: &str = "/etc/pipewire/pipewire.conf.d/80-edel-speaker
 /// The folder an add-on's init scripts are copied to in the slot, run
 /// at boot by the slot's own init (M7.2a).
 pub const ADDON_INIT_DIR: &str = "/usr/lib/edel/init.d";
+/// A link to OpenRC's `edel::base::SERVICE_CONF_DIR` beside
+/// `ADDON_INIT_DIR` (M8.17c): OpenRC follows `/etc/init.d`'s link to an
+/// add-on's script and looks for its `conf.d` beside the script, so an
+/// add-on's service reads the machine's settings as a slot's does.
+pub const ADDON_CONF_DIR: &str = "/usr/lib/edel/conf.d";
 /// The folder of an add-on's own `/etc` files, one folder per add-on, so
 /// the files it brings never clash with the slot's (M7.2a).
 pub const ADDON_ETC_DIR: &str = "/usr/lib/edel/etc";
