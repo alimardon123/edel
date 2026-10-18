@@ -9,6 +9,9 @@ summary = "The compositor: windows on the screen, drawn with the GPU"
 why = "edel-compositor draws every window and routes all input (ADR-002); it links libseat, libinput, libudev, libgbm, libxkbcommon and libgcc, and dbus-run-session gives each session its own bus, which apps and portals talk over."
 programs = ["edel-compositor"]
 packages = ["dbus", "eudev-libs", "libgcc", "libinput-libs", "libseat", "libxkbcommon", "mesa-gbm"]
+# The desktop's (M8.17): a machine without a graphics card starts no
+# compositor, so the guard does not wait for its health there.
+screen = true
 health = ["compositor"]
 
 # The basics checklist (M6.7): each row is proved by its desktop-test case or marked.

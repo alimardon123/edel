@@ -5,9 +5,9 @@ name = "edel-flatpak"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "mdev", "ab-boot", "ssh", "vm", "flatpak", "flatpak-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "seat", "network", "flatpak", "flatpak-test"]
 
 [vm]
-kernel = "virt"
+kernel = "lts"
 slot_mib = 1024
 cmdline = "console=ttyS0"

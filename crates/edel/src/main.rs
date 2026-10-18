@@ -526,14 +526,14 @@ enum ImageCommands {
     Build(Box<BuildArgs>),
     /// Check an image definition without building it
     Check {
-        /// Image definition, for example images/vm.toml
+        /// Image definition, for example images/edel.toml
         definition: PathBuf,
     },
 }
 
 #[derive(clap::Args)]
 struct BuildArgs {
-    /// Image definition, for example images/vm.toml
+    /// Image definition, for example images/edel.toml
     definition: PathBuf,
     /// Directory for the finished images and the work area
     #[arg(long, default_value = "out")]
@@ -1212,7 +1212,7 @@ mod tests {
                 "s.toml",
                 "--plan",
             ],
-            &["edel", "image", "build", "images/vm.toml", "--plan"],
+            &["edel", "image", "build", "images/edel.toml", "--plan"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok(), "{args:?}");
         }

@@ -36,6 +36,12 @@ pub struct Feature {
     /// Also built as a signed add-on (M7.2a).
     #[serde(default)]
     pub addon: bool,
+    /// Only for a machine with a screen (M8.17): where the kernel shows no
+    /// graphics card, its services do not start unless the settings file
+    /// switches it on, and its health is not waited for
+    /// (`EDEL_HEALTH_SCREEN`), so one image serves desktops and servers.
+    #[serde(default)]
+    pub screen: bool,
     /// Health files it writes, which the boot guard waits for (M1.5).
     #[serde(default)]
     pub health: Vec<String>,

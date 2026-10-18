@@ -12,9 +12,12 @@
 //! and `users.NAME.ssh_keys` when a key is given), applied at once; a
 //! password goes the way the installer's does, hashed into
 //! `places::FIRST_PASSWORDS`, which apply gives with `chpasswd -e` and
-//! deletes, so it is never in the settings file (ADR-006). An image with a
-//! greeter (the `login` feature) is left alone: its first start is the
-//! desktop's (M6.12).
+//! deletes, so it is never in the settings file (ADR-006). A key also
+//! turns ssh on (`services.ssh = true`), as the one image ships it off
+//! (M8.17) and a key is for logging in from afar. A machine whose greeter
+//! starts (the `login` feature, on a machine with a screen) is left alone:
+//! its first start is the desktop's (M6.12); the one image on a server or
+//! a virtual machine with no graphics card starts none, so its console asks.
 //!
 //! The Welcome (M6.12) makes the first person with `edel settings first-boot
 //! --user NAME --new-password-stdin [KEY=VALUE...]`, which `first_person`
@@ -98,7 +101,9 @@ fn can_log_in_now() -> bool {
 /// `edel settings first-boot --console`: asks for the first person when
 /// nobody can log in, and does nothing otherwise.
 pub fn console() -> Result<()> {
-    if Path::new(places::FEATURES_DIR).join("login.toml").exists() || can_log_in_now() {
+    let greeter =
+        Path::new(places::FEATURES_DIR).join("login.toml").exists() && edel::services::screen_now();
+    if greeter || can_log_in_now() {
         return Ok(());
     }
     println!(
@@ -138,7 +143,11 @@ pub fn console() -> Result<()> {
     if let Some(hash) = &hashed {
         write_private(places::FIRST_PASSWORDS, &format!("{name}:{hash}\n"))?;
     }
-    machine::set(&assignments(&name, key.as_deref()))?;
+    let mut settings = assignments(&name, key.as_deref());
+    if key.is_some() && Path::new(places::FEATURES_DIR).join("ssh.toml").exists() {
+        settings.push("services.ssh=true".to_string());
+    }
+    machine::set(&settings)?;
     machine::apply(false)?;
     println!(
         "{}",

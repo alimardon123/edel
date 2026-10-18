@@ -2987,7 +2987,7 @@ msgstr ""
 msgid "Build an image from its definition file (run as root on Alpine)"
 msgstr ""
 
-msgid "Image definition, for example images/vm.toml"
+msgid "Image definition, for example images/edel.toml"
 msgstr ""
 
 msgid "Directory for the finished images and the work area"

@@ -317,7 +317,7 @@ jobs:
         # it with its size.
         run: |
           mkdir -p out/try
-          ln -f out/edel-desktop-x86_64.img.gz out/try/
+          ln -f out/edel-x86_64.img.gz out/try/
           (cd out/try && sha256sum *.img.gz >SHA256SUMS)
           {
             echo "### Images to try"

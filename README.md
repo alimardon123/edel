@@ -2,7 +2,7 @@
 
 A lightweight, fast and beautiful operating system for everyone: developers, creative workers, gamers, office users, and later servers, cloud VMs and containers. One base, built on a soft fork of [Alpine Linux](https://alpinelinux.org/), runs as a container, a VM, a desktop and a phone.
 
-**Status:** early. The update path, the settings file and the installer work and are tested in CI. The desktop (our compositor and panel, four layout presets, light and dark) runs in CI's virtual machine and has not met real hardware yet. The first target is a light, beautiful desktop for AMD and Intel laptops, on the same base as the container and VM images; servers, edge devices and phones follow ([roadmap](docs/ROADMAP.md)).
+**Status:** early. The update path, the settings file and the installer work and are tested in CI. The desktop (our compositor and panel, four layout presets, light and dark) runs in CI's virtual machine and has not met real hardware yet. The first target is a light, beautiful desktop for AMD and Intel laptops, on the same base as the container image; servers, edge devices and phones follow ([roadmap](docs/ROADMAP.md)).
 
 ## How decisions are made
 
@@ -43,21 +43,21 @@ That produces, in `out/`:
 | File | What it is |
 |------|------------|
 | `edel-container-x86_64.tar.gz` | Container image; load it with `docker import` |
-| `edel-vm-x86_64.img` | Bootable VM disk: UEFI, GRUB, two root slots, A and B, and a data partition that grows to fill the disk |
-| `edel-vm-x86_64.ext4` | One root slot; installing it into a running VM is an update |
+| `edel-x86_64.img` | The one disk image for every machine: UEFI, GRUB, two root slots, A and B, and a data partition that grows to fill the disk; with no screen it starts no desktop |
+| `edel-x86_64.ext4` | One root slot; installing it into a running machine is an update |
 
 To see every step without changing anything:
 
 ```sh
-cargo run -- image build images/vm.toml --plan
+cargo run -- image build images/edel.toml --plan
 ```
 
-To boot the VM disk (the firmware path differs between distributions):
+To boot the disk in a virtual machine (the firmware path differs between distributions):
 
 ```sh
 qemu-system-x86_64 -machine q35,accel=kvm -m 512 -nographic \
   -bios /usr/share/ovmf/OVMF.fd -snapshot \
-  -drive file=out/edel-vm-x86_64.img,format=raw,if=virtio
+  -drive file=out/edel-x86_64.img,format=raw,if=virtio
 ```
 
 CI builds both images on every change, runs the container, boots the VM in QEMU until the Edel OS login prompt appears, tests updates and rollback (below), and reports image sizes.

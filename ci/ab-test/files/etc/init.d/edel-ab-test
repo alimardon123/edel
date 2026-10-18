@@ -51,11 +51,12 @@
 #      drivers, as on a machine that has none.
 #   5. (hang) With no watchdog, the guard restarted slot B itself (M1.10),
 #      so slot A runs and slot B is off. Install it again with a service
-#      that freezes the kernel with panic reboots switched off.
+#      that freezes the kernel with panic reboots switched off, once the
+#      guard pets the hardware watchdog.
 #   6. (freeze) Only the hardware watchdog can restart a frozen kernel:
 #      slot A runs again and slot B is off. Install it again with its own
 #      health check, network, which a service writes once a default route
-#      exists, and without the networking service, as an update that
+#      exists, and without its network services, as an update that
 #      breaks the network would be.
 #   7. (network) The check never passed, so slot B fell back (M1.11):
 #      slot A runs again and slot B is off. Install it again with the
@@ -146,9 +147,10 @@ greeted() {
 # ab_break_b NAME COMMAND [nowatchdog | network | noroot]: install the
 # update into slot B again, at its last try, and add a service there whose
 # start runs COMMAND in the default runlevel; with nowatchdog, take slot
-# B's watchdog drivers out, so it boots with no watchdog at all, as
-# linux-virt has no softdog; with network, add the health check network to
-# slot B's os-release and take its networking service out, and this
+# B's watchdog drivers out and softdog out of the modules its initramfs
+# loads (slot.cfg's modules=), so it boots with no watchdog at all, as
+# linux-lts has softdog; with network, add the health check network to
+# slot B's os-release and take its network services out, and this
 # test's own; with noroot, point slot B's own boot lines (slot.cfg) at a
 # partition that does not exist.
 ab_break_b() {
@@ -163,10 +165,19 @@ ab_break_b() {
 	chmod 755 /run/ab-test/slot/etc/init.d/ab-$1
 	ln -s /etc/init.d/ab-$1 /run/ab-test/slot/etc/runlevels/default/ab-$1
 	case "${3:-}" in
-	nowatchdog) rm -f /run/ab-test/slot/lib/modules/*/kernel/drivers/watchdog/* ;;
+	nowatchdog)
+		rm -f /run/ab-test/slot/lib/modules/*/kernel/drivers/watchdog/*
+		# Only modules= loses it: softdog.soft_margin stays, unused.
+		sed -i -E 's/(modules=[^ ]*)(,softdog|softdog,)/\1/' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg
+		! grep -Eq 'modules=[^ ]*softdog' /run/ab-test/slot/usr/lib/edel/boot/slot.cfg || {
+			umount /run/ab-test/slot
+			ab_end "FAIL: taking softdog out of slot B's modules for $1"
+			return 1
+		}
+		;;
 	network)
 		sed -i 's/^EDEL_HEALTH="\(.*\)"$/EDEL_HEALTH="\1 network"/' /run/ab-test/slot/usr/lib/os-release
-		rm -f /run/ab-test/slot/etc/runlevels/*/networking
+		rm -f /run/ab-test/slot/etc/runlevels/*/networking /run/ab-test/slot/etc/runlevels/*/networkmanager
 		# Nothing hangs there, so this test would run in slot B and
 		# find it running; the guard alone decides.
 		rm -f /run/ab-test/slot/etc/runlevels/default/edel-ab-test
@@ -260,6 +271,9 @@ start() {
 	walk_end
 
 	# ci/ab-test.sh serves the signed update on the host, 10.0.2.2.
+	# NetworkManager brings eth0 up after it starts, so the downloads
+	# wait for the default route (up to 60 s).
+	for i in $(seq 60); do ip route | grep -q '^default' && break; sleep 1; done
 	update=http://10.0.2.2:8000/release.toml
 
 	case "$step" in
@@ -416,7 +430,7 @@ start() {
 		slot_b=$(echo "$slots" | awk '$1 == "B:" { print $4 }')
 		mkdir -p /run/ab-test/slot
 		mount "$slot_b" /run/ab-test/slot
-		echo "not an initramfs" >/run/ab-test/slot/boot/initramfs-virt
+		echo "not an initramfs" >/run/ab-test/slot/boot/initramfs-lts
 		umount /run/ab-test/slot
 		walk_begin broken-update 1
 		ab_next 4
@@ -443,7 +457,10 @@ start() {
 		;;
 	5)
 		ab_expect "running: A" "order: A B" "A: ok=1 try=0" "B: ok=0 try=3" || return 0
-		ab_break_b freeze 'echo 0 >/proc/sys/kernel/panic; echo c >/proc/sysrq-trigger' || return 0
+		# Frozen once the guard pets the hardware watchdog (state active,
+		# not softdog's): udev loads i6300esb late in the boot, after
+		# this service may run, and a frozen kernel never fires softdog.
+		ab_break_b freeze 'for i in $(seq 300); do for w in /sys/class/watchdog/watchdog*; do [ "$(cat "$w/state")" = active ] && [ "$(cat "$w/identity")" != "Software Watchdog" ] && break 2; done; sleep 0.1; done; echo 0 >/proc/sys/kernel/panic; echo c >/proc/sysrq-trigger' || return 0
 		ab_next 6
 		;;
 	6)

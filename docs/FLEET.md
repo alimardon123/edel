@@ -5,7 +5,7 @@ A fleet is many machines that run the same signed Edel OS and differ only in the
 ## Build a fleet image
 
 ```sh
-edel image build images/vm.toml --settings fleet.toml --settings room-12.toml --out out/room-12
+edel image build images/edel.toml --settings fleet.toml --settings room-12.toml --out out/room-12
 ```
 
 `--settings FILE` may be given more than once. The files are merged in order, a later file winning where two set the same key (a table is merged key by key; any other value, a list included, is replaced whole), the result is checked as strictly as `edel settings check` does, and it is written to the image's `/usr/share/edel/settings.toml`. That file seeds the machine's own at its first boot, unless an `EDEL-SEED` volume or the EFI system partition holds one first (`docs/settings.md`). A file with any problem stops the build before anything is built.

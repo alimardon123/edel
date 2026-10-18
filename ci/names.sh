@@ -12,6 +12,7 @@ default_reached=/run/edel/default-reached
 health_dir=/run/edel/health
 confirmed_file=/run/edel/confirmed
 no_healthy_slot=/run/edel/no-healthy-slot
+screen_file=/run/edel/screen
 started_file=/run/edel/started
 greetd_live=/run/edel/greetd.toml
 last_fallback=/data/edel/last-fallback.toml

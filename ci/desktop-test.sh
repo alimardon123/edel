@@ -280,8 +280,8 @@
 #               its agreety starts ci's compositor again; last, as it
 #               ends the first session
 #   live        alone (CI runs it in the VM test lane, as it boots another
-#               image): the desktop image as released, out/edel-desktop-
-#               x86_64.img, started as a removable USB stick (QEMU's
+#               image): the one image as released, out/edel-x86_64.img
+#               (images/edel.toml), started as a removable USB stick (QEMU's
 #               usb-storage, removable=on) on a plain screen (-vga std),
 #               with no seed and no test service; edel boot live says the
 #               stick logs live in, the slot is confirmed, and the panel
@@ -8424,7 +8424,7 @@ if [ "$*" = live ]; then
 	# A sparse copy rather than -snapshot, so a failure can show what the
 	# stick wrote on its data partition (M5.28a).
 	stick="$dir/stick.img"
-	cp --sparse=always out/edel-desktop-x86_64.img "$stick"
+	cp --sparse=always out/edel-x86_64.img "$stick"
 	# stick_logs: the session's, greetd's and the system's logs from the
 	# stick's data partition (partition 4), which /home and /var live on.
 	stick_logs() {
@@ -8556,7 +8556,7 @@ if [ "$*" = live ]; then
 		done
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
-	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but desktop.toml ships ssh off"
+	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
 	# The browser offline (M6.2): Super, "firefox" and Return start the
 	# default apps' Firefox from the stick's own installation with no
 	# network beyond the VM, and its window must map within 180 s, which
@@ -8789,7 +8789,7 @@ if [ "$*" = fresh ]; then
 	mkdir -p "$dir"
 	rm -f "$QMP"
 	fresh="$dir/fresh.img"
-	cp --sparse=always out/edel-desktop-x86_64.img "$fresh"
+	cp --sparse=always out/edel-x86_64.img "$fresh"
 	fresh_log=out/desktop-fresh.log
 	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
 	# for debugfs, its journal replayed on the copy.
