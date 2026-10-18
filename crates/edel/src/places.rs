@@ -44,6 +44,10 @@ pub const DATA_DIR: &str = data!("/edel");
 /// What this machine changed in `/etc`: a file here differs from the
 /// slot's (the overlay's upper directory, M1.4).
 pub const ETC_UPPER: &str = data!("/etc/upper");
+/// When `edel update --check` or `edel update` last verified the channel's
+/// list, and the version it offered (M8.14): written as root only, read by
+/// `edel::security`, so the status can say whether the machine is up to date.
+pub const LAST_CHECK: &str = data!("/edel/last-check.toml");
 /// The default apps (M6.2): a Flatpak system installation on the data
 /// partition, so the apps are paid for once rather than in each slot, and
 /// survive every update and rollback. `edel image build` fills it on the

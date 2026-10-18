@@ -1712,6 +1712,9 @@ msgstr ""
 msgid "release {version}: signature checked"
 msgstr ""
 
+msgid "could not keep the time of this check in {path}: {cause}; edel status will say not checked yet"
+msgstr ""
+
 msgid "newer"
 msgstr ""
 
@@ -1737,6 +1740,57 @@ msgid "{disk} is no stick (an installed disk, or one that cannot be unplugged), 
 msgstr ""
 
 msgid "wrote {path} on the EFI system partition"
+msgstr ""
+
+msgid "an update waits for a restart"
+msgstr ""
+
+msgid "restart to use it"
+msgstr ""
+
+msgid "not checked yet"
+msgstr ""
+
+msgid "check on Settings' Updates page or with edel update --check"
+msgstr ""
+
+msgid "version {version} is available"
+msgstr ""
+
+msgid "install it on Settings' Updates page or with doas edel update"
+msgstr ""
+
+msgid "up to date, checked on {date}"
+msgstr ""
+
+msgid "encrypted"
+msgstr ""
+
+msgid "not encrypted"
+msgstr ""
+
+msgid "no data partition"
+msgstr ""
+
+msgid "on"
+msgstr ""
+
+msgid "off"
+msgstr ""
+
+msgid "turn it on with doas edel settings set services.firewall=true, then doas edel settings apply"
+msgstr ""
+
+msgid "not part of this system"
+msgstr ""
+
+msgid "Updates"
+msgstr ""
+
+msgid "Data"
+msgstr ""
+
+msgid "Firewall"
 msgstr ""
 
 msgid "services.{name}: {name} is not a feature that can be switched on or off; the ones this machine has are {listed}"
@@ -1866,9 +1920,6 @@ msgid "Users"
 msgstr ""
 
 msgid "the people who log in, and their ssh keys"
-msgstr ""
-
-msgid "Updates"
 msgstr ""
 
 msgid "when updates are installed"
@@ -2873,7 +2924,7 @@ msgstr ""
 msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"
 msgstr ""
 
-msgid "Show the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong"
+msgid "Show whether the machine is up to date, its data encrypted and its firewall on, then the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong"
 msgstr ""
 
 msgid "platform: what apps can count on from this system, its platform level, kept by every later release"

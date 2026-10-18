@@ -19,6 +19,16 @@ pub fn compare(a: &str, b: &str) -> Ordering {
     })
 }
 
+/// The value of `key` in an os-release text, without quotes. The one reader
+/// of `/usr/lib/os-release` (M8.14): the release, the add-ons, the update
+/// and the security facts all ask it here.
+pub fn os_release_value(text: &str, key: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let (k, v) = line.split_once('=')?;
+        (k.trim() == key).then(|| v.trim().trim_matches('"').to_string())
+    })
+}
+
 /// Dotted parts compared one by one, a missing part as 0; within a part,
 /// runs of digits as numbers and the rest as text, so `rc10` follows `rc2`.
 fn dotted(a: &str, b: &str) -> Ordering {
@@ -75,6 +85,17 @@ mod tests {
         assert_eq!(compare("2026.10.2", "2026.9.9"), Ordering::Greater);
         assert_eq!(compare("2026.10.4", "2026.10.5"), Ordering::Less);
         assert_eq!(compare("0.1.0", "0.1"), Ordering::Equal);
+    }
+
+    #[test]
+    fn os_release_values_come_without_quotes() {
+        let text = "NAME=\"Edel OS\"\nVERSION_ID=2026.10.5\n";
+        assert_eq!(os_release_value(text, "NAME").as_deref(), Some("Edel OS"));
+        assert_eq!(
+            os_release_value(text, "VERSION_ID").as_deref(),
+            Some("2026.10.5")
+        );
+        assert_eq!(os_release_value(text, "MISSING"), None);
     }
 
     #[test]

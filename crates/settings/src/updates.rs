@@ -625,9 +625,13 @@ impl Ui {
     }
 
     /// Runs `edel args` off the drawing thread and gives what it did, after
-    /// showing it in the Details as the command line shows it.
+    /// showing it in the Details as the command line shows it. Only the check
+    /// uses it, and it runs as root where doas allows, so the record of the
+    /// check is kept (`cmd::edel_as_root_or_self`, M8.14).
     async fn run(self: &Rc<Self>, args: &'static [&'static str]) -> Option<cmd::Outcome> {
-        let done = gio::spawn_blocking(move || cmd::edel(args)).await.ok()?;
+        let done = gio::spawn_blocking(move || cmd::edel_as_root_or_self(args))
+            .await
+            .ok()?;
         self.show_last(&cmd::line(args), &done);
         Some(done)
     }

@@ -1865,6 +1865,9 @@ msgstr ""
 msgid "Can't reach the update server. Check your internet connection and try again."
 msgstr ""
 
+msgid "Security"
+msgstr ""
+
 msgid "Copy this machine to another, or set it up from a file."
 msgstr ""
 
