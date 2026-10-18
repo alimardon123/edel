@@ -113,10 +113,10 @@ ab_expect() {
 # ab_absent LINE...: no line of `edel status` starts with LINE.
 ab_absent() {
 	for line in "$@"; do
-		echo "$slots" | grep -q "^$line" && {
+		if echo "$slots" | grep -q "^$line"; then
 			ab_end "FAIL: step $step expected no \"$line\""
 			return 1
-		}
+		fi
 	done
 }
 
