@@ -159,10 +159,10 @@ portal_readall_ms = 50
 # How much slower the desktop's frames may be at p99 while memory is full
 # past what was available and pages go to zram, than with it idle (desktop-test
 # memory, M7.15). A difference, as animation_p99_ms is, so the runner's own
-# speed does not count. No CI run has measured it yet: 8 is the first value,
-# to be lowered to CI's first measurement plus 20 percent in the same pull
-# request.
-memory_full_p99_ms = 8
+# speed does not count. CI's first measurement (2026-10-18, PR #413) was
+# 1.7 ms (4.9 full against 3.2 idle); plus 20 percent, rounded up to a whole
+# millisecond, is 3.
+memory_full_p99_ms = 3
 # The walks a newcomer takes (M8.15a, docs/REVIEW-experience.md): for
 # each, the seconds the machine makes a person wait, timed by the machine
 # itself (a boot's `Started in`, or the guest's clock across a restart),
