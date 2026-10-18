@@ -190,6 +190,12 @@
 #               bluetooth) draws each page and says on its stderr what its
 #               headline is ("Connected", "This computer has no Bluetooth");
 #               kept as network.png and bluetooth.png
+#   firewall    the firewall (M8.14 part A): its table loads with policy drop
+#               and ssh's drop-in; a listener on port 8080 answers the
+#               machine itself, and the host gets no bytes from it through
+#               QEMU's port 2290, nor from port 22 (2292) while ssh is off;
+#               firewall off lets the host in, firewall on shuts it again,
+#               and ssh on answers the host with its SSH banner
 #   power       UPower, and the Power and Users pages (M5.8b): upower -e
 #               exits 0 as ci with upowerd running (QEMU has no battery, so
 #               it lists the display device and perhaps a power cable);
@@ -471,6 +477,28 @@ wait_for() {
 		[ "$i" -lt $((${2:-20} * 5)) ] || return 1
 		sleep 0.2
 	done
+}
+
+# inbound PORT: what the host gets from the guest's forwarded PORT when it
+# connects and sends nothing, read for up to 5 s and printed as it arrives
+# (the firewall case reads it). QEMU's user network accepts a connection on
+# the host at once, so a port the firewall closes shows as no bytes, not as
+# a refused connection; a refused connection prints nothing.
+inbound() {
+	python3 -c 'import socket, sys
+s = socket.socket()
+s.settimeout(5)
+data = b""
+try:
+    s.connect(("127.0.0.1", int(sys.argv[1])))
+    while True:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+except OSError:
+    pass
+sys.stdout.write(data.decode(errors="replace"))' "$1"
 }
 
 # The background colour the compositor clears to, from the design tokens.
@@ -1640,6 +1668,77 @@ case_network() {
 		echo "Network and Bluetooth (M5.8a): resident (VmRSS) and proportional (Pss) memory of the daemons, KiB: $(value network_rss_kib)." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	echo "PASS: nmcli -t general status reports connected ($(value network_status)), ci may change the network and nobody may not, bluetoothctl list exits 0 with no adapter in the VM, and Settings drew its Network and Bluetooth pages (daemons, KiB: $(value network_rss_kib))"
+}
+
+case_firewall() {
+	# The firewall (M8.14 part A). Its table must load with policy drop and
+	# ssh's drop-in (rules 0, drop=1, ssh=1). The listener must answer the
+	# machine itself first, so a closed port from the host means the firewall
+	# closed it. From the host, port 2290 (the listener) and 2292 (ssh) must
+	# give no bytes. firewall off lets the host in; firewall on shuts it
+	# again; ssh on gives the SSH banner. Then the machine is left as found.
+	asked=$(count 'DESKTOP-TEST: firewall_rules ')
+	guest 'firewall rules'
+	wait_more 'DESKTOP-TEST: firewall_rules ' "$asked" 15 || fail "the service did not read the firewall's table"
+	[ "$(value firewall_rules)" = "0 drop=1 ssh=1" ] || fail "the firewall's table should load with policy drop and ssh's drop-in: $(value firewall_rules)"
+	guest 'firewall listen'
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: firewall_local ')
+		guest 'firewall local'
+		wait_more 'DESKTOP-TEST: firewall_local ' "$asked" 15 || fail "the service did not try the listener on port 8080"
+		value firewall_local | grep -q edel-open && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "the listener on port 8080 answers nothing, even to the machine itself: $(value firewall_local)"
+		sleep 1
+	done
+	closed=$(inbound 2290)
+	case "$closed" in *edel-open*) fail "the firewall let the host reach the listener: $closed" ;; esac
+	ssh_closed=$(inbound 2292)
+	case "$ssh_closed" in *SSH-*) fail "ssh answers the host while services.ssh is off: $ssh_closed" ;; esac
+	asked=$(count 'DESKTOP-TEST: ran firewall off: ')
+	guest 'firewall off'
+	wait_more 'DESKTOP-TEST: ran firewall off: ' "$asked" 60 || fail "the service did not switch the firewall off"
+	[ "$(value 'ran firewall off:')" = 0 ] || fail "edel settings could not switch the firewall off: $(value 'ran firewall off:')"
+	i=0
+	while :; do
+		open=$(inbound 2290)
+		case "$open" in *edel-open*) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 6 ] || fail "with the firewall off the host still gets no answer from the listener: \"$open\""
+		sleep 5
+	done
+	asked=$(count 'DESKTOP-TEST: ran firewall on: ')
+	guest 'firewall on'
+	wait_more 'DESKTOP-TEST: ran firewall on: ' "$asked" 60 || fail "the service did not switch the firewall on"
+	[ "$(value 'ran firewall on:')" = 0 ] || fail "edel settings could not switch the firewall on: $(value 'ran firewall on:')"
+	i=0
+	while :; do
+		shut=$(inbound 2290)
+		case "$shut" in *edel-open*) ;; *) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 6 ] || fail "with the firewall on again the host still reaches the listener: \"$shut\""
+		sleep 5
+	done
+	asked=$(count 'DESKTOP-TEST: ran ssh on: ')
+	guest 'ssh on'
+	wait_more 'DESKTOP-TEST: ran ssh on: ' "$asked" 60 || fail "the service did not switch ssh on"
+	[ "$(value 'ran ssh on:')" = 0 ] || fail "edel settings could not switch ssh on: $(value 'ran ssh on:')"
+	i=0
+	while :; do
+		banner=$(inbound 2292)
+		case "$banner" in *SSH-2.0*) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 12 ] || fail "with ssh on the host gets no SSH banner through the firewall: \"$banner\""
+		sleep 5
+	done
+	asked=$(count 'DESKTOP-TEST: ran ssh default: ')
+	guest 'ssh default'
+	wait_more 'DESKTOP-TEST: ran ssh default: ' "$asked" 60 || fail "the service did not put ssh back"
+	asked=$(count 'DESKTOP-TEST: ran firewall listen off: ')
+	guest 'firewall listen off'
+	wait_more 'DESKTOP-TEST: ran firewall listen off: ' "$asked" || fail "the service did not stop the listener"
+	echo "PASS: firewall: the table loads with policy drop and ssh's drop-in; the listener answers the machine itself; from the host, port 2290 gives no bytes and port 2292 no SSH banner while ssh is off; firewall off let the listener's answer through, firewall on shut it again, and ssh on gave the SSH banner through; ssh and the listener are back as they were"
 }
 
 case_power() {
@@ -8630,7 +8729,7 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts wakeups device-power profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -9173,7 +9272,15 @@ case " $* " in
 	;;
 esac
 
-keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
+# The firewall case reaches the listener (port 8080 in the guest) and ssh
+# (port 22) from the host through two ports of the user network; no other
+# case forwards a port into the guest. Each is explicit, so nothing set
+# earlier in the script reaches this VM.
+fw_net=
+case " $* " in
+*' firewall '*) fw_net=",hostfwd=tcp:127.0.0.1:2290-:8080,hostfwd=tcp:127.0.0.1:2292-:22" ;;
+esac
+vm_net=$fw_net keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-global ICH9-LPC.disable_s3=0 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \

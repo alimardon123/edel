@@ -80,3 +80,15 @@ kernels = ["lts"]
 [FUSE_FS]
 reason = "fuse-overlayfs' layers for rootless containers, which the containers add-on loads at boot (M7.6b)"
 kernels = ["lts"]
+
+[NF_TABLES]
+reason = "nftables, the firewall's tables, which edel-firewall loads at boot (M8.14)"
+kernels = ["lts"]
+
+[NF_TABLES_INET]
+reason = "the inet family the firewall's table lives in, for IPv4 and IPv6 (M8.14)"
+kernels = ["lts"]
+
+[NFT_CT]
+reason = "the ct state match that lets answers to this machine's own connections in (M8.14)"
+kernels = ["lts"]

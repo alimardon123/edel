@@ -1,0 +1,28 @@
+#!/sbin/openrc-run
+# Closes inbound connections (roadmap M8.14, part A) by loading the rules in
+# edel::places' rules file, which include each feature's drop-ins. Only Edel
+# OS's own table is loaded and taken out, so the tables of other tools, such
+# as podman's NAT, are never flushed. It runs before the network comes up,
+# so no connection gets in before the rules are there.
+
+description="Close inbound connections, except the services that are on"
+
+# Edel OS's places, written by edel::places (M5.27).
+. /usr/share/edel/places.sh
+
+depend() {
+	need localmount
+	before net networkmanager
+}
+
+start() {
+	ebegin "Closing inbound connections, except the services that are on"
+	nft -f "$firewall_rules"
+	eend $?
+}
+
+stop() {
+	ebegin "Taking the firewall's rules out"
+	nft delete table inet edel
+	eend $?
+}

@@ -1,0 +1,19 @@
+# Edel OS's firewall rules (roadmap M8.14), loaded by edel-firewall at start.
+# Only the table inet edel is replaced, so other tools' tables survive it.
+# Each feature that listens on the network adds its rule in one drop-in
+# (features/NAME/usr/lib/edel/firewall.d/NAME.nft); they are included last.
+table inet edel
+delete table inet edel
+table inet edel {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		ct state established,related accept
+		ct state invalid drop
+		iif lo accept
+		meta l4proto ipv6-icmp accept
+		icmp type { echo-request, destination-unreachable, time-exceeded, parameter-problem } accept
+		udp sport 67 udp dport 68 accept
+		ip6 saddr fe80::/10 udp sport 547 udp dport 546 accept
+	}
+}
+include "/usr/lib/edel/firewall.d/*.nft"

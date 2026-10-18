@@ -1060,6 +1060,29 @@ commands() {
 			say "bluetooth_list $status: $(echo "$out" | tr '\n' ';')"
 			say "bluetooth_daemon $(pidof bluetoothd >/dev/null && echo running || echo stopped), adapters in the kernel: $(ls /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
 			;;
+		# The firewall (M8.14 part A): the table's rules, a listener on port
+		# 8080 that answers each connection with edel-open (busybox nc, as
+		# the image has no httpd), the machine's own connection to it, and the
+		# switches the case uses. The host reaches the listener and ssh through
+		# QEMU's forwarded ports (desktop-test.sh's fw_net).
+		'firewall rules')
+			say "firewall_rules $(nft list table inet edel >/tmp/fw.txt 2>&1; echo $?) drop=$(grep -c 'policy drop' /tmp/fw.txt) ssh=$(grep -c 'dport 22' /tmp/fw.txt)"
+			;;
+		'firewall listen')
+			( while :; do echo edel-open | nc -l -p 8080; done ) >/dev/null 2>&1 &
+			echo $! >/tmp/fw.pid
+			;;
+		'firewall local')
+			say "firewall_local $(echo | timeout 5 nc 127.0.0.1 8080 2>&1 | tr '\n' ' ')"
+			;;
+		'firewall listen off')
+			kill "$(cat /tmp/fw.pid)" 2>/dev/null
+			pkill -f 'nc -l -p 8080' || true
+			;;
+		'firewall off') edel settings set services.firewall=false && edel settings apply ;;
+		'firewall on') edel settings reset services.firewall && edel settings apply ;;
+		'ssh on') edel settings set services.ssh=true && edel settings apply ;;
+		'ssh default') edel settings reset services.ssh && edel settings apply ;;
 		'network window')
 			as_ci edel-settings --page network </dev/null >/tmp/network.log 2>&1 &
 			;;

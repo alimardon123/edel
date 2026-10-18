@@ -3,7 +3,9 @@
 # machine becomes is its settings file: with a screen it starts the
 # desktop, greetd's greeter on our compositor (M4.7b, M5.10b); with no
 # graphics card it starts no desktop service (the features marked screen)
-# and its console asks for the first person (M6.6b). A bootable A/B disk,
+# and its console asks for the first person (M6.6b). The firewall (M8.14) is
+# one of those: it closes inbound connections where there is a screen, and a
+# server keeps the ports its containers publish. A bootable A/B disk,
 # so its variant is vm. The container image is the other image, as a
 # container cannot be a disk.
 format = 2
@@ -11,7 +13,7 @@ name = "edel"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "wallpapers", "xwayland", "flatpak", "apps", "sound", "network", "bluetooth", "power", "capture", "location"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "wallpapers", "xwayland", "flatpak", "apps", "sound", "network", "firewall", "bluetooth", "power", "capture", "location"]
 # ssh is off where a screen is, a desktop's people sit at it, and on where
 # none is, as a server is used from afar; services.ssh in the settings
 # file decides either way (the seed, the installer, the console's key).
