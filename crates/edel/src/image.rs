@@ -1548,6 +1548,12 @@ impl Build<'_> {
             }
             copy_into_tree(a_root, tree, copy)?;
         }
+        // Each copy keeps its root's time, set once all are in place, as a
+        // file put into a folder moves that folder's time on: fontconfig
+        // drops a baked cache whose folder's time differs (M6.2a).
+        for copy in &plan.copies {
+            keep_time(&a_root.join(&copy.from), &tree.join(&copy.to))?;
+        }
         // One line per add-on in the build's log: what it ships, the caches
         // it carries a merged copy of, those left out, and the base's small
         // tools it keeps where a package brought its own.
@@ -1807,6 +1813,18 @@ fn copy_into_tree(a_root: &Path, tree: &Path, copy: &addons::Copy) -> Result<()>
     std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
         .with_context(|| format!("setting the owner of {}", dst.display()))?;
     Ok(())
+}
+
+/// Gives `dst` the time `src` was last changed; a link keeps its own, as
+/// nothing reads a link's time.
+fn keep_time(src: &Path, dst: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(src).with_context(|| format!("reading {}", src.display()))?;
+    if meta.file_type().is_symlink() {
+        return Ok(());
+    }
+    fs::File::open(dst)
+        .and_then(|f| f.set_modified(meta.modified()?))
+        .with_context(|| format!("setting the time of {}", dst.display()))
 }
 
 /// The data partition's size in MiB (M6.2): the definition's, or more
@@ -2404,6 +2422,27 @@ mod tests {
         let bytes = tree_bytes(&dir).unwrap();
         fs::remove_dir_all(&dir).unwrap();
         assert!((8192..16384).contains(&bytes), "{bytes}");
+    }
+
+    #[test]
+    fn a_copied_folder_keeps_its_time_after_files_go_in() {
+        let dir = std::env::temp_dir().join(format!("edel-keep-time-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("src/fonts")).unwrap();
+        let then = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_700_000_000);
+        fs::File::open(dir.join("src/fonts"))
+            .unwrap()
+            .set_modified(then)
+            .unwrap();
+        fs::create_dir_all(dir.join("dst/fonts")).unwrap();
+        fs::write(dir.join("dst/fonts/a.ttf"), b"x").unwrap();
+        keep_time(&dir.join("src/fonts"), &dir.join("dst/fonts")).unwrap();
+        let t = fs::metadata(dir.join("dst/fonts"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(t, then);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
