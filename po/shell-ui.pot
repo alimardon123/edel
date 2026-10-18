@@ -497,6 +497,15 @@ msgstr ""
 msgid "Year"
 msgstr ""
 
+msgid "Automatic"
+msgstr ""
+
+msgid "Accent"
+msgstr ""
+
+msgid "From wallpaper"
+msgstr ""
+
 msgid "Face"
 msgstr ""
 
@@ -512,7 +521,13 @@ msgstr ""
 msgid "Choose in Settings"
 msgstr ""
 
+msgid "Use on every widget"
+msgstr ""
+
 msgid "No picture"
+msgstr ""
+
+msgid "Colour, {name}"
 msgstr ""
 
 msgid "Words: {words}"

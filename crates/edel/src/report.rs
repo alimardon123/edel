@@ -7,7 +7,9 @@
 //! (M5.28a), the firmware the kernel asked for and this system lacks and the
 //! language's script whose fonts it lacks (M5.30c), as TOML on standard
 //! output. Everything comes from `/proc`, `/sys`, `/usr/share/edel/features`,
-//! `/usr/share/fonts` and busybox's `dmesg`, so no tool is added.
+//! `/usr/share/fonts` and busybox's `dmesg`, so no tool is added. With
+//! `--battery MINUTES` it first measures the battery for that long (M7.16a),
+//! as the `battery` table (`battery_report.rs`).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -19,6 +21,7 @@ use edel::i18n::trf;
 use edel::{features, places, scripts, session_log, settings};
 use serde::Serialize;
 
+use crate::battery_report;
 use crate::release::os_release_value;
 
 /// Where `edel-boot-ok` keeps the line it printed when the slot was
@@ -57,6 +60,40 @@ struct Report {
     /// The last lines of each person's desktop session logs (M5.28a): the
     /// one running it, or for root everyone's.
     sessions: Vec<Session>,
+    /// Each game's smoothness the last time it played (M7.7d), by person
+    /// and app, as the compositor keeps it.
+    games: Vec<Game>,
+    /// The battery measured for `--battery` (M7.16a), last so the TOML
+    /// table comes after the plain values.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery: Option<battery_report::Battery>,
+}
+
+/// One game's smoothness, from a person's games file (M7.7d).
+#[derive(Debug, PartialEq, Serialize)]
+struct Game {
+    person: String,
+    app: String,
+    #[serde(flatten)]
+    record: edel::smoothness::Record,
+}
+
+/// The games `people` played, each app's last time.
+fn games(people: &[session_log::Person]) -> Vec<Game> {
+    let mut found = Vec::new();
+    for person in people {
+        let Some(text) = session_log::read_log(person, places::GAMES) else {
+            continue;
+        };
+        for (app, record) in edel::smoothness::read(&text) {
+            found.push(Game {
+                person: person.name.clone(),
+                app,
+                record,
+            });
+        }
+    }
+    found
 }
 
 /// One person's session log, its last lines.
@@ -338,11 +375,14 @@ fn render(report: &Report) -> Result<String> {
 
 /// `edel report`, or with `esp` written to `/EFI/edel/report.toml` on the
 /// EFI system partition, where the desktop stick leaves it at every boot.
-pub fn report(esp: bool) -> Result<()> {
+pub fn report(esp: bool, battery: Option<u64>) -> Result<()> {
+    // Measured first, so the rest of the report is read after it.
+    let battery = battery.map(battery_report::measure).transpose()?;
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let dmesg = dmesg_now();
     let missing = missing_firmware(&dmesg);
     let (names, notes) = installed_features(Path::new(features::DIR));
+    let people = session_log::people(Path::new(places::HOMES), as_root());
     let report = Report {
         format: FORMAT,
         version: os_release_value(&os_release, "VERSION_ID").unwrap_or_default(),
@@ -362,7 +402,9 @@ pub fn report(esp: bool) -> Result<()> {
         pci: pci_devices(Path::new("/sys/bus/pci/devices")),
         missing_firmware: missing,
         missing_script: missing_script_now(),
-        sessions: sessions(&session_log::people(Path::new(places::HOMES), as_root())),
+        sessions: sessions(&people),
+        games: games(&people),
+        battery,
     };
     let text = render(&report)?;
     if esp {
@@ -509,6 +551,18 @@ mod tests {
                 ended: false,
                 last_lines: "edel-compositor: output Virtual-1 ready\n".into(),
             }],
+            battery: None,
+            games: vec![Game {
+                person: "ci".into(),
+                app: "edel.test.game".into(),
+                record: edel::smoothness::Record {
+                    frames: 600,
+                    seconds: 10.0,
+                    average_fps: 59.9,
+                    slowest_1_percent_ms: 18.0,
+                    slowest_0_1_percent_ms: 20.0,
+                },
+            }],
         };
         let text = render(&report).unwrap();
         let parsed: toml::Table = toml::from_str(&text).unwrap();
@@ -517,6 +571,8 @@ mod tests {
         assert!(parsed["dmesg"].as_str().unwrap().contains("\"quoted\""));
         assert_eq!(parsed["pci"][0]["driver"].as_str(), Some("i915"));
         assert_eq!(parsed["sessions"][0]["person"].as_str(), Some("ci"));
+        assert_eq!(parsed["games"][0]["app"].as_str(), Some("edel.test.game"));
+        assert_eq!(parsed["games"][0]["frames"].as_integer(), Some(600));
         assert!(parsed["system_log"].as_str().unwrap().contains("syslogd"));
         assert_eq!(
             parsed["missing_firmware"][0]["file"].as_str(),
@@ -619,6 +675,108 @@ mod tests {
         assert!(found[0].path.ends_with(places::SESSION_LOG_BEFORE));
         assert!(found[1].ended);
         assert!(found[1].last_lines.starts_with("ready\n"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn a_measured_battery_is_a_table_a_reader_parses() {
+        use crate::battery_report::{Battery, BatteryLine, Rest, Sleep, Waker};
+        let report = Report {
+            format: FORMAT,
+            version: String::new(),
+            kernel: String::new(),
+            features: vec![],
+            feature_notes: vec![],
+            started: String::new(),
+            memory_in_use_mib: 0,
+            dmesg: String::new(),
+            system_log: String::new(),
+            pci: vec![],
+            missing_firmware: vec![],
+            missing_script: None,
+            sessions: vec![],
+            games: vec![],
+            battery: Some(Battery {
+                minutes: 5,
+                plugged_in: false,
+                watts: Some(10.0),
+                note: "it drew 10.00 W on battery over 5 minutes".into(),
+                s0ix_percent: Some(80.5),
+                interrupts_per_second: 12.5,
+                batteries: vec![BatteryLine {
+                    name: "BAT0".into(),
+                    status: "Discharging".into(),
+                    start_wh: Some(50.0),
+                    end_wh: Some(49.17),
+                    watts: Some(10.0),
+                    power_now_watts: None,
+                    capacity_percent: Some(97),
+                    health_percent: Some(92),
+                    cycles: Some(312),
+                }],
+                cpu_rest: vec![Rest {
+                    state: "C1".into(),
+                    percent: 60.0,
+                }],
+                wakers: vec![Waker {
+                    name: "firefox".into(),
+                    pid: 4242,
+                    per_second: 3.5,
+                }],
+                sleep: Sleep {
+                    mode: "deep".into(),
+                    successes: 3,
+                    failures: 0,
+                    ..Default::default()
+                },
+            }),
+        };
+        let text = render(&report).unwrap();
+        let parsed: toml::Table = toml::from_str(&text).unwrap();
+        assert_eq!(parsed["battery"]["watts"].as_float(), Some(10.0));
+        assert_eq!(
+            parsed["battery"]["batteries"][0]["cycles"].as_integer(),
+            Some(312)
+        );
+        assert_eq!(
+            parsed["battery"]["wakers"][0]["pid"].as_integer(),
+            Some(4242)
+        );
+        assert_eq!(parsed["battery"]["sleep"]["mode"].as_str(), Some("deep"));
+        assert!(parsed["battery"]["sleep"].get("woke_by").is_none());
+    }
+
+    #[test]
+    fn shows_each_game_a_person_played() {
+        let dir = std::env::temp_dir().join(format!("edel-report-games-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let record = edel::smoothness::Record {
+            frames: 600,
+            seconds: 10.0,
+            average_fps: 59.9,
+            slowest_1_percent_ms: 18.0,
+            slowest_0_1_percent_ms: 20.0,
+        };
+        fs::write(
+            dir.join(places::GAMES),
+            edel::smoothness::with("", "edel.test.game", record.clone()),
+        )
+        .unwrap();
+        let person = session_log::Person {
+            name: "ci".into(),
+            dir: dir.clone(),
+            owner: Some(std::os::unix::fs::MetadataExt::uid(
+                &fs::metadata(&dir).unwrap(),
+            )),
+        };
+        let found = games(&[person]);
+        assert_eq!(
+            found,
+            [Game {
+                person: "ci".into(),
+                app: "edel.test.game".into(),
+                record,
+            }]
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 }

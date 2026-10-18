@@ -27,6 +27,7 @@ pub mod apps;
 pub mod backlight;
 #[cfg(feature = "os")]
 pub mod base;
+pub mod battery_care;
 pub mod bluetooth;
 #[cfg(feature = "pictures")]
 pub mod draw;
@@ -67,6 +68,7 @@ pub mod services;
 pub mod session_log;
 pub mod settings;
 pub mod shortcuts;
+pub mod smoothness;
 pub mod sound;
 #[cfg(feature = "os")]
 pub mod speakers;

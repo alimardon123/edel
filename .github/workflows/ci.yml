@@ -12,11 +12,14 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its older run. Every push to main
-# or of a tag keeps its own run, even when main and a tag point at the same
-# commit, so no publish is ever cancelled halfway.
+# A new push to a pull request cancels its older run. Pushes to main take
+# turns: one run at a time, and a newer merge replaces an older one still
+# waiting, so a burst of merges costs two full runs, not one each (faster
+# PRs, 2026-10-17); a run that started is never cancelled, so no publish
+# stops halfway, and the newest run tests every merge before it. Every tag
+# keeps its own run, even when main and a tag point at the same commit.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('{0}-{1}', github.ref, github.sha) }}
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref == 'refs/heads/main' && 'main' || format('{0}-{1}', github.ref, github.sha) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -28,6 +31,10 @@ jobs:
   changes:
     name: What this change can affect
     runs-on: ubuntu-latest
+    # actions: read lets changes.sh see whether the run before a push passed.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       images: ${{ steps.changes.outputs.images }}
       desktop: ${{ steps.changes.outputs.desktop }}
@@ -42,11 +49,21 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
           FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          BASE_REF: ${{ github.base_ref }}
+          ACTION: ${{ github.event.action }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
         run: sh ci/changes.sh
 
   rust:
     name: Rust checks
     runs-on: ubuntu-latest
+    env:
+      # Incremental files only help a later build on the same machine;
+      # here they would only grow the cache.
+      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install the libraries the compositor links
@@ -54,6 +71,19 @@ jobs:
         # libseat for the GPU backend (M4.2b); GTK4 and libadwaita for
         # Settings (M5.6a). EGL is loaded at run time.
         run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev
+      - name: Keep the crates and their builds between runs
+        # Keyed on Cargo.lock, as the other jobs' builds are (faster PRs,
+        # 2026-10-17): a pull request reads main's, so only our own crates
+        # build again.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: rust-checks-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-checks-
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo clippy -p edel-compositor --all-targets --locked --features winit -- -D warnings
@@ -449,7 +479,7 @@ jobs:
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid
           - part: D
-            cases: one-screen language settings-tour theme office-fonts
+            cases: one-screen wakeups device-power language settings-tour theme office-fonts
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

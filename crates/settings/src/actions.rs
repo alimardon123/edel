@@ -110,6 +110,13 @@ pub const RESET_DEVELOPER: Action = Action {
     args: &["settings", "reset", "--yes", "system.developer_mode"],
 };
 
+/// The Power page's Charge fully once button (M7.16e), which charges to 100
+/// percent once, for a trip, where battery care holds the charge at 80.
+pub const CHARGE_FULL: Action = Action {
+    page: "power",
+    args: &["power", "charge-full"],
+};
+
 // `edel addon list` joins this table when add-ons and their page come (M7.2):
 // the roadmap's list names it, but the command does not exist yet.
 
@@ -126,6 +133,7 @@ pub const ACTIONS: &[&Action] = &[
     &IMPORT,
     &RESET,
     &RESET_DEVELOPER,
+    &CHARGE_FULL,
     &SET,
     &APPLY,
     &INSTALL,
