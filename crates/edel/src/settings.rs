@@ -2541,7 +2541,13 @@ fn list_value_at<'a>(table: &'a Table, path: &[&str]) -> Option<&'a Value> {
 /// brings it, and adding it again takes it off there; the file's own list
 /// gains it only when no profile brings it.
 pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String> {
-    let text = &with_default_list(text, key, &crate::addon_state::running_default())?;
+    // The slot's default add-ons are the system's to read (`os`); a part
+    // built without it edits no add-ons.
+    #[cfg(feature = "os")]
+    let default = crate::addon_state::running_default();
+    #[cfg(not(feature = "os"))]
+    let default: Vec<String> = Vec::new();
+    let text = &with_default_list(text, key, &default)?;
     let item = list_item(value);
     let file = (key != WITHOUT)
         .then(|| read(text).ok())
