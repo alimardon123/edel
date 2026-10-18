@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use crate::i18n::n_;
 use crate::places;
 use crate::services;
+use crate::version;
 
 /// Where one add-on stands on this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -130,11 +131,7 @@ pub fn offered_in(dir: &Path) -> Vec<(String, String)> {
 /// The add-ons folder of the running version (`VERSION_ID`).
 pub fn running_dir() -> PathBuf {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let version = os_release
-        .lines()
-        .find_map(|line| line.strip_prefix("VERSION_ID="))
-        .unwrap_or_default()
-        .trim_matches('"');
+    let version = version::os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     Path::new(places::ADDONS_DIR).join(version)
 }
 

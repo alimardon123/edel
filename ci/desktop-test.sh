@@ -195,7 +195,10 @@
 #               machine itself, and the host gets no bytes from it through
 #               QEMU's port 2290, nor from port 22 (2292) while ssh is off;
 #               firewall off lets the host in, firewall on shuts it again,
-#               and ssh on answers the host with its SSH banner
+#               and ssh on answers the host with its SSH banner. Part B
+#               (M8.14): edel status and Settings' System page say the
+#               firewall is on, the data plain and no update checked, and
+#               off once it is switched off (system-security.png)
 #   power       UPower, and the Power and Users pages (M5.8b): upower -e
 #               exits 0 as ci with upowerd running (QEMU has no battery, so
 #               it lists the display device and perhaps a power cable);
@@ -1677,6 +1680,14 @@ case_firewall() {
 	# closed it. From the host, port 2290 (the listener) and 2292 (ssh) must
 	# give no bytes. firewall off lets the host in; firewall on shuts it
 	# again; ssh on gives the SSH banner. Then the machine is left as found.
+	# edel status as ci reads it, once the service has run it (M8.14 part B),
+	# into status_now.
+	security_status() {
+		asked=$(count 'DESKTOP-TEST: security_status ')
+		guest 'security status'
+		wait_more 'DESKTOP-TEST: security_status ' "$asked" 30 || fail "the service did not run edel status"
+		status_now=$(value security_status)
+	}
 	asked=$(count 'DESKTOP-TEST: firewall_rules ')
 	guest 'firewall rules'
 	wait_more 'DESKTOP-TEST: firewall_rules ' "$asked" 15 || fail "the service did not read the firewall's table"
@@ -1708,6 +1719,12 @@ case_firewall() {
 		[ "$i" -lt 6 ] || fail "with the firewall off the host still gets no answer from the listener: \"$open\""
 		sleep 5
 	done
+	# With the firewall off, edel status says so.
+	security_status
+	case "$status_now" in
+	*'firewall: off;'*) ;;
+	*) fail "edel status should say the firewall is off once services.firewall is false: $status_now" ;;
+	esac
 	asked=$(count 'DESKTOP-TEST: ran firewall on: ')
 	guest 'firewall on'
 	wait_more 'DESKTOP-TEST: ran firewall on: ' "$asked" 60 || fail "the service did not switch the firewall on"
@@ -1720,6 +1737,32 @@ case_firewall() {
 		[ "$i" -lt 6 ] || fail "with the firewall on again the host still reaches the listener: \"$shut\""
 		sleep 5
 	done
+	# The three facts (M8.14 part B), with the firewall on: edel status says
+	# so, and Settings' System page shows them and logs the same words.
+	security_status
+	case "$status_now" in
+	*'firewall: on;'*'data: not encrypted;'*'updates: not checked yet;'*) ;;
+	*) fail "edel status should say the firewall is on, the data not encrypted and no update checked: $status_now" ;;
+	esac
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'security window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its System page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	sleep 3
+	shot system-security $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
+		fail "the System page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+	asked=$(count 'DESKTOP-TEST: security_log ')
+	guest 'security log'
+	wait_more 'DESKTOP-TEST: security_log ' "$asked" || fail "the service did not read Settings' log"
+	case "$(value security_log)" in
+	*'edel-settings: system security firewall on, data not-encrypted, updates not-checked'*) ;;
+	*) fail "Settings' System page did not log the three facts: $(value security_log)" ;;
+	esac
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	asked=$(count 'DESKTOP-TEST: ran ssh on: ')
 	guest 'ssh on'
 	wait_more 'DESKTOP-TEST: ran ssh on: ' "$asked" 60 || fail "the service did not switch ssh on"
@@ -1738,7 +1781,7 @@ case_firewall() {
 	asked=$(count 'DESKTOP-TEST: ran firewall listen off: ')
 	guest 'firewall listen off'
 	wait_more 'DESKTOP-TEST: ran firewall listen off: ' "$asked" || fail "the service did not stop the listener"
-	echo "PASS: firewall: the table loads with policy drop and ssh's drop-in; the listener answers the machine itself; from the host, port 2290 gives no bytes and port 2292 no SSH banner while ssh is off; firewall off let the listener's answer through, firewall on shut it again, and ssh on gave the SSH banner through; ssh and the listener are back as they were"
+	echo "PASS: firewall: the table loads with policy drop and ssh's drop-in; the listener answers the machine itself; from the host, port 2290 gives no bytes and port 2292 no SSH banner while ssh is off; firewall off let the listener's answer through, firewall on shut it again, and ssh on gave the SSH banner through; edel status said the firewall on, the data not encrypted and no update checked, and off with the firewall off, and Settings' System page showed and logged the same (system-security.png); ssh and the listener are back as they were"
 }
 
 case_power() {

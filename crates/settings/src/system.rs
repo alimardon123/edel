@@ -7,7 +7,8 @@
 //! on a thread of its own and show its result or its message as they are
 //! (`cmd.rs`): changing the machine runs as root through doas (M6.5), and
 //! a click that lacks the right reads `edel`'s refusal. The page runs
-//! nothing in the background.
+//! nothing in the background; its Security group (M8.14) reads three facts
+//! from files, as `edel status` does.
 
 use std::cell::{Cell, RefCell};
 use std::fs;
@@ -21,7 +22,22 @@ use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
 
+use crate::status;
 use crate::{actions, cmd, rows, widgets};
+
+/// The Security group (M8.14): whether the machine is up to date, its data
+/// encrypted and its firewall on, the facts `edel status` prints, from the
+/// same module (`edel::security`). It reads files and runs nothing, as
+/// About reads `/proc`; the log line is what CI reads back.
+fn security(content: &gtk::Box) {
+    widgets::heading(content, tr("Security"));
+    let group = widgets::group(content);
+    let facts = edel::security::now();
+    eprintln!("edel-settings: system security {}", facts.log_words());
+    for (title, value) in facts.rows() {
+        widgets::fact_row(&group, title, &status::capital(&value));
+    }
+}
 
 const INTRO: &str = n_("Copy this machine to another, or set it up from a file.");
 
@@ -118,6 +134,9 @@ pub fn page() -> gtk::Widget {
     // What this release did not understand comes first, hidden when there
     // is nothing (M6.11).
     crate::unknown::group(&content);
+    // Whether the machine is up to date, encrypted and behind its firewall
+    // (M8.14): the three facts `edel status` shows, read from files.
+    security(&content);
 
     widgets::heading(&content, tr("Copy this machine"));
     let group = widgets::group(&content);

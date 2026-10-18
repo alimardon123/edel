@@ -136,9 +136,10 @@ enum Commands {
     /// Go back to the version in the other slot, the one before the last
     /// update; it starts at the next restart
     Rollback,
-    /// Show the version running now and the one in the other slot, the
-    /// desktop's effect tier while a session runs, and which log to read
-    /// when the last boot or desktop session went wrong
+    /// Show whether the machine is up to date, its data encrypted and its
+    /// firewall on, then the version running now and the one in the other
+    /// slot, the desktop's effect tier while a session runs, and which log
+    /// to read when the last boot or desktop session went wrong
     Status,
     /// platform: what apps can count on from this system, its platform
     /// level, kept by every later release
@@ -1282,7 +1283,7 @@ mod tests {
                     .get_about()
                     .unwrap()
                     .to_string()
-                    .starts_with("Show the version")
+                    .starts_with("Show whether the machine is up to date")
             );
             // The command reference is written from the English table.
             let english = cli_command();

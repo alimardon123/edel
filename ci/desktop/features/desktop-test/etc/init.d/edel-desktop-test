@@ -1083,6 +1083,16 @@ commands() {
 		'firewall on') edel settings reset services.firewall && edel settings apply ;;
 		'ssh on') edel settings set services.ssh=true && edel settings apply ;;
 		'ssh default') edel settings reset services.ssh && edel settings apply ;;
+		# The three facts (M8.14 part B): the lines `edel status` prints, as
+		# ci reads them, Settings' System page opened as ci with its stderr
+		# kept, and the line that page logged for the facts.
+		'security status')
+			say "security_status $(as_ci edel status 2>&1 | grep -E '^(updates|data|firewall):' | tr '\n' ';')"
+			;;
+		'security window')
+			as_ci edel-settings --page system </dev/null >/tmp/security.log 2>&1 &
+			;;
+		'security log') say "security_log $(grep 'system security' /tmp/security.log 2>/dev/null | tail -n 1)" ;;
 		'network window')
 			as_ci edel-settings --page network </dev/null >/tmp/network.log 2>&1 &
 			;;

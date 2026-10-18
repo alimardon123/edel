@@ -468,17 +468,22 @@ fn unprefixed(message: &str) -> &str {
         .map_or(message, |(_, rest)| rest)
 }
 
+/// `text` with its first letter a capital, as a row's value shows a word
+/// the command prints in lower case, with no full stop (M8.14).
+pub fn capital(text: &str) -> String {
+    let mut letters = text.trim().chars();
+    letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
+        .unwrap_or_default()
+}
+
 /// `message` as a sentence: its first letter a capital and a full stop at
 /// the end, as Settings shows what the command prints in lower case
 /// (`docs/MESSAGES.md`).
 pub fn sentence(message: &str) -> String {
-    let message = message.trim();
-    let mut letters = message.chars();
-    let Some(first) = letters.next() else {
-        return String::new();
-    };
-    let mut text: String = first.to_uppercase().chain(letters).collect();
-    if !text.ends_with(['.', '!', '?']) {
+    let mut text = capital(message);
+    if !text.is_empty() && !text.ends_with(['.', '!', '?']) {
         text.push('.');
     }
     text
