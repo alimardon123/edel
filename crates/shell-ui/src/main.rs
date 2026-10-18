@@ -376,10 +376,13 @@ struct Shell {
     /// Whether a suspend or a shut down is under way, shared with its thread
     /// for the guard after it (M7.8).
     suspending: Arc<AtomicBool>,
-    /// The compositor's idle notifier, and the notification that locks the
-    /// screen after the lock time (M7.8).
+    /// The compositor's idle notifier, and the notifications of the idle
+    /// ladder, each with its step (M7.8, M7.16b).
     idle_notifier: Option<ExtIdleNotifierV1>,
-    idle_notification: Option<ExtIdleNotificationV1>,
+    idle_notifications: Vec<(power_rules::Stage, ExtIdleNotificationV1)>,
+    /// The light the idle dim turned down, until input brings it back
+    /// (M7.16b).
+    dimmed: Option<power_card::Dimmed>,
     /// The compositor's background-effect manager, when it has one, and
     /// whether it blurs now (its `capabilities` event): the popups' glass
     /// needs both (M8.21 21d).
@@ -390,9 +393,9 @@ struct Shell {
     screencopy: Option<ZwlrScreencopyManagerV1>,
     shots: Vec<screenshot::Shot>,
     next_shot: u64,
-    /// The power profile last asked of `edel`, until the kernel shows it
-    /// (M7.8).
-    profile_asked: Option<String>,
+    /// The power profile and the charger's word last asked of `edel`, until
+    /// the computer has what it asks for (M7.8, M7.16c).
+    profile_asked: Option<(String, Option<bool>)>,
     exit: bool,
 }
 
@@ -620,7 +623,8 @@ fn run() -> Result<()> {
         screencopy: screenshot::bind(&globals, &qh),
         shots: Vec::new(),
         next_shot: 0,
-        idle_notification: None,
+        idle_notifications: Vec::new(),
+        dimmed: None,
         profile_asked: None,
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
@@ -792,8 +796,10 @@ fn run() -> Result<()> {
             .map_err(|e| anyhow::anyhow!("watching the panel editor's bus: {e}"))?;
     }
     // shell-ui's own notices (M5.9e): a fallback record shown once for each
-    // person, and the update check on a timer, from a person's session only.
+    // person, a hardware pack named once (M7.11), and the update check on a
+    // timer, from a person's session only.
     shell.tell_fallback();
+    shell.tell_hardware();
     check_updates(&event_loop.handle());
     // What plays (M5.9d): read over MPRIS only while quick settings is open,
     // its news reaching the loop over a channel as the tray's does.

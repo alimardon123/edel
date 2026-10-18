@@ -72,7 +72,7 @@ power: how hard the machine works, its power profile; shell-ui sets it on batter
 
 ### `edel power profile [NAME]`
 
-Show the power profile the kernel uses and the ones it offers, or set it: power-saver, balanced or performance.
+Show the power profile and the processor's hint, or set both: power-saver, balanced or performance.
 
 | | What it does |
 |---|---|
@@ -80,7 +80,7 @@ Show the power profile the kernel uses and the ones it offers, or set it: power-
 
 ### `edel power charge-full`
 
-Charge to 100 percent once, for a trip: the charge limit comes back after a sleep once unplugged, or at the next start.
+Charge to 100 percent once, for a trip: the charge limit comes back once it is unplugged, or at the next start.
 
 ## `edel install [DISK] [OPTIONS]`
 

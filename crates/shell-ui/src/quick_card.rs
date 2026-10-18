@@ -212,7 +212,7 @@ impl Shell {
                 card.setting_light = false;
                 self.send_brightness();
             }
-            Cmd::Output(_) => {}
+            Cmd::Output(_) | Cmd::Lights { .. } => {}
         }
     }
 

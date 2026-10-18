@@ -1,0 +1,50 @@
+#!/sbin/openrc-run
+# Compressed memory for every machine (roadmap M7.15): a zram swap device of
+# half the memory, compressed with zstd where the kernel offers it, made
+# once at each start. Pages the machine has not touched for a while are
+# kept compressed in memory instead of being dropped or written to disk, so
+# a machine with 8 GB keeps a game, a browser and a build open without
+# stalling, and one with less keeps working. Nothing stays running: the
+# kernel does the work. A kernel without zram says so in one line and the
+# machine starts as before.
+
+description="Make compressed memory (zram swap)"
+
+depend() {
+	after modules
+}
+
+start() {
+	ebegin "Making compressed memory"
+	[ -e /sys/block/zram0 ] || modprobe zram num_devices=1 2>/dev/null
+	if [ ! -e /sys/block/zram0/disksize ]; then
+		echo "edel-zram: this kernel has no zram, so there is no compressed memory"
+		eend 0
+		return 0
+	fi
+	if grep -q '^/dev/zram0 ' /proc/swaps; then
+		eend 0
+		return 0
+	fi
+	case " $(cat /sys/block/zram0/comp_algorithm) " in
+	*zstd*) echo zstd >/sys/block/zram0/comp_algorithm ;;
+	esac
+	algorithm=$(sed -n 's/.*\[\(.*\)\].*/\1/p' /sys/block/zram0/comp_algorithm)
+	mem_kib=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+	if echo "$((mem_kib / 2))K" >/sys/block/zram0/disksize &&
+		mkswap /dev/zram0 >/dev/null && swapon /dev/zram0 &&
+		grep -q '^/dev/zram0 ' /proc/swaps; then
+		echo "edel-zram: /dev/zram0 is in /proc/swaps, $((mem_kib / 2048)) MiB compressed with $algorithm"
+		eend 0
+		return 0
+	fi
+	echo "edel-zram: could not make compressed memory on /dev/zram0; the machine runs without it"
+	eend 0
+}
+
+stop() {
+	grep -q '^/dev/zram0 ' /proc/swaps || return 0
+	ebegin "Taking compressed memory away"
+	swapoff /dev/zram0 && echo 1 >/sys/block/zram0/reset
+	eend 0
+}

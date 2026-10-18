@@ -69,6 +69,9 @@ kernels = ["lts"]
 reason = "libinput reads keyboards, mice and touchpads through evdev (M4.1)"
 kernels = ["lts"]
 
+[ZRAM]
+reason = "edel-zram makes compressed memory of half the RAM on every machine (M7.15)"
+
 [INPUT_UINPUT]
 reason = "Steam Input's virtual pads on /dev/uinput, which the gaming add-on loads at boot (M7.6b)"
 kernels = ["lts"]

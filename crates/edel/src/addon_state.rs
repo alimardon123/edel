@@ -9,6 +9,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::features::Feature;
+use crate::hardware::{self, Device, Pack};
 use crate::i18n::n_;
 use crate::places;
 use crate::services;
@@ -122,9 +124,37 @@ pub fn offered() -> Vec<(String, String)> {
 
 /// [`offered`] from the folder `dir`.
 pub fn offered_in(dir: &Path) -> Vec<(String, String)> {
-    services::installed_in(dir)
+    offered_features_in(dir)
         .into_iter()
         .map(|(name, feature)| (name, feature.summary))
+        .collect()
+}
+
+/// The feature files of the add-ons the image was built with, read from
+/// the folder `dir` (`places::OFFERED_ADDONS_DIR`).
+pub fn offered_features_in(dir: &Path) -> Vec<(String, Feature)> {
+    services::installed_in(dir)
+}
+
+/// The hardware packs among `offered` that serve `devices` and that
+/// `state` does not show as chosen (M7.11), in the order `offered` lists
+/// them: what the packs file holds and `edel status` and Settings name.
+pub fn unchosen_packs(
+    offered: &[(String, Feature)],
+    devices: &[Device],
+    state: impl Fn(&str) -> State,
+) -> Vec<Pack> {
+    offered
+        .iter()
+        .filter(|(name, feature)| {
+            !feature.hardware.is_empty()
+                && hardware::serves(&feature.hardware, devices)
+                && !state(name).chosen()
+        })
+        .map(|(name, feature)| Pack {
+            name: name.clone(),
+            summary: feature.summary.clone(),
+        })
         .collect()
 }
 
@@ -250,5 +280,48 @@ mod tests {
         assert_eq!(names_in(&dir), names(&["x"]));
         assert_eq!(failed_in(&dir), names(&["c", "d"]));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn pack(name: &str, hardware: &str) -> (String, Feature) {
+        let text = format!(
+            "format = 1\nsummary = \"{name} summary\"\nwhy = \"x\"\naddon = true\nhardware = [\"{hardware}\"]\n"
+        );
+        let (feature, _) = crate::features::read(&text).unwrap();
+        (name.to_string(), feature)
+    }
+
+    fn device(modalias: &str) -> Device {
+        Device {
+            bus: "pci".into(),
+            name: "0000:00:02.0".into(),
+            modalias: modalias.into(),
+        }
+    }
+
+    #[test]
+    fn an_unchosen_pack_that_serves_this_machine_is_listed() {
+        let offered = vec![
+            pack("graphics-nvidia", "pci:v000010DEd*"),
+            pack("ci-hello", "pci:v00001AF4d*"),
+            ("orca".to_string(), Feature::default()),
+        ];
+        let devices = [device("pci:v000010DEd00001EB8sv0bc03")];
+        let off = |_: &str| State::Off;
+        assert_eq!(
+            unchosen_packs(&offered, &devices, off),
+            [Pack {
+                name: "graphics-nvidia".into(),
+                summary: "graphics-nvidia summary".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_chosen_pack_is_not_listed_as_one_to_add() {
+        let offered = vec![pack("graphics-nvidia", "pci:v000010DEd*")];
+        let devices = [device("pci:v000010DEd00001EB8sv0bc03")];
+        let waiting = |_: &str| State::Waiting;
+        assert!(unchosen_packs(&offered, &devices, waiting).is_empty());
+        assert!(unchosen_packs(&offered, &[], |_: &str| State::Off).is_empty());
     }
 }

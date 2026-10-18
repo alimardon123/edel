@@ -92,6 +92,14 @@ impl Link {
             link.on_battery(u32::from(on));
         }
     }
+
+    /// Asks the compositor to turn every screen off until the next input,
+    /// after nobody used the machine for `power.screen_off_minutes` (M7.16b).
+    pub fn screens_off(&self) {
+        if let Some(link) = &self.0 {
+            link.screens_off();
+        }
+    }
 }
 
 /// The link's user data: its events change what the panel shows.

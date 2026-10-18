@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use edel::{base, places};
+use edel::{addon_state, base, hardware, places, services};
 
 use crate::boot::DATA_PARTITION;
 use crate::update::{Disk, run};
@@ -485,6 +485,40 @@ fn grow_file_system(dev: &Path) {
     eprintln!("warning: could not grow the data file system: {why}");
 }
 
+/// The hardware packs (M7.11, ADR-012), after the add-ons are mounted: when
+/// a mounted pack holds a device's firmware (`probe`), each device it
+/// serves that has no driver is started again, since its driver may have
+/// asked for the firmware before the pack came; then the packs this
+/// machine's devices match and it has not chosen are written to
+/// `places::PACKS_FILE` for `edel status`, Settings and shell-ui, as an
+/// empty file when there are none. Never fails the boot.
+fn hardware_packs(probe: bool) {
+    let mounted = addon_state::mounted();
+    if probe {
+        let patterns: Vec<String> = services::installed()
+            .iter()
+            .filter(|(name, feature)| feature.addon && mounted.contains(name))
+            .flat_map(|(_, feature)| feature.hardware.clone())
+            .collect();
+        for line in hardware::start_again_at(Path::new(hardware::BUS), &patterns) {
+            println!("edel-data: {line}");
+        }
+    }
+    let devices = hardware::devices();
+    let offered = addon_state::offered_features_in(Path::new(places::OFFERED_ADDONS_DIR));
+    let facts = addon_state::Facts::read();
+    let packs =
+        addon_state::unchosen_packs(&offered, &devices, |name| addon_state::state(name, &facts));
+    let written = fs::create_dir_all(places::RUN_DIR)
+        .and_then(|()| fs::write(places::PACKS_FILE, hardware::packs_text(&packs)));
+    if let Err(err) = written {
+        eprintln!(
+            "warning: edel-data: could not write {}: {err}",
+            places::PACKS_FILE
+        );
+    }
+}
+
 /// Grows the data partition if the disk has room, mounts it at `/data` and
 /// grows its file system to fill it.
 pub fn mount_data() -> Result<()> {
@@ -520,7 +554,8 @@ pub fn mount_data() -> Result<()> {
     let mut first_error = None;
     // A safe start (M7.1) leaves the add-ons off as it does developer
     // mode's layer: they live on /data, which both slots share.
-    let addons = if is_safe_start(&fs::read_to_string("/proc/cmdline").unwrap_or_default()) {
+    let safe = is_safe_start(&fs::read_to_string("/proc/cmdline").unwrap_or_default());
+    let addons = if safe {
         println!(
             "edel-data: add-ons are left off, as this start is a safe one: no slot had a try left"
         );
@@ -541,6 +576,7 @@ pub fn mount_data() -> Result<()> {
             first_error.get_or_insert(err);
         }
     }
+    hardware_packs(!safe);
     // This device's identity key (M6.12): made once, at the first boot; a
     // failure is said and never stops the boot.
     match crate::device_key::ensure(
