@@ -134,3 +134,11 @@ flatpak_cold_ms = 500
 flatpak_warm_ms = 300
 flatpak_app_pss_mib = 6
 portal_readall_ms = 50
+
+# How much slower the desktop's frames may be at p99 while memory is full
+# past what was available and pages go to zram, than with it idle (desktop-test
+# memory, M7.15). A difference, as animation_p99_ms is, so the runner's own
+# speed does not count. No CI run has measured it yet: 8 is the first value,
+# to be lowered to CI's first measurement plus 20 percent in the same pull
+# request.
+memory_full_p99_ms = 8

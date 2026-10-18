@@ -5448,23 +5448,25 @@ case_wakeups() {
 }
 
 case_memory() {
-	# Compressed memory (M7.15): the service fills a tmpfs with text to a
-	# fifth past the memory's size, which only fits by swapping to zram,
-	# while it times 10 s of frames. The fill must finish, zram must hold
-	# some of it, and the frames must hold frame_p99_ms meanwhile, so the
-	# machine stays responsive past its memory.
+	# Compressed memory (M7.15): the service times 10 s of frames with the
+	# desktop idle, then fills a tmpfs with text to all the available
+	# memory and three quarters of the free swap, which fits only by
+	# swapping to zram, while it times 10 s more. The fill must pass the
+	# memory that was available, zram must hold some of it, and the frames
+	# with memory full may be at most memory_full_p99_ms slower at p99 than
+	# with it idle, so the machine stays responsive past its memory.
 	n=$(count 'DESKTOP-TEST: memory_fill ')
 	guest 'fill memory'
 	wait_more 'DESKTOP-TEST: memory_fill ' "$n" 120 || fail "the memory fill did not finish within 120 s"
 	line=$(value memory_fill)
 	set -- $line
-	filled=${1#filled_mib=} mem=${2#mem_mib=} used=${3#zram_used_kib=} p99=${4#frame_p99_ms=}
-	[ "${filled:-0}" -gt "${mem:-0}" ] || fail "the fill wrote ${filled:-no} MiB, not past the memory's ${mem:-unknown} MiB ($line)"
+	filled=${1#filled_mib=} available=${2#available_mib=} mem=${3#mem_mib=} used=${4#zram_used_kib=} calm=${5#calm_p99_ms=} full=${6#full_p99_ms=}
+	[ "${filled:-0}" -gt "${available:-0}" ] || fail "the fill wrote ${filled:-no} MiB, not past the ${available:-unknown} MiB of memory available ($line)"
 	[ "${used:-0}" -gt 0 ] || fail "zram held nothing while memory was full ($line)"
-	limit=$(budget frame_p99_ms)
-	awk -v m="$p99" -v b="$limit" 'BEGIN { exit !(m != "" && m <= b) }' ||
-		fail "with memory full the frames took ${p99:-none} ms at p99, over the budget of $limit ms ($line)"
-	echo "PASS: ${filled} MiB filled past ${mem} MiB of memory, zram held ${used} KiB, and the frames meanwhile had p99 $p99 ms, within the budget of $limit ms"
+	limit=$(budget memory_full_p99_ms)
+	awk -v c="$calm" -v f="$full" -v b="$limit" 'BEGIN { exit !(c != "" && f != "" && f - c <= b) }' ||
+		fail "with memory full the frames took ${full:-none} ms at p99 against ${calm:-none} ms idle, more than $limit ms slower ($line)"
+	echo "PASS: ${filled} MiB filled past the ${available} MiB available of ${mem} MiB, zram held ${used} KiB, and the frames had p99 $full ms against $calm ms idle, within $limit ms"
 }
 
 case_device_power() {

@@ -325,30 +325,34 @@ commands() {
 				say "desktop_wakeups_per_second $(awk -v a="$comp_rate" -v b="$shell_rate" 'BEGIN { printf "%.2f", a + b }')"
 			) &
 			;;
-		# The devices' power saving (M7.16d), read from /sys and /proc and the
-		# Wi-Fi setting NetworkManager has: PCI devices that may sleep (graphics
-		# and the management engine left to their drivers), the SATA link
-		# policies (none when the VM has no SATA host), the sound chip's
-		# power_save, the NMI watchdog, and Wi-Fi's power save.
-		# Compressed memory (M7.15): a tmpfs filled with text to a fifth past
-		# the memory's size, which the kernel can only keep by swapping it to
-		# zram, while weston-presentation-shm times 10 s of frames; then what
-		# zram holds, and the fill is taken away.
+		# Compressed memory (M7.15): first 10 s of frames with the desktop
+		# idle, then a tmpfs filled with text (at nice 19) to all the memory
+		# and three quarters of the swap that is free, which fits only by
+		# swapping to zram, while 10 s more are timed; then what zram holds,
+		# and the fill is taken away.
 		'fill memory')
+			as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-calm.txt 2>&1
 			mkdir -p /tmp/fill
 			mount -t tmpfs -o size=8g fill /tmp/fill
 			mem_kib=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+			free_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+			fill_kib=$(awk '/^MemAvailable:/ { a = $2 } /^SwapFree:/ { s = $2 } END { printf "%d", a + s * 3 / 4 }' /proc/meminfo)
 			(yes 'Edel OS fills its memory past its size to try compressed memory' |
-				head -c "$((mem_kib * 1024 / 5 * 6))" >/tmp/fill/data) &
+				nice -n 19 head -c "$((fill_kib * 1024))" >/tmp/fill/data) &
 			fill=$!
 			as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-fill.txt 2>&1
 			wait "$fill"
 			filled=$(du -m /tmp/fill/data | cut -f1)
 			used=$(awk '$1 == "/dev/zram0" { print $4 }' /proc/swaps)
-			say "memory_fill filled_mib=$filled mem_mib=$((mem_kib / 1024)) zram_used_kib=${used:-0} frame_p99_ms=$(frame_ms /tmp/frames-fill.txt 99)"
+			say "memory_fill filled_mib=$filled available_mib=$((free_kib / 1024)) mem_mib=$((mem_kib / 1024)) zram_used_kib=${used:-0} calm_p99_ms=$(frame_ms /tmp/frames-calm.txt 99) full_p99_ms=$(frame_ms /tmp/frames-fill.txt 99)"
 			rm -f /tmp/fill/data
 			umount /tmp/fill
 			;;
+		# The devices' power saving (M7.16d), read from /sys and /proc and the
+		# Wi-Fi setting NetworkManager has: PCI devices that may sleep (graphics
+		# and the management engine left to their drivers), the SATA link
+		# policies (unsupported where the controller refuses them), the sound chip's
+		# power_save, the NMI watchdog, and Wi-Fi's power save.
 		'device power')
 			pci_auto=0 pci_all=0
 			for d in /sys/bus/pci/devices/*; do
