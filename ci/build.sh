@@ -257,5 +257,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
+	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test
