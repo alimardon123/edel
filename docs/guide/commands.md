@@ -78,6 +78,10 @@ Show the power profile the kernel uses and the ones it offers, or set it: power-
 |---|---|
 | `NAME` | The profile to set, as power.on_battery names them |
 
+### `edel power charge-full`
+
+Charge to 100 percent once, for a trip: the charge limit comes back after a sleep once unplugged, or at the next start.
+
 ## `edel install [DISK] [OPTIONS]`
 
 Install Edel OS on another disk, erasing it: the running system becomes slot A, and FILE the new machine's settings.
@@ -100,6 +104,7 @@ Print what an issue about this machine needs, as TOML: the release, kernel, boot
 | | What it does |
 |---|---|
 | `--esp` | Write it to /EFI/edel/report.toml on the EFI system partition instead, where any computer can read it from the disk or stick |
+| `--battery MINUTES` | Also measure the battery for MINUTES (5 or more) with the computer left alone and unplugged: watts drawn, how long the processor rested, what woke it, and how deep the last sleep went |
 
 ## `edel settings`
 

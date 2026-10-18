@@ -11,6 +11,7 @@ use std::path::Path;
 
 use anyhow::{Result, bail};
 
+use crate::battery_care;
 use crate::i18n::{n_, tr, trf};
 use crate::settings;
 
@@ -580,11 +581,9 @@ pub fn hostname_answer(value: &str) -> Result<String, String> {
 /// `sys` (`/sys`, or a test's tree): a laptop has a battery, a virtual
 /// machine says so in its firmware, anything else is a pc.
 pub fn form_factor(sys: &Path) -> &'static str {
-    let battery = fs::read_dir(sys.join("class/power_supply")).is_ok_and(|entries| {
-        entries
-            .filter_map(|e| e.ok())
-            .any(|e| fs::read_to_string(e.path().join("type")).is_ok_and(|t| t.trim() == "Battery"))
-    });
+    // The supplies folder is the one `battery_care` names, under `sys`.
+    let supplies = sys.join(battery_care::POWER_SUPPLY.trim_start_matches("/sys/"));
+    let battery = !battery_care::batteries(&supplies).is_empty();
     let vendor = fs::read_to_string(sys.join("class/dmi/id/sys_vendor")).unwrap_or_default();
     if battery {
         "laptop"

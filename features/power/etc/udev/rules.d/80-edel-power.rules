@@ -1,0 +1,15 @@
+# Devices save power while unused (M7.16d), as ChromeOS and TLP set them.
+# PCI devices may sleep; a driver that cannot keeps its device awake on its
+# own. Graphics (class 0x03) and Intel's management engine (0x0780) are
+# left to their drivers, as TLP leaves them.
+ACTION=="add", SUBSYSTEM=="pci", TEST=="power/control", ATTR{class}!="0x03*", ATTR{class}!="0x0780*", ATTR{power/control}="auto"
+# USB devices may sleep, as hubs already do. USB network adapters and
+# fingerprint readers (class ff) sleep too; the laptop trial checks them.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", TEST=="power/control", ATTR{power/control}="auto"
+# Not keyboards, mice and game controllers (HID, 03), sound (01) or
+# cameras (0e), which would lose a first key press or start slowly: their
+# interface keeps its device awake, and a hub stays awake while a device
+# below it is.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTR{bInterfaceClass}=="01|03|0e", RUN+="/bin/sh -c 'echo on > %S%p/../power/control'"
+# SATA links rest between commands.
+ACTION=="add", SUBSYSTEM=="scsi_host", KERNEL=="host*", TEST=="link_power_management_policy", ATTR{link_power_management_policy}="med_power_with_dipm"

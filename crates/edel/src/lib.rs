@@ -27,6 +27,7 @@ pub mod apps;
 pub mod backlight;
 #[cfg(feature = "os")]
 pub mod base;
+pub mod battery_care;
 pub mod bluetooth;
 #[cfg(feature = "pictures")]
 pub mod draw;

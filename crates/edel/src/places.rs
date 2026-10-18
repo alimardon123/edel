@@ -172,6 +172,10 @@ pub const STARTED: &str = run!("/started");
 /// restart, and gone at the next boot, as `/run` is memory (M5.10c): the
 /// lock screen's power menu marks Restart while it exists.
 pub const RESTART_PENDING: &str = run!("/restart-pending");
+/// Written by `edel power charge-full` for a trip (M7.16e): battery care's
+/// limit is off while it exists, and `edel boot battery-care` takes it away
+/// once the computer is unplugged; gone at the next boot, as `/run` is memory.
+pub const CHARGE_FULL_ONCE: &str = run!("/charge-full-once");
 /// One updater at a time (M1.1).
 pub const UPDATE_LOCK: &str = run!("/update.lock");
 /// The account a stick logs in by itself (M3.6), which may also run

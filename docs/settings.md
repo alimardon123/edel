@@ -370,6 +370,7 @@ This page has no key in the file.
 | `power.power_button` | What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing. | suspend | release |
 | `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here. | balanced | release |
 | `power.game_mode` | When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out. | plugged-in | release |
+| `power.battery_care` | Stop charging at 80 percent where the laptop offers a limit, so the battery keeps more of its health over the years. | `false` | release |
 
 ### `notifications`
 
