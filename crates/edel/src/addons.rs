@@ -234,7 +234,7 @@ fn scan_into(root: &Path, under: &str, map: &mut BTreeMap<String, Stamp>) -> Res
 }
 
 /// What changed between two scans, each list sorted.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Diff {
     /// Paths that are new, folders included.
     pub new: Vec<String>,

@@ -1477,12 +1477,41 @@ impl Build<'_> {
                 .with_context(|| format!("checking add-on {name}"))?;
         }
         if keeps_font_cache(addon) {
+            self.drop_unkept(addon, &a_root, before)?;
             self.bake_font_cache(&a_root)?;
         }
 
         let (files, accounts) = self.make_addon_tree(addon, start, &a_root, &tree, before)?;
         self.pack_addon(name, &tree, &addon.text)?;
         Ok((files, accounts))
+    }
+
+    /// Takes out of an add-on's root the new files its `[[keep]]` lists
+    /// leave out, before its fonts' cache is baked (M8.17c), so the cache
+    /// names only the fonts the add-on ships.
+    fn drop_unkept(
+        &self,
+        addon: &Listed,
+        a_root: &Path,
+        before: &BTreeMap<String, addons::Stamp>,
+    ) -> Result<()> {
+        let keeps: Vec<edel::keep::Keep> = addon
+            .parts()
+            .flat_map(|part| part.feature.keep.iter().cloned())
+            .collect();
+        if self.runner.dry_run || keeps.is_empty() {
+            return Ok(());
+        }
+        let after = addons::scan(a_root)?;
+        let all = addons::diff(before, &after);
+        let mut kept = all.clone();
+        keep_addon(&addon.name, &keeps, &mut kept, &after)?;
+        let kept: BTreeSet<&String> = kept.new.iter().collect();
+        for path in all.new.iter().filter(|p| !kept.contains(p)) {
+            let at = a_root.join(path);
+            fs::remove_file(&at).with_context(|| format!("removing {}", at.display()))?;
+        }
+        Ok(())
     }
 
     /// Makes an add-on's tree (M7.2a): what its copy of the root adds, less
