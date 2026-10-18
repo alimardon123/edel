@@ -10,9 +10,9 @@ Each release lists its files with their sha256 in `release.toml`, and `release.t
 
 | On | Check the sha256 |
 |---|---|
-| Linux | `sha256sum edel-desktop-x86_64.img.gz` |
-| macOS | `shasum -a 256 edel-desktop-x86_64.img.gz` |
-| Windows | `certutil -hashfile edel-desktop-x86_64.img.gz SHA256` |
+| Linux | `sha256sum edel-x86_64.img.gz` |
+| macOS | `shasum -a 256 edel-x86_64.img.gz` |
+| Windows | `certutil -hashfile edel-x86_64.img.gz SHA256` |
 
 Compare the line it prints with the file's `sha256` in `release.toml`, or its line in `SHA256SUMS`. On a machine that already runs Edel OS, `edel release verify release.toml` checks the list's signature against the keys the system carries.
 
@@ -20,7 +20,7 @@ Compare the line it prints with the file's `sha256` in `release.toml`, or its li
 
 Writing erases the stick, which needs 4 GB or more.
 
-- **Linux:** `gunzip -c edel-desktop-x86_64.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`, with `sdX` the stick (`lsblk` lists the disks; pick the stick's, never a partition such as `sdX1`).
+- **Linux:** `gunzip -c edel-x86_64.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync`, with `sdX` the stick (`lsblk` lists the disks; pick the stick's, never a partition such as `sdX1`).
 - **Windows and macOS:** we name a stick writer here only once CI or Alimardon has tried it. Until then, see [Try it](TRY-IT.md), which names the ones people use, from memory.
 
 ## 3. Start from the stick
@@ -40,7 +40,7 @@ Each of these ends in the new disk's own `settings.toml`.
 | **A file on a web server** | `doas edel install sda --settings https://example.org/fleet.toml` | That address, over https only: a settings file can make administrators and add ssh keys and is not signed, so `http://` is refused. The server is checked against the machine's certificate authorities, so a fleet adds its own authority to `/etc/ssl/certs/ca-certificates.crt` on the stick. |
 | **Installer page in Settings** | Start from the stick: Settings opens on Install Edel OS. It asks the same questions, shows the disk as `edel install --list` sees it, then the plan, and erases only when Erase and install is pressed twice. Return moves to the next question, so the keyboard alone does it. | Your answers, as on a terminal. Your password goes to `edel install` on its standard input, never in the file. |
 | **A file on another stick, with the installer page** | Put your settings file, `settings.toml`, at the top of any USB stick (FAT, as any computer writes it), plug it in beside the Edel OS stick and open Settings: the page finds it and offers Use it, then asks only what the file leaves open, such as the password. `edel install --find-settings` shows what it would find. | That file, with your answers to the rest added to it; its own lines and comments stay. |
-| **A virtual machine image** | No install: start `edel-vm-x86_64.img` and give its first boot a file on a small disk labelled `EDEL-SEED` ([Try it](TRY-IT.md)). | The seed disk's file, kept on the data partition. |
+| **A virtual machine image** | No install: start `edel-x86_64.img` and give its first boot a file on a small disk labelled `EDEL-SEED` ([Try it](TRY-IT.md)). | The seed disk's file, kept on the data partition. |
 
 `edel install --list` shows every disk it could install on, with its model, size and partitions, and marks the one running; it changes nothing. `--plan` shows what an install would erase and write, and changes nothing. `edel settings check FILE` checks a file, or an `https://` address, before you use it.
 

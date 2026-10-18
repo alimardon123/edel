@@ -76,7 +76,8 @@ fi
 	fail "diff after set is not exactly the hostname: $(cat out/system-diff.log)"
 ssh_root edel settings reset network.hostname || fail "edel settings reset failed"
 ssh_root edel settings apply || fail "edel settings apply after reset failed"
-[ "$(ssh_root hostname)" = edel ] || fail "the hostname did not go back to the image's"
+now=$(ssh_root hostname)
+[ "$now" = edel ] || fail "the hostname did not go back to the image's: it is $now"
 final=$(ssh_root cat "/etc/edel/$settings_name")
 printf '%s\n' "$final" | grep -qxF 'future.key = 1' || fail "reset lost future.key"
 printf '%s\n' "$final" | grep -A1 -xF '# The person who runs CI' | grep -qxF '[users.ci]' ||
@@ -116,8 +117,8 @@ assert r["format"] == 1 and r["version"] and r["kernel"], "release or kernel mis
 assert r["started"].startswith("Started in "), "no boot line"
 assert r["pci"] and all(d["driver"] for d in r["pci"]), "no PCI devices"
 assert "Linux version" in r["dmesg"], "no kernel log"
-# M4.0: the image carries the files of the features vm.toml lists.
-assert r["features"] == ["ab-boot", "base", "machine", "mdev", "ssh", "vm"], "features: %s" % r["features"]
+# M4.0: the image carries the files of the features ci/vm/vm.toml lists.
+assert r["features"] == ["ab-boot", "base", "kernel", "machine", "network", "seat", "ssh", "udev"], "features: %s" % r["features"]
 assert r["feature_notes"] == [], "feature notes: %s" % r["feature_notes"]
 print("report:", r["version"], r["kernel"], len(r["pci"]), "PCI devices,", r["memory_in_use_mib"], "MiB in use, features", " ".join(r["features"]))
 ' || fail "edel report printed no valid report: $(head -c 400 out/report.toml)"

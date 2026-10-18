@@ -556,8 +556,11 @@ mod tests {
                 ],
                 Need::Admin,
             ),
-            (&["edel", "image", "check", "images/vm.toml"], Need::Anyone),
-            (&["edel", "image", "build", "images/vm.toml"], Need::Admin),
+            (
+                &["edel", "image", "check", "images/edel.toml"],
+                Need::Anyone,
+            ),
+            (&["edel", "image", "build", "images/edel.toml"], Need::Admin),
             (&["edel", "theme", "list"], Need::Anyone),
             (&["edel", "theme", "save", "mine"], Need::Admin),
             (&["edel", "theme", "export", "mine"], Need::Admin),

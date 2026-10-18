@@ -1,0 +1,32 @@
+# Edel OS (roadmap M8.17): the one disk image for every machine, servers,
+# VMs, desktops and laptops, and the stick to try and install from. What a
+# machine becomes is its settings file: with a screen it starts the
+# desktop, greetd's greeter on our compositor (M4.7b, M5.10b); with no
+# graphics card it starts no desktop service (the features marked screen)
+# and its console asks for the first person (M6.6b). A bootable A/B disk,
+# so its variant is vm. The container image is the other image, as a
+# container cannot be a disk.
+format = 2
+name = "edel"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "wallpapers", "xwayland", "flatpak", "apps", "sound", "network", "bluetooth", "power", "capture", "location"]
+# ssh is off where a screen is, a desktop's people sit at it, and on where
+# none is, as a server is used from afar; services.ssh in the settings
+# file decides either way (the seed, the installer, the console's key).
+off = ["ssh"]
+headless = ["ssh"]
+# Built beside the image from its root, signed in its release, and
+# mounted on a machine whose settings file names them (M7.2a).
+addons = ["fonts-cjk", "orca", "printing", "containers", "virtualization"]
+
+[vm]
+kernel = "lts"
+# Small slots, so the disk fits a common 8 GB stick; `edel install` gives
+# the installed machine slots of 4096 MiB.
+slot_mib = 1536
+# The screen and the serial port both show the kernel; the serial port,
+# listed last, also gets the boot messages, as the CI tests read them and
+# a server's console is often one.
+cmdline = "console=tty0 console=ttyS0,115200"

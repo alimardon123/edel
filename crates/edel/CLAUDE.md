@@ -11,7 +11,7 @@ The one command-line tool of Edel OS and the library `edel::settings`: the works
 
 ## Fast checks
 
-Run the eleven "Rust checks" commands from the root CLAUDE.md before every push. After touching `image.rs`, `run.rs` or `def.rs`, also run `cargo run -- image build images/vm.toml --plan` and the same for `images/container.toml`. Run the tool with `cargo run -- ...`, never a binary left in `target/`: a stale build rejects newer definitions with errors such as "unknown field `cmdline`".
+Run the eleven "Rust checks" commands from the root CLAUDE.md before every push. After touching `image.rs`, `run.rs` or `def.rs`, also run `cargo run -- image build images/edel.toml --plan` and the same for `images/container.toml`. Run the tool with `cargo run -- ...`, never a binary left in `target/`: a stale build rejects newer definitions with errors such as "unknown field `cmdline`".
 
 ## Layout
 
