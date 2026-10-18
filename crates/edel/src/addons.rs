@@ -437,6 +437,34 @@ pub fn new_accounts(before: &str, after: &str) -> String {
     out
 }
 
+/// The lines of `earlier` (other add-ons' new account lines) whose names
+/// `text` lacks, to hold their ids while an add-on's packages are added
+/// (M8.17c): add-ons are built side by side from one root, and apk gives a
+/// new system group or user the next free id, so without them two add-ons
+/// a machine mounts together would give one id to two names.
+pub fn held_accounts(text: &str, earlier: &str) -> String {
+    let names: BTreeSet<&str> = text
+        .lines()
+        .map(|line| line.split(':').next().unwrap_or_default())
+        .collect();
+    earlier
+        .lines()
+        .filter(|line| {
+            !line.is_empty() && !names.contains(line.split(':').next().unwrap_or_default())
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+/// `text` without the lines `held` added to it, once the packages are in.
+pub fn without_held(text: &str, held: &str) -> String {
+    let held: BTreeSet<&str> = held.lines().collect();
+    text.lines()
+        .filter(|line| !held.contains(line))
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
 /// The names (the first field) of the account lines that both texts have
 /// with a different line in `after`: a package that added a member to an
 /// existing group, or changed an existing user's shell. `new_accounts` gives
@@ -2112,6 +2140,19 @@ mod tests {
         assert_eq!(plan.copies[1].to, "usr/lib/edel/etc/ci-hello/foo/a");
         assert_eq!(plan.copies[1].link.as_deref(), Some("/etc/b"));
         assert_eq!(absolute("usr/bin/l", "../lib/x"), "/usr/lib/x");
+    }
+
+    #[test]
+    fn earlier_add_ons_ids_are_held_while_the_packages_go_in() {
+        let image = "root:x:0:\nlp:x:7:\n";
+        let earlier = "seat:x:104:\nlp:x:7:\n";
+        let held = held_accounts(image, earlier);
+        assert_eq!(held, "seat:x:104:\n");
+        let after = format!("{image}{held}cups:x:105:\n");
+        assert_eq!(
+            without_held(&after, &held),
+            "root:x:0:\nlp:x:7:\ncups:x:105:\n"
+        );
     }
 
     #[test]

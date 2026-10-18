@@ -1267,7 +1267,8 @@ impl Build<'_> {
         };
         let image = scan(root)?;
         let mut bases: BTreeMap<String, BTreeMap<String, addons::Stamp>> = BTreeMap::new();
-        let (mut trees, mut sets) = (Vec::new(), Vec::new());
+        let mut trees = Vec::new();
+        let mut sets: Vec<(String, String)> = Vec::new();
         for addon in list.iter().copied() {
             let base = addon.feature.on.as_deref();
             let start = base.map_or(root.to_path_buf(), a_root_of);
@@ -1277,7 +1278,9 @@ impl Build<'_> {
                 bases.insert(base.to_string(), scan(&start)?);
             }
             let before = base.and_then(|b| bases.get(b)).unwrap_or(&image);
-            let (mut files, accounts) = self.build_addon(work, &start, addon, before, &cache)?;
+            let earlier: Vec<String> = sets.iter().map(|(name, _)| name.clone()).collect();
+            let (mut files, accounts) =
+                self.build_addon(work, &start, addon, before, &cache, &earlier)?;
             // An add-on another is built `on` keeps its copy of the root
             // until that one is built; the others go at once.
             if !list
@@ -1326,6 +1329,53 @@ impl Build<'_> {
         Ok(())
     }
 
+    /// Adds the account lines of the add-ons built before (`earlier`) to an
+    /// add-on's copy of the root, so its packages take ids none of them
+    /// has (M8.17c, `addons::held_accounts`). Returns what it added to
+    /// each account file, for [`Build::release_accounts`].
+    fn hold_accounts(
+        &self,
+        a_root: &Path,
+        work: &Path,
+        earlier: &[String],
+    ) -> Result<Vec<(&'static str, String)>> {
+        let mut held = Vec::new();
+        if self.runner.dry_run || earlier.is_empty() {
+            return Ok(held);
+        }
+        for path in addons::ACCOUNT_FILES {
+            let file = path.rsplit('/').next().unwrap_or(path);
+            let lines: String = earlier
+                .iter()
+                .map(|other| {
+                    let tree = work.join("addons").join(other).join("tree");
+                    fs::read_to_string(tree.join(addons::accounts_dir(other)).join(file))
+                        .unwrap_or_default()
+                })
+                .collect();
+            let at = a_root.join(path);
+            let Ok(text) = fs::read_to_string(&at) else {
+                continue;
+            };
+            let add = addons::held_accounts(&text, &lines);
+            if !add.is_empty() {
+                fs::write(&at, format!("{text}{add}"))?;
+                held.push((path, add));
+            }
+        }
+        Ok(held)
+    }
+
+    /// Takes the lines [`Build::hold_accounts`] added out again.
+    fn release_accounts(&self, a_root: &Path, held: &[(&'static str, String)]) -> Result<()> {
+        for (path, add) in held {
+            let at = a_root.join(path);
+            let text = fs::read_to_string(&at).with_context(|| format!("reading {path}"))?;
+            fs::write(&at, addons::without_held(&text, add))?;
+        }
+        Ok(())
+    }
+
     /// Takes an add-on's copy of the root away once its tree is made.
     fn remove_addon_root(&self, a_root: &Path) -> Result<()> {
         if self.runner.dry_run {
@@ -1346,6 +1396,7 @@ impl Build<'_> {
         addon: &Listed,
         before: &BTreeMap<String, addons::Stamp>,
         cache: &Path,
+        earlier: &[String],
     ) -> Result<(Vec<String>, String)> {
         let name = addon.name.as_str();
         let dir = work.join("addons").join(name);
@@ -1369,6 +1420,7 @@ impl Build<'_> {
                 .arg(start.join("."))
                 .arg(&a_root),
         )?;
+        let held = self.hold_accounts(&a_root, work, earlier)?;
         let mut packages: Vec<String> = Vec::new();
         let mut programs: Vec<String> = Vec::new();
         for part in addon.parts() {
@@ -1389,6 +1441,7 @@ impl Build<'_> {
             self.runner
                 .run(apk.arg("--cache-dir").arg(cache).arg("add").args(&packages))?;
         }
+        self.release_accounts(&a_root, &held)?;
         for part in addon.parts() {
             if let Some(files) = &part.files {
                 self.copy_tree(files, &a_root)?;

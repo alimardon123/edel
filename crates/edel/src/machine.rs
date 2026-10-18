@@ -676,6 +676,14 @@ fn zone_of_target(target: &Path) -> Option<String> {
 fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let mut changes = Vec::new();
     let mut notes = Vec::new();
+    // The mounted add-ons' files show in /etc first: before the people are
+    // added, whose homes take the desktop's /etc/skel (M8.17c), and before
+    // their services are; the services of one that cannot be switched off
+    // are on, as a built-in feature's are (M7.2a).
+    let (make, remove) = machine.addon_links.plan();
+    if !make.is_empty() || !remove.is_empty() {
+        changes.push(Change::Addons { make, remove });
+    }
     match &file.network.hostname {
         Some(h) if machine.hostname.trim() != h => changes.push(Change::Hostname(h.clone())),
         None if machine.hostname_set => changes.push(Change::HostnameDefault),
@@ -811,13 +819,6 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let developer = file.system.developer_mode == Some(true);
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
-    }
-    // The mounted add-ons' files show in /etc before their services are
-    // added; the services of one that cannot be switched off are on, as a
-    // built-in feature's are (M7.2a).
-    let (make, remove) = machine.addon_links.plan();
-    if !make.is_empty() || !remove.is_empty() {
-        changes.push(Change::Addons { make, remove });
     }
     // An add-on made of features brings their services (M8.17c).
     let mut from_addons: BTreeSet<&str> = machine.addons.iter().map(String::as_str).collect();

@@ -1,2 +1,7 @@
 format = 1
 summary = "Wallpapers: light and dark pairs behind the windows, ours and NASA's Earth"
+# An add-on over the desktop (M8.17c), carried beside it on the disk, so
+# a machine can leave the pictures out and CI's desktop tests draw the
+# background colour.
+addon = true
+on = "desktop"
