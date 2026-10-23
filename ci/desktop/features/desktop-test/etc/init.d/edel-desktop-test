@@ -1636,10 +1636,10 @@ commands() {
 		# fontconfig cache folder, whether /var/cache/fontconfig exists (it
 		# would make Flatpak hand apps its stale cache), and how many caches
 		# ci's own fontconfig built when it listed the fonts, and the
-		# folders those are for.
+		# folders those and any in /var/cache/fontconfig are for.
 		'font cache')
 			own=$(as_ci "fc-list >/dev/null 2>&1; ls \$HOME/.cache/fontconfig 2>/dev/null | grep -c '\.cache-'")
-			own_dirs=$(for f in /home/ci/.cache/fontconfig/*.cache-*; do
+			own_dirs=$(for f in /home/ci/.cache/fontconfig/*.cache-* /var/cache/fontconfig/*.cache-*; do
 				[ -e "$f" ] && fc-cat -v "$f" 2>/dev/null | sed -n 's/^Directory: //p' | head -n 1
 			done | tr '\n' ' ')
 			say "font_cache $(ls "$font_cache_dir" 2>/dev/null | grep -c '\.cache-') $( [ -d /var/cache/fontconfig ] && echo var-cache || echo no-var-cache ) $own $own_dirs"

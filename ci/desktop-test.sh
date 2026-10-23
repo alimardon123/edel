@@ -4019,9 +4019,9 @@ case_default_apps() {
 	varcache=$(echo "$fonts" | cut -d' ' -f2)
 	own=$(echo "$fonts" | cut -d' ' -f3)
 	[ "${baked:-0}" -gt 0 ] || fail "the slot carries no fonts' cache: the check said \"$fonts\""
-	[ "$varcache" != var-cache ] ||
-		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
 	own_dirs=$(echo "$fonts" | cut -d' ' -f4-)
+	[ "$varcache" != var-cache ] ||
+		fail "/var/cache/fontconfig exists, for $own_dirs, so Flatpak would hand apps that stale cache instead of the slot's"
 	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, for $own_dirs, so the slot's cache was stale for those folders"
 	# What it saves (M6.2a): the same fonts listed five times with the
 	# baked cache and five times with none, as each app's first start did
@@ -9006,7 +9006,11 @@ if [ "$*" = live ]; then
 	for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
 		debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | grep -q '/desktop\.ext4/' && carried=$version
 	done
-	[ -n "$carried" ] || fail "the installed disk has no desktop add-on beside its slot"
+	if [ -z "$carried" ]; then
+		debugfs -R "ls -l $addons_dir_on_data" "$dir/target-data.img" 2>&1 | sed 's/^/  target addons: /'
+		stick_logs
+		fail "the installed disk has no desktop add-on beside its slot"
+	fi
 	echo "PASS: the installed disk holds the desktop add-on in $addons_dir/$carried"
 	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
