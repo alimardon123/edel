@@ -9001,12 +9001,26 @@ if [ "$*" = live ]; then
 	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
 	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
 	# The desktop add-on the stick runs goes straight beside the new slot,
-	# in its version's folder, not to be tried (M8.17c).
+	# in its version's folder, not to be tried (M8.17c). The installer
+	# copies it last, after the default apps, so the test waits until the
+	# file is there and its size holds between two looks.
 	carried=''
-	for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
-		debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | grep -q '/desktop\.ext4/' && carried=$version
+	size=''
+	i=0
+	while [ "$i" -lt 30 ]; do
+		target_data
+		was=$size
+		carried=''
+		size=''
+		for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
+			found=$(debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 == "desktop.ext4" { print $7 }')
+			[ -n "$found" ] && carried=$version size=$found
+		done
+		[ -n "$carried" ] && [ "${size:-0}" -gt 0 ] && [ "$size" = "$was" ] && break
+		i=$((i + 1))
+		sleep 10
 	done
-	if [ -z "$carried" ]; then
+	if [ -z "$carried" ] || [ "$size" != "$was" ]; then
 		debugfs -R "ls -l $addons_dir_on_data" "$dir/target-data.img" 2>&1 | sed 's/^/  target addons: /'
 		stick_logs
 		fail "the installed disk has no desktop add-on beside its slot"
