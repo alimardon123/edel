@@ -1579,10 +1579,13 @@ impl Build<'_> {
         }
         // Each copy keeps its root's time, set once all are in place, as a
         // file put into a folder moves that folder's time on: fontconfig
-        // drops a baked cache whose folder's time differs (M6.2a).
+        // drops a baked cache whose folder's time differs (M6.2a). So do
+        // the folders made as their parents, such as /usr/share/fonts that
+        // the image has too, which the overlay shows with the add-on's time.
         for copy in &plan.copies {
             keep_time(&a_root.join(&copy.from), &tree.join(&copy.to))?;
         }
+        keep_folder_times(a_root, tree, Path::new(""))?;
         // One line per add-on in the build's log: what it ships, the caches
         // it carries a merged copy of, those left out, and the base's small
         // tools it keeps where a package brought its own.
@@ -1841,6 +1844,22 @@ fn copy_into_tree(a_root: &Path, tree: &Path, copy: &addons::Copy) -> Result<()>
     }
     std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
         .with_context(|| format!("setting the owner of {}", dst.display()))?;
+    Ok(())
+}
+
+/// Gives each folder below `tree` at `rel` the time of the folder at the
+/// same place in `a_root`, where there is one: the parents the copies made.
+fn keep_folder_times(a_root: &Path, tree: &Path, rel: &Path) -> Result<()> {
+    for entry in fs::read_dir(tree.join(rel))? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            keep_folder_times(a_root, tree, &rel.join(entry.file_name()))?;
+        }
+    }
+    let src = a_root.join(rel);
+    if fs::symlink_metadata(&src).is_ok_and(|m| m.is_dir()) {
+        keep_time(&src, &tree.join(rel))?;
+    }
     Ok(())
 }
 
@@ -2466,6 +2485,19 @@ mod tests {
         fs::create_dir_all(dir.join("dst/fonts")).unwrap();
         fs::write(dir.join("dst/fonts/a.ttf"), b"x").unwrap();
         keep_time(&dir.join("src/fonts"), &dir.join("dst/fonts")).unwrap();
+        let t = fs::metadata(dir.join("dst/fonts"))
+            .unwrap()
+            .modified()
+            .unwrap();
+        assert_eq!(t, then);
+        // A parent the copies made takes its root's time too.
+        fs::create_dir_all(dir.join("src/fonts/noto")).unwrap();
+        fs::create_dir_all(dir.join("dst/fonts/noto")).unwrap();
+        fs::File::open(dir.join("src/fonts"))
+            .unwrap()
+            .set_modified(then)
+            .unwrap();
+        keep_folder_times(&dir.join("src"), &dir.join("dst"), Path::new("")).unwrap();
         let t = fs::metadata(dir.join("dst/fonts"))
             .unwrap()
             .modified()
