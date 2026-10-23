@@ -820,7 +820,9 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
     }
-    // An add-on made of features brings their services (M8.17c).
+    // An add-on made of features brings their services (M8.17c), but for
+    // a `screen` feature's default runlevel, which `services::plan` below
+    // switches by whether the machine has a screen (M8.17).
     let mut from_addons: BTreeSet<&str> = machine.addons.iter().map(String::as_str).collect();
     for (name, f) in &machine.features {
         if machine.addons.contains(name) {
@@ -833,6 +835,9 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         .filter(|(name, f)| !f.switchable && from_addons.contains(name.as_str()))
     {
         for (level, service) in feature.services.entries() {
+            if feature.screen && level == "default" {
+                continue;
+            }
             let entry = (level.to_string(), service.to_string());
             if !machine.runlevels.contains(&entry) {
                 changes.push(Change::Service(services::Step {
@@ -3236,6 +3241,39 @@ mod tests {
 
     /// A machine whose battery offers a charge limit, now at `limit`, and
     /// whether a trip's full charge is pending.
+    #[test]
+    fn a_desktop_add_on_starts_its_greeter_only_where_there_is_a_screen() {
+        let feature = |text: &str| edel::features::read(text).unwrap().0;
+        let mut machine = machine();
+        machine.addons = vec!["desktop".into()];
+        machine.features = vec![
+            (
+                "desktop".into(),
+                feature("format = 1\nsummary = \"d\"\naddon = true\nfeatures = [\"login\"]\n"),
+            ),
+            (
+                "login".into(),
+                feature(
+                    "format = 1\nsummary = \"l\"\nscreen = true\n[services]\nboot = [\"edel-live\"]\ndefault = [\"greetd\"]\n",
+                ),
+            ),
+        ];
+        let file = SettingsFile::default();
+        let started = |machine: &Machine| -> Vec<String> {
+            plan(&file, machine)
+                .0
+                .iter()
+                .filter_map(|c| match c {
+                    Change::Service(s) if s.on => Some(format!("{}/{}", s.level, s.service)),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(started(&machine), ["boot/edel-live", "default/greetd"]);
+        machine.screen = false;
+        assert_eq!(started(&machine), ["boot/edel-live"]);
+    }
+
     fn battery(limit: u32, charge_full_once: bool) -> Machine {
         let mut machine = machine();
         machine.battery_limit = Some(limit);
