@@ -689,7 +689,16 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
 fn mark_restart_pending(slot: &str) {
     let path = Path::new(edel::places::RESTART_PENDING);
     if let Err(e) = fs::write(path, format!("{slot}\n")) {
-        eprintln!("warning: could not write {}: {e}", path.display());
+        eprintln!(
+            "warning: {}",
+            trf(
+                "could not write {path} ({why}), so the power menu does not mark Restart; the update still starts at the next restart",
+                &[
+                    ("path", &path.display().to_string()),
+                    ("why", &e.to_string())
+                ]
+            )
+        );
     }
 }
 
@@ -774,7 +783,11 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
         let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
         if let Err(err) = record_fallback(failed, disk.running) {
             eprintln!(
-                "warning: the fallback happened but could not be recorded: {err:#}; Settings will not mention it"
+                "warning: {}",
+                trf(
+                    "the fallback happened but could not be recorded ({why}), so Settings will not mention it",
+                    &[("why", &format!("{err:#}"))]
+                )
             );
         }
     }
@@ -789,7 +802,11 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
         Ok(Some(line)) => lines.push(line),
         Ok(None) => {}
         Err(err) => lines.push(format!(
-            "warning: the boot loader was not updated: {err:#}; the slot is confirmed and the boot loader before it stays"
+            "warning: {}",
+            trf(
+                "the boot loader was not updated ({why}); the slot is confirmed and the boot loader before it stays",
+                &[("why", &format!("{err:#}"))]
+            )
         )),
     }
     Ok(lines)

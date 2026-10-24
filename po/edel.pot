@@ -2834,6 +2834,9 @@ msgstr ""
 msgid "slot {slot} written and checked; restart to use it (edel restart); if it fails to start, Edel OS goes back to slot {running} on its own"
 msgstr ""
 
+msgid "could not write {path} ({why}), so the power menu does not mark Restart; the update still starts at the next restart"
+msgstr ""
+
 msgid "the update image is {size} MiB and slot {slot} holds {room} MiB, so nothing was written; the running system is unchanged"
 msgstr ""
 
@@ -2853,6 +2856,12 @@ msgid "could not write the slot"
 msgstr ""
 
 msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again"
+msgstr ""
+
+msgid "the fallback happened but could not be recorded ({why}), so Settings will not mention it"
+msgstr ""
+
+msgid "the boot loader was not updated ({why}); the slot is confirmed and the boot loader before it stays"
 msgstr ""
 
 msgid "slot {slot} starts after the next restart (edel restart); slot {running} stays installed, so edel rollback again undoes this"
