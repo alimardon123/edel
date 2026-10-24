@@ -9,7 +9,9 @@
 //! output. Everything comes from `/proc`, `/sys`, `/usr/share/edel/features`,
 //! `/usr/share/fonts` and busybox's `dmesg`, so no tool is added. With
 //! `--battery MINUTES` it first measures the battery for that long (M7.16a),
-//! as the `battery` table (`battery_report.rs`).
+//! as the `battery` table (`battery_report.rs`). It also names the machine's
+//! model, what the budgets measure (`measured`, `frame_times`) and the
+//! basics checklist's rows for the person to answer (M8.1).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -20,7 +22,7 @@ use edel::firmware::{Missing, missing_firmware};
 use edel::hardware::{self, Pack};
 use edel::i18n::trf;
 use edel::{addon_state, features, places, scripts, session_log, settings};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::battery_report;
 use crate::release::os_release_value;
@@ -41,6 +43,8 @@ struct Report {
     format: u32,
     version: String,
     kernel: String,
+    /// The machine's maker and model, from `/sys/class/dmi/id` (M8.1).
+    model: String,
     /// The features in `/usr/share/edel/features/`, by name.
     features: Vec<String>,
     /// What reading them skipped, such as a field this edel does not know.
@@ -64,6 +68,12 @@ struct Report {
     /// Each game's smoothness the last time it played (M7.7d), by person
     /// and app, as the compositor keeps it.
     games: Vec<Game>,
+    /// What CI's budgets measure, measured on this machine (M8.1).
+    measured: Measured,
+    /// Each person's latest frame times from the compositor (M8.1).
+    frame_times: Vec<FrameTimes>,
+    /// The basics checklist's rows for the person to answer (M8.1).
+    basics: Vec<BasicAnswer>,
     /// The battery measured for `--battery` (M7.16a), last so the TOML
     /// table comes after the plain values.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,6 +105,118 @@ fn games(people: &[session_log::Person]) -> Vec<Game> {
         }
     }
     found
+}
+
+/// What CI's budgets measure, measured on this machine (M8.1): the
+/// boot and the memory from the `started` line, so a laptop's numbers sit
+/// beside the VM's in `ci/budgets.toml`.
+#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Measured {
+    /// Seconds from the kernel's start to the slot confirmed.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub boot_seconds: Option<f64>,
+    /// Memory in use then, with nothing else started: the idle memory.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub memory_at_boot_mib: Option<u64>,
+    /// What the root holds.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub root_used_mib: Option<u64>,
+}
+
+/// The compositor's frame times in a person's session (M8.1): its latest
+/// `frames N, render p50 A ms, p99 B ms, idle frames C` line, which it
+/// logs once the screen goes quiet after drawing (telemetry.rs).
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct FrameTimes {
+    pub person: String,
+    pub frames: u64,
+    pub render_p50_ms: f64,
+    pub render_p99_ms: f64,
+    pub idle_frames: u64,
+}
+
+/// One row of the basics checklist (M6.7) for a person to answer (M8.1):
+/// `works` is "not answered" until they set it to "yes" or "no" before
+/// attaching the report; a row CI proves names its case in `test`.
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct BasicAnswer {
+    pub feature: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub test: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub needs: Option<String>,
+    #[serde(default)]
+    pub works: String,
+}
+
+/// What `works` says until the person answers.
+pub(crate) const NOT_ANSWERED: &str = "not answered";
+
+/// The machine's model: its maker and its product name, joined by a space,
+/// or the product alone when it already starts with the maker (M8.1).
+fn model_of(vendor: &str, product: &str) -> String {
+    let (vendor, product) = (vendor.trim(), product.trim());
+    if !vendor.is_empty() && product.starts_with(vendor) {
+        product.to_string()
+    } else {
+        format!("{vendor} {product}").trim().to_string()
+    }
+}
+
+/// The numbers of `started`, the line `edel-boot-ok` keeps, such as
+/// `Started in 6.78 s, 60 MiB of memory in use, 91 MiB used on the root`;
+/// each number is read on its own, so a line missing a part leaves that
+/// field None (M8.1).
+pub(crate) fn measured(started: &str) -> Measured {
+    let boot_seconds = started
+        .strip_prefix("Started in ")
+        .and_then(|rest| rest.split_once(" s"))
+        .and_then(|(seconds, _)| seconds.parse::<f64>().ok())
+        .filter(|v| v.is_finite());
+    let memory_at_boot_mib = started
+        .split_once(" MiB of memory in use")
+        .and_then(|(head, _)| head.rsplit(' ').next())
+        .and_then(|mib| mib.parse().ok());
+    let root_used_mib = started
+        .split_once(" MiB used on the root")
+        .and_then(|(head, _)| head.rsplit(' ').next())
+        .and_then(|mib| mib.parse().ok());
+    Measured {
+        boot_seconds,
+        memory_at_boot_mib,
+        root_used_mib,
+    }
+}
+
+/// The compositor's last frame line in `log` that parses, as frames, render
+/// p50 and p99 in milliseconds, and idle frames (M8.1). A line that does not
+/// parse is skipped, so an earlier good one is still found.
+pub(crate) fn last_frame_times(log: &str) -> Option<(u64, f64, f64, u64)> {
+    log.lines().rev().find_map(|line| {
+        line.find("edel-compositor: frames ")
+            .and_then(|at| session_log::frame_summary(&line[at..]))
+    })
+}
+
+/// Each person's latest frame times: from their session log, else from the
+/// one before it, the first that has a parsable line (M8.1).
+fn frame_times(people: &[session_log::Person]) -> Vec<FrameTimes> {
+    people
+        .iter()
+        .filter_map(|person| {
+            [places::SESSION_LOG, places::SESSION_LOG_BEFORE]
+                .into_iter()
+                .find_map(|name| last_frame_times(&session_log::read_log(person, name)?))
+                .map(|(frames, p50, p99, idle)| FrameTimes {
+                    person: person.name.clone(),
+                    frames,
+                    render_p50_ms: p50,
+                    render_p99_ms: p99,
+                    idle_frames: idle,
+                })
+        })
+        .collect()
 }
 
 /// One person's session log, its last lines.
@@ -344,12 +466,14 @@ fn pci_devices(devices: &Path) -> Vec<Pci> {
 }
 
 /// The features in `dir`, read the way a machine reads them (leniently),
-/// and a note for each thing skipped.
-fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>) {
+/// a note for each thing skipped, and each feature's basics rows for the
+/// person to answer, `works` not answered (M8.1).
+fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>, Vec<BasicAnswer>) {
     let mut names = Vec::new();
     let mut notes = Vec::new();
+    let mut basics = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else {
-        return (names, notes);
+        return (names, notes, basics);
     };
     let mut files: Vec<_> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
     files.sort();
@@ -365,14 +489,21 @@ fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>) {
             .map_err(anyhow::Error::from)
             .and_then(|text| features::read(&text))
         {
-            Ok((_, skipped)) => {
+            Ok((feature, skipped)) => {
                 names.push(name.to_string());
                 notes.extend(skipped.into_iter().map(|n| format!("{name}: {n}")));
+                basics.extend(feature.basics.into_iter().map(|row| BasicAnswer {
+                    feature: name.to_string(),
+                    name: row.name,
+                    test: row.test,
+                    needs: row.needs,
+                    works: NOT_ANSWERED.into(),
+                }));
             }
             Err(err) => notes.push(format!("{name}: not read: {err:#}")),
         }
     }
-    (names, notes)
+    (names, notes, basics)
 }
 
 /// Whether the disk `name` is removable or on USB (`edel::install`'s, which
@@ -407,15 +538,20 @@ pub fn report(esp: bool, battery: Option<u64>) -> Result<()> {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let dmesg = dmesg_now();
     let missing = missing_firmware(&dmesg);
-    let (names, notes) = installed_features(Path::new(features::DIR));
+    let (names, notes, basics) = installed_features(Path::new(features::DIR));
     let people = session_log::people(Path::new(places::HOMES), as_root());
+    let started = read_trimmed(Path::new(STARTED));
+    let measured_now = measured(&started);
     let report = Report {
         format: FORMAT,
         version: os_release_value(&os_release, "VERSION_ID").unwrap_or_default(),
         kernel: read_trimmed(Path::new("/proc/sys/kernel/osrelease")),
+        model: edel::speakers::machine_model(Path::new("/sys"))
+            .map(|(vendor, product)| model_of(&vendor, &product))
+            .unwrap_or_default(),
         features: names,
         feature_notes: notes,
-        started: read_trimmed(Path::new(STARTED)),
+        started,
         memory_in_use_mib: memory_in_use_mib(
             &fs::read_to_string("/proc/meminfo").unwrap_or_default(),
         )
@@ -430,6 +566,9 @@ pub fn report(esp: bool, battery: Option<u64>) -> Result<()> {
         missing_script: missing_script_now(),
         sessions: sessions(&people),
         games: games(&people),
+        measured: measured_now,
+        frame_times: frame_times(&people),
+        basics,
         battery,
     };
     let text = render(&report)?;
@@ -496,14 +635,28 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         let ssh = "format = 1\nsummary = \"ssh\"\nwhy = \"w\"\npackages = [\"openssh-server\"]\n";
-        fs::write(dir.join("ssh.toml"), format!("{ssh}shiny = true\n")).unwrap();
+        fs::write(
+            dir.join("ssh.toml"),
+            format!("{ssh}shiny = true\n[[basics]]\nname = \"Audio\"\ntest = \"sound\"\n"),
+        )
+        .unwrap();
         fs::write(dir.join("base.toml"), "format = 1\nsummary = \"base\"\n").unwrap();
         fs::write(dir.join("broken.toml"), "format = [").unwrap();
-        let (names, notes) = installed_features(&dir);
+        let (names, notes, basics) = installed_features(&dir);
         fs::remove_dir_all(&dir).unwrap();
         assert_eq!(names, ["base", "ssh"]);
         assert_eq!(notes[1], "ssh: unknown field shiny ignored");
         assert!(notes[0].starts_with("broken: not read"), "{notes:?}");
+        assert_eq!(
+            basics,
+            [BasicAnswer {
+                feature: "ssh".into(),
+                name: "Audio".into(),
+                test: Some("sound".into()),
+                needs: None,
+                works: NOT_ANSWERED.into(),
+            }]
+        );
     }
 
     #[test]
@@ -589,11 +742,42 @@ mod tests {
                     slowest_0_1_percent_ms: 20.0,
                 },
             }],
+            model: "HP 250 G8 Notebook PC".into(),
+            measured: Measured {
+                boot_seconds: Some(6.78),
+                memory_at_boot_mib: Some(60),
+                root_used_mib: Some(91),
+            },
+            frame_times: vec![FrameTimes {
+                person: "ci".into(),
+                frames: 300,
+                render_p50_ms: 1.2,
+                render_p99_ms: 3.4,
+                idle_frames: 0,
+            }],
+            basics: vec![BasicAnswer {
+                feature: "sound".into(),
+                name: "Audio".into(),
+                test: Some("sound".into()),
+                needs: None,
+                works: NOT_ANSWERED.into(),
+            }],
         };
         let text = render(&report).unwrap();
         let parsed: toml::Table = toml::from_str(&text).unwrap();
         assert_eq!(parsed["format"].as_integer(), Some(1));
         assert_eq!(parsed["version"].as_str(), Some("2026.10.90"));
+        assert_eq!(parsed["model"].as_str(), Some("HP 250 G8 Notebook PC"));
+        assert_eq!(parsed["measured"]["boot_seconds"].as_float(), Some(6.78));
+        assert_eq!(parsed["measured"]["root_used_mib"].as_integer(), Some(91));
+        assert_eq!(
+            parsed["frame_times"][0]["render_p99_ms"].as_float(),
+            Some(3.4)
+        );
+        assert_eq!(parsed["basics"][0]["works"].as_str(), Some("not answered"));
+        assert!(text.contains("[measured]"), "{text}");
+        assert!(text.contains("[[frame_times]]"), "{text}");
+        assert!(text.contains("[[basics]]"), "{text}");
         assert!(parsed["dmesg"].as_str().unwrap().contains("\"quoted\""));
         assert_eq!(parsed["pci"][0]["driver"].as_str(), Some("i915"));
         assert_eq!(parsed["sessions"][0]["person"].as_str(), Some("ci"));
@@ -739,6 +923,26 @@ mod tests {
             missing_script: None,
             sessions: vec![],
             games: vec![],
+            model: "HP 250 G8 Notebook PC".into(),
+            measured: Measured {
+                boot_seconds: Some(6.78),
+                memory_at_boot_mib: Some(60),
+                root_used_mib: Some(91),
+            },
+            frame_times: vec![FrameTimes {
+                person: "ci".into(),
+                frames: 300,
+                render_p50_ms: 1.2,
+                render_p99_ms: 3.4,
+                idle_frames: 0,
+            }],
+            basics: vec![BasicAnswer {
+                feature: "sound".into(),
+                name: "Audio".into(),
+                test: Some("sound".into()),
+                needs: None,
+                works: NOT_ANSWERED.into(),
+            }],
             battery: Some(Battery {
                 minutes: 5,
                 plugged_in: false,
@@ -822,5 +1026,62 @@ mod tests {
             }]
         );
         fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn the_model_is_the_maker_and_the_product_once() {
+        assert_eq!(
+            model_of("HP", "HP 250 G8 Notebook PC"),
+            "HP 250 G8 Notebook PC"
+        );
+        assert_eq!(model_of("LENOVO", "20XW"), "LENOVO 20XW");
+        assert_eq!(model_of("", ""), "");
+    }
+
+    #[test]
+    fn reads_the_boot_and_the_memory_from_the_started_line() {
+        assert_eq!(
+            measured("Started in 6.78 s, 60 MiB of memory in use, 91 MiB used on the root"),
+            Measured {
+                boot_seconds: Some(6.78),
+                memory_at_boot_mib: Some(60),
+                root_used_mib: Some(91),
+            }
+        );
+        assert_eq!(measured(""), Measured::default());
+        assert_eq!(
+            measured("Started in 5.5 s"),
+            Measured {
+                boot_seconds: Some(5.5),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn the_last_frame_line_that_parses_is_the_one_read() {
+        let log = "edel-compositor: frames 6, render p50 3.00 ms, p99 9.00 ms, idle frames 1\n\
+                   edel-compositor: frames 300, render p50 1.20 ms, p99 3.40 ms, idle frames 0\n";
+        assert_eq!(last_frame_times(log), Some((300, 1.2, 3.4, 0)));
+        assert_eq!(
+            last_frame_times("edel-compositor: output Virtual-1 ready\n"),
+            None
+        );
+        let broken = "edel-compositor: frames 6, render p50 3.00 ms, p99 9.00 ms, idle frames 1\n\
+                      edel-compositor: frames 3, render p50 x ms, p99 1.00 ms, idle frames 0\n";
+        assert_eq!(last_frame_times(broken), Some((6, 3.0, 9.0, 1)));
+    }
+
+    #[test]
+    fn a_basics_row_is_not_answered_until_the_person_sets_it() {
+        let row = BasicAnswer {
+            feature: "sound".into(),
+            name: "Audio".into(),
+            test: Some("sound".into()),
+            needs: None,
+            works: NOT_ANSWERED.into(),
+        };
+        let text = toml::to_string(&row).unwrap();
+        assert!(text.contains("works = \"not answered\""), "{text}");
+        assert!(!text.contains("needs"), "{text}");
     }
 }

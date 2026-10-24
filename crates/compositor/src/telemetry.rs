@@ -67,7 +67,8 @@ pub fn percentile(sorted: &[Duration], p: u32) -> Duration {
 
 impl fmt::Display for Summary {
     /// One line for people and for CI's grep: `frames 300, render p50
-    /// 1.20 ms, p99 3.40 ms, idle frames 0`.
+    /// 1.20 ms, p99 3.40 ms, idle frames 0`. `edel report` reads it back by
+    /// `edel::session_log::frame_summary` (M8.1).
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ms = |d: Duration| d.as_secs_f64() * 1000.0;
         write!(
@@ -129,6 +130,28 @@ mod tests {
         assert!(t.still_for(Duration::from_secs(60)).is_some());
         std::thread::sleep(ms(20));
         assert_eq!(t.still_for(ms(10)), None);
+    }
+
+    #[test]
+    fn the_summary_line_reads_back_to_its_numbers() {
+        // One frame of 1.234 ms that nothing changed in: p50 and p99 are
+        // both 1.234 ms, which the line prints to two decimals.
+        let mut t = Telemetry::default();
+        t.frame(Duration::from_micros(1234), false);
+        let s = t.summary();
+        let line = s.to_string();
+        assert_eq!(
+            line,
+            "frames 1, render p50 1.23 ms, p99 1.23 ms, idle frames 1"
+        );
+        assert_eq!(
+            edel::session_log::frame_summary(&format!("edel-compositor: {line}")),
+            Some((1, 1.23, 1.23, 1))
+        );
+        assert_eq!(
+            edel::session_log::frame_summary(&line),
+            Some((s.frames as u64, 1.23, 1.23, s.idle_frames))
+        );
     }
 
     #[test]
