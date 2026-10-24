@@ -8,6 +8,7 @@ mod addons;
 mod battery_report;
 mod bom;
 mod boot;
+mod cloud;
 mod completion;
 mod data;
 mod def;
@@ -468,6 +469,9 @@ enum BootCommands {
     /// Set the battery's charge limit again after a resume, as some laptops
     /// forget it
     BatteryCare,
+    /// On a cloud, with no settings file yet, keep the instance's user data
+    /// as the settings file and restart to start with it
+    Cloud,
 }
 
 #[derive(Subcommand)]
@@ -860,6 +864,7 @@ fn run(command: Commands) -> Result<()> {
             BootCommands::Live => live::live(),
             BootCommands::Speakers => speaker_boot::speakers(),
             BootCommands::BatteryCare => system_power::battery_care(),
+            BootCommands::Cloud => cloud::boot(),
         },
         Commands::Release { command } => match command {
             ReleaseCommands::Keygen { dir, name } => release::keygen(&dir, &name),

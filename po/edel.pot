@@ -182,6 +182,18 @@ msgstr ""
 msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
+msgid "{provider} gave this machine no user data, so it starts without a settings file"
+msgstr ""
+
+msgid "could not read {provider}'s user data: {why}; the machine starts without a settings file"
+msgstr ""
+
+msgid "{provider}'s user data is not a settings file this release can read: {why}"
+msgstr ""
+
+msgid "kept {provider}'s user data as {path}; restarting to start with it"
+msgstr ""
+
 msgid "could not keep the runtime {runtime} for a person's own apps"
 msgstr ""
 
