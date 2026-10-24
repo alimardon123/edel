@@ -40,9 +40,40 @@ pub fn default_in(os_release: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The default add-ons of the running slot.
+/// The default add-ons of the running slot, for this machine
+/// ([`for_this_machine`]).
 pub fn running_default() -> Vec<String> {
-    default_in(&fs::read_to_string("/usr/lib/os-release").unwrap_or_default())
+    for_this_machine(default_in(
+        &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
+    ))
+}
+
+/// `default` less the hardware packs among this slot's offered add-ons
+/// that serve none of this machine's devices (M8.17d): the image carries
+/// every laptop's firmware packs, and a machine has those of its own chips.
+pub fn for_this_machine(default: Vec<String>) -> Vec<String> {
+    let offered = offered_features_in(Path::new(places::OFFERED_ADDONS_DIR));
+    matching(default, &offered, &hardware::devices())
+}
+
+/// [`for_this_machine`] on given add-ons and devices: an add-on that is
+/// not a pack, or is not offered here, stays.
+pub fn matching(
+    default: Vec<String>,
+    offered: &[(String, Feature)],
+    devices: &[Device],
+) -> Vec<String> {
+    default
+        .into_iter()
+        .filter(|name| {
+            offered
+                .iter()
+                .find(|(offered, _)| offered == name)
+                .is_none_or(|(_, feature)| {
+                    feature.hardware.is_empty() || hardware::serves(&feature.hardware, devices)
+                })
+        })
+        .collect()
 }
 
 /// The add-ons `file` names, its profiles' included (M7.6), and while the
@@ -414,6 +445,27 @@ mod tests {
                 name: "graphics-nvidia".into(),
                 summary: "graphics-nvidia summary".into(),
             }]
+        );
+    }
+
+    #[test]
+    fn a_default_pack_stays_only_where_it_serves_a_device() {
+        let offered = vec![
+            pack("wifi-intel", "pci:v00008086d*bc02sc80*"),
+            pack("graphics-amd", "pci:v00001002d*bc03*"),
+            ("desktop".to_string(), Feature::default()),
+        ];
+        let default = ["desktop", "wifi-intel", "graphics-amd", "not-offered"].map(String::from);
+        let laptop = [device(
+            "pci:v00008086d0000A0F0sv00008086sd00000244bc02sc80i00",
+        )];
+        assert_eq!(
+            matching(default.to_vec(), &offered, &laptop),
+            ["desktop", "wifi-intel", "not-offered"]
+        );
+        assert_eq!(
+            matching(default.to_vec(), &offered, &[]),
+            ["desktop", "not-offered"]
         );
     }
 

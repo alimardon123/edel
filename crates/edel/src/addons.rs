@@ -759,7 +759,9 @@ pub fn fetch(location: &str, manifest: &Manifest, allow_http: bool, slot: &Path)
     // its desktop through the update (M8.17c).
     let wanted = {
         let path = places::found(&places::machine_settings());
-        let default = edel::addon_state::default_in(&slot_file(slot, "/usr/lib/os-release"));
+        let default = edel::addon_state::for_this_machine(edel::addon_state::default_in(
+            &slot_file(slot, "/usr/lib/os-release"),
+        ));
         match edel::settings::read_on_machine(&path) {
             Ok(read) => edel::addon_state::installed(&read.file, &default),
             Err(_) => default,

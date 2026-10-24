@@ -730,16 +730,6 @@ pub fn check_addon(image: &ImageDef, listed: &Listed) -> Result<()> {
                 part.name
             );
         }
-        if feature
-            .keep
-            .iter()
-            .any(|k| !k.newest.is_empty() || k.newest_by.is_some())
-        {
-            bail!(
-                "add-on {name}: {}'s keep only lists files; newest needs the image's modules",
-                part.name
-            );
-        }
     }
     Ok(())
 }
@@ -1186,15 +1176,6 @@ mod tests {
                     r#"["hello"]"#,
                 ),
                 "names kernel modules, mkinitfs features or the Alpine branch, which belong to the image",
-            ),
-            (
-                with_addon(
-                    &format!(
-                        "{ADDON}\n[[keep]]\nunder = \"lib/firmware\"\nfiles = [\"i915/*\"]\nnewest = [\"i915/*\"]\nnewest_by = \"i915\"\n"
-                    ),
-                    r#"["hello"]"#,
-                ),
-                "hello's keep only lists files; newest needs the image's modules",
             ),
             (
                 {
