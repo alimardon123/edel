@@ -47,6 +47,7 @@ power.lid_close
 power.lock_after_minutes
 power.power_button
 power.on_battery
+power.saver
 power.game_mode
 power.battery_care
 services.*

@@ -42,7 +42,7 @@ if ! tr -d '\r' <"$log" | grep -q 'Mounting root: failed' ||
 	exit 1
 fi
 # M1.10: slot B's hang ran with no watchdog, so the guard restarted it.
-if ! grep -q 'edel guard: this slot is not healthy after .* the machine has no watchdog; restarting it now' "$log"; then
+if ! grep -q 'edel guard: this version of Edel OS did not finish starting in .*; restarting the computer now' "$log"; then
 	echo "FAIL: with no watchdog, the guard did not restart the hung slot B itself"
 	exit 1
 fi
@@ -53,7 +53,7 @@ if ! tr -d '\r' <"$log" | grep -q 'edel guard: health not reached after [0-9]* s
 fi
 # M6.17: with no slot left with a try, slot B's guard kept the machine
 # running instead of restarting it.
-if ! tr -d '\r' <"$log" | grep -q 'edel guard: this slot is not healthy after [0-9]* s (network not reached) and no slot has a try left, so the machine keeps running'; then
+if ! tr -d '\r' <"$log" | grep -q 'edel guard: Edel OS did not finish starting in [0-9]* s (network did not start), and no version has a start left, so the computer keeps running'; then
 	echo "FAIL: with no slot left with a try, slot B's guard did not say it keeps the machine running"
 	exit 1
 fi

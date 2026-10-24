@@ -93,6 +93,14 @@ impl Link {
         }
     }
 
+    /// Tells the compositor whether the battery saver is on, so it draws at
+    /// most the Lite tier (M8.31).
+    pub fn saver(&self, on: bool) {
+        if let Some(link) = &self.0 {
+            link.saver(u32::from(on));
+        }
+    }
+
     /// Asks the compositor to turn every screen off until the next input,
     /// after nobody used the machine for `power.screen_off_minutes` (M7.16b).
     pub fn screens_off(&self) {

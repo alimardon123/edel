@@ -311,11 +311,12 @@ fn behind_key(behind: &[Drawn], spots: &[Spot], blur: u32, scale: f64) -> Vec<Se
 
 impl Edel {
     /// Compiles the blur's programs once the renderer exists, only when the
-    /// session starts on the Full tier: the tier never rises again, so on
+    /// session starts on the Full tier: the deadline's tier never rises
+    /// again (the battery saver's Lite comes and goes, M8.31), so on
     /// Balanced and Lite they would only cost memory. On failure the popups
     /// keep their colour, and the log says why.
     pub fn start_backdrop(&mut self, renderer: &mut GlesRenderer) {
-        if self.deadline.tier() != Tier::Full {
+        if self.tier() != Tier::Full {
             self.tell_blur();
             return;
         }
@@ -332,7 +333,7 @@ impl Edel {
     /// The capability the blur has now: `blur` on the Full tier with the
     /// programs made, none otherwise.
     fn blur_capabilities(&self) -> Capability {
-        if self.backdrops.programs.is_some() && self.deadline.tier() == Tier::Full {
+        if self.backdrops.programs.is_some() && self.tier() == Tier::Full {
             Capability::Blur
         } else {
             Capability::empty()
@@ -378,7 +379,7 @@ impl Edel {
         let name = output.name();
         let blur = self.tokens.blur;
         let wanted = !spots.is_empty()
-            && self.deadline.tier() == Tier::Full
+            && self.tier() == Tier::Full
             && blur > 0
             && !self.backdrops.failed.contains(&name);
         let programs = match (wanted, self.backdrops.programs.clone()) {

@@ -428,10 +428,7 @@ impl Edel {
         scale: f64,
         look: Seen,
     ) -> Vec<Drawn> {
-        if self.deadline.tier() == Tier::Lite
-            || self.is_fullscreen(window)
-            || self.tokens.shadow_blur == 0
-        {
+        if self.tier() == Tier::Lite || self.is_fullscreen(window) || self.tokens.shadow_blur == 0 {
             return Vec::new();
         }
         // The shadow follows the window's corners (M5.14); square, the 6 it

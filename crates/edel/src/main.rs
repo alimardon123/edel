@@ -41,7 +41,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{FromArgMatches, Parser, Subcommand};
 use edel::i18n::{self, trf};
-use edel::{settings, users};
+use edel::{places, settings, users};
 
 use crate::def::ImageDef;
 use crate::run::Runner;
@@ -444,8 +444,9 @@ enum SettingsCommands {
     /// Check a settings file strictly: every unknown key, value or format,
     /// and every key this release does not act on yet, is refused
     Check {
-        /// The settings file, a path or an https:// address
-        file: String,
+        /// The settings file, a path or an https:// address; without one,
+        /// your own file and the machine's
+        file: Option<String>,
     },
     /// Ask for the first person on a console when nobody can log in, as
     /// the consoles do before their login prompt (M6.6b); with --user, make
@@ -650,13 +651,13 @@ fn main() -> std::process::ExitCode {
     // Who may change the machine, and their password, before anything runs (M6.5).
     if let Err(err) = privilege::gate(&cli.command, cli.password_stdin) {
         eprintln!("{}", failure_line(name, &err));
-        return std::process::ExitCode::FAILURE;
+        return std::process::ExitCode::from(edel::exit::code_of(&err));
     }
     match run(cli.command) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{}", failure_line(name, &err));
-            std::process::ExitCode::FAILURE
+            std::process::ExitCode::from(edel::exit::code_of(&err))
         }
     }
 }
@@ -932,10 +933,7 @@ fn run(command: Commands) -> Result<()> {
                     let location = release::default_location(&accept)?;
                     println!(
                         "edel update: {}",
-                        trf(
-                            "no release named; taking {location}",
-                            &[("location", &location)]
-                        )
+                        trf("checking {location}", &[("location", &location)])
                     );
                     location
                 }
@@ -943,7 +941,13 @@ fn run(command: Commands) -> Result<()> {
             if check {
                 release::check(&location, &accept)
             } else {
-                let system = update::install(&location, &accept, unsigned);
+                // A release that is the running version is no failure:
+                // edel update says so and ends well (M8.15).
+                let system = update::install(&location, &accept, unsigned).or_else(|err| {
+                    let up = err.downcast::<release::UpToDate>()?;
+                    println!("edel update: {up}");
+                    Ok(())
+                });
                 // The default apps follow the system, whether or not it had
                 // a newer release (M6.2); their failure never hides the
                 // system's own result.
@@ -1022,9 +1026,10 @@ fn run(command: Commands) -> Result<()> {
                 machine::import(settings_source::local(&file)?.path())
             }
             Some(SettingsCommands::Export) => machine::export(),
-            Some(SettingsCommands::Check { file }) => {
+            Some(SettingsCommands::Check { file: Some(file) }) => {
                 check_system_file(&settings_source::local(&file)?)
             }
+            Some(SettingsCommands::Check { file: None }) => check_own_files(),
             Some(SettingsCommands::FirstBoot {
                 user: Some(user),
                 assignments,
@@ -1111,6 +1116,38 @@ fn web_app_list() {
     }
 }
 
+/// `edel settings check` with no file: the person's own file and the
+/// machine's, those that exist, so a person who just edited theirs needs
+/// no path (the messages audit's row 52). Fails when either has a problem.
+fn check_own_files() -> Result<()> {
+    let files: Vec<PathBuf> = places::person_settings()
+        .into_iter()
+        .chain([places::machine_settings()])
+        .filter(|path| path.exists())
+        .collect();
+    if files.is_empty() {
+        println!(
+            "{}",
+            i18n::tr(
+                "no settings file yet, so there is nothing to check; every setting is at its default"
+            )
+        );
+        return Ok(());
+    }
+    let mut failed = None;
+    for path in &files {
+        let source = settings_source::local(&path.to_string_lossy())?;
+        if let Err(e) = check_system_file(&source) {
+            eprintln!("edel settings: {e:#}");
+            failed = Some(e);
+        }
+    }
+    match failed {
+        Some(_) => std::process::exit(1),
+        None => Ok(()),
+    }
+}
+
 /// `edel settings check FILE`: prints one line per problem and fails when
 /// there is any (ADR-008, section 2).
 fn check_system_file(source: &settings_source::Local) -> Result<()> {
@@ -1118,8 +1155,11 @@ fn check_system_file(source: &settings_source::Local) -> Result<()> {
     let shown = source.shown().to_string();
     let text = std::fs::read_to_string(file)
         .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
-    let mut problems = settings::check(&text)
-        .with_context(|| trf("could not check {path}", &[("path", &shown)]))?;
+    let mut problems = match settings::check(&text) {
+        Ok(problems) => problems,
+        Err(e) if e.is::<settings::Mistake>() => return Err(settings::named(e, file, false)),
+        Err(e) => return Err(e.context(trf("could not check {path}", &[("path", &shown)]))),
+    };
     // On a machine, `[services]` names only features it can switch (M6.10).
     let installed = edel::services::installed();
     if !installed.is_empty() {

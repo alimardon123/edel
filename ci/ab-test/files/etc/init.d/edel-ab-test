@@ -238,7 +238,7 @@ slot_matches_release() {
 # alone): fails when slot B boots a second time, which only a restart
 # does; else waits for the guard's note, then 45 s more, and wants slot B
 # still running with edel status's health line. It powers the VM off.
-standdown_watch='( exec >/dev/console 2>&1; . /usr/share/edel/places.sh; mark="$data_dir/ab-standdown-booted"; if [ -e "$mark" ]; then echo "AB-TEST: FAIL: step 8 slot B booted again, so the guard restarted it"; poweroff; exit; fi; touch "$mark"; sync; i=0; while [ ! -e "$no_healthy_slot" ] && [ "$i" -lt 300 ]; do sleep 1; i=$((i + 1)); done; sleep 45; s=$(/usr/bin/edel status 2>&1); echo "$s"; if echo "$s" | grep -q "^running: B" && echo "$s" | grep -q "^health: this slot is not healthy after [0-9]* s (network not reached) and no slot has a try left"; then echo "AB-TEST: PASS"; else echo "AB-TEST: FAIL: step 8 expected slot B running with a health line in edel status"; fi; poweroff ) &'
+standdown_watch='( exec >/dev/console 2>&1; . /usr/share/edel/places.sh; mark="$data_dir/ab-standdown-booted"; if [ -e "$mark" ]; then echo "AB-TEST: FAIL: step 8 slot B booted again, so the guard restarted it"; poweroff; exit; fi; touch "$mark"; sync; i=0; while [ ! -e "$no_healthy_slot" ] && [ "$i" -lt 300 ]; do sleep 1; i=$((i + 1)); done; sleep 45; s=$(/usr/bin/edel status 2>&1); echo "$s"; if echo "$s" | grep -q "^running: B" && echo "$s" | grep -q "^health: Edel OS did not finish starting in [0-9]* s (network did not start), and no version has a start left"; then echo "AB-TEST: PASS"; else echo "AB-TEST: FAIL: step 8 expected slot B running with a health line in edel status"; fi; poweroff ) &'
 
 ab_next() {
 	echo "$1" >"$esp/ab-test-step"

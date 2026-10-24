@@ -158,6 +158,24 @@ msgstr ""
 msgid "measuring the battery for {minutes} minutes; leave the computer alone, unplugged, with its screen on"
 msgstr ""
 
+msgid "{name} is no longer nearby; search again, then pair"
+msgstr ""
+
+msgid "pairing with {name}"
+msgstr ""
+
+msgid "{name} wants a code typed on this computer, which Settings cannot take yet; type bluetoothctl in a terminal, then pair {address} at its prompt, and enter the code there"
+msgstr ""
+
+msgid "could not reach Bluetooth over the system bus: {error}; restart the computer if this stays"
+msgstr ""
+
+msgid "a pairing is running already; finish it, then try again"
+msgstr ""
+
+msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
+msgstr ""
+
 msgid "this machine has no {program}, so it has no Bluetooth; the bluetooth feature brings BlueZ"
 msgstr ""
 
@@ -177,9 +195,6 @@ msgid "{name} did not answer; check that it is on and close by, then try again"
 msgstr ""
 
 msgid "{command} failed: {said}"
-msgstr ""
-
-msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
 msgid "{provider} gave this machine no user data, so it starts without a settings file"
@@ -299,7 +314,7 @@ msgstr ""
 msgid "install refused: auto found {count} disks it could take ({names}); name one in install.disk by its /dev/disk/by-id/ name"
 msgstr ""
 
-msgid "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed"
+msgid "Edel OS did not finish starting in {seconds} s ({missing} did not start), and no version has a start left, so the computer keeps running as it is; run edel report and send the file it writes"
 msgstr ""
 
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
@@ -890,6 +905,9 @@ msgstr ""
 msgid "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here."
 msgstr ""
 
+msgid "Battery saver: auto turns it on at 20 percent or less on battery, on keeps it on, off never; it lightens effects and runs power-saver."
+msgstr ""
+
 msgid "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out."
 msgstr ""
 
@@ -1235,6 +1253,90 @@ msgstr ""
 msgid "could not replace {path}"
 msgstr ""
 
+msgid "this computer's name is now {name}"
+msgstr ""
+
+msgid "this computer's name is back to the release's"
+msgstr ""
+
+msgid "the time zone is now {zone}"
+msgstr ""
+
+msgid "the time zone is back to UTC"
+msgstr ""
+
+msgid "apps that ask are told you are in {zone}"
+msgstr ""
+
+msgid "apps that ask are told no place"
+msgstr ""
+
+msgid "apps may now find the place from nearby Wi-Fi"
+msgstr ""
+
+msgid "apps no longer find the place from nearby Wi-Fi"
+msgstr ""
+
+msgid "the battery now stops charging at {percent} percent"
+msgstr ""
+
+msgid "added the account {name}"
+msgstr ""
+
+msgid "{name} now logs in to {shell}"
+msgstr ""
+
+msgid "{name} can now log in with an ssh key"
+msgstr ""
+
+msgid "made the group {group}, whose people are administrators"
+msgstr ""
+
+msgid "{name} is now an administrator"
+msgstr ""
+
+msgid "{name} is no longer an administrator"
+msgstr ""
+
+msgid "{name} now logs in with {count} ssh keys"
+msgstr ""
+
+msgid "turned on {service}, so it starts with the computer"
+msgstr ""
+
+msgid "turned off {service}, so it no longer starts with the computer"
+msgstr ""
+
+msgid "removed the passwords edel install left, as nobody in the file has one"
+msgstr ""
+
+msgid "{names} now log in with the password edel install asked for"
+msgstr ""
+
+msgid "developer mode is on"
+msgstr ""
+
+msgid "developer mode is off"
+msgstr ""
+
+msgid "{name} may now use the screen, keyboard and mouse"
+msgstr ""
+
+msgid "installed {apps} for {name}"
+msgstr ""
+
+msgid "no default apps are set now"
+msgstr ""
+
+msgid "the default apps are set"
+msgstr ""
+
+msgid "the add-ons' files are in place ({made} linked, {removed} taken out)"
+msgstr ""
+
+msgid "each person's ids for rootless containers are written"
+msgstr ""
+
 msgid "add-on {name} starts at the next restart, once edel settings apply has fetched it"
 msgstr ""
 
@@ -1274,7 +1376,7 @@ msgstr ""
 msgid "no settings file, so nothing to apply"
 msgstr ""
 
-msgid "left out {problem}"
+msgid "{path}: not using {problem}"
 msgstr ""
 
 msgid "skipped {key}: not supported yet"
@@ -1316,7 +1418,10 @@ msgstr ""
 msgid "the desktop follows it at once"
 msgstr ""
 
-msgid "edel settings apply applies it"
+msgid "run doas edel settings apply to use it now, or it applies at the next start"
+msgstr ""
+
+msgid "run doas edel settings apply to use it"
 msgstr ""
 
 msgid "{path} is format {format}, so the change applies to this release only"
@@ -1403,12 +1508,6 @@ msgstr ""
 msgid "{word} default"
 msgstr ""
 
-msgid "{name}: no such page or key; did you mean {near}?"
-msgstr ""
-
-msgid "{name}: no such page or key; edel settings lists the pages"
-msgstr ""
-
 msgid "your own file"
 msgstr ""
 
@@ -1451,7 +1550,7 @@ msgstr ""
 msgid "the settings files {paths} have problems, so nothing was built; fix these (edel settings check shows them again):"
 msgstr ""
 
-msgid "no release named; taking {location}"
+msgid "checking {location}"
 msgstr ""
 
 msgid "edel web-app writes the files of the person who runs it, and root has no desktop of its own; run it as that person, without doas"
@@ -1464,6 +1563,9 @@ msgid "removed web app {name}"
 msgstr ""
 
 msgid "no web apps yet; make one with edel web-app add URL"
+msgstr ""
+
+msgid "no settings file yet, so there is nothing to check; every setting is at its default"
 msgstr ""
 
 msgid "{path}: ok"
@@ -1685,6 +1787,9 @@ msgstr ""
 msgid "{what} needs your password"
 msgstr ""
 
+msgid "this changes the system, so it asks your password"
+msgstr ""
+
 msgid "could not read /etc/group to see who may change the system"
 msgstr ""
 
@@ -1790,7 +1895,10 @@ msgstr ""
 msgid "refused: release.toml is format {format}; this edel reads format {current}, so install a release in between first"
 msgstr ""
 
-msgid "refused: version {version} is not newer than the running {running}; pass --allow-downgrade to install it anyway"
+msgid "Edel OS {version} is up to date; nothing to install"
+msgstr ""
+
+msgid "refused: version {version} is older than the running {running}; nothing was changed; pass --allow-downgrade to go back to it on purpose"
 msgstr ""
 
 msgid "refused: release {version} has no image {image}, the one this system is; nothing was changed, so wait for a release that lists it"
@@ -2036,7 +2144,16 @@ msgstr ""
 msgid "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
 msgstr ""
 
-msgid "the file is not valid TOML"
+msgid "{path} has a mistake on line {line}, column {column} ({why}), so this change was not saved; fix that line, then run edel settings check {path}"
+msgstr ""
+
+msgid "{path} has a mistake on line {line}, column {column} ({why}); fix that line"
+msgstr ""
+
+msgid "the settings file has a mistake on line {line}, column {column} ({why}); fix that line"
+msgstr ""
+
+msgid "{path} has a mistake on line {line}, so none of its settings are used and the release's are; fix that line, or run edel settings check {path}"
 msgstr ""
 
 msgid "the file is format {format}, and this release reads format {current}"
@@ -2052,9 +2169,6 @@ msgid "{name} is not a colour; did you mean {near}?"
 msgstr ""
 
 msgid "{name} is not a colour; try a colour such as {names}, or see edel settings get appearance"
-msgstr ""
-
-msgid "{path} is not valid TOML; nothing is applied"
 msgstr ""
 
 msgid "{path} is format {format}, newer than this release reads, and there is no {older} beside it; nothing is applied"
@@ -2102,6 +2216,12 @@ msgstr ""
 msgid "{key} is a table of colours; set one colour in it, such as {key}.panel"
 msgstr ""
 
+msgid "{key}: no such key or page; did you mean {near}? edel settings lists the pages"
+msgstr ""
+
+msgid "{key}: no such key or page; edel settings lists the pages"
+msgstr ""
+
 msgid "unknown key; did you mean {near}?"
 msgstr ""
 
@@ -2124,6 +2244,9 @@ msgid "expected a table"
 msgstr ""
 
 msgid "a built-in preset's name in quotes, such as \"hive\""
+msgstr ""
+
+msgid "{value} is not a computer name; give letters, digits and hyphens, up to 63, such as lab-1"
 msgstr ""
 
 msgid "expected {expected}, not {value}"
@@ -2154,9 +2277,6 @@ msgid "unknown value {value}; use {allowed}"
 msgstr ""
 
 msgid "a whole number from {least} to {most}"
-msgstr ""
-
-msgid "a hostname: letters, digits and hyphens, up to 63"
 msgstr ""
 
 msgid "a login shell's full path, such as \"/bin/sh\""
@@ -2858,16 +2978,16 @@ msgstr ""
 msgid "slot {slot} is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged"
 msgstr ""
 
-msgid "cannot mount the EFI system partition {device}"
+msgid "could not open the start-up partition {device}, which says which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes"
 msgstr ""
 
 msgid "the EFI system partition has no {file}, so the slots cannot be read; this disk was not made by edel install, or it is damaged"
 msgstr ""
 
-msgid "could not read the GRUB environment"
+msgid "could not read which version starts next from the start-up partition; nothing was changed; if this repeats, run edel report and send the file it writes"
 msgstr ""
 
-msgid "could not open the GRUB environment"
+msgid "could not open the start-up partition's record of which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes"
 msgstr ""
 
 msgid "GRUB's environment block has no directory"
@@ -2882,7 +3002,7 @@ msgstr ""
 msgid "could not take the lock {path}: another edel command took it first; try again"
 msgstr ""
 
-msgid "{doing}: permission denied; this changes the system, so run it with doas: doas edel ..."
+msgid "{doing}: permission denied; {command} changes the system, so it needs an administrator: doas {command}"
 msgstr ""
 
 msgid "{command} (pid {pid}) is running"
@@ -2903,6 +3023,9 @@ msgstr ""
 msgid "cannot read {path}"
 msgstr ""
 
+msgid "the versions installed are shown to administrators only: doas edel status"
+msgstr ""
+
 msgid "installing an unsigned image; nothing checked where it came from"
 msgstr ""
 
@@ -2915,7 +3038,10 @@ msgstr ""
 msgid "could not start e2fsck"
 msgstr ""
 
-msgid "slot {slot} written and checked; restart to use it; if it fails to start, Edel OS goes back to slot {running} on its own"
+msgid "slot {slot} written and checked; restart to use it (edel restart); if it fails to start, Edel OS goes back to slot {running} on its own"
+msgstr ""
+
+msgid "could not write {path} ({why}), so the power menu does not mark Restart; the update still starts at the next restart"
 msgstr ""
 
 msgid "the update image is {size} MiB and slot {slot} holds {room} MiB, so nothing was written; the running system is unchanged"
@@ -2936,7 +3062,16 @@ msgstr ""
 msgid "could not write the slot"
 msgstr ""
 
-msgid "slot {slot} starts after the next restart; slot {running} stays installed"
+msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again"
+msgstr ""
+
+msgid "the fallback happened but could not be recorded ({why}), so Settings will not mention it"
+msgstr ""
+
+msgid "the boot loader was not updated ({why}); the slot is confirmed and the boot loader before it stays"
+msgstr ""
+
+msgid "slot {slot} starts after the next restart (edel restart); slot {running} stays installed, so edel rollback again undoes this"
 msgstr ""
 
 msgid "{version} is available; edel update installs it"
@@ -3189,6 +3324,9 @@ msgid "Print this machine as a settings file, to keep or to import on another ma
 msgstr ""
 
 msgid "Check a settings file strictly: every unknown key, value or format, and every key this release does not act on yet, is refused"
+msgstr ""
+
+msgid "The settings file, a path or an https:// address; without one, your own file and the machine's"
 msgstr ""
 
 msgid "Build and inspect Edel OS images"

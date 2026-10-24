@@ -1545,10 +1545,14 @@ fn note_text(view: &View) -> Option<&'static str> {
         Field::Ready if view.people.is_some() => Some(tr("Left and right choose a person")),
         Field::Ready => None,
         Field::Checking => Some(tr("Checking")),
-        Field::Wrong => Some(tr("Wrong password, try again")),
-        Field::NoChecker => Some(tr("This system cannot check passwords")),
-        Field::Refused => Some(tr("Wrong user name or password")),
-        Field::Failed => Some(tr("Could not log in, try again")),
+        Field::Wrong => Some(tr("Wrong password. Type it again.")),
+        Field::NoChecker => Some(tr(
+            "Passwords cannot be checked here. Log in with Ctrl+Alt+F2.",
+        )),
+        Field::Refused => Some(tr("Wrong username or password. Type them again.")),
+        Field::Failed => Some(tr(
+            "Could not start your session. Try again, or log in with Ctrl+Alt+F2.",
+        )),
     }
 }
 
@@ -1792,7 +1796,7 @@ fn count(
 }
 
 /// The greeter's first step: the field shows the user name as typed, with
-/// a caret in the accent, or "User name" when empty, and the note under
+/// a caret in the accent, or "Username" when empty, and the note under
 /// it says why the last try failed.
 fn paint_name_field(
     pixmap: &mut Pixmap,
@@ -1831,7 +1835,7 @@ fn paint_name_field(
     let top = (f.y + (f.h - 15.0 * 1.25) / 2.0) * s;
     let x = (f.x + 20.0) * s;
     if view.name.is_empty() {
-        let mut line = text.fit(tr("User name"), 15.0 * s, (f.w - 40.0) * s);
+        let mut line = text.fit(tr("Username"), 15.0 * s, (f.w - 40.0) * s);
         text.draw(pixmap, &mut line, x, top, quiet);
     }
     let mut line = text.fit(&view.name, 15.0 * s, (f.w - 44.0) * s);
@@ -1854,8 +1858,10 @@ fn paint_name_field(
     );
     let warn = mix(tokens.title_close_hover, ink, 0.3);
     let note = match view.field {
-        Field::Refused => Some(tr("Wrong user name or password")),
-        Field::Failed => Some(tr("Could not log in, try again")),
+        Field::Refused => Some(tr("Wrong username or password. Type them again.")),
+        Field::Failed => Some(tr(
+            "Could not start your session. Try again, or log in with Ctrl+Alt+F2.",
+        )),
         _ => None,
     };
     if let Some(words) = note {
@@ -3267,7 +3273,7 @@ mod tests {
         assert_eq!(note_text(&view), Some("Caps Lock is on"));
         view.caps = false;
         view.field = Field::Wrong;
-        assert_eq!(note_text(&view), Some("Wrong password, try again"));
+        assert_eq!(note_text(&view), Some("Wrong password. Type it again."));
         view.field = Field::Ready;
         view.people = None;
         assert_eq!(note_text(&view), None, "no hint on the lock screen");

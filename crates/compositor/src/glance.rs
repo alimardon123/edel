@@ -938,7 +938,7 @@ impl Edel {
             (f64::from(area.size.w) * scale / BACKDROP_SHRINK).ceil() as u32,
             (f64::from(area.size.h) * scale / BACKDROP_SHRINK).ceil() as u32,
         );
-        let blurred = self.deadline.tier() != Tier::Lite;
+        let blurred = self.tier() != Tier::Lite;
         // The backdrop is the wallpaper of the workspace this screen shows
         // (M5.12b5), as the desktop behind the windows is.
         let what = self.wallpaper.on(self.desks.shown_on(&name)).clone();
@@ -1267,7 +1267,7 @@ impl Edel {
     /// on Full and Balanced, while Lite keeps the pictures each window last
     /// showed and lets the apps rest (M5.2j-b4).
     pub fn overview_is_live(&self) -> bool {
-        self.overview.is_some() && self.deadline.tier() != Tier::Lite
+        self.overview.is_some() && self.tier() != Tier::Lite
     }
 
     /// Takes the shown windows' newest pictures, when the overview is live:

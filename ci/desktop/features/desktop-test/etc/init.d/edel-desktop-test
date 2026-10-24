@@ -690,6 +690,9 @@ commands() {
 		# release's own.
 		'dnd on') edel settings set notifications.do_not_disturb=true ;;
 		'dnd default') edel settings reset notifications.do_not_disturb ;;
+		# The battery saver (M8.31) in the machine's file, and back to the release's auto.
+		'saver on') edel settings set power.saver=on ;;
+		'saver default') edel settings reset power.saver ;;
 		# Where banners appear (M5.9j), in the machine's file, and back.
 		'banners top-right' | 'banners top-left') edel settings set "notifications.position=${command#banners }" ;;
 		'banners default') edel settings reset notifications.position ;;
@@ -736,6 +739,10 @@ commands() {
 		'descriptors')
 			say "descriptors $(ls "/proc/$(pidof edel-compositor | cut -d' ' -f1)/fd" | wc -l) $(ls "/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/fd" | wc -l)"
 			;;
+		# Forty windows that close before a frame of theirs is drawn
+		# (M8.21), and the desktop's processes, which must not change.
+		flash) say "flash $(as_ci edel-testclient --flash 40 --title flash </dev/null 2>&1) exit $?" ;;
+		pids) say "pids $(pidof edel-compositor) / $(pidof edel-shell-ui)" ;;
 		# A window that locks the pointer and says what it hears, and one
 		# that keeps the screen on, and the state file's count (M5.23).
 		'lock window')
@@ -1530,7 +1537,16 @@ commands() {
 			say "agents_off $? $(tail -n 3 /tmp/agents.log | tr '\n' ';')"
 			say "agents_left $(edel settings diff 2>&1 | tr '\n' ';')"
 			say "agents_files $(find /etc /usr/lib/edel -name '*ai-agents*' 2>/dev/null | tr '\n' ' ')"
-			procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+			# Newelle's window closed a moment ago, and its sandbox may
+			# take that long to end: up to 10 s, then what still runs.
+			i=0
+			while :; do
+				procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+				[ -n "$procs" ] && [ "$i" -lt 20 ] || break
+				i=$((i + 1))
+				sleep 0.5
+			done
+			[ -z "$procs" ] || procs="$procs; after 10 s: $(ps -o pid,args | grep -E 'bwrap|flatpak|testclient' | grep -v grep | tr '\n' ';')"
 			say "agents_processes ${procs:-none}"
 			;;
 		# Containers as the admin (M7.6b part 4): our own container image,

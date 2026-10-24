@@ -38,8 +38,8 @@ use edel::power::{self, Bar, Device, Sample, Snapshot, State};
 use edel::settings::{
     GAME_MODE, GAME_MODE_DEFAULT, LID_CLOSE, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES,
     LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY, ON_BATTERY_DEFAULT, POWER_BUTTON,
-    POWER_BUTTON_DEFAULT, SCREEN_OFF_MINUTES, SCREEN_OFF_MINUTES_DEFAULT_TEXT, SLEEP_AFTER_MINUTES,
-    SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
+    POWER_BUTTON_DEFAULT, SAVER, SAVER_DEFAULT, SCREEN_OFF_MINUTES,
+    SCREEN_OFF_MINUTES_DEFAULT_TEXT, SLEEP_AFTER_MINUTES, SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
 };
 
 use crate::choice_row::{self, ChoiceRow};
@@ -331,6 +331,14 @@ impl Lid {
                 ON_BATTERY,
                 n_("Plugged in, it runs at Balanced, or Performance when chosen here"),
                 ON_BATTERY_DEFAULT,
+            ),
+            ChoiceRow::new(
+                &self.group,
+                SAVER,
+                n_(
+                    "Lighter effects and the power-saver profile; Automatic turns it on at 20 percent on battery",
+                ),
+                SAVER_DEFAULT,
             ),
             ChoiceRow::new(
                 &self.group,
@@ -965,6 +973,7 @@ mod tests {
         assert_eq!(rows::title(SCREEN_OFF_MINUTES), "Screen off after");
         assert_eq!(rows::title(SLEEP_AFTER_MINUTES), "Sleep on battery after");
         assert_eq!(rows::title(ON_BATTERY), "On battery");
+        assert_eq!(rows::title(SAVER), "Battery saver");
         assert_eq!(rows::title(GAME_MODE), "Game mode");
         assert_eq!(rows::title(edel::settings::BATTERY_CARE), "Battery care");
         assert_eq!(rows::label("plugged-in"), "When plugged in");
@@ -978,6 +987,7 @@ mod tests {
             (LID_CLOSE, LID_CLOSE_DEFAULT),
             (POWER_BUTTON, POWER_BUTTON_DEFAULT),
             (ON_BATTERY, ON_BATTERY_DEFAULT),
+            (SAVER, SAVER_DEFAULT),
             (GAME_MODE, GAME_MODE_DEFAULT),
         ] {
             assert!(rows::values(key).contains(&release), "{key}: {release}");

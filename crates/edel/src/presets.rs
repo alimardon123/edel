@@ -77,10 +77,12 @@ pub const TILES: &[&str] = &[
     "do_not_disturb",
     "location",
     "dark_style",
+    "battery_saver",
 ];
 
-/// The tiles a preset that names none shows, in this order: the six every
-/// built-in preset lists today (Location only where its feature is there).
+/// The tiles a preset that names none shows, in this order: the seven
+/// every built-in preset shows (Location only where its feature is there,
+/// Battery saver only where a battery is).
 pub const DEFAULT_TILES: &[&str] = &[
     "wifi",
     "bluetooth",
@@ -88,6 +90,7 @@ pub const DEFAULT_TILES: &[&str] = &[
     "do_not_disturb",
     "location",
     "dark_style",
+    "battery_saver",
 ];
 
 /// Quick settings (M5.9a): the tiles a preset shows, in two columns, in
@@ -1175,25 +1178,14 @@ mod tests {
     #[test]
     fn a_quick_tile_this_release_lacks_or_lists_twice_is_refused() {
         let classic = BUILT_IN[0].1;
-        let with = |tiles: &str| {
-            let lines: Vec<String> = classic
-                .lines()
-                .map(|l| {
-                    if l.starts_with("tiles =") {
-                        format!("tiles = {tiles}")
-                    } else {
-                        l.to_string()
-                    }
-                })
-                .collect();
-            format!("{}\n", lines.join("\n"))
-        };
+        // Classic names no tiles, so each text gets its own `[quick]` table.
+        let with = |tiles: &str| format!("{classic}\n[quick]\ntiles = {tiles}\n");
         let e = format!(
             "{:#}",
             check(&with("[\"wifi\", \"night_light\"]")).unwrap_err()
         );
         assert!(
-            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, do_not_disturb, location, dark_style"),
+            e.contains("\"night_light\" is not a quick settings tile; the tiles are wifi, bluetooth, airplane, do_not_disturb, location, dark_style, battery_saver"),
             "{e}"
         );
         let e = format!("{:#}", check(&with("[\"wifi\", \"wifi\"]")).unwrap_err());
@@ -1201,7 +1193,7 @@ mod tests {
             e.contains("the quick settings tile wifi is listed twice"),
             "{e}"
         );
-        let text = classic.replace("[quick]", "[quick]\nrows = 3");
+        let text = format!("{classic}\n[quick]\nrows = 3\n");
         assert!(format!("{:#}", check(&text).unwrap_err()).contains("unknown field `rows`"));
         assert!(check(&with("[]")).is_ok(), "an empty list shows no tiles");
     }

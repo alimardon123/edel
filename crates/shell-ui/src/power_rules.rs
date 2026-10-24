@@ -47,6 +47,7 @@ pub struct Rules {
     screen_off: u32,
     sleep_after: u32,
     on_battery: String,
+    saver: String,
 }
 
 /// The minutes a whole-minute key of the settings files gives, checked
@@ -92,12 +93,19 @@ impl Rules {
                 person,
             ),
             on_battery: one_of(settings::ON_BATTERY, settings::ON_BATTERY_DEFAULT),
+            saver: one_of(settings::SAVER, settings::SAVER_DEFAULT),
         }
     }
 
     /// The minutes without input before the screen locks; 0 for never.
     pub fn lock_after(&self) -> u32 {
         self.lock_after
+    }
+
+    /// Whether `power.saver` is `auto`, so a saver that is on came from the
+    /// battery and stays on until the charger (M8.31).
+    pub fn saver_auto(&self) -> bool {
+        self.saver == "auto"
     }
 }
 
@@ -128,12 +136,33 @@ pub fn on_button(rules: &Rules, edel_here: bool) -> Do {
     }
 }
 
-/// The power profile the machine should use now: on battery the rules'
-/// choice; plugged in, Performance while a game plays (`game`, M7.7b) or
-/// when that is the choice, else Balanced. With no word on the power, the
-/// machine counts as plugged in.
-pub fn profile(rules: &Rules, on_battery: Option<bool>, game: bool) -> &str {
+/// Whether the battery saver is on now (M8.31). `on` and `off` are the
+/// person's choice whatever the battery does. `auto`, the default, is on
+/// while the computer runs on battery at [`settings::SAVER_AT_PERCENT`] or
+/// less, and once on it stays on until the charger is plugged in (`was_on`,
+/// the last decision), so 20 and 21 percent cannot flap it. With no battery
+/// (`None`, `None`) it is off.
+pub fn saver(rules: &Rules, on_battery: Option<bool>, percent: Option<u32>, was_on: bool) -> bool {
+    match rules.saver.as_str() {
+        "on" => true,
+        "off" => false,
+        _ => {
+            on_battery == Some(true)
+                && (was_on || percent.is_some_and(|p| p <= settings::SAVER_AT_PERCENT))
+        }
+    }
+}
+
+/// The power profile the machine should use now: `saver` (M8.31) is
+/// power-saver first, before the battery and a game, as the person chose to
+/// save power (`auto` is never on at the charger, so only an explicit `on`
+/// beats a game). Else on battery the rules' choice; plugged in,
+/// Performance while a game plays (`game`, M7.7b) or when that is the
+/// choice, else Balanced. With no word on the power, the machine counts as
+/// plugged in.
+pub fn profile(rules: &Rules, on_battery: Option<bool>, game: bool, saver: bool) -> &str {
     match on_battery {
+        _ if saver => "power-saver",
         Some(true) => &rules.on_battery,
         _ if game || rules.on_battery == "performance" => "performance",
         _ => "balanced",
@@ -192,6 +221,7 @@ mod tests {
         assert_eq!(rules.button, "suspend");
         assert_eq!(rules.lock_after(), 5);
         assert_eq!(rules.on_battery, "balanced");
+        assert_eq!(rules.saver, "auto");
     }
 
     #[test]
@@ -267,16 +297,16 @@ mod tests {
     #[test]
     fn the_profile_follows_the_power_and_the_choice_for_battery() {
         let balanced = Rules::read(None, None);
-        assert_eq!(profile(&balanced, Some(true), false), "balanced");
-        assert_eq!(profile(&balanced, Some(false), false), "balanced");
-        assert_eq!(profile(&balanced, None, false), "balanced");
+        assert_eq!(profile(&balanced, Some(true), false, false), "balanced");
+        assert_eq!(profile(&balanced, Some(false), false, false), "balanced");
+        assert_eq!(profile(&balanced, None, false, false), "balanced");
         let saver = rules("[power]\non_battery = \"power-saver\"\n");
-        assert_eq!(profile(&saver, Some(true), false), "power-saver");
-        assert_eq!(profile(&saver, Some(false), false), "balanced");
+        assert_eq!(profile(&saver, Some(true), false, false), "power-saver");
+        assert_eq!(profile(&saver, Some(false), false, false), "balanced");
         let fast = rules("[power]\non_battery = \"performance\"\n");
-        assert_eq!(profile(&fast, Some(true), false), "performance");
+        assert_eq!(profile(&fast, Some(true), false, false), "performance");
         assert_eq!(
-            profile(&fast, Some(false), false),
+            profile(&fast, Some(false), false, false),
             "performance",
             "plugged in, Performance when chosen"
         );
@@ -285,18 +315,18 @@ mod tests {
     #[test]
     fn a_game_on_the_charger_asks_for_full_power_and_battery_still_decides() {
         let balanced = Rules::read(None, None);
-        assert_eq!(profile(&balanced, Some(false), true), "performance");
+        assert_eq!(profile(&balanced, Some(false), true, false), "performance");
         assert_eq!(
-            profile(&balanced, None, true),
+            profile(&balanced, None, true, false),
             "performance",
             "a machine with no battery counts as plugged in"
         );
-        assert_eq!(profile(&balanced, Some(true), true), "balanced");
+        assert_eq!(profile(&balanced, Some(true), true, false), "balanced");
         let saver = rules("[power]\non_battery = \"power-saver\"\n");
-        assert_eq!(profile(&saver, Some(true), true), "power-saver");
-        assert_eq!(profile(&saver, Some(false), true), "performance");
+        assert_eq!(profile(&saver, Some(true), true, false), "power-saver");
+        assert_eq!(profile(&saver, Some(false), true, false), "performance");
         assert_eq!(
-            profile(&saver, Some(false), false),
+            profile(&saver, Some(false), false, false),
             "balanced",
             "the rules' profile comes back when the game ends"
         );
@@ -369,6 +399,73 @@ mod tests {
             idle_stages(&battery, Some(true), true),
             [(120_000, Stage::Lock)]
         );
+    }
+
+    #[test]
+    fn the_saver_is_auto_by_the_battery_at_twenty_percent_and_latches_until_the_charger() {
+        let auto = Rules::read(None, None);
+        assert!(
+            saver(&auto, Some(true), Some(20), false),
+            "20 percent on battery"
+        );
+        assert!(
+            !saver(&auto, Some(true), Some(21), false),
+            "21 percent on battery"
+        );
+        assert!(
+            !saver(&auto, Some(false), Some(5), false),
+            "5 percent on the charger"
+        );
+        assert!(
+            saver(&auto, Some(true), Some(21), true),
+            "latched at 21 percent"
+        );
+        assert!(
+            !saver(&auto, Some(false), Some(21), true),
+            "the charger ends the latch"
+        );
+        assert!(!saver(&auto, None, None, false), "no battery is off");
+        assert!(
+            !saver(&auto, None, None, true),
+            "no battery is off even when latched"
+        );
+    }
+
+    #[test]
+    fn the_saver_on_and_off_ignore_the_battery() {
+        let on = rules("[power]\nsaver = \"on\"\n");
+        assert!(saver(&on, Some(false), Some(90), false), "on the charger");
+        let off = rules("[power]\nsaver = \"off\"\n");
+        assert!(
+            !saver(&off, Some(true), Some(5), false),
+            "5 percent on battery"
+        );
+        assert!(
+            !saver(&off, Some(true), Some(5), true),
+            "off ends any latch"
+        );
+    }
+
+    #[test]
+    fn the_saver_s_profile_is_power_saver_before_the_battery_and_a_game() {
+        let auto = Rules::read(None, None);
+        assert_eq!(
+            profile(&auto, Some(false), false, true),
+            "power-saver",
+            "on the charger"
+        );
+        assert_eq!(
+            profile(&auto, Some(true), false, true),
+            "power-saver",
+            "on battery"
+        );
+        assert_eq!(
+            profile(&auto, Some(false), true, true),
+            "power-saver",
+            "with a game"
+        );
+        let fast = rules("[power]\non_battery = \"performance\"\n");
+        assert_eq!(profile(&fast, Some(true), false, true), "power-saver");
     }
 
     #[test]

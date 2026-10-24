@@ -1215,15 +1215,7 @@ fn values_text(keys: &[String]) -> String {
 /// what it sets, Cancel and Add theme (the default), as `widgets::ask_name`
 /// builds its dialog.
 fn import_dialog(card: &Rc<Card>, near: &gtk::Widget, plan: theme_file::Import) {
-    let window = gtk::Window::builder()
-        .title(tr("Add theme"))
-        .modal(true)
-        .resizable(false)
-        .default_width(360)
-        .build();
-    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
-        window.set_transient_for(Some(&parent));
-    }
+    let window = widgets::modal(near, tr("Add theme"), 360, |b| b.css_classes(["edel"]));
     let title = gtk::Label::builder()
         .label(&plan.title)
         .xalign(0.0)
@@ -1241,20 +1233,8 @@ fn import_dialog(card: &Rc<Card>, near: &gtk::Widget, plan: theme_file::Import) 
         .build();
     let cancel = widgets::action(tr("Cancel"), false);
     let add = widgets::action(tr("Add theme"), true);
-    let buttons = gtk::Box::builder()
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&add);
-    let body = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .margin_top(20)
-        .margin_bottom(20)
-        .margin_start(20)
-        .margin_end(20)
-        .build();
+    let buttons = widgets::dialog_buttons(&[&cancel, &add]);
+    let body = widgets::dialog_body(12);
     body.append(&title);
     body.append(&pictures);
     body.append(&values);

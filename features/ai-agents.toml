@@ -7,3 +7,6 @@ summary = "AI agents: Newelle and Alpaca, from Flathub, for the people who pick 
 why = "Some people want an AI agent on their computer (Alimardon, 2026-10-06, after Omarchy built them into its core); Edel OS offers them only to those who choose them. The agents are Flatpak apps, so nothing of theirs is in the slot or in this add-on: edel settings apply installs them for each administrator with flatpak --user while addons.installed names this add-on, as it does apps.installed, and dropping the add-on installs nothing more and keeps what people have. Newelle runs commands as the person who started it, so it changes the system only through the commands everyone uses (edel settings set, edel update), each change shown by edel settings diff and undone by a reset or a rollback, with an administrator's rights only when that person has them. Alpaca is a chat app for models run on the machine itself. Neither runs until a person starts it, and we send nothing anywhere: an agent's account and key are the person's, kept by the agent. Command-line agents run in a dev container of the containers add-on, set up by the person."
 addon = true
 flatpak = ["com.jeffser.Alpaca", "io.github.qwersyk.Newelle"]
+# Built over the desktop (M8.17c): its apps need Flatpak and a screen, so on
+# a machine without the desktop it stays off and says so.
+on = "desktop"

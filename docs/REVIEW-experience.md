@@ -36,8 +36,27 @@ A walk that must grow (a new page in the Welcome, a new question in the installe
 ## Left for the laptop (M8.15b)
 
 - **A setting changed three ways** (Settings, `edel settings`, the settings file): CI proves each way works in its own cases (`settings`, `tiling` and the others in [CASES.md](https://github.com/alimardon123/edel/blob/main/ci/CASES.md)), and the desktop follows within a frame or two; what a person feels there is below what a CI clock in a VM measures honestly, so it is walked on the laptop.
-- **Every error message a person can meet**, read for whether it says what to do ([MESSAGES.md](MESSAGES.md)).
+- **Every error message a person can meet**, read for whether it says what to do ([MESSAGES.md](MESSAGES.md)). Read once on 2026-10-24 in the code of every walk, 60 messages that did not say what to do were found; the update, rollback and guard's words, the desktop's, the lock screen's, Settings' and the settings file's are reworded in the UI lane's pull requests, and the installer's in System A's. The laptop walk reads them again where they appear.
 - **The download and writing the stick**, which happen on another computer.
+
+## The laptop walk (M8.15b)
+
+Alimardon walks these on the HP 250 G8, from a stick written from the release, with the session reading along. Each line is one walk: do it as someone new to Edel OS would, note anything slow, unclear or ugly in a sentence, and after each part run `edel report > walk-N.toml` and send the file. Every finding gets its own pull request or its reason written here.
+
+| # | Walk | What to do | What to watch |
+|---|---|---|---|
+| 1 | Download and the stick | Download the image, check its sha256, write it as `docs/TRY-IT.md` says | Whether every step was clear without asking |
+| 2 | `try` | Start from the stick | Seconds to the desktop; any black screen or flicker when the greeter hands over |
+| 3 | `install-page` | Install Edel OS from the Welcome onto the internal disk | Every question and message read; the restart and taking the stick out |
+| 4 | `first-setup` | The first start from the internal disk | The Welcome's pages, the greeter, the first login |
+| 5 | A setting three ways | Change the accent colour in Settings, then with `edel settings set appearance.accent=green`, then in `~/.config/edel/settings.toml` by hand, including one mistake on purpose | That the desktop follows at once each time, and that the mistake's message says which line and what to do |
+| 6 | Each Settings page | Open every page and change one thing on each | Anything that waits, jumps or reads unclear |
+| 7 | The presets | Classic, Mac-like, Windows-like, Hive and Zen from the layout button | Frames missed while switching; title bars and panels where the preset puts them |
+| 8 | Hardware only | Plug a screen in and out with windows on it; close and open the lid; sleep and wake; type in a GTK 4 app with an input method; copy between an X11 app and a Wayland app; pair a Bluetooth keyboard (it shows a code) and a phone (it compares a number) | Windows kept on a screen, the lock screen taking keys at once, the code shown, nothing crashing (each is a row of the other projects' bugs review that only real hardware proves) |
+| 9 | `update` and `rollback` | `doas edel update`, restart, `doas edel rollback`, restart | The words at each step; `edel update` on an up-to-date machine says so and ends well |
+| 10 | `broken-update` | Only if a broken test release is offered: update to it and wait | The computer coming back by itself and the notice that says so |
+
+What CI already proves of each walk is in the table above; the laptop adds what a VM cannot show: real screens, the GPU, input devices, the battery and how it feels.
 
 ## First numbers
 

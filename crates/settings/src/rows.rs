@@ -328,6 +328,10 @@ pub const ROWS: &[Row] = &[
         title: n_("On battery"),
     },
     Row {
+        key: edel::settings::SAVER,
+        title: n_("Battery saver"),
+    },
+    Row {
         key: edel::settings::GAME_MODE,
         title: n_("Game mode"),
     },
@@ -756,6 +760,8 @@ pub fn label(value: &str) -> String {
         "lock" => n_("Lock the screen"),
         "power-saver" => n_("Power saver"),
         "plugged-in" => n_("When plugged in"),
+        "on" => n_("On"),
+        "off" => n_("Off"),
         _ => return crate::files::title(&value.replace('-', " ")),
     };
     tr(word).to_string()
@@ -770,6 +776,15 @@ pub fn describe(source: &Source, current: &str) -> String {
         Source::Machine(_) => tr("Set by this machine").to_string(),
         Source::Release => trf("Automatic ({current})", &[("current", current)]),
     }
+}
+
+/// The label of the choice Edel OS's own default gives, for every page that
+/// offers it, written once here (ADR-010).
+pub fn release_choice() -> String {
+    trf(
+        "Automatic ({current})",
+        &[("current", tr("Edel OS's choice"))],
+    )
 }
 
 /// What a row's line adds about where its value comes from, as the

@@ -2,7 +2,8 @@
 //! plain headline at the top with its switch; the devices paired with this
 //! computer, each with Connect or Disconnect and Remove; and a search for
 //! devices nearby, each with Pair. A computer with no Bluetooth says so
-//! and shows nothing else. Everything goes through `bluetoothctl`
+//! and shows nothing else. Everything but the pairing itself goes through
+//! `bluetoothctl`
 //! (`edel::bluetooth`, which the panel's quick settings will use too), run
 //! on a thread of its own and never the one that draws; each row copies
 //! the `bluetoothctl` command that does the same, so the page and the
@@ -14,9 +15,9 @@
 //! screen, and only then; a search runs only when a person asks for it.
 //!
 //! Seam (ADR-011): a device is whatever BlueZ lists, so a paired phone's
-//! or a lent keyboard's entry is one more row, and pairing with a passcode
-//! (a keyboard that shows a number to type) joins later as another answer
-//! to the agent, with no change to the rest of the page.
+//! or a lent keyboard's entry is one more row. Pairing goes through
+//! `pairing.rs`, which shows a keyboard's code and asks whether a phone's
+//! numbers match; typing a code on this computer is its seam.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -28,6 +29,7 @@ use gtk::prelude::*;
 use edel::bluetooth::{self, Device, Kind, Snapshot};
 use edel::i18n::{n_, tr, trf};
 
+use crate::pairing::{self, Paired};
 use crate::{card, widgets};
 
 const INTRO: &str = n_("Headphones, speakers, mice and keyboards. Pairings stay on this computer.");
@@ -354,23 +356,38 @@ fn act<E: std::fmt::Display + Send + 'static>(
     doing: String,
     work: impl FnOnce() -> Result<(), E> + Send + 'static,
 ) {
+    begin(ui, &doing);
+    let ui = ui.clone();
+    glib::spawn_future_local(async move {
+        let done = gio::spawn_blocking(work).await;
+        let problem = match done {
+            Ok(Err(e)) => Some(format!("{e:#}")),
+            _ => None,
+        };
+        finish(&ui, problem);
+    });
+}
+
+/// Starts a change: the page is busy and says `doing` until [`finish`].
+fn begin(ui: &Rc<Ui>, doing: &str) {
     ui.busy.set(true);
     ui.failed.set(false);
     ui.problem.set_visible(false);
     ui.glance
-        .show(true, &doing, tr("This can take a few seconds."));
-    let ui = ui.clone();
-    glib::spawn_future_local(async move {
-        let done = gio::spawn_blocking(work).await;
-        ui.busy.set(false);
-        if let Ok(Err(e)) = done {
-            ui.problem.set_label(&format!("{e:#}"));
-            ui.problem.set_visible(true);
-            ui.failed.set(true);
-        }
-        ui.shown.borrow_mut().clear();
-        refresh(&ui);
-    });
+        .show(true, doing, tr("This can take a few seconds."));
+}
+
+/// Ends a change: `problem` is what went wrong, shown on the page's
+/// problem line, or none. Then the page shows what Bluetooth is.
+fn finish(ui: &Rc<Ui>, problem: Option<String>) {
+    ui.busy.set(false);
+    if let Some(words) = problem {
+        ui.problem.set_label(&words);
+        ui.problem.set_visible(true);
+        ui.failed.set(true);
+    }
+    ui.shown.borrow_mut().clear();
+    refresh(ui);
 }
 
 /// Shows what BlueZ says.
@@ -512,8 +529,8 @@ fn paired_row(ui: &Rc<Ui>, device: &Device, powered: bool) {
 /// A device found nearby: Pair.
 fn nearby_row(ui: &Rc<Ui>, device: &Device) {
     let controls = gtk::Box::builder().spacing(10).build();
-    let pair = widgets::action(tr("Pair"), true);
-    controls.append(&pair);
+    let pair_button = widgets::action(tr("Pair"), true);
+    controls.append(&pair_button);
     let row = widgets::row(&ui.found, &device.name, controls.upcast_ref());
     row.subtitle.set_label(&note(device));
     row.reset.set_visible(false);
@@ -523,13 +540,25 @@ fn nearby_row(ui: &Rc<Ui>, device: &Device) {
         widgets::copied(button);
     });
     let (ui, device) = (ui.clone(), device.clone());
-    pair.connect_clicked(move |_| {
-        let (address, name) = (device.address.clone(), device.name.clone());
-        act(
+    pair_button.connect_clicked(move |button| {
+        pair(&ui, button.upcast_ref(), &device);
+    });
+}
+
+/// Pairs with a device found nearby, answering BlueZ's questions in
+/// prompts over `near` (the Pair button), then trusts and connects it.
+fn pair(ui: &Rc<Ui>, near: &gtk::Widget, device: &Device) {
+    let (address, name) = (device.address.clone(), device.name.clone());
+    begin(ui, &trf("Pairing with {name}", &[("name", &name)]));
+    let ui = ui.clone();
+    pairing::pair(near, &device.address, &device.name, move |end| match end {
+        Paired::Yes => act(
             &ui,
-            trf("Pairing with {name}", &[("name", &device.name)]),
-            move || bluetooth::pair(&address, &name),
-        );
+            trf("Connecting to {name}", &[("name", &name)]),
+            move || bluetooth::trust_and_connect(&address, &name),
+        ),
+        Paired::Cancelled => finish(&ui, None),
+        Paired::Failed(words) => finish(&ui, Some(words)),
     });
 }
 
@@ -540,12 +569,6 @@ fn show_details(ui: &Rc<Ui>, snapshot: &Snapshot) {
         widgets::value_row(&ui.details, tr("Called"), &adapter.name);
         widgets::value_row(&ui.details, tr("Address"), &adapter.address);
     }
-    widgets::text_row(
-        &ui.details,
-        tr(
-            "Keyboards that ask you to type a code on them cannot be paired here yet; pair them with bluetoothctl.",
-        ),
-    );
 }
 
 #[cfg(test)]

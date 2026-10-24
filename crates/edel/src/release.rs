@@ -353,22 +353,50 @@ pub use edel::version::compare as compare_versions;
 /// The value of `key` in an os-release text (`edel::version`).
 pub use edel::version::os_release_value;
 
-/// The entry for `image` in `manifest`, refused when the version is not
-/// newer than `running` (unless `allow_downgrade`).
+/// What `edel update` meets when the release is the version running:
+/// nothing to do, which is not a failure (M8.15), so `edel update` says so
+/// and ends well.
+#[derive(Debug)]
+pub struct UpToDate {
+    pub version: String,
+}
+
+impl std::fmt::Display for UpToDate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&trf(
+            "Edel OS {version} is up to date; nothing to install",
+            &[("version", &self.version)],
+        ))
+    }
+}
+
+impl std::error::Error for UpToDate {}
+
+/// The entry for `image` in `manifest`: [`UpToDate`] when the version is
+/// the running one, refused when it is older (unless `allow_downgrade`).
 fn pick_image<'a>(
     manifest: &'a Manifest,
     image: &str,
     running: &str,
     allow_downgrade: bool,
 ) -> Result<&'a ImageEntry> {
-    if !allow_downgrade && compare_versions(&manifest.version, running) != Ordering::Greater {
-        bail!(
-            "{}",
-            trf(
-                "refused: version {version} is not newer than the running {running}; pass --allow-downgrade to install it anyway",
-                &[("version", &manifest.version), ("running", running)]
-            )
-        );
+    if !allow_downgrade {
+        match compare_versions(&manifest.version, running) {
+            Ordering::Greater => {}
+            Ordering::Equal => {
+                return Err(UpToDate {
+                    version: manifest.version.clone(),
+                }
+                .into());
+            }
+            Ordering::Less => bail!(
+                "{}",
+                trf(
+                    "refused: version {version} is older than the running {running}; nothing was changed; pass --allow-downgrade to go back to it on purpose",
+                    &[("version", &manifest.version), ("running", running)]
+                )
+            ),
+        }
     }
     manifest
         .images
@@ -418,10 +446,9 @@ fn could_not_read(path: &str) -> String {
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
-        let mut response = agent()
-            .get(location)
-            .call()
-            .with_context(|| download_failed(location))?;
+        let mut response = agent().get(location).call().with_context(|| {
+            edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
+        })?;
         Ok(response.body_mut().read_to_vec()?)
     } else {
         let path = local_path(location);
@@ -432,10 +459,9 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
 /// Opens an image for streaming, decompressing a `.gz` file on the way.
 fn open_image(location: &str) -> Result<Box<dyn Read>> {
     let raw: Box<dyn Read> = if is_url(location) {
-        let response = agent()
-            .get(location)
-            .call()
-            .with_context(|| download_failed(location))?;
+        let response = agent().get(location).call().with_context(|| {
+            edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
+        })?;
         Box::new(response.into_body().into_reader())
     } else {
         let path = local_path(location);
@@ -1050,7 +1076,9 @@ mod tests {
         let manifest = parse_manifest(MANIFEST).unwrap();
         assert!(pick_image(&manifest, "edel-vm-x86_64", "2026.10.1", false).is_ok());
         let err = pick_image(&manifest, "edel-vm-x86_64", "2026.10.2", false).unwrap_err();
-        assert!(err.to_string().contains("not newer"));
+        assert!(err.downcast_ref::<UpToDate>().is_some());
+        let older = pick_image(&manifest, "edel-vm-x86_64", "2026.11.0", false).unwrap_err();
+        assert!(older.downcast_ref::<UpToDate>().is_none());
         assert!(pick_image(&manifest, "edel-vm-x86_64", "2026.11.0", false).is_err());
         assert!(pick_image(&manifest, "edel-vm-x86_64", "2026.11.0", true).is_ok());
         assert!(pick_image(&manifest, "edel-laptop-x86_64", "0.1", false).is_err());
@@ -1167,7 +1195,13 @@ mod tests {
             pick_image(&manifest, "edel-vm-x86_64", "2026.10.2", false)
                 .unwrap_err()
                 .to_string(),
-            "refused: version 2026.10.2 is not newer than the running 2026.10.2; pass --allow-downgrade to install it anyway"
+            "Edel OS 2026.10.2 is up to date; nothing to install"
+        );
+        assert_eq!(
+            pick_image(&manifest, "edel-vm-x86_64", "2026.11.0", false)
+                .unwrap_err()
+                .to_string(),
+            "refused: version 2026.10.2 is older than the running 2026.11.0; nothing was changed; pass --allow-downgrade to go back to it on purpose"
         );
         assert_eq!(
             pick_image(&manifest, "edel-laptop-x86_64", "2026.10.1", false)

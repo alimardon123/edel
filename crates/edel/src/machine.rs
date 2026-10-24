@@ -420,6 +420,94 @@ impl fmt::Display for Change {
     }
 }
 
+impl Change {
+    /// What `edel settings apply` says once the change is made, in the
+    /// person's language (the M8.15 messages audit's row 55); the
+    /// [`Display`](fmt::Display) line stays English for `diff` and the boot.
+    fn said(&self) -> String {
+        match self {
+            Change::Hostname(h) => trf("this computer's name is now {name}", &[("name", h)]),
+            Change::HostnameDefault => tr("this computer's name is back to the release's").into(),
+            Change::Timezone(z) => trf("the time zone is now {zone}", &[("zone", z)]),
+            Change::TimezoneDefault => tr("the time zone is back to UTC").into(),
+            Change::Geolocation { zone, .. } => trf(
+                "apps that ask are told you are in {zone}",
+                &[("zone", zone)],
+            ),
+            Change::GeolocationNone => tr("apps that ask are told no place").into(),
+            Change::LocationOnline(true) => {
+                tr("apps may now find the place from nearby Wi-Fi").into()
+            }
+            Change::LocationOnline(false) => {
+                tr("apps no longer find the place from nearby Wi-Fi").into()
+            }
+            Change::BatteryCare(percent) => trf(
+                "the battery now stops charging at {percent} percent",
+                &[("percent", &percent.to_string())],
+            ),
+            Change::AddUser { name, .. } => trf("added the account {name}", &[("name", name)]),
+            Change::Shell { name, shell } => trf(
+                "{name} now logs in to {shell}",
+                &[("name", name), ("shell", shell)],
+            ),
+            Change::Unlock(name) => trf("{name} can now log in with an ssh key", &[("name", name)]),
+            Change::AdminGroup => trf(
+                "made the group {group}, whose people are administrators",
+                &[("group", ADMIN_GROUP)],
+            ),
+            Change::Admin { name, on: true } => {
+                trf("{name} is now an administrator", &[("name", name)])
+            }
+            Change::Admin { name, on: false } => {
+                trf("{name} is no longer an administrator", &[("name", name)])
+            }
+            Change::Keys { name, keys } => trf(
+                "{name} now logs in with {count} ssh keys",
+                &[("name", name), ("count", &keys.len().to_string())],
+            ),
+            Change::Service(step) if step.on => trf(
+                "turned on {service}, so it starts with the computer",
+                &[("service", &step.service)],
+            ),
+            Change::Service(step) => trf(
+                "turned off {service}, so it no longer starts with the computer",
+                &[("service", &step.service)],
+            ),
+            Change::Passwords(names) if names.is_empty() => {
+                tr("removed the passwords edel install left, as nobody in the file has one").into()
+            }
+            Change::Passwords(names) => trf(
+                "{names} now log in with the password edel install asked for",
+                &[("names", &names.join(", "))],
+            ),
+            Change::Developer(true) => tr("developer mode is on").into(),
+            Change::Developer(false) => tr("developer mode is off").into(),
+            Change::Seat(name) => trf(
+                "{name} may now use the screen, keyboard and mouse",
+                &[("name", name)],
+            ),
+            Change::Flatpak { name, ids } => trf(
+                "installed {apps} for {name}",
+                &[("apps", &ids.join(", ")), ("name", name)],
+            ),
+            Change::MimeDefaults(text) if text.is_empty() => {
+                tr("no default apps are set now").into()
+            }
+            Change::MimeDefaults(_) => tr("the default apps are set").into(),
+            Change::Addons { make, remove } => trf(
+                "the add-ons' files are in place ({made} linked, {removed} taken out)",
+                &[
+                    ("made", &make.len().to_string()),
+                    ("removed", &remove.len().to_string()),
+                ],
+            ),
+            Change::SubIds { .. } => {
+                tr("each person's ids for rootless containers are written").into()
+            }
+        }
+    }
+}
+
 /// What apply compares the file with, read from the machine.
 #[derive(Default)]
 struct Machine {
@@ -487,7 +575,16 @@ impl Machine {
         // whose files the slot keeps, so they come with no restart, and of
         // those built in or mounted.
         let offered = services::installed_in(Path::new(places::OFFERED_ADDONS_DIR));
-        let addon_apps = addon_apps(features.iter().chain(&offered));
+        // An add-on built over another (`on`, M8.17c) brings its apps only
+        // where that one is: ai-agents' need the desktop's Flatpak.
+        let mounted = edel::addon_state::mounted();
+        let chosen = edel::addon_state::installed(file, &edel::addon_state::running_default());
+        let has = |base: &str| {
+            features.iter().any(|(name, _)| name == base)
+                || mounted.iter().any(|name| name == base)
+                || chosen.iter().any(|name| name == base)
+        };
+        let addon_apps = addon_apps(features.iter().chain(&offered), has);
         // Asked only when the file wants apps, its own or its add-ons'
         // (M7.9), so a machine without any never starts flatpak (M6.1).
         let lists_apps = file.apps.installed.as_ref().is_some_and(|l| !l.is_empty())
@@ -535,7 +632,7 @@ impl Machine {
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
             screen: services::screen_now(),
-            addons: edel::addon_state::mounted(),
+            addons: mounted,
             addon_links: crate::addons::Links::read(),
             default_addons: edel::addon_state::running_default(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
@@ -553,14 +650,17 @@ impl Machine {
 }
 
 /// The Flatpak apps of each add-on among `features` (M7.9), by name: an
-/// add-on's `flatpak` list. A name found twice (built in and offered)
-/// keeps the first one's list.
+/// add-on's `flatpak` list, left out when the add-on it is built over
+/// (`on`) is not one the machine `has`. A name found twice (built in and
+/// offered) keeps the first one's list.
 fn addon_apps<'a>(
     features: impl Iterator<Item = &'a (String, edel::features::Feature)>,
+    has: impl Fn(&str) -> bool,
 ) -> BTreeMap<String, Vec<String>> {
     let mut apps = BTreeMap::new();
     for (name, feature) in features {
-        if feature.addon && !feature.flatpak.is_empty() {
+        let base_here = feature.on.as_deref().is_none_or(&has);
+        if feature.addon && !feature.flatpak.is_empty() && base_here {
             apps.entry(name.clone())
                 .or_insert_with(|| feature.flatpak.clone());
         }
@@ -1458,10 +1558,16 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     // and diff act on them; the file itself still names only the profiles.
     lay_default_addons(&mut read.file);
     read.file = edel::profiles::applied(&read.file);
+    // Each line names the file, the key left out and its mistake; the
+    // rest of the file is used (the messages audit's row 50).
+    let shown = path.display().to_string();
     for problem in &read.problems {
         println!(
-            "edel settings: {}",
-            trf("left out {problem}", &[("problem", &problem.to_string())])
+            "warning: {}",
+            trf(
+                "{path}: not using {problem}",
+                &[("path", &shown), ("problem", &problem.to_string())]
+            )
         );
     }
     for key in &read.later {
@@ -1623,7 +1729,8 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
             continue;
         }
         match execute(change, boot) {
-            Ok(()) => println!("edel settings: {change}"),
+            Ok(()) if boot => println!("edel settings: {change}"),
+            Ok(()) => println!("edel settings: {}", change.said()),
             Err(err) => {
                 failed += 1;
                 eprintln!(
@@ -1760,6 +1867,9 @@ struct Written {
     desktop: bool,
     /// Whether a key that applies from the next login was written (M7.6b)
     next_login: bool,
+    /// Whether the next start applies it, as the boot's apply does (no
+    /// `apps.` key, which waits for an apply that may use the network)
+    at_start: bool,
     newer: Option<i64>,
 }
 
@@ -1778,8 +1888,12 @@ fn report_written(command: &str, what: &str, written: &Written) {
                         tr("it applies from the next login")
                     } else if written.desktop {
                         tr("the desktop follows it at once")
+                    } else if written.at_start {
+                        tr(
+                            "run doas edel settings apply to use it now, or it applies at the next start",
+                        )
                     } else {
-                        tr("edel settings apply applies it")
+                        tr("run doas edel settings apply to use it")
                     }
                 )
             ]
@@ -1827,7 +1941,11 @@ fn write_edit_at(
     let mut path = machine.to_path_buf();
     let mut newer = None;
     if let Ok(text) = fs::read_to_string(machine) {
-        let format = settings::format(&text).with_context(|| could_not_read(machine))?;
+        let format = match settings::format(&text) {
+            Ok(format) => format,
+            Err(e) if e.is::<settings::Mistake>() => return Err(settings::named(e, machine, true)),
+            Err(e) => return Err(e.context(could_not_read(machine))),
+        };
         if format > settings::FORMAT {
             path = settings::versioned(machine, settings::FORMAT);
             newer = Some(format);
@@ -1848,7 +1966,7 @@ fn write_edit_at(
             )
         ),
     };
-    let edited = change(&text)?;
+    let edited = change(&text).map_err(|e| settings::named(e, &path, true))?;
     // A change of root's ssh keys is the one a person must confirm (M6.5).
     if privilege::root_keys_change(&text, &edited) {
         privilege::confirm("changing root's ssh keys")?;
@@ -1873,11 +1991,15 @@ fn write_edit_at(
     fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     let next_login = keys.contains(&settings::LOW_LATENCY);
+    // The boot's apply runs the offline sections (ab-boot's edel-settings);
+    // the apps wait for an apply that may use the network.
+    let at_start = !keys.iter().any(|k| k.starts_with("apps."));
     Ok(Written {
         machine: shown,
         path,
         desktop,
         next_login,
+        at_start,
         newer,
     })
 }
@@ -2035,11 +2157,21 @@ fn target_for(is_root: bool, keys: &[&str], command: &str) -> Result<Target> {
 /// [`edit`] for the person's own settings file (M6.11), which the desktop
 /// reads over the machine's for the keys it follows.
 fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> Result<()> {
-    let file = places::person_settings().with_context(|| {
+    edit_person_as("edel settings", what, keys, change)
+}
+
+/// [`edit_person`] for `command`, such as `edel preset`.
+fn edit_person_as(
+    command: &str,
+    what: &str,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    let file = person_file().with_context(|| {
         tr("HOME is not set, so there is no folder for the person's settings file; set HOME and try again")
     })?;
-    let written = write_edit_at("edel settings", &places::found(&file), keys, change)?;
-    report_written("edel settings", what, &written);
+    let written = write_edit_at(command, &file, keys, change)?;
+    report_written(command, what, &written);
     Ok(())
 }
 
@@ -2058,6 +2190,7 @@ fn desktop_follows(key: &str) -> bool {
             "region.keyboard",
             "region.input_method",
             "location.enabled",
+            "power.saver",
         ]
         .contains(&key)
         || [
@@ -2111,6 +2244,66 @@ pub fn reset(keys: &[String], yes: bool) -> Result<()> {
 
 /// The machine's settings file as it is, or the release's empty one, for
 /// the theme and preset commands to read.
+/// The themes and presets a person sees: the machine's file with the
+/// person's own themes and presets over it, and the person's choice of
+/// each over the machine's, as the desktop and Settings read them (the
+/// messages audit's row 60).
+fn seen_file() -> Result<settings::SettingsFile> {
+    let mut file = settings::read(&theme_text())
+        .with_context(|| could_not_read(&machine_file()))?
+        .file;
+    if is_root() {
+        return Ok(file);
+    }
+    let Some(own) = person_file()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|text| settings::read(&text).ok())
+    else {
+        return Ok(file);
+    };
+    let own = own.file;
+    file.themes.extend(own.themes);
+    file.presets.extend(own.presets);
+    if own.layout.preset.is_some() {
+        file.layout.preset = own.layout.preset;
+    }
+    if own.appearance.theme.is_some() {
+        file.appearance.theme = own.appearance.theme;
+    }
+    Ok(file)
+}
+
+/// The text `edel theme` and `edel preset` change: the person's own file,
+/// or the machine's for root, as `edel settings set` writes them.
+fn own_text() -> String {
+    match person_file().filter(|_| !is_root()) {
+        Some(path) => {
+            fs::read_to_string(path).unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT))
+        }
+        None => theme_text(),
+    }
+}
+
+/// The person's own settings file, where it is found.
+fn person_file() -> Option<PathBuf> {
+    places::person_settings().map(|file| places::found(&file))
+}
+
+/// Writes a theme or preset change where `edel settings set` would: the
+/// person's own file, as Settings does, or the machine's for root, so a
+/// person needs no administrator for their own (row 60).
+fn edit_own(
+    command: &str,
+    what: &str,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    match target_for(is_root(), keys, command)? {
+        Target::Machine => edit_as(command, what, keys, change),
+        Target::Person => edit_person_as(command, what, keys, change),
+    }
+}
+
 fn theme_text() -> String {
     fs::read_to_string(machine_file())
         .unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT))
@@ -2120,11 +2313,7 @@ fn theme_text() -> String {
 /// line with its name, its title and what it is (`edel theme` in the
 /// command table).
 pub fn theme_list() -> Result<()> {
-    let text = theme_text();
-    let file = settings::read(&text)
-        .with_context(|| could_not_read(&machine_file()))?
-        .file;
-    for row in themes::rows(&file) {
+    for row in themes::rows(&seen_file()?) {
         let mut marks = Vec::new();
         if row.built_in {
             marks.push(tr("(built in)"));
@@ -2142,7 +2331,7 @@ pub fn theme_list() -> Result<()> {
 /// person's own, one write, and the screen stays the same.
 pub fn theme_save(name: &str) -> Result<()> {
     let what = trf("saved the theme {name}", &[("name", name)]);
-    edit_as("edel theme", &what, &["appearance.theme"], |text| {
+    edit_own("edel theme", &what, &["appearance.theme"], |text| {
         themes::save_text(text, name)
     })
 }
@@ -2151,7 +2340,7 @@ pub fn theme_save(name: &str) -> Result<()> {
 /// it is the theme in use.
 pub fn theme_delete(name: &str) -> Result<()> {
     let what = trf("deleted the theme {name}", &[("name", name)]);
-    edit_as("edel theme", &what, &["appearance.theme"], |text| {
+    edit_own("edel theme", &what, &["appearance.theme"], |text| {
         themes::delete_text(text, name)
     })
 }
@@ -2160,7 +2349,7 @@ pub fn theme_delete(name: &str) -> Result<()> {
 /// so it shows as it was made; says so and writes nothing when there are
 /// none.
 pub fn theme_reset() -> Result<()> {
-    let text = theme_text();
+    let text = own_text();
     if themes::reset_text(&text)?.is_none() {
         println!(
             "edel theme: {}",
@@ -2169,7 +2358,7 @@ pub fn theme_reset() -> Result<()> {
         return Ok(());
     }
     let what = tr("reset the theme in use");
-    edit_as("edel theme", what, &["appearance.theme"], |text| {
+    edit_own("edel theme", what, &["appearance.theme"], |text| {
         Ok(themes::reset_text(text)?.unwrap_or_else(|| text.to_string()))
     })
 }
@@ -2179,10 +2368,7 @@ pub fn theme_reset() -> Result<()> {
 /// in this folder when no FILE is given. A file that is there is never
 /// written over, and a theme that would not read back is not written at all.
 pub fn theme_export(name: &str, file: Option<&Path>) -> Result<()> {
-    let text = theme_text();
-    let read = settings::read(&text)
-        .with_context(|| could_not_read(&machine_file()))?
-        .file;
+    let read = seen_file()?;
     let Some(theme) = themes::lookup(name, &read.themes) else {
         bail!(
             "{}",
@@ -2249,10 +2435,7 @@ fn import_line(title: &str, name: &str, pictures: usize) -> String {
 /// line with its name, its title, its base and what it is (`edel preset` in
 /// the command table).
 pub fn preset_list() -> Result<()> {
-    let file = settings::read(&theme_text())
-        .with_context(|| could_not_read(&machine_file()))?
-        .file;
-    for row in presets::rows(&file) {
+    for row in presets::rows(&seen_file()?) {
         let mut marks = Vec::new();
         if row.built_in {
             marks.push(tr("(built in)"));
@@ -2270,7 +2453,7 @@ pub fn preset_list() -> Result<()> {
 /// person's own, one write, and the screen stays the same.
 pub fn preset_save(name: &str) -> Result<()> {
     let what = trf("saved the preset {name}", &[("name", name)]);
-    edit_as("edel preset", &what, &["layout.preset"], |text| {
+    edit_own("edel preset", &what, &["layout.preset"], |text| {
         presets::save_text(text, name)
     })
 }
@@ -2279,7 +2462,7 @@ pub fn preset_save(name: &str) -> Result<()> {
 /// it is the preset in use.
 pub fn preset_delete(name: &str) -> Result<()> {
     let what = trf("deleted the preset {name}", &[("name", name)]);
-    edit_as("edel preset", &what, &["layout.preset"], |text| {
+    edit_own("edel preset", &what, &["layout.preset"], |text| {
         presets::delete_text(text, name)
     })
 }
@@ -2434,22 +2617,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             {
                 (None, Some(w))
             }
-            None => match settings::nearest_key(w) {
-                Some(near) => bail!(
-                    "{}",
-                    trf(
-                        "{name}: no such page or key; did you mean {near}?",
-                        &[("name", w), ("near", &near)]
-                    )
-                ),
-                None => bail!(
-                    "{}",
-                    trf(
-                        "{name}: no such page or key; edel settings lists the pages",
-                        &[("name", w)]
-                    )
-                ),
-            },
+            None => bail!("{}", settings::no_such_key(w)),
         },
     };
     let wanted = |k: &str| match (section, key) {
@@ -2859,6 +3027,21 @@ fn describe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apply_says_a_change_in_plain_words_and_diff_keeps_the_key() {
+        let on = Change::Service(services::Step {
+            level: "default".into(),
+            service: "sshd".into(),
+            on: true,
+        });
+        assert_eq!(on.said(), "turned on sshd, so it starts with the computer");
+        assert_eq!(
+            on.to_string(),
+            "services: start sshd and add it to the default runlevel"
+        );
+        assert_eq!(Change::Developer(false).said(), "developer mode is off");
+    }
 
     static PRESET_LINE: key_help::Help = key_help::Help {
         key: "layout.tiling",
@@ -3535,6 +3718,20 @@ mod tests {
     }
 
     #[test]
+    fn an_addons_apps_wait_for_the_addon_it_is_built_over() {
+        let feature = |text: &str| edel::features::read(text).unwrap().0;
+        let agents = feature(
+            "format = 1\nsummary = \"a\"\nwhy = \"b\"\naddon = true\non = \"desktop\"\nflatpak = [\"com.jeffser.Alpaca\"]\n",
+        );
+        let features = [("ai-agents".to_string(), agents)];
+        assert!(addon_apps(features.iter(), |_| false).is_empty());
+        assert_eq!(
+            addon_apps(features.iter(), |base| base == "desktop")["ai-agents"],
+            ["com.jeffser.Alpaca"]
+        );
+    }
+
+    #[test]
     fn wanted_apps_lists_the_files_then_the_addons_none_twice() {
         let file = settings::read(
             "format = 1\n[apps]\ninstalled = [\"io.mpv.Mpv\"]\n[addons]\ninstalled = [\"ai-agents\", \"gaming\"]\n",
@@ -3787,6 +3984,10 @@ mod tests {
         // The clock's zone and servers are the machine's, which apply sets.
         assert!(!desktop_follows("region.timezone"));
         assert!(desktop_follows("location.enabled"));
+        // The battery saver is the person's, which the quick settings tile
+        // writes without a password; the battery's own setting is not.
+        assert!(desktop_follows("power.saver"));
+        assert!(!desktop_follows("power.on_battery"));
         assert!(!desktop_follows("location.place"));
         assert!(!desktop_follows("location.online"));
         assert!(!desktop_follows("region.time_servers"));
