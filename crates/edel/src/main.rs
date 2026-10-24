@@ -907,10 +907,7 @@ fn run(command: Commands) -> Result<()> {
                     let location = release::default_location(&accept)?;
                     println!(
                         "edel update: {}",
-                        trf(
-                            "no release named; taking {location}",
-                            &[("location", &location)]
-                        )
+                        trf("checking {location}", &[("location", &location)])
                     );
                     location
                 }
@@ -918,7 +915,13 @@ fn run(command: Commands) -> Result<()> {
             if check {
                 release::check(&location, &accept)
             } else {
-                let system = update::install(&location, &accept, unsigned);
+                // A release that is the running version is no failure:
+                // edel update says so and ends well (M8.15).
+                let system = update::install(&location, &accept, unsigned).or_else(|err| {
+                    let up = err.downcast::<release::UpToDate>()?;
+                    println!("edel update: {up}");
+                    Ok(())
+                });
                 // The default apps follow the system, whether or not it had
                 // a newer release (M6.2); their failure never hides the
                 // system's own result.

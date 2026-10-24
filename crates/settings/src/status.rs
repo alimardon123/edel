@@ -582,7 +582,7 @@ mod tests {
 
     #[test]
     fn a_check_is_read_with_or_without_the_extra_lines() {
-        let full = "edel update: no release named; taking https://x/release.toml\n\
+        let full = "edel update: checking https://x/release.toml\n\
                     running: 2026.10.5\navailable: 2026.10.6 (newer)\nnewer: yes\n\
                     released: 2026-10-08\nsize: 412000000\n";
         assert_eq!(parse_check(full), Some(found(true)));

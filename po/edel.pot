@@ -281,7 +281,7 @@ msgstr ""
 msgid "install refused: auto found {count} disks it could take ({names}); name one in install.disk by its /dev/disk/by-id/ name"
 msgstr ""
 
-msgid "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed"
+msgid "Edel OS did not finish starting in {seconds} s ({missing} did not start), and no version has a start left, so the computer keeps running as it is; run edel report and send the file it writes"
 msgstr ""
 
 msgid "/dev/{disk} has {has}, and Edel OS needs at least {needs}; use a larger disk"
@@ -1370,7 +1370,7 @@ msgstr ""
 msgid "the settings files {paths} have problems, so nothing was built; fix these (edel settings check shows them again):"
 msgstr ""
 
-msgid "no release named; taking {location}"
+msgid "checking {location}"
 msgstr ""
 
 msgid "edel web-app writes the files of the person who runs it, and root has no desktop of its own; run it as that person, without doas"
@@ -1709,7 +1709,10 @@ msgstr ""
 msgid "refused: release.toml is format {format}; this edel reads format {current}, so install a release in between first"
 msgstr ""
 
-msgid "refused: version {version} is not newer than the running {running}; pass --allow-downgrade to install it anyway"
+msgid "Edel OS {version} is up to date; nothing to install"
+msgstr ""
+
+msgid "refused: version {version} is older than the running {running}; nothing was changed; pass --allow-downgrade to go back to it on purpose"
 msgstr ""
 
 msgid "refused: release {version} has no image {image}, the one this system is; nothing was changed, so wait for a release that lists it"
@@ -2816,7 +2819,7 @@ msgstr ""
 msgid "could not start e2fsck"
 msgstr ""
 
-msgid "slot {slot} written and checked; restart to use it; if it fails to start, Edel OS goes back to slot {running} on its own"
+msgid "slot {slot} written and checked; restart to use it (edel restart); if it fails to start, Edel OS goes back to slot {running} on its own"
 msgstr ""
 
 msgid "the update image is {size} MiB and slot {slot} holds {room} MiB, so nothing was written; the running system is unchanged"
@@ -2837,7 +2840,10 @@ msgstr ""
 msgid "could not write the slot"
 msgstr ""
 
-msgid "slot {slot} starts after the next restart; slot {running} stays installed"
+msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again"
+msgstr ""
+
+msgid "slot {slot} starts after the next restart (edel restart); slot {running} stays installed, so edel rollback again undoes this"
 msgstr ""
 
 msgid "a web app named {name} is already there ({id}); remove it first with edel web-app remove {name}"
