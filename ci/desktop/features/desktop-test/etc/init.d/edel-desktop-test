@@ -1537,7 +1537,16 @@ commands() {
 			say "agents_off $? $(tail -n 3 /tmp/agents.log | tr '\n' ';')"
 			say "agents_left $(edel settings diff 2>&1 | tr '\n' ';')"
 			say "agents_files $(find /etc /usr/lib/edel -name '*ai-agents*' 2>/dev/null | tr '\n' ' ')"
-			procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+			# Newelle's window closed a moment ago, and its sandbox may
+			# take that long to end: up to 10 s, then what still runs.
+			i=0
+			while :; do
+				procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+				[ -n "$procs" ] && [ "$i" -lt 20 ] || break
+				i=$((i + 1))
+				sleep 0.5
+			done
+			[ -z "$procs" ] || procs="$procs; after 10 s: $(ps -o pid,args | grep -E 'bwrap|flatpak|testclient' | grep -v grep | tr '\n' ';')"
 			say "agents_processes ${procs:-none}"
 			;;
 		# Containers as the admin (M7.6b part 4): our own container image,
