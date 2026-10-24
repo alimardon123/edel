@@ -446,10 +446,9 @@ fn could_not_read(path: &str) -> String {
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
-        let mut response = agent()
-            .get(location)
-            .call()
-            .with_context(|| download_failed(location))?;
+        let mut response = agent().get(location).call().with_context(|| {
+            edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
+        })?;
         Ok(response.body_mut().read_to_vec()?)
     } else {
         let path = local_path(location);
@@ -460,10 +459,9 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
 /// Opens an image for streaming, decompressing a `.gz` file on the way.
 fn open_image(location: &str) -> Result<Box<dyn Read>> {
     let raw: Box<dyn Read> = if is_url(location) {
-        let response = agent()
-            .get(location)
-            .call()
-            .with_context(|| download_failed(location))?;
+        let response = agent().get(location).call().with_context(|| {
+            edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
+        })?;
         Box::new(response.into_body().into_reader())
     } else {
         let path = local_path(location);

@@ -206,10 +206,13 @@ pub enum Phase {
     GoingBack,
     /// Restart now was pressed.
     Restarting,
-    /// A command failed, with what `edel` said.
+    /// A command failed, with what `edel` said and its exit status (none
+    /// when it did not start or was killed): the status tells the cause
+    /// in any language (`edel::exit`).
     Failed {
         doing: Doing,
         message: String,
+        code: Option<i32>,
     },
 }
 
@@ -304,8 +307,12 @@ pub fn view(i: &Inputs) -> View {
             rollback: None,
             ..base
         },
-        Phase::Failed { doing, message } if *doing != Doing::Check || pending.is_none() => {
-            failed(*doing, message, i.root, base)
+        Phase::Failed {
+            doing,
+            message,
+            code,
+        } if *doing != Doing::Check || pending.is_none() => {
+            failed(*doing, message, *code, i.root, base)
         }
         _ if pending.is_some() || matches!(i.phase, Phase::Installed { .. }) => {
             let (target, newer) = match (&pending, i.phase) {
@@ -389,7 +396,7 @@ pub fn view(i: &Inputs) -> View {
 
 /// The view of a failure: what could not be done, why in plain words, and
 /// the button that tries again.
-fn failed(doing: Doing, message: &str, root: bool, base: View) -> View {
+fn failed(doing: Doing, message: &str, code: Option<i32>, root: bool, base: View) -> View {
     let (title, retry) = match doing {
         Doing::Check => (
             tr("Couldn't check for updates"),
@@ -412,29 +419,28 @@ fn failed(doing: Doing, message: &str, root: bool, base: View) -> View {
         icon: "status-problem",
         problem: true,
         title: title.into(),
-        sub: plain_failure(doing, message, root),
+        sub: plain_failure(doing, message, code, root),
         primary: retry,
         ..base
     }
 }
 
-/// Whether a failure's message is a refusal of rights: doas's, or edel's
-/// own words for a person outside the admin group (M6.5).
-fn refused_for_rights(message: &str) -> bool {
-    message.contains("Operation not permitted")
-        || message.contains("not in the group")
-        || message.contains("permission denied")
+/// Whether a failure is a refusal of rights: `edel`'s exit status for it
+/// (a person outside the admin group, M6.5), or doas's words, which doas
+/// does not translate.
+fn refused_for_rights(message: &str, code: Option<i32>) -> bool {
+    code == Some(i32::from(edel::exit::REFUSED)) || message.contains("Operation not permitted")
 }
 
 /// What a failure says to a person: what `edel` said as a sentence, or,
 /// for the two causes people meet, a sentence of its own. The command's
 /// own words stay in the page's Details.
-pub fn plain_failure(doing: Doing, message: &str, root: bool) -> String {
+pub fn plain_failure(doing: Doing, message: &str, code: Option<i32>, root: bool) -> String {
     // A person who is not an administrator is refused by doas or by edel
     // itself: the words say what to do about that, and any other failure
     // (the network, a release that is not newer) keeps the command's own
     // message (M6.5).
-    if !root && doing != Doing::Check && refused_for_rights(message) {
+    if !root && doing != Doing::Check && refused_for_rights(message, code) {
         return match doing {
             Doing::Install => tr(
                 "Installing needs administrator rights, and only an administrator can change the system. Ask an administrator to install the update.",
@@ -449,7 +455,7 @@ pub fn plain_failure(doing: Doing, message: &str, root: bool) -> String {
         .to_string();
     }
     let message = unprefixed(message);
-    if message.starts_with("could not download") {
+    if code == Some(i32::from(edel::exit::OFFLINE)) {
         return tr("Can't reach the update server. Check your internet connection and try again.")
             .to_string();
     }
@@ -700,6 +706,7 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::Check,
             message: "could not download https://x/release.toml; check the network".into(),
+            code: Some(69),
         };
         let v = view(&inputs(&phase, None));
         assert_eq!(v.title, "Couldn't check for updates");
@@ -714,6 +721,7 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::Check,
             message: "refused: signature: no key signed this".into(),
+            code: None,
         };
         assert_eq!(
             view(&inputs(&phase, None)).sub,
@@ -726,6 +734,7 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::Install,
             message: "could not download the release: the network is down".into(),
+            code: Some(69),
         };
         let mut i = inputs(&phase, None);
         i.root = false;
@@ -736,6 +745,7 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::GoBack,
             message: "refused: no version is kept ready".into(),
+            code: None,
         };
         let mut i = inputs(&phase, None);
         i.root = false;
@@ -744,9 +754,11 @@ mod tests {
 
     #[test]
     fn changing_the_machine_as_a_person_says_what_is_missing() {
+        // edel's refusal is found by its exit status, whatever language it is in.
         let phase = Phase::Failed {
             doing: Doing::Install,
-            message: "could not write /run/edel: permission denied".into(),
+            message: "edel install: impossible d'écrire /run/edel".into(),
+            code: Some(i32::from(edel::exit::REFUSED)),
         };
         let mut i = inputs(&phase, None);
         i.root = false;
@@ -755,8 +767,18 @@ mod tests {
         assert!(v.sub.contains("administrator rights"), "{}", v.sub);
         assert!(v.sub.contains("Ask an administrator"), "{}", v.sub);
         let phase = Phase::Failed {
+            doing: Doing::GoBack,
+            message: "edel update: guest n'est pas dans le groupe admin".into(),
+            code: Some(i32::from(edel::exit::REFUSED)),
+        };
+        let mut i = inputs(&phase, None);
+        i.root = false;
+        assert!(view(&i).sub.starts_with("Going back needs administrator"));
+        // doas's own words are not translated, so they still mean a refusal.
+        let phase = Phase::Failed {
             doing: Doing::Restart,
             message: "doas: Operation not permitted".into(),
+            code: Some(1),
         };
         let mut i = inputs(&phase, None);
         i.root = false;
@@ -765,6 +787,7 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::Install,
             message: "refused: version 2026.10.5 is not newer".into(),
+            code: None,
         };
         assert_eq!(
             view(&inputs(&phase, None)).sub,
@@ -781,6 +804,7 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::Check,
             message: "x".into(),
+            code: None,
         };
         assert_eq!(
             view(&inputs(&phase, Some(&s))).title,
@@ -819,13 +843,28 @@ mod tests {
         let phase = Phase::Failed {
             doing: Doing::Check,
             message: "edel update: could not download https://x/release.toml: refused".into(),
+            code: Some(i32::from(edel::exit::OFFLINE)),
         };
         assert!(view(&inputs(&phase, None)).sub.starts_with("Can't reach"));
         let phase = Phase::Failed {
             doing: Doing::Check,
             message: "edel update: refused: expired: x".into(),
+            code: None,
         };
         assert_eq!(view(&inputs(&phase, None)).sub, "Refused: expired: x.");
+    }
+
+    #[test]
+    fn a_translated_download_failure_is_found_by_its_exit_status() {
+        let phase = Phase::Failed {
+            doing: Doing::Check,
+            message: "edel update: impossible de télécharger https://x/release.toml".into(),
+            code: Some(i32::from(edel::exit::OFFLINE)),
+        };
+        assert_eq!(
+            view(&inputs(&phase, None)).sub,
+            "Can't reach the update server. Check your internet connection and try again."
+        );
     }
 
     #[test]
