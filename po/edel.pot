@@ -827,10 +827,10 @@ msgstr ""
 msgid "A release to stay on instead of following the channel; this release does not act on it yet."
 msgstr ""
 
-msgid "Whether updates are checked, installed, or installed and restarted by themselves, or off; this release does not act on it yet."
+msgid "Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due."
 msgstr ""
 
-msgid "The hours when a restart may happen by itself, such as 02:00-04:00; this release does not act on it yet."
+msgid "The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour."
 msgstr ""
 
 msgid "The Flathub apps installed for each administrator, by app id such as io.mpv.Mpv."
@@ -2127,6 +2127,12 @@ msgid "{value} is not a channel name; use lowercase letters, digits and hyphens,
 msgstr ""
 
 msgid "a channel name in quotes, such as \"stable\""
+msgstr ""
+
+msgid "{value} is not a span of hours; write the start and the end in 24-hour time, such as \"02:00-04:00\""
+msgstr ""
+
+msgid "a span of hours in quotes, such as \"02:00-04:00\""
 msgstr ""
 
 msgid "a cursor theme's name in quotes, such as \"default\""
