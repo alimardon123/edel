@@ -6,3 +6,5 @@ summary = "Orca, the screen reader, with the eSpeak NG voice"
 why = "People who cannot see the screen use the desktop through a screen reader, and Orca is the one that reads GTK apps and our own surfaces over AT-SPI, which the base already carries (M6.9). It speaks through speech-dispatcher with the eSpeak NG voice, which knows about a hundred languages and needs no network. speech-dispatcher starts when Orca first speaks and stops when it is idle, so nothing runs until a person starts Orca."
 packages = ["orca", "speech-dispatcher", "espeak-ng"]
 addon = true
+# Built over the desktop, whose libraries and font cache it uses (M8.17c).
+on = "desktop"

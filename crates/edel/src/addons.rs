@@ -128,14 +128,20 @@ fn under(path: &str, dir: &str) -> bool {
 /// itself, or that apps check against their folder's time and rebuild: left
 /// out of an add-on, so the slot's own is used.
 pub fn is_system_cache(path: &str) -> bool {
-    let font = rel(places::FONT_CACHE_DIR);
-    CACHE_DIRS.iter().any(|dir| under(path, dir))
-        || path == font
-        || under(path, font)
+    is_font_cache(path)
+        || CACHE_DIRS.iter().any(|dir| under(path, dir))
         || CACHE_FILES.contains(&path)
         || CACHE_PATTERNS
             .iter()
             .any(|pattern| edel::keep::matches(pattern, path))
+}
+
+/// Whether `path` (relative to a root) is in the fonts' baked cache
+/// (`places::FONT_CACHE_DIR`, M6.2a): a system cache, but kept, as a merged
+/// one, by the add-on that brings the fonts and those over it (M8.17c).
+pub fn is_font_cache(path: &str) -> bool {
+    let font = rel(places::FONT_CACHE_DIR);
+    path == font || under(path, font)
 }
 
 /// Whether `path` (relative to a root) is a cache a package trigger wrote
@@ -228,7 +234,7 @@ fn scan_into(root: &Path, under: &str, map: &mut BTreeMap<String, Stamp>) -> Res
 }
 
 /// What changed between two scans, each list sorted.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Diff {
     /// Paths that are new, folders included.
     pub new: Vec<String>,
@@ -313,7 +319,13 @@ pub struct TreePlan {
 
 /// Sorts the changes of an add-on's root into what its tree keeps. Every
 /// refusal is gathered and reported together, so one build names them all.
-pub fn plan_tree(diff: &Diff, after: &BTreeMap<String, Stamp>, name: &str) -> Result<TreePlan> {
+pub fn plan_tree(
+    diff: &Diff,
+    after: &BTreeMap<String, Stamp>,
+    name: &str,
+    font_cache: bool,
+) -> Result<TreePlan> {
+    let is_merged_cache = |path: &str| is_merged_cache(path) || (font_cache && is_font_cache(path));
     let mut plan = TreePlan::default();
     let mut problems = Vec::new();
     for path in &diff.new {
@@ -423,6 +435,34 @@ pub fn new_accounts(before: &str, after: &str) -> String {
         }
     }
     out
+}
+
+/// The lines of `earlier` (other add-ons' new account lines) whose names
+/// `text` lacks, to hold their ids while an add-on's packages are added
+/// (M8.17c): add-ons are built side by side from one root, and apk gives a
+/// new system group or user the next free id, so without them two add-ons
+/// a machine mounts together would give one id to two names.
+pub fn held_accounts(text: &str, earlier: &str) -> String {
+    let names: BTreeSet<&str> = text
+        .lines()
+        .map(|line| line.split(':').next().unwrap_or_default())
+        .collect();
+    earlier
+        .lines()
+        .filter(|line| {
+            !line.is_empty() && !names.contains(line.split(':').next().unwrap_or_default())
+        })
+        .map(|line| format!("{line}\n"))
+        .collect()
+}
+
+/// `text` without the lines `held` added to it, once the packages are in.
+pub fn without_held(text: &str, held: &str) -> String {
+    let held: BTreeSet<&str> = held.lines().collect();
+    text.lines()
+        .filter(|line| !held.contains(line))
+        .map(|line| format!("{line}\n"))
+        .collect()
 }
 
 /// The names (the first field) of the account lines that both texts have
@@ -603,6 +643,26 @@ pub fn collisions(
         .collect()
 }
 
+/// The order the add-ons `named` (each with the add-on it is built on, if
+/// any) lie over `/usr`, the topmost first, and those left off with the
+/// add-on they need (M8.17c): an add-on built on another lies above it, so
+/// its copy of a merged cache shows, and one whose base is not here is
+/// left off, as its files need the base's.
+pub fn layers(named: &[(String, Option<String>)]) -> (Vec<String>, Vec<(String, String)>) {
+    let here = |base: &str| named.iter().any(|(n, on)| n == base && on.is_none());
+    let mut skipped = Vec::new();
+    let (mut over, mut rest) = (Vec::new(), Vec::new());
+    for (name, on) in named {
+        match on {
+            Some(base) if here(base) => over.push(name.clone()),
+            Some(base) => skipped.push((name.clone(), base.clone())),
+            None => rest.push(name.clone()),
+        }
+    }
+    over.extend(rest);
+    (over, skipped)
+}
+
 /// The `lowerdir` of the slot's overlay for `/usr`: each mounted add-on's
 /// `usr` folder in the order given, then the slot's own `usr` last, so the
 /// lowest layer is the slot's.
@@ -643,14 +703,10 @@ pub fn folded(paths: &[String]) -> String {
 // ---- On a machine (M7.2a): fetching, mounting and linking. ----
 
 /// The add-ons the machine's settings file names (`addons.installed`),
-/// its profiles' included (M7.6), read leniently: none when the file is
-/// missing or unreadable.
+/// its profiles' and the slot's default included (M7.6, M8.17c), read
+/// leniently: the default alone while there is no file yet.
 pub fn wanted_on_machine() -> Vec<String> {
-    let path = places::found(&places::machine_settings());
-    edel::settings::read_on_machine(&path)
-        .ok()
-        .and_then(|read| edel::profiles::applied(&read.file).addons.installed)
-        .unwrap_or_default()
+    edel::addon_state::installed_on_machine()
 }
 
 /// Where the add-ons of `version` are kept on the data partition.
@@ -698,8 +754,18 @@ pub fn fetch(location: &str, manifest: &Manifest, allow_http: bool, slot: &Path)
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let entries = crate::release::addons_for(manifest, &image);
     let built_in = |name: &str| built_into(slot, name);
-    let (to_fetch, notes) =
-        fetch_plan(&wanted_on_machine(), &entries, &manifest.version, &built_in);
+    // While the file names no add-ons of its own, the new slot's default
+    // decides, so a desktop whose files leave the slot for an add-on keeps
+    // its desktop through the update (M8.17c).
+    let wanted = {
+        let path = places::found(&places::machine_settings());
+        let default = edel::addon_state::default_in(&slot_file(slot, "/usr/lib/os-release"));
+        match edel::settings::read_on_machine(&path) {
+            Ok(read) => edel::addon_state::installed(&read.file, &default),
+            Err(_) => default,
+        }
+    };
+    let (to_fetch, notes) = fetch_plan(&wanted, &entries, &manifest.version, &built_in);
     for note in notes {
         println!("edel update: {note}");
     }
@@ -722,13 +788,21 @@ pub fn fetch(location: &str, manifest: &Manifest, allow_http: bool, slot: &Path)
 /// Whether the slot on `device` carries feature `name`, read with
 /// debugfs, so the slot is never mounted.
 fn built_into(device: &Path, name: &str) -> bool {
-    let file = format!("{}/{name}.toml", edel::features::DIR);
+    !slot_file(device, &format!("{}/{name}.toml", edel::features::DIR)).is_empty()
+}
+
+/// The text of `file` in the slot on `device`, read with debugfs, so the
+/// slot is never mounted; empty when it has none.
+fn slot_file(device: &Path, file: &str) -> String {
     Command::new("debugfs")
         .args(["-R", &format!("cat {file}")])
         .arg(device)
         .stderr(Stdio::null())
         .output()
-        .is_ok_and(|out| out.status.success() && !out.stdout.is_empty())
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+        .unwrap_or_default()
 }
 
 /// Fetches one add-on to `dir/NAME.ext4` through a `.part` file renamed
@@ -1111,9 +1185,9 @@ pub fn fetch_chosen() -> Result<()> {
 /// this version came from, when it can be reached. Nothing here fails the
 /// install: an add-on not staged is said and comes with apply later.
 pub fn stage_for_install(settings: &str, data: &Path) {
+    let default = edel::addon_state::running_default();
     let wanted = edel::settings::read(settings)
-        .ok()
-        .and_then(|read| edel::profiles::applied(&read.file).addons.installed)
+        .map(|read| edel::addon_state::installed(&read.file, &default))
         .unwrap_or_default();
     if wanted.is_empty() {
         return;
@@ -1130,6 +1204,12 @@ pub fn stage_for_install(settings: &str, data: &Path) {
             .exists()
             && !edel::addon_state::mounted().iter().any(|m| m == name)
     };
+    // An add-on running here now has started on this machine's hardware,
+    // so it goes straight beside the new slot, not to be tried: a first
+    // boot that misses its health once must not take the desktop away
+    // (M8.17c).
+    let running_now = edel::addon_state::mounted();
+    let mut copied = Vec::new();
     let mut staged = Vec::new();
     let mut missing = Vec::new();
     let said = |name: &str, why: String| {
@@ -1148,7 +1228,14 @@ pub fn stage_for_install(settings: &str, data: &Path) {
     for name in wanted.iter().filter(|n| !built_in(n)) {
         let file = format!("{name}.ext4");
         if here.join(&file).is_file() {
-            match fs::copy(here.join(&file), pending.join(&file)) {
+            let running = running_now.contains(name);
+            let to = if running {
+                under(&here)
+            } else {
+                pending.clone()
+            };
+            match fs::copy(here.join(&file), to.join(&file)) {
+                Ok(_) if running => copied.push(name.clone()),
                 Ok(_) => staged.push(name.clone()),
                 Err(err) => said(name, err.to_string()),
             }
@@ -1184,6 +1271,15 @@ pub fn stage_for_install(settings: &str, data: &Path) {
             Ok(got) => staged.extend(got),
             Err(err) => said(&missing.join(", "), format!("{err:#}")),
         }
+    }
+    if !copied.is_empty() {
+        println!(
+            "edel install: {}",
+            trf(
+                "add-on {names} copied; it starts with the new system",
+                &[("names", &copied.join(", "))]
+            )
+        );
     }
     if staged.is_empty() {
         let _ = fs::remove_dir_all(&pending);
@@ -1294,8 +1390,7 @@ pub fn mount_all() -> Result<()> {
             );
         }
     }
-    let mut mounts = Vec::new();
-    let mut tried = String::new();
+    let mut found = Vec::new();
     for name in wanted {
         let file = dir.join(format!("{name}.ext4"));
         let file = if !file.is_file() && plan.tried.contains(&name) {
@@ -1318,6 +1413,32 @@ pub fn mount_all() -> Result<()> {
             }
             continue;
         }
+        // The add-on it is built over, from its own feature file (M8.17c).
+        let text = slot_file(&file, &format!("{}/{name}.toml", edel::features::DIR));
+        let on = edel::features::read(&text).ok().and_then(|(f, _)| f.on);
+        found.push((name, file, on));
+    }
+    let named: Vec<(String, Option<String>)> = found
+        .iter()
+        .map(|(n, _, on)| (n.clone(), on.clone()))
+        .collect();
+    let (order, skipped) = layers(&named);
+    for (name, base) in skipped {
+        println!(
+            "edel-data: {}",
+            trf(
+                "add-on {name} needs the {base} add-on, so it is left off; add it with edel settings set addons.installed+={base}",
+                &[("name", &name), ("base", &base)]
+            )
+        );
+    }
+    let mut mounts = Vec::new();
+    let mut tried = String::new();
+    for name in order {
+        let Some((_, file, _)) = found.iter().find(|(n, _, _)| *n == name) else {
+            continue;
+        };
+        let file = file.clone();
         let at = Path::new(places::ADDONS_RUN).join(&name);
         fs::create_dir_all(&at)?;
         if !crate::data::is_mounted(&at.to_string_lossy())? {
@@ -1366,22 +1487,6 @@ pub fn mount_all() -> Result<()> {
         "edel-data: {}",
         trf("add-ons mounted: {names}", &[("names", &names.join(", "))])
     );
-    // udev read its rules and announced the devices present at boot
-    // before this layer was there (edel-data runs after udev-settle), so
-    // an add-on's rules (printing's scanners, gaming's controllers,
-    // M7.6b) would reach only devices plugged in later, and maybe not even
-    // those. udev reads them again and announces every device once more;
-    // only where udev runs, and a failure never stops the boot.
-    if brings_device_rules(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
-        let taken = run(&mut edel::base::reread_device_rules())
-            .and_then(|()| run(&mut edel::base::replay_device_events()));
-        match taken {
-            Ok(()) => println!("edel-data: udev took the add-ons' device rules"),
-            Err(err) => eprintln!(
-                "warning: edel-data: udev could not take the add-ons' device rules, so a device plugged in before this start may need plugging in again: {err:#}"
-            ),
-        }
-    }
     if !tried.is_empty() {
         println!(
             "edel-data: {}",
@@ -1392,6 +1497,32 @@ pub fn mount_all() -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// Has udev take the mounted add-ons' device rules: udev read its rules
+/// and announced the devices present at boot before the add-ons were over
+/// `/usr` (edel-data runs after udev-settle), so an add-on's rules
+/// (printing's scanners, gaming's controllers, M7.6b; the desktop's sound
+/// devices, M8.17c) would reach only devices plugged in later, and maybe
+/// not even those. `data::mount_data` calls it once `/etc` has its layer
+/// and the add-ons' accounts, so a rule's group (`seat`, which the desktop
+/// add-on brings) is known. Only where udev runs; a failure never stops
+/// the boot.
+pub fn take_device_rules() {
+    let mounts: Vec<PathBuf> = edel::addon_state::mounted()
+        .iter()
+        .map(|name| Path::new(places::ADDONS_RUN).join(name))
+        .collect();
+    if brings_device_rules(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
+        let taken = run(&mut edel::base::reread_device_rules())
+            .and_then(|()| run(&mut edel::base::replay_device_events()));
+        match taken {
+            Ok(()) => println!("edel-data: udev took the add-ons' device rules"),
+            Err(err) => eprintln!(
+                "warning: edel-data: udev could not take the add-ons' device rules, so a device plugged in before this start may need plugging in again: {err:#}"
+            ),
+        }
+    }
 }
 
 /// The account lines the mounted add-ons add to `/etc/FILE` (`passwd`,
@@ -1684,6 +1815,25 @@ fn walk(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn an_add_on_lies_over_the_one_it_is_built_on_or_stays_off() {
+        let named = |list: &[(&str, Option<&str>)]| -> Vec<(String, Option<String>)> {
+            list.iter()
+                .map(|(n, on)| (n.to_string(), on.map(String::from)))
+                .collect()
+        };
+        let (order, skipped) = layers(&named(&[
+            ("desktop", None),
+            ("printing", None),
+            ("orca", Some("desktop")),
+        ]));
+        assert_eq!(order, ["orca", "desktop", "printing"]);
+        assert!(skipped.is_empty());
+        let (order, skipped) = layers(&named(&[("orca", Some("desktop")), ("printing", None)]));
+        assert_eq!(order, ["printing"]);
+        assert_eq!(skipped, [("orca".to_string(), "desktop".to_string())]);
+    }
     use std::os::unix::fs::symlink;
     use std::process;
 
@@ -1896,7 +2046,7 @@ mod tests {
             ("var/cache/apk/index", file(1)),
             ("var/lib/x", file(1)),
         ]);
-        let plan = plan_tree(&diff(&before, &after), &after, "ci-hello").unwrap();
+        let plan = plan_tree(&diff(&before, &after), &after, "ci-hello", false).unwrap();
         let copies: Vec<(&str, &str)> = plan
             .copies
             .iter()
@@ -1926,7 +2076,7 @@ mod tests {
             ("usr/share/glib-2.0/schemas/gschemas.compiled", file(2)),
             ("usr/share/icons/hicolor/icon-theme.cache", file(2)),
         ]);
-        let plan = plan_tree(&diff(&before, &after), &after, "ci-hello").unwrap();
+        let plan = plan_tree(&diff(&before, &after), &after, "ci-hello", false).unwrap();
         let copies: Vec<(&str, &str)> = plan
             .copies
             .iter()
@@ -1959,7 +2109,7 @@ mod tests {
     fn plan_tree_refuses_a_tree_and_names_every_refusal() {
         let before = tree(&[("usr/lib/libc.so", file(5)), ("usr/share/doc/x", file(1))]);
         let after = tree(&[("opt/x", file(1)), ("usr/lib/libc.so", file(6))]);
-        let error = plan_tree(&diff(&before, &after), &after, "ci-hello")
+        let error = plan_tree(&diff(&before, &after), &after, "ci-hello", false)
             .unwrap_err()
             .to_string();
         assert!(
@@ -1983,13 +2133,26 @@ mod tests {
     #[test]
     fn plan_tree_rewrites_a_relocated_relative_link() {
         let after = tree(&[("etc/foo", dir(1)), ("etc/foo/a", link("../b"))]);
-        let plan = plan_tree(&diff(&BTreeMap::new(), &after), &after, "ci-hello").unwrap();
+        let plan = plan_tree(&diff(&BTreeMap::new(), &after), &after, "ci-hello", false).unwrap();
         assert_eq!(plan.copies.len(), 2);
         assert_eq!(plan.copies[0].to, "usr/lib/edel/etc/ci-hello/foo");
         assert_eq!(plan.copies[0].link, None);
         assert_eq!(plan.copies[1].to, "usr/lib/edel/etc/ci-hello/foo/a");
         assert_eq!(plan.copies[1].link.as_deref(), Some("/etc/b"));
         assert_eq!(absolute("usr/bin/l", "../lib/x"), "/usr/lib/x");
+    }
+
+    #[test]
+    fn earlier_add_ons_ids_are_held_while_the_packages_go_in() {
+        let image = "root:x:0:\nlp:x:7:\n";
+        let earlier = "seat:x:104:\nlp:x:7:\n";
+        let held = held_accounts(image, earlier);
+        assert_eq!(held, "seat:x:104:\n");
+        let after = format!("{image}{held}cups:x:105:\n");
+        assert_eq!(
+            without_held(&after, &held),
+            "root:x:0:\nlp:x:7:\ncups:x:105:\n"
+        );
     }
 
     #[test]

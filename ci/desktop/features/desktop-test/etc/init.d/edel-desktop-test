@@ -1635,9 +1635,14 @@ commands() {
 		# The font caches (M6.2a): how many the image bakes into the
 		# fontconfig cache folder, whether /var/cache/fontconfig exists (it
 		# would make Flatpak hand apps its stale cache), and how many caches
-		# ci's own fontconfig built when it listed the fonts.
+		# ci's own fontconfig built when it listed the fonts, and the
+		# folders those and any in /var/cache/fontconfig are for.
 		'font cache')
-			say "font_cache $(ls "$font_cache_dir" 2>/dev/null | grep -c '\.cache-') $( [ -d /var/cache/fontconfig ] && echo var-cache || echo no-var-cache ) $(as_ci "fc-list >/dev/null 2>&1; ls \$HOME/.cache/fontconfig 2>/dev/null | grep -c '\.cache-'")"
+			own=$(as_ci "fc-list >/dev/null 2>&1; ls \$HOME/.cache/fontconfig 2>/dev/null | grep -c '\.cache-'")
+			own_dirs=$(for f in /home/ci/.cache/fontconfig/*.cache-* /var/cache/fontconfig/*.cache-*; do
+				[ -e "$f" ] && fc-cat -v "$f" 2>/dev/null | sed -n 's/^Directory: //p' | head -n 1
+			done | tr '\n' ' ')
+			say "font_cache $(ls "$font_cache_dir" 2>/dev/null | grep -c '\.cache-') $( [ -d /var/cache/fontconfig ] && echo var-cache || echo no-var-cache ) $own $own_dirs"
 			;;
 		# What the baked cache saves (M6.2a): fc-list as ci with the slot's
 		# cache, then with a fontconfig file naming the same fonts and an
@@ -1891,9 +1896,11 @@ shown() {
 	done
 }
 
-# break_update (M4.8): installs CI's update into slot B, puts a compositor
-# there that only fails, gives slot B its last try and restarts. Slot B
-# then never shows a frame, so the guard lets the watchdog restart the VM
+# break_update (M4.8): installs CI's update, with the desktop add-on it
+# lists, into slot B, has slot B's guard wait for a health nothing writes
+# (the compositor is the desktop add-on's since M8.17c, shared by both
+# slots of one version), gives slot B its last try and restarts. Slot B
+# then never becomes healthy, so the guard lets the watchdog restart the VM
 # and GRUB starts slot A again; the marker on /data, which both slots
 # share, makes the next boots say so instead of testing the desktop.
 break_update() {
@@ -1904,8 +1911,11 @@ break_update() {
 	slot_b=$(edel status | awk '$1 == "B:" { print $4 }')
 	mkdir -p /run/desktop-test/slot /run/desktop-test/esp
 	mount "$slot_b" /run/desktop-test/slot || return 1
-	printf '#!/bin/sh\necho "edel-compositor: broken on purpose by desktop-test rollback" >&2\nexit 1\n' \
-		>/run/desktop-test/slot/usr/bin/edel-compositor
+	sed -i 's/^EDEL_HEALTH="\(.*\)"$/EDEL_HEALTH="\1 broken-on-purpose"/' /run/desktop-test/slot/usr/lib/os-release
+	grep -q '^EDEL_HEALTH=".* broken-on-purpose"$' /run/desktop-test/slot/usr/lib/os-release || {
+		say "rollback: FAIL: slot B's health was not broken"
+		return 1
+	}
 	umount /run/desktop-test/slot
 	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" /run/desktop-test/esp || return 1
 	# The same length, so GRUB's 1024-byte block stays whole.

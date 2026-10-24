@@ -11,15 +11,17 @@ name = "edel"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "wallpapers", "xwayland", "flatpak", "apps", "sound", "network", "bluetooth", "power", "capture", "location"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "network"]
 # ssh is off where a screen is, a desktop's people sit at it, and on where
 # none is, as a server is used from afar; services.ssh in the settings
 # file decides either way (the seed, the installer, the console's key).
 off = ["ssh"]
 headless = ["ssh"]
 # Built beside the image from its root, signed in its release, and
-# mounted on a machine whose settings file names them (M7.2a).
-addons = ["fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming", "graphics-nvidia"]
+# mounted on a machine whose settings file names them (M7.2a). The
+# desktop is one of them (M8.17c), and wallpapers, fonts-cjk, orca and
+# graphics-nvidia are built on it.
+addons = ["desktop", "wallpapers", "fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming", "graphics-nvidia"]
 
 [vm]
 kernel = "lts"
@@ -30,3 +32,7 @@ slot_mib = 1536
 # listed last, also gets the boot messages, as the CI tests read them and
 # a server's console is often one.
 cmdline = "console=tty0 console=ttyS0,115200"
+# The disk carries the desktop and its wallpapers on its data partition, and a machine has it
+# while its settings file names no add-ons of its own (M8.17c): the stick,
+# and every machine installed from it, starts the desktop where a screen is.
+carry = ["desktop", "wallpapers"]

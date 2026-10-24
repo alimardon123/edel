@@ -78,6 +78,7 @@ pub fn health_file(name: &str) -> Option<PathBuf> {
 }
 
 /// What the guard waits for, from os-release.
+#[derive(Clone)]
 struct HealthPlan {
     /// The health files every machine waits for.
     files: Vec<PathBuf>,
@@ -121,6 +122,41 @@ fn health_plan(os_release: &str) -> HealthPlan {
 }
 
 impl HealthPlan {
+    /// This plan with the health of the add-ons mounted under `run_dir`
+    /// (`places::ADDONS_RUN`), each read from the feature files it ships
+    /// (M8.17c): the desktop add-on's compositor is waited for as a built-in
+    /// one is, so a broken desktop falls back with its slot. The guard
+    /// starts before the add-ons mount, so it asks again at every look.
+    fn with_addons(&self, run_dir: &Path) -> HealthPlan {
+        let mut plan = self.clone();
+        let features_dir = edel::features::DIR.trim_start_matches('/');
+        let Ok(mounts) = fs::read_dir(run_dir) else {
+            return plan;
+        };
+        let mut features: Vec<edel::features::Feature> = mounts
+            .flatten()
+            .flat_map(|m| edel::services::installed_in(&m.path().join(features_dir)))
+            .map(|(_, f)| f)
+            .collect();
+        // Waited for everywhere when any feature without screen lists it.
+        features.sort_by_key(|f| f.screen);
+        for feature in features {
+            for name in &feature.health {
+                let Some(file) = health_file(name) else {
+                    continue;
+                };
+                if plan.files.contains(&file) || plan.screen_files.contains(&file) {
+                    continue;
+                }
+                match feature.screen {
+                    true => plan.screen_files.push(file),
+                    false => plan.files.push(file),
+                }
+            }
+        }
+        plan
+    }
+
     /// The files this boot waits for: the desktop's too only while the
     /// machine has a screen, asked only once the others are there, so by
     /// then the kernel has found its graphics card (udev settles in
@@ -245,6 +281,7 @@ pub fn guard() -> Result<()> {
     let mut stood_down = false;
     let mut said_no_screen = false;
     loop {
+        let plan = plan.with_addons(Path::new(places::ADDONS_RUN));
         let files = plan.wanted(edel::services::screen_now);
         if !said_no_screen
             && files.len() == plan.files.len()
@@ -465,6 +502,39 @@ fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_guard_waits_for_the_mounted_add_ons_health() {
+        let run = std::env::temp_dir().join(format!("edel-guard-addons-{}", std::process::id()));
+        let features = run
+            .join("desktop")
+            .join(edel::features::DIR.trim_start_matches('/'));
+        fs::create_dir_all(&features).unwrap();
+        fs::create_dir_all(run.join("printing")).unwrap();
+        fs::write(
+            features.join("compositor.toml"),
+            "format = 1\nsummary = \"c\"\nscreen = true\nhealth = [\"compositor\"]\n",
+        )
+        .unwrap();
+        fs::write(
+            features.join("sound.toml"),
+            "format = 1\nsummary = \"s\"\nhealth = [\"sound\"]\n",
+        )
+        .unwrap();
+        let plan = health_plan("EDEL_HEALTH=\"default-runlevel\"\n").with_addons(&run);
+        assert_eq!(plan.screen_files, [health_file("compositor").unwrap()]);
+        assert_eq!(
+            plan.files,
+            [
+                health_file("default-runlevel").unwrap(),
+                health_file("sound").unwrap()
+            ]
+        );
+        // Nothing mounted, nothing more.
+        let none = health_plan("EDEL_HEALTH=\"default-runlevel\"\n").with_addons(&run.join("none"));
+        assert_eq!(none.files.len(), 1);
+        fs::remove_dir_all(&run).unwrap();
+    }
 
     const OS_RELEASE: &str = "NAME=\"Edel OS\"\nEDEL_HEALTH=\"default-runlevel network Bad_Name\"\nEDEL_HEALTH_TIMEOUT=30\n";
 

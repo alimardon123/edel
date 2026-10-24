@@ -432,6 +432,8 @@ struct Machine {
     addons: Vec<String>,
     /// Their files and the links to them in `/etc`
     addon_links: crate::addons::Links,
+    /// The add-ons the slot has while the file names none (M8.17c).
+    default_addons: Vec<String>,
     /// The system's `mimeapps.list` (M6.10), `None` when the file is missing
     mime_defaults: Option<String>,
     /// `places::FIRST_PASSWORDS`, which `edel install` leaves (M6.6b)
@@ -500,6 +502,7 @@ impl Machine {
             screen: services::screen_now(),
             addons: edel::addon_state::mounted(),
             addon_links: crate::addons::Links::read(),
+            default_addons: edel::addon_state::running_default(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
             first_passwords: fs::read_to_string(FIRST_PASSWORDS).ok(),
             subids: Path::new("/usr/bin/newuidmap").exists().then(|| {
@@ -673,6 +676,14 @@ fn zone_of_target(target: &Path) -> Option<String> {
 fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let mut changes = Vec::new();
     let mut notes = Vec::new();
+    // The mounted add-ons' files show in /etc first: before the people are
+    // added, whose homes take the desktop's /etc/skel (M8.17c), and before
+    // their services are; the services of one that cannot be switched off
+    // are on, as a built-in feature's are (M7.2a).
+    let (make, remove) = machine.addon_links.plan();
+    if !make.is_empty() || !remove.is_empty() {
+        changes.push(Change::Addons { make, remove });
+    }
     match &file.network.hostname {
         Some(h) if machine.hostname.trim() != h => changes.push(Change::Hostname(h.clone())),
         None if machine.hostname_set => changes.push(Change::HostnameDefault),
@@ -809,19 +820,24 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     if developer != machine.developer {
         changes.push(Change::Developer(developer));
     }
-    // The mounted add-ons' files show in /etc before their services are
-    // added; the services of one that cannot be switched off are on, as a
-    // built-in feature's are (M7.2a).
-    let (make, remove) = machine.addon_links.plan();
-    if !make.is_empty() || !remove.is_empty() {
-        changes.push(Change::Addons { make, remove });
+    // An add-on made of features brings their services (M8.17c), but for
+    // a `screen` feature's default runlevel, which `services::plan` below
+    // switches by whether the machine has a screen (M8.17).
+    let mut from_addons: BTreeSet<&str> = machine.addons.iter().map(String::as_str).collect();
+    for (name, f) in &machine.features {
+        if machine.addons.contains(name) {
+            from_addons.extend(f.features.iter().map(String::as_str));
+        }
     }
     for (_, feature) in machine
         .features
         .iter()
-        .filter(|(name, f)| !f.switchable && machine.addons.contains(name))
+        .filter(|(name, f)| !f.switchable && from_addons.contains(name.as_str()))
     {
         for (level, service) in feature.services.entries() {
+            if feature.screen && level == "default" {
+                continue;
+            }
             let entry = (level.to_string(), service.to_string());
             if !machine.runlevels.contains(&entry) {
                 changes.push(Change::Service(services::Step {
@@ -833,7 +849,8 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         }
     }
     let built: BTreeSet<&str> = machine.features.iter().map(|(n, _)| n.as_str()).collect();
-    for name in file.addons.installed.iter().flatten() {
+    let installed = edel::addon_state::installed(file, &machine.default_addons);
+    for name in &installed {
         if !built.contains(name.as_str()) {
             notes.push(trf(
                 "add-on {name} starts at the next restart, once edel settings apply has fetched it",
@@ -842,7 +859,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
         }
     }
     for name in &machine.addons {
-        if !file.addons.installed.iter().flatten().any(|n| n == name) {
+        if !installed.contains(name) {
             notes.push(trf(
                 "add-on {name} goes at the next restart",
                 &[("name", name)],
@@ -1365,6 +1382,7 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     let mut read = settings::read_on_machine(path)?;
     // The profiles the file names give what it leaves out (M7.6), so apply
     // and diff act on them; the file itself still names only the profiles.
+    lay_default_addons(&mut read.file);
     read.file = edel::profiles::applied(&read.file);
     for problem in &read.problems {
         println!(
@@ -1453,12 +1471,25 @@ pub fn import(file: &Path) -> Result<()> {
     apply_file(Some(file), false)
 }
 
-/// The boot's apply on a machine with no settings file: only the
-/// services, as an empty file asks for them (M8.17).
+/// Lays the slot's default add-ons under a file that names none of its
+/// own (M8.17c), before the profiles are applied, as applying them loses
+/// that the list was absent.
+fn lay_default_addons(file: &mut SettingsFile) {
+    let default = edel::addon_state::running_default();
+    if file.addons.installed.is_none() && !default.is_empty() {
+        file.addons.installed = Some(edel::addon_state::installed(file, &default));
+    }
+}
+
+/// The boot's apply on a machine with no settings file: the default
+/// add-ons' links, then the services, as an empty file asks for them
+/// (M8.17, M8.17c); the desktop's services are the add-on's.
 fn boot_services() -> Result<()> {
-    let file = SettingsFile::default();
+    let mut file = SettingsFile::default();
+    lay_default_addons(&mut file);
     let (changes, _) = plan(&file, &Machine::read(&file)?);
-    for change in changes.iter().filter(|c| matches!(c, Change::Service(_))) {
+    let boot_change = |c: &&Change| matches!(c, Change::Service(_) | Change::Addons { .. });
+    for change in changes.iter().filter(boot_change) {
         match execute(change, true) {
             Ok(()) => println!("edel settings: {change}"),
             Err(err) => eprintln!(
@@ -2997,6 +3028,7 @@ mod tests {
             screen: true,
             addons: Vec::new(),
             addon_links: Default::default(),
+            default_addons: Vec::new(),
             mime_defaults: None,
             first_passwords: None,
             subids: None,
@@ -3209,6 +3241,39 @@ mod tests {
 
     /// A machine whose battery offers a charge limit, now at `limit`, and
     /// whether a trip's full charge is pending.
+    #[test]
+    fn a_desktop_add_on_starts_its_greeter_only_where_there_is_a_screen() {
+        let feature = |text: &str| edel::features::read(text).unwrap().0;
+        let mut machine = machine();
+        machine.addons = vec!["desktop".into()];
+        machine.features = vec![
+            (
+                "desktop".into(),
+                feature("format = 1\nsummary = \"d\"\naddon = true\nfeatures = [\"login\"]\n"),
+            ),
+            (
+                "login".into(),
+                feature(
+                    "format = 1\nsummary = \"l\"\nscreen = true\n[services]\nboot = [\"edel-live\"]\ndefault = [\"greetd\"]\n",
+                ),
+            ),
+        ];
+        let file = SettingsFile::default();
+        let started = |machine: &Machine| -> Vec<String> {
+            plan(&file, machine)
+                .0
+                .iter()
+                .filter_map(|c| match c {
+                    Change::Service(s) if s.on => Some(format!("{}/{}", s.level, s.service)),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(started(&machine), ["boot/edel-live", "default/greetd"]);
+        machine.screen = false;
+        assert_eq!(started(&machine), ["boot/edel-live"]);
+    }
+
     fn battery(limit: u32, charge_full_once: bool) -> Machine {
         let mut machine = machine();
         machine.battery_limit = Some(limit);
