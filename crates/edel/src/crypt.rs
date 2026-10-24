@@ -329,11 +329,15 @@ pub fn unlock(device: &Path) -> Result<PathBuf> {
         "This computer's data is encrypted. Type its passphrase, the password it was installed with: ",
     );
     let (lines, typed) = mpsc::channel();
-    let mut writers = Vec::new();
-    for console in &open_consoles {
+    let (mut writers, mut verdicts) = (Vec::new(), Vec::new());
+    for (index, console) in open_consoles.iter().enumerate() {
         writers.push(console.writer.try_clone()?);
         let (reader, writer) = (console.reader.try_clone()?, console.writer.try_clone()?);
         let lines = lines.clone();
+        // A console asks again only once its last line was tried, so the
+        // refusal comes before the next prompt.
+        let (verdict, tried) = mpsc::channel::<()>();
+        verdicts.push(verdict);
         std::thread::spawn(move || {
             loop {
                 let (Ok(reader), Ok(writer)) = (reader.try_clone(), writer.try_clone()) else {
@@ -341,7 +345,7 @@ pub fn unlock(device: &Path) -> Result<PathBuf> {
                 };
                 match privilege::read_secret_from(reader, writer, prompt) {
                     Ok(passphrase) if passphrase.letters() > 0 => {
-                        if lines.send(passphrase).is_err() {
+                        if lines.send((index, passphrase)).is_err() || tried.recv().is_err() {
                             return;
                         }
                     }
@@ -359,7 +363,7 @@ pub fn unlock(device: &Path) -> Result<PathBuf> {
         let _ = fs::write(places::UNLOCK_WAITING, "");
         let got = typed.recv();
         let _ = fs::remove_file(places::UNLOCK_WAITING);
-        let Ok(passphrase) = got else {
+        let Ok((index, passphrase)) = got else {
             break Err(anyhow::anyhow!(
                 "{}",
                 tr("no console could take the data's passphrase")
@@ -373,6 +377,7 @@ pub fn unlock(device: &Path) -> Result<PathBuf> {
                 for writer in &mut writers {
                     let _ = writeln!(writer, "{line}");
                 }
+                let _ = verdicts[index].send(());
             }
             Err(err) => break Err(err),
         }

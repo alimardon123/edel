@@ -118,7 +118,7 @@ crypt_sock=out/install-crypt.sock
 crypt_log=out/install-crypt.log
 rm -f "$crypt_sock"
 python3 ci/serial.py "$crypt_sock" 'Type its passphrase, the password it was installed with: =not-the-one' \
-	'does not unlock this computer' "Type its passphrase, the password it was installed with: =@130 edel-ci-tty" \
+	"type it again.=@130 edel-ci-tty" \
 	>"$crypt_log" 2>&1 &
 typist=$!
 vm_console=$crypt_sock main_log=$log main_waited=$waited
