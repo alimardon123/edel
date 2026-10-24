@@ -350,7 +350,7 @@ impl Shell {
         let Some(area) = self.desktops.get(i).and_then(|screen| screen.area) else {
             return;
         };
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let screen = &self.desktops[i];
         let drawn = Drawn {
             when: lock::When::of(&now),

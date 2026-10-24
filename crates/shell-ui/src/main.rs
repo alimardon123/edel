@@ -1134,7 +1134,7 @@ fn on_path(name: &str) -> bool {
 /// collects the apps the launcher started that ended, then sleeps until
 /// the next one.
 fn tick(handle: &LoopHandle<'static, Shell>) {
-    let next = || widgets::clock::until_next_minute(&jiff::Zoned::now());
+    let next = || widgets::clock::until_next_minute(&edel::timezones::now());
     let result = handle.insert_source(
         Timer::from_duration(next()),
         move |_, _, shell: &mut Shell| {

@@ -2401,14 +2401,18 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
         })?;
     }
     let new = path.with_extension("toml.edel-new");
-    fs::write(&new, edited)
-        .and_then(|()| fs::rename(&new, path))
-        .with_context(|| {
-            trf(
-                "could not write {path}",
-                &[("path", &path.display().to_string())],
-            )
-        })
+    let written = fs::write(&new, edited).and_then(|()| fs::rename(&new, path));
+    // A full disk stops the write halfway (M8.11): the file kept as it was,
+    // and the half-written one taken out, not left to fill the disk more.
+    if written.is_err() {
+        let _ = fs::remove_file(&new);
+    }
+    written.with_context(|| {
+        trf(
+            "could not write {path}",
+            &[("path", &path.display().to_string())],
+        )
+    })
 }
 
 /// `edel settings set KEY=VALUE` on a file's text (ADR-008, writers): checks
@@ -3759,6 +3763,20 @@ pub fn write_slot_copy(root: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_write_keeps_the_file_and_leaves_no_half_file() {
+        // The rename fails as a full disk's write would: the file's place
+        // is a folder. Nothing is left beside it.
+        let dir = std::env::temp_dir().join(format!("edel-write-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let path = dir.join(crate::places::SETTINGS);
+        fs::create_dir_all(&path).unwrap();
+        assert!(write_text(&path, "hostname = \"lab\"\n").is_err());
+        assert!(!path.with_extension("toml.edel-new").exists());
+        assert!(path.is_dir());
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_span_of_hours_may_pass_midnight() {
