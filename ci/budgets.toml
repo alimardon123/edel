@@ -79,19 +79,23 @@ shell_ui_own_mib = 1.8
 desktop_behind_game_cpu_percent = 1
 
 # The smoothness gate (M7.7e, desktop-test smoothness): a fullscreen game
-# stand-in, edel-testclient --busy --smooth 300, in game mode. The 99th
-# percentile of the time between the frames the screen presented, in
-# milliseconds, and the share of its frames that went straight to the
-# screen, in percent, which must not fall below the floor. A change that
-# makes either more than 10 percent worse does not merge, so each is the
-# first CI measurements made 10 percent worse. On 2026-10-18 (PR #403)
-# two runners measured p99 12.9 ms on one and 14.8 to 14.9 ms in four
-# runs on the other, slowest 19.8 to 23.8 ms, none straight to the
-# screen; 10 percent over the slower runner is 16.4 ms, under one frame
-# at 60 Hz, as 10 percent over the faster failed on the slower. CI's VM
-# gives the client shared memory buffers, which cannot go straight to
-# the screen, so the floor stays 0 there.
-game_frame_p99_ms = 16.4
+# stand-in, edel-testclient --busy --smooth 1200, in game mode. The 99th
+# percentile of the time between the frames the screen presented, as a
+# multiple of their median, and the share of its frames that went
+# straight to the screen, in percent, which must not fall below the
+# floor. A change that makes either more than 10 percent worse does not
+# merge, so each is the first CI measurements made 10 percent worse.
+# Until 2026-10-24 the gate was the p99 alone, game_frame_p99_ms = 16.4
+# (PR #403): it measured the runner, as CI's VM has no screen refresh, so
+# a frame takes as long as the runner's processor needs. Over 14 runs of
+# the same code it gave 11.2 to 19.1 ms, and 12.5 and 19.1 ms in two runs
+# in one boot, with render p50 0.59 ms on AMD runners at 2.6 GHz and
+# 0.98 ms on an Intel runner at 2.8 GHz. The ratio takes the runner's
+# pace out, as animation_p99_ms does for the animations. Its first value
+# comes from the next full run, before the change merges. CI's VM gives
+# the client shared memory buffers, which cannot go straight to the
+# screen, so the floor stays 0 there.
+game_frame_p99_ratio = 2.0
 game_direct_percent_floor = 0
 
 # The compositor's and shell-ui's wakeups per second together, from their
