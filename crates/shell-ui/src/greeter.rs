@@ -16,7 +16,7 @@
 //! screen's does. Logs `greeter shown, N screens`, `greeter places ...`,
 //! `greeter: chose LOGIN` or `greeter: chose other`, `greeter: power menu
 //! shown, 3 rows`, `greeter: power menu hidden`, `greeter: power: NAME`,
-//! `greeter: logging USER in`, `greeter: wrong user name or password` and
+//! `greeter: logging USER in`, `greeter: wrong username or password` and
 //! `greeter: session started for USER`, then `greeter: desktop ID`.
 //! With two or more desktop sessions installed (M5.10c3b) a chip in the
 //! corner names the one the login starts and opens a menu of them, each
@@ -735,7 +735,7 @@ impl Greeter {
                 return;
             }
             Login::Refused => {
-                eprintln!("edel-shell-ui: greeter: wrong user name or password");
+                eprintln!("edel-shell-ui: greeter: wrong username or password");
                 self.field = Field::Refused;
             }
             Login::Failed(why) => {

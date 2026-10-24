@@ -1796,7 +1796,7 @@ fn count(
 }
 
 /// The greeter's first step: the field shows the user name as typed, with
-/// a caret in the accent, or "User name" when empty, and the note under
+/// a caret in the accent, or "Username" when empty, and the note under
 /// it says why the last try failed.
 fn paint_name_field(
     pixmap: &mut Pixmap,
@@ -1835,7 +1835,7 @@ fn paint_name_field(
     let top = (f.y + (f.h - 15.0 * 1.25) / 2.0) * s;
     let x = (f.x + 20.0) * s;
     if view.name.is_empty() {
-        let mut line = text.fit(tr("User name"), 15.0 * s, (f.w - 40.0) * s);
+        let mut line = text.fit(tr("Username"), 15.0 * s, (f.w - 40.0) * s);
         text.draw(pixmap, &mut line, x, top, quiet);
     }
     let mut line = text.fit(&view.name, 15.0 * s, (f.w - 44.0) * s);
