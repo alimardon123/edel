@@ -110,17 +110,31 @@ fn listed(os_release: &str, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The graphics drivers of servers' management chips (BMCs): their card
+/// only mirrors the console to a remote viewer, so it is no screen anyone
+/// sits at (M7.4).
+const BMC_DRIVERS: [&str; 2] = ["ast", "mgag200"];
+
 /// Whether this machine has a screen: the kernel shows a graphics card
-/// under `sys` (`/sys`), `class/drm/cardN`. A server or a virtual machine
-/// with no display device has none; the firmware's framebuffer counts, so
-/// a machine whose graphics driver fails still has its screen.
+/// under `sys` (`/sys`), `class/drm/cardN`, whose driver is not a BMC's
+/// ([`BMC_DRIVERS`]). A server or a virtual machine with no display device
+/// has none; the firmware's framebuffer counts, so a machine whose
+/// graphics driver fails still has its screen.
 pub fn has_screen(sys: &Path) -> bool {
     fs::read_dir(sys.join("class/drm")).is_ok_and(|entries| {
         entries.filter_map(|e| e.ok()).any(|e| {
-            e.file_name()
+            let card = e
+                .file_name()
                 .to_str()
                 .and_then(|n| n.strip_prefix("card"))
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            let bmc = fs::read_link(e.path().join("device/driver")).is_ok_and(|driver| {
+                driver
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| BMC_DRIVERS.contains(&n))
+            });
+            card && !bmc
         })
     })
 }
@@ -399,6 +413,16 @@ mod tests {
         fs::create_dir_all(drm.join("card0")).unwrap();
         assert!(has_screen(&sys));
         assert!(!has_screen(&sys.join("nothing")));
+        // A server's management chip mirrors its console, no screen.
+        let drivers = sys.join("bus/pci/drivers");
+        fs::create_dir_all(drivers.join("ast")).unwrap();
+        fs::create_dir_all(drivers.join("i915")).unwrap();
+        fs::create_dir_all(drm.join("card0/device")).unwrap();
+        std::os::unix::fs::symlink(drivers.join("ast"), drm.join("card0/device/driver")).unwrap();
+        assert!(!has_screen(&sys));
+        fs::create_dir_all(drm.join("card1/device")).unwrap();
+        std::os::unix::fs::symlink(drivers.join("i915"), drm.join("card1/device/driver")).unwrap();
+        assert!(has_screen(&sys));
         fs::remove_dir_all(&sys).unwrap();
     }
 
