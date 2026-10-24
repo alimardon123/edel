@@ -8972,7 +8972,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
-	started=$(tr -d '\r' <"$log" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	started=$(walk_boot_seconds "$log")
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
@@ -9397,21 +9397,23 @@ if [ "$*" = fresh ]; then
 	*"File not found"*) ;;
 	*) fail "first-passwords is still on the data partition: apply did not give cleo the password" ;;
 	esac
-	keep_vm=1 run_vm "$fresh_log.2" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+	# The restart into the greeter, kept with the lane's logs (out/*.log).
+	fresh_again=out/desktop-fresh-greeter.log
+	keep_vm=1 run_vm "$fresh_again" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-drive if=none,id=fresh,format=raw,file="$fresh" \
 		-device virtio-blk-pci,drive=fresh,bootindex=0
-	[ "$found" = 1 ] || { cat "$fresh_log.2"; fail "the disk the Welcome set up did not start again"; }
+	[ "$found" = 1 ] || { cat "$fresh_again"; fail "the disk the Welcome set up did not start again"; }
 	i=0
-	until tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
+	until tr -d '\r' <"$fresh_again" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
 		i=$((i + 1))
 		sleep 1
 	done
 	stop_vm
-	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
+	tr -d '\r' <"$fresh_again" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$fresh" "$dir/fresh-data.img"
-	greeter=$(tr -d '\r' <"$fresh_log.2" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	greeter=$(walk_boot_seconds "$fresh_again")
 	walk first-setup "seconds=$greeter" "steps=$walk_steps" || fail "the first setup on a new computer is over its budget (walk first-setup, docs/REVIEW-experience.md)"
 	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0

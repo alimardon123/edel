@@ -172,17 +172,22 @@ portal_readall_ms = 50
 memory_full_p99_ms = 8
 # The walks a newcomer takes (M8.15a, docs/REVIEW-experience.md): for
 # each, the seconds the machine makes a person wait, timed by the machine
-# itself (a boot's `Started in`, or the guest's clock across a restart),
-# and the steps a person takes (each key, typed word or click). Seconds
+# itself (a boot's seconds from the kernel running /init to its `Started
+# in`, or the guest's clock across a restart), and the steps a person
+# takes (each key, typed word or click). Seconds
 # are the first CI measurement (2026-10-18, PR #403) plus 20 percent,
 # rounded up to a whole second: try 11.95, first setup 3.88, install 12,
 # update 14, rollback 12, broken update 51; steps are exact. A walk that
-# must grow changes its budget in a reviewed change that says why.
-walk_try_seconds = 15
+# must grow changes its budget in a reviewed change that says why. Since
+# 2026-10-24 try and first-setup start at /init, as the kernel's part
+# before it is Alpine's and what a slow runner stretches most; their
+# budgets lost the kernel's usual part (1.36 s on the stick, 1.15 s on a
+# disk, docs/REVIEW-experience.md), so they allow no more than before.
+walk_try_seconds = 13.64
 walk_install_page_steps = 9
 walk_install_seconds = 15
 walk_install_steps = 1
-walk_first_setup_seconds = 5
+walk_first_setup_seconds = 3.85
 walk_first_setup_steps = 12
 walk_update_seconds = 17
 walk_update_steps = 2
