@@ -29,6 +29,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [FORMATS.md](FORMATS.md) | Every file format edel owns: fields, signatures, leniency, the stepping-stone rule | Reference |
 | [RELEASE.md](RELEASE.md) | What CI publishes, what is kept forever, the release key and the steps that wait for Alimardon | Reference |
 | [SPIKE-flatpak.md](SPIKE-flatpak.md) | Flatpak's glibc runtimes on the musl base: the verdict and what CI measured | Spike |
+| [SECURITY.md](SECURITY.md) | How Alpine's security fixes reach a release (the monthly rebuild) and how to read the package lists and bills of materials | Reference |
 | [MESSAGES.md](MESSAGES.md) | How every error, warning, progress line and log line is written, and where each is found | Reference |
 | [layout-guide.md](layout-guide.md) | How apps fit every screen: three size classes, touch targets, the touch mode key, live resize | Guide |
 | [SHORTCUTS.md](SHORTCUTS.md) | Every keyboard shortcut's action, default keys and whether it is a way out; generated from `crates/edel/src/shortcuts.rs` | Reference |
