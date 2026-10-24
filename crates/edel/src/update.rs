@@ -245,7 +245,7 @@ impl Esp {
             .arg(&dir))
         .with_context(|| {
             trf(
-                "cannot mount the EFI system partition {device}",
+                "could not open the start-up partition {device}, which says which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes",
                 &[("device", &dev.display().to_string())],
             )
         })?;
@@ -272,7 +272,7 @@ impl Esp {
     fn load(&self) -> Result<Env> {
         Env::parse(
             &fs::read_to_string(self.env_path())
-                .context(tr("could not read the GRUB environment"))?,
+                .context(tr("could not read which version starts next from the start-up partition; nothing was changed; if this repeats, run edel report and send the file it writes"))?,
         )
     }
 
@@ -282,7 +282,7 @@ impl Esp {
         let file = OpenOptions::new()
             .write(true)
             .open(self.env_path())
-            .context(tr("could not open the GRUB environment"))?;
+            .context(tr("could not open the start-up partition's record of which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes"))?;
         file.write_all_at(env.render()?.as_bytes(), 0)?;
         file.sync_all()?;
         Ok(())
@@ -380,14 +380,26 @@ pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
     if err.kind() == std::io::ErrorKind::PermissionDenied {
         anyhow::Error::new(edel::exit::Coded::new(
             edel::exit::REFUSED,
-            trf(
-                "{doing}: permission denied; this changes the system, so run it with doas: doas edel ...",
-                &[("doing", doing)],
-            ),
+            refused(doing, &typed()),
         ))
     } else {
         anyhow::Error::new(err).context(doing.to_string())
     }
+}
+
+/// The refusal of `command` for what failed (`doing`), naming the command
+/// to run instead (the messages audit's row 33).
+fn refused(doing: &str, command: &str) -> String {
+    trf(
+        "{doing}: permission denied; {command} changes the system, so it needs an administrator: doas {command}",
+        &[("doing", doing), ("command", command)],
+    )
+}
+
+/// The command the person ran, `edel update --check`, as they typed it.
+fn typed() -> String {
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    format!("edel {}", words.join(" "))
 }
 
 /// Who holds a lock, from the lock file's `PID COMMAND`.
@@ -496,6 +508,16 @@ pub fn status() -> Result<()> {
     // needs root, so a person without it sees them too.
     for line in edel::security::now().lines() {
         println!("{line}");
+    }
+    // The versions installed need the start-up partition, which only root
+    // reads; a person sees the facts above and how to see the rest (the
+    // messages audit's row 39), and Settings' Updates page shows them.
+    if edel::users::current() != Some(0) {
+        eprintln!(
+            "warning: {}",
+            tr("the versions installed are shown to administrators only: doas edel status")
+        );
+        return Ok(());
     }
     let disk = Disk::find()?;
     let env = Esp::mount(&disk)?.load()?;
@@ -1057,11 +1079,13 @@ mod tests {
     /// `Permission denied (os error 13)`.
     #[test]
     fn a_refused_write_says_to_run_it_with_doas() {
-        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
         assert_eq!(
-            io_failure(denied, "could not write /run/edel").to_string(),
-            "could not write /run/edel: permission denied; this changes the system, so run it with doas: doas edel ..."
+            refused("could not write /run/edel", "edel update --check"),
+            "could not write /run/edel: permission denied; edel update --check changes the system, so it needs an administrator: doas edel update --check"
         );
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let text = io_failure(denied, "could not write /run/edel").to_string();
+        assert!(text.contains("needs an administrator: doas edel"), "{text}");
         let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
         let text = format!("{:#}", io_failure(full, "could not write /run/edel"));
         assert!(text.starts_with("could not write /run/edel: "), "{text}");
