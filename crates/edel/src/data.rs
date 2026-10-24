@@ -523,20 +523,8 @@ fn hardware_packs(probe: bool) {
 /// The keyboard of the machine's settings file, else of its first
 /// person's own file, for the encrypted data's prompt (M8.2b).
 fn follow_keyboard(device: &Path) {
-    let layout = |text: &str| {
-        edel::settings::read(text)
-            .ok()
-            .and_then(|read| read.file.region.keyboard)
-    };
-    let machine = fs::read_to_string(places::found(&places::machine_settings()))
-        .ok()
-        .and_then(|text| layout(&text));
-    let person = || {
-        let passwd = fs::read_to_string("/etc/passwd").ok()?;
-        let first = crate::machine::first_person(&passwd)?;
-        let file = places::person_settings_in(Path::new(&first.home));
-        layout(&fs::read_to_string(file).ok()?)
-    };
+    let machine = edel::settings::on_machine("region.keyboard");
+    let person = || crate::machine::first_persons_keyboard();
     // No keyboard anywhere is the default, the kernel's US map.
     let keyboard = machine.or_else(person).unwrap_or_else(|| "us".into());
     crate::crypt::follow_keyboard(device, &keyboard);

@@ -124,6 +124,17 @@ pub(crate) fn first_person(passwd: &str) -> Option<Account> {
         .min_by_key(|a| a.uid)
 }
 
+/// The keyboard in the first person's own settings file, if it names one.
+pub(crate) fn first_persons_keyboard() -> Option<String> {
+    let first = first_person(&fs::read_to_string("/etc/passwd").ok()?)?;
+    let file = places::person_settings_in(Path::new(&first.home));
+    settings::read(&fs::read_to_string(file).ok()?)
+        .ok()?
+        .file
+        .region
+        .keyboard
+}
+
 pub(crate) fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
