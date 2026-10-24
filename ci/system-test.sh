@@ -174,7 +174,7 @@ ssh_root edel settings set services.udev=false >out/services-bad.log 2>&1 || cod
 	grep -q 'ssh' out/services-bad.log ||
 	fail "services.udev=false was not refused with the features that can be switched: $(cat out/services-bad.log)"
 ssh_root 'edel settings set services.ssh=false && edel settings apply >/tmp/services-off.log 2>&1; cat /tmp/services-off.log; nohup sh -c "sleep 15; edel settings set services.ssh=true && edel settings apply >/tmp/services-on.log 2>&1" >/dev/null 2>&1 &' >out/services-off.log 2>&1 || true
-grep -q 'services: stop sshd and take it out of the default runlevel' out/services-off.log ||
+grep -q 'turned off sshd, so it no longer starts with the computer' out/services-off.log ||
 	fail "apply did not say it stopped sshd: $(cat out/services-off.log)"
 sleep 2
 if ssh_ci true >out/services-ssh.log 2>&1; then

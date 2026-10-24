@@ -395,6 +395,94 @@ impl fmt::Display for Change {
     }
 }
 
+impl Change {
+    /// What `edel settings apply` says once the change is made, in the
+    /// person's language (the M8.15 messages audit's row 55); the
+    /// [`Display`](fmt::Display) line stays English for `diff` and the boot.
+    fn said(&self) -> String {
+        match self {
+            Change::Hostname(h) => trf("this computer's name is now {name}", &[("name", h)]),
+            Change::HostnameDefault => tr("this computer's name is back to the release's").into(),
+            Change::Timezone(z) => trf("the time zone is now {zone}", &[("zone", z)]),
+            Change::TimezoneDefault => tr("the time zone is back to UTC").into(),
+            Change::Geolocation { zone, .. } => trf(
+                "apps that ask are told you are in {zone}",
+                &[("zone", zone)],
+            ),
+            Change::GeolocationNone => tr("apps that ask are told no place").into(),
+            Change::LocationOnline(true) => {
+                tr("apps may now find the place from nearby Wi-Fi").into()
+            }
+            Change::LocationOnline(false) => {
+                tr("apps no longer find the place from nearby Wi-Fi").into()
+            }
+            Change::BatteryCare(percent) => trf(
+                "the battery now stops charging at {percent} percent",
+                &[("percent", &percent.to_string())],
+            ),
+            Change::AddUser { name, .. } => trf("added the account {name}", &[("name", name)]),
+            Change::Shell { name, shell } => trf(
+                "{name} now logs in to {shell}",
+                &[("name", name), ("shell", shell)],
+            ),
+            Change::Unlock(name) => trf("{name} can now log in with an ssh key", &[("name", name)]),
+            Change::AdminGroup => trf(
+                "made the group {group}, whose people are administrators",
+                &[("group", ADMIN_GROUP)],
+            ),
+            Change::Admin { name, on: true } => {
+                trf("{name} is now an administrator", &[("name", name)])
+            }
+            Change::Admin { name, on: false } => {
+                trf("{name} is no longer an administrator", &[("name", name)])
+            }
+            Change::Keys { name, keys } => trf(
+                "{name} now logs in with {count} ssh keys",
+                &[("name", name), ("count", &keys.len().to_string())],
+            ),
+            Change::Service(step) if step.on => trf(
+                "turned on {service}, so it starts with the computer",
+                &[("service", &step.service)],
+            ),
+            Change::Service(step) => trf(
+                "turned off {service}, so it no longer starts with the computer",
+                &[("service", &step.service)],
+            ),
+            Change::Passwords(names) if names.is_empty() => {
+                tr("removed the passwords edel install left, as nobody in the file has one").into()
+            }
+            Change::Passwords(names) => trf(
+                "{names} now log in with the password edel install asked for",
+                &[("names", &names.join(", "))],
+            ),
+            Change::Developer(true) => tr("developer mode is on").into(),
+            Change::Developer(false) => tr("developer mode is off").into(),
+            Change::Seat(name) => trf(
+                "{name} may now use the screen, keyboard and mouse",
+                &[("name", name)],
+            ),
+            Change::Flatpak { name, ids } => trf(
+                "installed {apps} for {name}",
+                &[("apps", &ids.join(", ")), ("name", name)],
+            ),
+            Change::MimeDefaults(text) if text.is_empty() => {
+                tr("no default apps are set now").into()
+            }
+            Change::MimeDefaults(_) => tr("the default apps are set").into(),
+            Change::Addons { make, remove } => trf(
+                "the add-ons' files are in place ({made} linked, {removed} taken out)",
+                &[
+                    ("made", &make.len().to_string()),
+                    ("removed", &remove.len().to_string()),
+                ],
+            ),
+            Change::SubIds { .. } => {
+                tr("each person's ids for rootless containers are written").into()
+            }
+        }
+    }
+}
+
 /// What apply compares the file with, read from the machine.
 #[derive(Default)]
 struct Machine {
@@ -1616,7 +1704,8 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
             continue;
         }
         match execute(change, boot) {
-            Ok(()) => println!("edel settings: {change}"),
+            Ok(()) if boot => println!("edel settings: {change}"),
+            Ok(()) => println!("edel settings: {}", change.said()),
             Err(err) => {
                 failed += 1;
                 eprintln!(
@@ -2912,6 +3001,21 @@ fn describe(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apply_says_a_change_in_plain_words_and_diff_keeps_the_key() {
+        let on = Change::Service(services::Step {
+            level: "default".into(),
+            service: "sshd".into(),
+            on: true,
+        });
+        assert_eq!(on.said(), "turned on sshd, so it starts with the computer");
+        assert_eq!(
+            on.to_string(),
+            "services: start sshd and add it to the default runlevel"
+        );
+        assert_eq!(Change::Developer(false).said(), "developer mode is off");
+    }
 
     static PRESET_LINE: key_help::Help = key_help::Help {
         key: "layout.tiling",
