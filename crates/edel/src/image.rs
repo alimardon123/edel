@@ -1767,6 +1767,21 @@ fn container_tar_args(epoch: Option<u64>) -> Vec<String> {
     args
 }
 
+/// The folder `under` names in `root`, through the links `merge_usr` made
+/// there (`lib` leads to `usr/lib`), as an add-on's copy of the root is
+/// merged before its packages go in, so their files are found under
+/// `usr/lib/firmware` when a feature says `lib/firmware`. A folder that is
+/// not there, or a link out of the root, is taken as written.
+fn real_under(root: &Path, under: &str) -> String {
+    match (fs::canonicalize(root.join(under)), fs::canonicalize(root)) {
+        (Ok(at), Ok(root)) => at
+            .strip_prefix(&root)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| under.to_string()),
+        _ => under.to_string(),
+    }
+}
+
 /// Takes out of an add-on's new files what its `[[keep]]` lists do not keep
 /// (M7.2a), with the plan the image's own `[[keep]]` uses for its packages
 /// (`edel::keep::plan`): under each folder, the new files a listed pattern
@@ -1783,7 +1798,8 @@ fn keep_addon(
     a_root: &Path,
 ) -> Result<()> {
     for keep in keeps {
-        let under = keep.under.trim_matches('/');
+        let real = real_under(a_root, keep.under.trim_matches('/'));
+        let under = real.as_str();
         let prefix = format!("{under}/");
         let files: Vec<&str> = diff
             .new
@@ -2331,6 +2347,17 @@ fn is_flatpakrepo(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_keep_under_lib_is_found_under_usr_lib_in_a_merged_root() {
+        let root = std::env::temp_dir().join(format!("edel-real-under-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("usr/lib/firmware/amdgpu")).unwrap();
+        std::os::unix::fs::symlink("usr/lib", root.join("lib")).unwrap();
+        assert_eq!(real_under(&root, "lib/firmware"), "usr/lib/firmware");
+        assert_eq!(real_under(&root, "usr/share/fonts"), "usr/share/fonts");
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn source_date_epoch_takes_digits_and_nothing_else() {
