@@ -171,7 +171,8 @@ pub fn pin(
 
 /// Gives every file under `dir` on the root's own file system (not the
 /// proc, sys and dev mounted for the package scripts) the new ids. A
-/// change of owner drops the set-id bits, so the mode is put back.
+/// change of owner drops the set-id bits and the file's capabilities, so
+/// the mode and the attributes are put back.
 fn chown_tree(dir: &Path, device: u64, moves: &Moves, seen: &mut HashSet<u64>) -> Result<()> {
     for entry in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
         let path = entry?.path();
@@ -182,11 +183,13 @@ fn chown_tree(dir: &Path, device: u64, moves: &Moves, seen: &mut HashSet<u64>) -
         let uid = moves.users.get(&meta.uid()).copied();
         let gid = moves.groups.get(&meta.gid()).copied();
         if (uid.is_some() || gid.is_some()) && seen.insert(meta.ino()) {
+            let attrs = crate::xattrs::read(&path)?;
             std::os::unix::fs::lchown(&path, uid, gid)
                 .with_context(|| format!("changing the owner of {}", path.display()))?;
             if !meta.file_type().is_symlink() {
                 fs::set_permissions(&path, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
             }
+            crate::xattrs::write(&path, &attrs)?;
         }
         if meta.is_dir() {
             chown_tree(&path, device, moves, seen)?;

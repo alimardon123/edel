@@ -1865,12 +1865,14 @@ fn copy_into_tree(a_root: &Path, tree: &Path, copy: &addons::Copy) -> Result<()>
     } else {
         fs::copy(&src, &dst).with_context(|| format!("copying {}", src.display()))?;
     }
+    // The owner first: a change of owner drops the set-id bits and the
+    // file's capabilities, which the mode and the attributes then put back.
+    std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
+        .with_context(|| format!("setting the owner of {}", dst.display()))?;
     if !link {
         fs::set_permissions(&dst, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
     }
-    std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
-        .with_context(|| format!("setting the owner of {}", dst.display()))?;
-    Ok(())
+    crate::xattrs::write(&dst, &crate::xattrs::read(&src)?)
 }
 
 /// Gives each folder below `tree` at `rel` the time of the folder at the

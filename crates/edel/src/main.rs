@@ -34,6 +34,7 @@ mod shell;
 mod speaker_boot;
 mod system_power;
 mod update;
+mod xattrs;
 
 use std::path::{Path, PathBuf};
 
