@@ -18,6 +18,7 @@ mod drm;
 mod edelshell;
 mod everyday;
 mod extworkspace;
+mod frame_rate;
 mod fullscreen;
 mod games;
 mod glance;
