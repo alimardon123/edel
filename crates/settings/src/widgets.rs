@@ -16,7 +16,7 @@ use edel::i18n::{tr, trf};
 use edel::tokens::Colour;
 
 use crate::files::Files;
-use crate::{actions, icon, rows};
+use crate::{actions, icon, rows, status};
 
 /// How wide a page's text and cards grow before they stop and centre,
 /// margins included, so lines stay easy to read on a wide screen.
@@ -721,7 +721,11 @@ pub fn output_row(group: &gtk::Box) -> gtk::Label {
 /// Shows `text` in a row made by [`output_row`] (none hides it), as an
 /// error when `failed`.
 pub fn say(row: &gtk::Label, text: &str, failed: bool) {
-    row.set_label(text);
+    if failed {
+        row.set_label(&status::said(text));
+    } else {
+        row.set_label(text);
+    }
     row.set_visible(!text.is_empty());
     if failed {
         row.add_css_class("edel-error");
@@ -1778,7 +1782,7 @@ impl Line {
             self.row.subtitle.set_label(&self.words(source));
         } else {
             self.row.subtitle.add_css_class("edel-error");
-            self.row.subtitle.set_label(problem.as_str());
+            self.row.subtitle.set_label(&status::said(&problem));
         }
         let reset = if self.machine {
             !matches!(source, edel::settings::Source::Release)

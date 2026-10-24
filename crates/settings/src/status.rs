@@ -459,7 +459,7 @@ pub fn plain_failure(doing: Doing, message: &str, root: bool) -> String {
 /// `message` without the `edel update: ` that `edel` starts a failure's line
 /// with, which a person reading a sentence does not need
 /// (`docs/MESSAGES.md`).
-fn unprefixed(message: &str) -> &str {
+pub fn unprefixed(message: &str) -> &str {
     let message = message.trim();
     message
         .strip_prefix("edel ")
@@ -487,6 +487,20 @@ pub fn sentence(message: &str) -> String {
         text.push('.');
     }
     text
+}
+
+/// What `edel` printed for a failure as Settings shows it: each line a
+/// sentence without the command's prefix, as `docs/MESSAGES.md` asks, so a
+/// page never shows `edel install: ...` in lower case. A sentence stays as
+/// it is.
+pub fn said(message: &str) -> String {
+    message
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| sentence(unprefixed(line)))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[cfg(test)]
@@ -772,6 +786,23 @@ mod tests {
             view(&inputs(&phase, Some(&s))).title,
             "Restart to finish updating"
         );
+    }
+
+    #[test]
+    fn a_failure_is_shown_as_sentences() {
+        assert_eq!(
+            said("edel install: \"mount\" failed with exit status: 32\n"),
+            "\"mount\" failed with exit status: 32."
+        );
+        assert_eq!(
+            said("warning: x\nedel settings: no such key"),
+            "Warning: x.\nNo such key."
+        );
+        assert_eq!(
+            said("Wrong password. Type it again."),
+            "Wrong password. Type it again."
+        );
+        assert_eq!(said(""), "");
     }
 
     #[test]

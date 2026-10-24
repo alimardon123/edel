@@ -521,6 +521,12 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
+msgid "This account has no home folder to keep your settings in."
+msgstr ""
+
+msgid "Could not save this change in your settings file ({path}): this account may not write it. Log out and in again, or ask an administrator."
+msgstr ""
+
 msgid "no disk to install on"
 msgstr ""
 
