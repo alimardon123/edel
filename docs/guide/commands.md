@@ -160,13 +160,13 @@ Make FILE this machine's settings and apply it, such as a file exported on anoth
 
 Print this machine as a settings file, to keep or to import on another machine, and the /etc files it changed.
 
-### `edel settings check FILE`
+### `edel settings check [FILE]`
 
 Check a settings file strictly: every unknown key, value or format, and every key this release does not act on yet, is refused.
 
 | | What it does |
 |---|---|
-| `FILE` | The settings file, a path or an https:// address |
+| `FILE` | The settings file, a path or an https:// address; without one, your own file and the machine's |
 
 ## `edel image`
 

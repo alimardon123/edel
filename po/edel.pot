@@ -1382,6 +1382,9 @@ msgstr ""
 msgid "no web apps yet; make one with edel web-app add URL"
 msgstr ""
 
+msgid "no settings file yet, so there is nothing to check; every setting is at its default"
+msgstr ""
+
 msgid "{path}: ok"
 msgstr ""
 
@@ -3084,6 +3087,9 @@ msgid "Print this machine as a settings file, to keep or to import on another ma
 msgstr ""
 
 msgid "Check a settings file strictly: every unknown key, value or format, and every key this release does not act on yet, is refused"
+msgstr ""
+
+msgid "The settings file, a path or an https:// address; without one, your own file and the machine's"
 msgstr ""
 
 msgid "Build and inspect Edel OS images"
