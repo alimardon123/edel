@@ -977,7 +977,7 @@ mod tests {
             glyphs: SwashCache::new(),
             family: "Inter".into(),
         };
-        let mut line = text.line("Wrong password, try again", 14.0);
+        let mut line = text.line("Wrong password. Type it again.", 14.0);
         assert_eq!(line.width, 0.0);
         assert_eq!(text.fit("Settings", 14.0, 40.0).width, 0.0);
         let mut pixmap = Pixmap::new(64, 16).unwrap();

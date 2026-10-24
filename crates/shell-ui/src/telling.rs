@@ -87,7 +87,7 @@ pub fn fallback(record: &str) -> Option<Notification> {
         app: APP.to_string(),
         icon: "status-problem".to_string(),
         summary: tr("The last update did not start").to_string(),
-        body: tr("Edel OS went back to the version before it, so everything works as it did and nothing was lost.").to_string(),
+        body: tr("Edel OS went back to the version before it, so everything works as it did and nothing was lost. The next update tries again; open Updates to send a report if it keeps happening.").to_string(),
         actions: open_updates(),
         timeout: -1,
         urgency: Urgency::Normal,

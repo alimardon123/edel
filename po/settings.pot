@@ -347,13 +347,13 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
-msgid "could not run {program}: {why}; its rule for edel comes with the machine feature"
+msgid "Settings could not ask for administrator rights, as {program} did not start: {why}. This release is damaged: run edel rollback, or send a report."
 msgstr ""
 
 msgid "could not finish {program}: {why}"
 msgstr ""
 
-msgid "could not run edel: {why}; the edel tool should be in /usr/bin"
+msgid "Settings could not run edel, which does this: {why}. This release is damaged: restart, and if it repeats, send a report."
 msgstr ""
 
 msgid "Strong edges and the plainest colours, for text that is easy to read"
@@ -422,12 +422,6 @@ msgstr ""
 msgid "Set by this machine"
 msgstr ""
 
-msgid "Automatic ({current})"
-msgstr ""
-
-msgid "the release"
-msgstr ""
-
 msgid "Cursor and icons"
 msgstr ""
 
@@ -438,6 +432,9 @@ msgid "The pointer's look in every app that starts after this"
 msgstr ""
 
 msgid "The apps' icons in the panel, the dock, the launcher and the title bars"
+msgstr ""
+
+msgid "Automatic ({current})"
 msgstr ""
 
 msgid "Automatic"
@@ -482,7 +479,7 @@ msgstr ""
 msgid "Edit"
 msgstr ""
 
-msgid "the call to the desktop stopped"
+msgid "The desktop did not answer. Log out and in again, then try once more."
 msgstr ""
 
 msgid "The desktop is not running, so its widgets cannot be edited now:\n{why}"
@@ -1700,6 +1697,9 @@ msgstr ""
 msgid "When plugged in"
 msgstr ""
 
+msgid "Edel OS's choice"
+msgstr ""
+
 msgid "From the preset"
 msgstr ""
 
@@ -2198,7 +2198,7 @@ msgstr ""
 msgid "Size {size}"
 msgstr ""
 
-msgid "the command stopped without an answer; try again"
+msgid "Edel OS did not answer. Try again."
 msgstr ""
 
 msgid "The people who use this computer."
@@ -2327,7 +2327,7 @@ msgstr ""
 msgid "{name} can log in now, but the computer did not restart: {why}. Restart it to log in as {name}."
 msgstr ""
 
-msgid "the account could not be made; try again"
+msgid "Your account could not be made, as the command stopped without an answer. Press Start using Edel OS again."
 msgstr ""
 
 msgid "Add the fonts this language needs"

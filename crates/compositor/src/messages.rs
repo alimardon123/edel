@@ -10,15 +10,15 @@ use std::fmt::Display;
 use std::path::Path;
 
 /// The context of the fatal error when no graphics card is found.
-pub const NO_GPU: &str = "no graphics card found, so there is no screen to draw on; the desktop needs a GPU with a driver (a /dev/dri/card file), and a virtual machine needs a virtual GPU";
+pub const NO_GPU: &str = "the desktop could not start: no graphics card answered; on a virtual machine, give it a virtual graphics card; on a computer, run edel report and send the file it writes";
 
 /// The context when the card list cannot be read.
-pub const GPU_LIST: &str = "could not list the graphics cards; is udev running?";
+pub const GPU_LIST: &str = "the desktop could not start: the list of graphics cards could not be read; restart the computer, and if this comes back run edel report and send the file it writes";
 
 /// The context when the card's file cannot be opened.
 pub fn gpu_open(path: &Path) -> String {
     format!(
-        "could not open the graphics card {}; this user needs to be in group video or seat",
+        "could not open the graphics card {}: this account may not use the screen; log out and in again, and if it repeats run doas edel settings apply, which gives the people at the computer the screen",
         path.display()
     )
 }
@@ -36,8 +36,7 @@ pub fn gpu_missing(path: &Path, seen: &str) -> String {
 }
 
 /// The context when EGL, the way to draw with the card, does not start.
-pub const NO_EGL: &str =
-    "could not start EGL on the graphics card; its Mesa driver is missing or too old";
+pub const NO_EGL: &str = "the desktop could not draw on this graphics card: its driver is missing or too old; run edel report and send the file it writes, as this card needs support in Edel OS";
 
 /// Started inside another desktop, but built without the development
 /// window (M6.17): it draws on the graphics card instead.
@@ -392,11 +391,11 @@ mod tests {
 
     #[test]
     fn a_missing_graphics_card_says_what_the_desktop_needs() {
-        assert!(NO_GPU.starts_with("no graphics card found, so there is no screen to draw on;"));
-        assert!(NO_GPU.contains("a virtual machine needs a virtual GPU"));
+        assert!(NO_GPU.starts_with("the desktop could not start: no graphics card answered;"));
+        assert!(NO_GPU.contains("on a virtual machine, give it a virtual graphics card"));
         assert_eq!(
             gpu_open(Path::new("/dev/dri/card0")),
-            "could not open the graphics card /dev/dri/card0; this user needs to be in group video or seat"
+            "could not open the graphics card /dev/dri/card0: this account may not use the screen; log out and in again, and if it repeats run doas edel settings apply, which gives the people at the computer the screen"
         );
         assert!(
             gpu_missing(Path::new("/dev/dri/card0"), "/dev/dri/card0: not found").contains(

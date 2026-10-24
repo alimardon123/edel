@@ -755,7 +755,7 @@ fn failed(doing: Doing, done: &cmd::Outcome) -> Phase {
 fn stopped(doing: Doing) -> Phase {
     Phase::Failed {
         doing,
-        message: tr("the command stopped without an answer; try again").to_string(),
+        message: tr("Edel OS did not answer. Try again.").to_string(),
     }
 }
 
