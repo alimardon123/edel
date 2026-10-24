@@ -139,6 +139,36 @@ rm -f out/fleet-seed.img
 mkfs.vfat -C -n EDEL-SEED out/fleet-seed.img 4096
 mcopy -i out/fleet-seed.img ci/fleet/erase.toml "::$settings_name"
 
+# The server (roadmap M7.4): ci/server/vm.toml, which carries the containers
+# add-on, with a FAT EDEL-SEED volume holding the server's settings (admin
+# ci with the system test's ssh key, ssh on, the containers add-on) and the
+# same settings named ci-cloud as the user data server-test.sh serves from
+# a stand-in for a cloud's metadata address.
+build "$version" ci/server/vm.toml --no-compress --health-timeout 30 --out out/server-test
+server_settings() {
+	cat <<EOF
+format = 1
+
+[network]
+hostname = "$1"
+
+[users.ci]
+admin = true
+ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
+
+[services]
+ssh = true
+
+[addons]
+installed = ["containers"]
+EOF
+}
+server_settings ci-server >out/server-test/seed.toml
+server_settings ci-cloud >out/server-test/user-data.toml
+rm -f out/server-test/seed.img
+mkfs.vfat -C -n EDEL-SEED out/server-test/seed.img 4096
+mcopy -i out/server-test/seed.img out/server-test/seed.toml "::$settings_name"
+
 # The install test image (roadmap M2.4, M2.5): the CI VM image (ci/vm/vm.toml) plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
@@ -260,5 +290,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
+	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test

@@ -13,7 +13,8 @@
 #   fresh      `desktop-test.sh fresh`, the released image as a computer's
 #              own disk with nobody on it; it reads live's archive
 #   fleet      fleet-test.sh, the fleet images and the stick that installs
-#              itself (M7.3)
+#              itself (M7.3), then server-test.sh, the seeded server and
+#              the cloud instance (M7.4)
 # Each lane runs its tests in order and stops at the first failure.
 #
 #   sh ci/vm-tests.sh             every lane on this machine: installed beside
@@ -51,7 +52,7 @@ run_lane() {
 	system) lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
-	fleet) lane fleet-test.sh ;;
+	fleet) lane fleet-test.sh server-test.sh ;;
 	*) no_lane "$1" ;;
 	esac
 }
@@ -74,7 +75,7 @@ files() {
 	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test ;;
 	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-x86_64.img out/install-file.img ;;
-	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img ;;
+	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/keys out/edel-container-x86_64.tar.gz ;;
 	*) no_lane "$1" ;;
 	esac
 }

@@ -116,6 +116,11 @@ pub fn boot() -> Result<()> {
             ("path", &target.display().to_string()),
         ],
     ));
+    // The network is up now, and the boot that applies the file stays
+    // offline, so the add-ons it chooses are fetched first (M7.2b).
+    if let Err(err) = crate::addons::fetch_chosen() {
+        say(&format!("{err:#}"));
+    }
     wait_for_confirmed();
     crate::system_power::run(crate::system_power::Action::Restart)
 }
