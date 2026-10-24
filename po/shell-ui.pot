@@ -221,13 +221,13 @@ msgstr ""
 msgid "Wrong password. Type it again."
 msgstr ""
 
-msgid "Passwords cannot be checked on this computer, so the screen stays locked. Press Ctrl+Alt+F2 and log in there to end the session."
+msgid "Passwords cannot be checked here. Log in with Ctrl+Alt+F2."
 msgstr ""
 
 msgid "Wrong username or password. Type them again."
 msgstr ""
 
-msgid "Could not start your session. Try again, or press Ctrl+Alt+F2 to log in on a text screen."
+msgid "Could not start your session. Try again, or log in with Ctrl+Alt+F2."
 msgstr ""
 
 msgid "1 notification"
