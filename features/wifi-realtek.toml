@@ -1,0 +1,13 @@
+# Realtek Wi-Fi (M8.17d, ADR-012): a hardware pack.
+format = 1
+summary = "Realtek Wi-Fi: the firmware of the laptops' and dongles' chips"
+why = "rtlwifi, rtw88 and rtw89 cannot start a Realtek Wi-Fi chip without its firmware (about 6 MiB), which only a machine with one needs, so it is a pack the stick carries and such a machine gets. Realtek's wired chips' firmware is small and stays in the base (feature laptop), so a wired machine is online without any pack."
+packages = ["linux-firmware-rtlwifi", "linux-firmware-rtw88", "linux-firmware-rtw89"]
+addon = true
+# Realtek's PCI Wi-Fi (network, other) and its USB dongles.
+hardware = ["pci:v000010ECd*bc02sc80*", "usb:v0BDAp*"]
+
+# Every chip of rtlwifi, rtw88 and rtw89.
+[[keep]]
+under = "lib/firmware"
+files = ["rtlwifi/*", "rtw88/*", "rtw89/*"]

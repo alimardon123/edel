@@ -18,14 +18,12 @@ use gtk::prelude::*;
 use edel::i18n::{tr, trf};
 
 use crate::files::Files;
+use crate::widgets::CONTROL_WIDTH;
 use crate::widgets::{Line, exit_text, monitors, reset_words, set_words};
 use crate::{cmd, widgets};
 
 /// The key the row writes.
 const KEY: &str = "system.profiles";
-
-/// The width of the choice, as the installer's rows have it.
-const CONTROL_WIDTH: i32 = 240;
 
 /// The choice's entries: None (no name), then the release's profiles.
 fn names() -> Vec<Option<&'static str>> {

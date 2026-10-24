@@ -26,6 +26,7 @@ use edel::i18n::{n_, tr, trf};
 use edel::settings::{LOCATION_ENABLED, PAGES, SettingsFile, Source};
 
 use crate::files::Files;
+use crate::widgets::CONTROL_WIDTH;
 use crate::widgets::{Line, exit_text, monitors, reset_words, set_words};
 use crate::{cmd, rows, widgets};
 
@@ -36,9 +37,6 @@ const ONLINE: &str = "location.online";
 
 /// The time zone key the place's first entry reads (`region.timezone`).
 const ZONE: &str = "region.timezone";
-
-/// The width of the place's choice, as Region's time zone has it.
-const CONTROL_WIDTH: i32 = 240;
 
 /// The city a time zone stands for, as people read it, or none: UTC names no
 /// city, and a zone with no coordinates in tzdata names none either.

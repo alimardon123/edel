@@ -541,8 +541,13 @@ pub fn language_answer(value: &str) -> Result<String, String> {
             .all(|c| c.is_ascii_alphanumeric() || "_.@-".contains(c))
     {
         Ok(value.to_string())
+    } else if value.is_empty() {
+        Err(tr("choose a language, such as en_US.UTF-8 or de_DE.UTF-8").to_string())
     } else {
-        Err(tr("a language such as en_US.UTF-8 or de_DE.UTF-8").to_string())
+        Err(trf(
+            "{value} is not a language; choose one such as en_US.UTF-8 or de_DE.UTF-8",
+            &[("value", &format!("{value:?}"))],
+        ))
     }
 }
 
@@ -581,9 +586,25 @@ pub fn profile_answer(value: &str) -> Result<String, String> {
 pub fn hostname_answer(value: &str) -> Result<String, String> {
     if settings::is_hostname(value) {
         Ok(value.to_string())
+    } else if value.is_empty() {
+        Err(
+            tr("choose a computer name: letters, digits and hyphens, up to 63, such as ali-laptop")
+                .to_string(),
+        )
     } else {
-        Err(tr("letters, digits and hyphens, up to 63").to_string())
+        Err(trf(
+            "{value} is not a computer name: use letters, digits and hyphens, up to 63, such as ali-laptop",
+            &[("value", &format!("{value:?}"))],
+        ))
     }
+}
+
+/// Whether an install onto a computer of `form` (`form_factor`) encrypts
+/// its data unless asked otherwise (M8.2): laptops and computers with a
+/// screen do, as they are the ones lost or left; a virtual machine or a
+/// computer without a screen starts unattended and stays plain.
+pub fn encrypts_by_default(form: &str, screen: bool) -> bool {
+    form == "laptop" || (form == "pc" && screen)
 }
 
 /// What kind of computer this is, for the suggested computer name, from
