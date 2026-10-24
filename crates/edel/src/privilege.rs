@@ -214,20 +214,21 @@ pub fn gate(command: &Commands, password_stdin: bool) -> Result<()> {
     {
         return Ok(());
     }
-    enforce(need(command), None)
+    enforce(need(command), &format!("edel {}", command.name()), None)
 }
 
 /// Asks the password of the administrator who ran doas, before a change
 /// that `what` names (such as "changing root's ssh keys"). Nothing is asked
 /// when `edel` runs as root with no doas, or as anyone but root.
 pub fn confirm(what: &str) -> Result<()> {
-    enforce(Need::Password, Some(what))
+    enforce(Need::Password, "edel settings", Some(what))
 }
 
 /// Applies [`decide`] to this process: reads what it needs, and bails with
 /// the refusal. `note` says what the password is for, shown before the
-/// prompt.
-fn enforce(need: Need, note: Option<&str>) -> Result<()> {
+/// prompt with `prefix`, the command's own (the messages audit's row 47);
+/// without one, a person at a terminal is told why a password is asked.
+fn enforce(need: Need, prefix: &str, note: Option<&str>) -> Result<()> {
     let euid = users::current().unwrap_or(u32::MAX);
     let doas = std::env::var(places::AS_ROOT_USER)
         .ok()
@@ -243,11 +244,18 @@ fn enforce(need: Need, note: Option<&str>) -> Result<()> {
         }
         Decision::AskPassword => {
             let user = doas.unwrap_or_default();
-            if let Some(what) = note {
-                println!(
-                    "edel settings: {}",
+            match note {
+                Some(what) => println!(
+                    "{prefix}: {}",
                     trf("{what} needs your password", &[("what", what)])
-                );
+                ),
+                // Settings gives the password on standard input and has
+                // said why in its own dialog.
+                None if !FROM_STDIN.load(Ordering::Relaxed) => println!(
+                    "{prefix}: {}",
+                    tr("this changes the system, so it asks your password")
+                ),
+                None => {}
             }
             ask(&user)
         }
