@@ -14,11 +14,13 @@ update_image_mib = 700
 
 # The one image (images/edel.toml, M8.17) booted with no screen: CI's first
 # measurement on 2026-10-17 (1099 MiB, 4.34 s, 85 MiB) plus 20 percent. The
-# VM image it replaced measured 91 MiB, 6.42 s and 63 MiB on 2026-10-02; the
-# root holds the desktop's files until it becomes an add-on (M8.17b).
+# VM image it replaced measured 91 MiB, 6.42 s and 63 MiB on 2026-10-02.
+# Since the desktop became an add-on (M8.17c) the root and memory are CI's
+# median on 2026-10-23 (461 MiB, 72 MiB) plus 20 percent; the boot keeps
+# its budget, as the VM's boot swings with the runner (3.2 to 3.7 s that day).
 #
 # Used space on the root (`df -Pm /` in the guest), in MiB.
-headless_root_mib = 1319
+headless_root_mib = 553
 
 # Seconds from the kernel's start to the confirmed slot (`/proc/uptime`
 # when edel-boot-ok runs), median of three boots with KVM.
@@ -26,7 +28,7 @@ headless_boot_seconds = 5.2
 
 # Memory in use at that moment (MemTotal minus MemAvailable), in MiB,
 # median of three boots with 512 MiB.
-headless_memory_mib = 102
+headless_memory_mib = 87
 
 # The desktop (roadmap M4.2a), from the sway baseline CI measured on
 # 2026-10-03 in PR #41 (ci/desktop-test.sh baseline, sway under llvmpipe
