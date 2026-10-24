@@ -1000,47 +1000,95 @@ pub fn ask_name(
     entry.select_region(0, -1);
 }
 
-/// A yes or no question in our own look: `message` as the heading,
-/// `detail` under it, then Cancel and `act`, in a small modal window over
-/// `near`'s, titled `act`. Cancel is the default (Return) and Escape
-/// closes, so the safe answer is the easy one; `danger` draws `act` in
-/// the problem colour, as a Delete is. `done` runs once, on `act`.
-pub fn confirm(
+/// What a prompt shows.
+pub struct Prompt<'a> {
+    /// The window's title
+    pub title: &'a str,
+    /// The heading
+    pub message: &'a str,
+    /// A code shown large under the heading, and how a screen reader says
+    /// it (its figures one by one)
+    pub code: Option<(&'a str, &'a str)>,
+    /// The line under it; empty for none
+    pub detail: &'a str,
+    /// The button that says yes; none for a prompt with Cancel alone
+    pub act: Option<&'a str>,
+    /// Whether `act` is drawn in the problem colour
+    pub danger: bool,
+}
+
+/// What a prompt does with the person's answer, once.
+type Answer = Box<dyn FnOnce(bool)>;
+
+/// An open prompt, which its caller can take away when the question is
+/// gone, without an answer.
+pub struct Prompted {
+    window: gtk::Window,
+    pending: Rc<RefCell<Option<Answer>>>,
+}
+
+impl Prompted {
+    /// Closes it without calling its `done`.
+    pub fn dismiss(&self) {
+        self.pending.borrow_mut().take();
+        self.window.close();
+    }
+}
+
+/// A question or a code in our own look, in a small modal window over
+/// `near`'s: the heading, the code, the line under it, then Cancel and the
+/// act. Cancel is the default (Return) and Escape closes, so the safe
+/// answer is the easy one. `done` runs once: `true` on the act, `false`
+/// when the person cancels or closes it, never after [`Prompted::dismiss`].
+pub fn prompt(
     near: &gtk::Widget,
-    message: &str,
-    detail: &str,
-    act: &str,
-    danger: bool,
-    done: impl FnOnce() + 'static,
-) {
-    let window = modal(near, act, 360, |b| {
+    shown: Prompt<'_>,
+    done: impl FnOnce(bool) + 'static,
+) -> Prompted {
+    let window = modal(near, shown.title, 360, |b| {
         b.css_classes(["edel"])
             .accessible_role(gtk::AccessibleRole::AlertDialog)
     });
-    window.update_property(&[gtk::accessible::Property::Label(message)]);
+    window.update_property(&[gtk::accessible::Property::Label(shown.message)]);
     let heading = gtk::Label::builder()
-        .label(message)
+        .label(shown.message)
         .xalign(0.0)
         .wrap(true)
         .css_classes(["edel-prompt-title"])
         .build();
     let body = dialog_body(6);
     body.append(&heading);
-    if !detail.is_empty() {
+    if let Some((code, spoken)) = shown.code {
+        let figures = gtk::Label::builder()
+            .label(code)
+            .xalign(0.0)
+            .css_classes(["edel-code"])
+            .build();
+        figures.update_property(&[gtk::accessible::Property::Label(spoken)]);
+        body.append(&figures);
+    }
+    if !shown.detail.is_empty() {
         let under = gtk::Label::builder()
-            .label(detail)
+            .label(shown.detail)
             .xalign(0.0)
             .wrap(true)
             .css_classes(["edel-prompt-detail"])
             .build();
         body.append(&under);
+        window.update_property(&[gtk::accessible::Property::Description(shown.detail)]);
     }
     let cancel = action(tr("Cancel"), false);
-    let act_button = action(act, !danger);
-    if danger {
-        act_button.add_css_class("edel-danger");
-    }
-    let buttons = dialog_buttons(&[&cancel, &act_button]);
+    let act_button = shown.act.map(|act| {
+        let button = action(act, !shown.danger);
+        if shown.danger {
+            button.add_css_class("edel-danger");
+        }
+        button
+    });
+    let buttons = match &act_button {
+        Some(act_button) => dialog_buttons(&[&cancel, act_button]),
+        None => dialog_buttons(&[&cancel]),
+    };
     buttons.set_margin_top(14);
     body.append(&buttons);
     window.set_child(Some(&body));
@@ -1058,20 +1106,63 @@ pub fn confirm(
     });
     window.add_controller(keys);
 
+    let pending: Rc<RefCell<Option<Answer>>> = Rc::new(RefCell::new(Some(Box::new(done))));
+    // Cancel, Escape and the window's own close button all close the
+    // window; the close handler answers "no" unless the act took the answer.
     let close = window.clone();
     cancel.connect_clicked(move |_| close.close());
-    type Once = Box<dyn FnOnce()>;
-    let pending: Rc<RefCell<Option<Once>>> = Rc::new(RefCell::new(Some(Box::new(done))));
-    let (dialog, run) = (window.clone(), pending);
-    act_button.connect_clicked(move |_| {
-        dialog.close();
-        let next = run.borrow_mut().take();
+    let answered = pending.clone();
+    window.connect_close_request(move |_| {
+        let next = answered.borrow_mut().take();
         if let Some(done) = next {
-            done();
+            done(false);
         }
+        glib::Propagation::Proceed
     });
+    if let Some(act_button) = &act_button {
+        let (dialog, run) = (window.clone(), pending.clone());
+        act_button.connect_clicked(move |_| {
+            let next = run.borrow_mut().take();
+            dialog.close();
+            if let Some(done) = next {
+                done(true);
+            }
+        });
+    }
     window.present();
     cancel.grab_focus();
+    Prompted { window, pending }
+}
+
+/// A yes or no question in our own look: `message` as the heading,
+/// `detail` under it, then Cancel and `act`, in a small modal window over
+/// `near`'s, titled `act`. Cancel is the default (Return) and Escape
+/// closes, so the safe answer is the easy one; `danger` draws `act` in
+/// the problem colour, as a Delete is. `done` runs once, on `act`.
+pub fn confirm(
+    near: &gtk::Widget,
+    message: &str,
+    detail: &str,
+    act: &str,
+    danger: bool,
+    done: impl FnOnce() + 'static,
+) {
+    prompt(
+        near,
+        Prompt {
+            title: act,
+            message,
+            code: None,
+            detail,
+            act: Some(act),
+            danger,
+        },
+        move |yes| {
+            if yes {
+                done();
+            }
+        },
+    );
 }
 
 /// Asks whether to delete `message` (Delete), with Cancel as the default and

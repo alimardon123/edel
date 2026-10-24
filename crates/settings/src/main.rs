@@ -36,6 +36,7 @@ mod look_pictures;
 mod motion;
 mod network;
 mod notifications;
+mod pairing;
 mod panels;
 mod power;
 mod preview;

@@ -10,8 +10,10 @@
 //! the keys that go with them are secrets, so no key of the settings file
 //! holds them (ADR-006). `bluetoothctl` is the one command line to this; a
 //! machine without it (no `bluetooth` feature) says so. A device is
-//! whatever BlueZ lists (ADR-011): nothing here assumes it is local. Std
-//! only.
+//! whatever BlueZ lists (ADR-011): nothing here assumes it is local. While
+//! a pairing runs, Settings answers BlueZ's questions as an agent of its
+//! own over D-Bus; the names it needs and the words for what can go wrong
+//! are here, so the reading and the words stay written once. Std only.
 
 use std::path::Path;
 use std::time::Duration;
@@ -31,13 +33,148 @@ pub const SYSFS: &str = "/sys/class/bluetooth";
 const READ_TIME: Duration = Duration::from_secs(8);
 
 /// How long pairing, which waits for the device, may take.
-const PAIR_TIME: Duration = Duration::from_secs(70);
+pub const PAIR_TIME: Duration = Duration::from_secs(70);
 
 /// How long a scan looks, in seconds.
 pub const SCAN_SECONDS: u32 = 10;
 
 /// The most devices read in one go: each is a call of its own.
 const MOST_DEVICES: usize = 40;
+
+/// BlueZ's name on the system bus.
+pub const BLUEZ: &str = "org.bluez";
+
+/// Where BlueZ's agent manager lives.
+pub const BLUEZ_ROOT: &str = "/org/bluez";
+
+/// The interfaces a pairing talks to.
+pub const AGENT_MANAGER: &str = "org.bluez.AgentManager1";
+pub const AGENT: &str = "org.bluez.Agent1";
+pub const DEVICE: &str = "org.bluez.Device1";
+
+/// Where an agent of ours sits on the bus while a pairing runs.
+pub const AGENT_PATH: &str = "/org/edel/bluetooth/agent";
+
+/// What the agent can do: show a code and take a yes or a no. It cannot
+/// take a code typed on this computer, so it never says it can.
+pub const AGENT_CAPABILITY: &str = "DisplayYesNo";
+
+/// The agent's interface, as BlueZ's doc/org.bluez.Agent.rst gives it.
+pub const AGENT_XML: &str = r#"<node>
+  <interface name="org.bluez.Agent1">
+    <method name="Release"/>
+    <method name="RequestPinCode"><arg name="device" type="o" direction="in"/><arg name="pincode" type="s" direction="out"/></method>
+    <method name="DisplayPinCode"><arg name="device" type="o" direction="in"/><arg name="pincode" type="s" direction="in"/></method>
+    <method name="RequestPasskey"><arg name="device" type="o" direction="in"/><arg name="passkey" type="u" direction="out"/></method>
+    <method name="DisplayPasskey"><arg name="device" type="o" direction="in"/><arg name="passkey" type="u" direction="in"/><arg name="entered" type="q" direction="in"/></method>
+    <method name="RequestConfirmation"><arg name="device" type="o" direction="in"/><arg name="passkey" type="u" direction="in"/></method>
+    <method name="RequestAuthorization"><arg name="device" type="o" direction="in"/></method>
+    <method name="AuthorizeService"><arg name="device" type="o" direction="in"/><arg name="uuid" type="s" direction="in"/></method>
+    <method name="Cancel"/>
+  </interface>
+</node>"#;
+
+/// The answer that refuses a question.
+pub const REJECTED: &str = "org.bluez.Error.Rejected";
+
+/// What Pair says about a device that is paired already: not a failure.
+pub const ALREADY_PAIRED: &str = "org.bluez.Error.AlreadyExists";
+
+/// What BlueZ asks the agent while a pairing runs, about the device at
+/// `device` (its object path).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Question {
+    /// Type `code` on the device, then Enter (DisplayPasskey, DisplayPinCode)
+    Show { device: String, code: String },
+    /// Does the device show `code`? (RequestConfirmation)
+    Confirm { device: String, code: String },
+    /// May the device go on (RequestAuthorization, AuthorizeService): yes
+    /// for the device being paired, no for any other
+    Allow { device: String },
+    /// A code to type on this computer (RequestPinCode, RequestPasskey),
+    /// which the agent refuses
+    Type { device: String },
+    /// BlueZ took its question back (Cancel) or let the agent go (Release)
+    Gone,
+}
+
+/// A passkey as the device shows it: six figures, zeros in front.
+pub fn passkey(number: u32) -> String {
+    format!("{number:06}")
+}
+
+/// The address in a device's object path,
+/// `/org/bluez/hci0/dev_A4_C3_F0_12_34_56` to `A4:C3:F0:12:34:56`; none
+/// for any other path (an adapter, a device's service).
+pub fn address_of_path(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    // ["", "org", "bluez", "hciN", "dev_..."]
+    if parts.len() != 5 || parts[1] != "org" || parts[2] != "bluez" || !parts[3].starts_with("hci")
+    {
+        return None;
+    }
+    let address = parts[4].strip_prefix("dev_")?.replace('_', ":");
+    is_address(&address).then_some(address)
+}
+
+/// The object path of the device at `address` among BlueZ's objects
+/// (`paths`, the keys of ObjectManager's GetManagedObjects), else why not.
+pub fn device_path<'a>(
+    paths: impl IntoIterator<Item = &'a str>,
+    address: &str,
+    name: &str,
+) -> Result<String> {
+    for path in paths {
+        if address_of_path(path).is_some_and(|a| a.eq_ignore_ascii_case(address)) {
+            return Ok(path.to_string());
+        }
+    }
+    bail!(
+        "{}",
+        trf(
+            "{name} is no longer nearby; search again, then pair",
+            &[("name", name)]
+        )
+    )
+}
+
+/// Why a pairing failed, from the error BlueZ or the bus gave (`said`, the
+/// D-Bus error's name, a colon and its message), in words that tell what
+/// to do.
+pub fn pair_failed(said: &str, timed_out: bool, name: &str) -> String {
+    explain(
+        &trf("pairing with {name}", &[("name", name)]),
+        said,
+        timed_out,
+        name,
+    )
+}
+
+/// What the page says when a device wants a code typed on this computer.
+pub fn type_here(name: &str, address: &str) -> String {
+    trf(
+        "{name} wants a code typed on this computer, which Settings cannot take yet; type bluetoothctl in a terminal, then pair {address} at its prompt, and enter the code there",
+        &[("name", name), ("address", address)],
+    )
+}
+
+/// What the page says when the system bus does not answer.
+pub fn bus_failed(error: &str) -> String {
+    trf(
+        "could not reach Bluetooth over the system bus: {error}; restart the computer if this stays",
+        &[("error", error)],
+    )
+}
+
+/// What the page says when a pairing is asked for while one runs.
+pub fn pairing_runs() -> String {
+    tr("a pairing is running already; finish it, then try again").to_string()
+}
+
+/// Bluetooth is not running though the computer has an adapter.
+pub fn not_running() -> String {
+    tr("Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off").to_string()
+}
 
 /// What a device is, from the icon BlueZ gives it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,12 +470,7 @@ fn has_adapter(sysfs: &Path) -> Result<bool> {
     let list = bluetoothctl(&words(&["list"]), READ_TIME)?;
     if !list.ok() || parse_list(&list.out).is_empty() {
         if kernel_has_adapter(sysfs) {
-            bail!(
-                "{}",
-                tr(
-                    "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
-                )
-            );
+            bail!("{}", not_running());
         }
         return Ok(false);
     }
@@ -392,9 +524,12 @@ pub fn scan_args() -> Vec<String> {
     ]
 }
 
-/// The arguments that pair with `address`. The agent that answers the
-/// device's questions has no keyboard and no screen, which is how
-/// headphones, speakers, mice and most phones pair ("Just Works").
+/// The arguments that pair with `address`, what the Pair row copies: the
+/// agent has no keyboard and no screen, which is how headphones, speakers,
+/// mice and most phones pair ("Just Works"). Settings itself pairs with an
+/// agent of its own that shows a code and asks whether numbers match
+/// (`crates/settings/src/pairing.rs`); on the command line the same is
+/// `bluetoothctl`'s own prompt: type `bluetoothctl`, then `pair ADDRESS`.
 pub fn pair_args(address: &str) -> Vec<String> {
     words(&["--agent", "NoInputNoOutput", "pair", address])
 }
@@ -424,10 +559,9 @@ pub fn scan() -> Result<()> {
     Ok(())
 }
 
-/// Pairs with a device, trusts it so it connects by itself next time, and
-/// connects.
-pub fn pair(address: &str, name: &str) -> Result<()> {
-    must(&pair_args(address), PAIR_TIME, name)?;
+/// Trusts a device that is paired, so it connects by itself next time, and
+/// connects it: what follows a pairing.
+pub fn trust_and_connect(address: &str, name: &str) -> Result<()> {
     must(&device_args("trust", address), READ_TIME, name)?;
     must(&device_args("connect", address), PAIR_TIME, name).map(drop)
 }
@@ -681,6 +815,100 @@ Device 00:11:22:33:44:55 (public)
             let message = format!("{:#}", read().unwrap_err());
             assert!(message.contains("has no bluetoothctl"), "{message}");
             assert!(message.contains("the bluetooth feature"), "{message}");
+        }
+    }
+
+    #[test]
+    fn a_passkey_keeps_its_zeros() {
+        assert_eq!(passkey(42), "000042");
+        assert_eq!(passkey(123456), "123456");
+    }
+
+    #[test]
+    fn a_device_path_gives_its_address() {
+        assert_eq!(
+            address_of_path("/org/bluez/hci0/dev_A4_C3_F0_12_34_56").as_deref(),
+            Some("A4:C3:F0:12:34:56")
+        );
+        for path in [
+            "/org/bluez/hci0",
+            "/org/bluez/hci0/dev_A4_C3_F0_12_34_56/service000a",
+            "/org/bluez/hci0/dev_XY",
+            "/org/edel/x/y/dev_A4_C3_F0_12_34_56",
+        ] {
+            assert_eq!(address_of_path(path), None, "{path}");
+        }
+    }
+
+    #[test]
+    fn the_device_is_found_among_bluezs_objects() {
+        let paths = [
+            "/org/bluez",
+            "/org/bluez/hci1",
+            "/org/bluez/hci1/dev_00_11_22_33_44_55",
+            "/org/bluez/hci1/dev_00_11_22_33_44_55/service0001",
+        ];
+        assert_eq!(
+            device_path(paths, "00:11:22:33:44:55", "Keys").unwrap(),
+            "/org/bluez/hci1/dev_00_11_22_33_44_55"
+        );
+        assert_eq!(
+            device_path(paths, "00:11:22:33:44:55".to_lowercase().as_str(), "Keys").unwrap(),
+            "/org/bluez/hci1/dev_00_11_22_33_44_55"
+        );
+        let missing = device_path(paths, "66:77:88:99:AA:BB", "Keys").unwrap_err();
+        assert_eq!(
+            format!("{missing}"),
+            "Keys is no longer nearby; search again, then pair"
+        );
+    }
+
+    #[test]
+    fn a_failed_pairing_says_what_to_do() {
+        assert_eq!(
+            pair_failed(
+                "org.bluez.Error.AuthenticationFailed: Authentication Failed",
+                false,
+                "Keys"
+            ),
+            "Keys refused to pair; put it in pairing mode and try again"
+        );
+        assert_eq!(
+            pair_failed("", true, "Keys"),
+            "Keys did not answer; check that it is on and close by, then try again"
+        );
+        assert_eq!(
+            pair_failed("org.bluez.Error.Failed: Input/output error", false, "Keys"),
+            "pairing with Keys failed: org.bluez.Error.Failed: Input/output error"
+        );
+    }
+
+    #[test]
+    fn a_code_typed_here_says_how_to_pair_on_the_command_line() {
+        assert_eq!(
+            type_here("Keys", "00:11:22:33:44:55"),
+            "Keys wants a code typed on this computer, which Settings cannot take yet; type bluetoothctl in a terminal, then pair 00:11:22:33:44:55 at its prompt, and enter the code there"
+        );
+    }
+
+    #[test]
+    fn the_agent_answers_no_more_than_it_says() {
+        assert_eq!(AGENT_CAPABILITY, "DisplayYesNo");
+        for method in [
+            "Release",
+            "RequestPinCode",
+            "DisplayPinCode",
+            "RequestPasskey",
+            "DisplayPasskey",
+            "RequestConfirmation",
+            "RequestAuthorization",
+            "AuthorizeService",
+            "Cancel",
+        ] {
+            assert!(
+                AGENT_XML.contains(&format!("<method name=\"{method}\"")),
+                "{method}"
+            );
         }
     }
 }
