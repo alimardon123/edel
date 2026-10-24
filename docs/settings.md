@@ -468,8 +468,8 @@ This page has no key in the file.
 |---|---|---|---|
 | `updates.channel` | The release channel whose updates this machine takes, such as stable or preview. | the image's | image |
 | `updates.version` | A release to stay on instead of following the channel; this release does not act on it yet. | follows the channel | release |
-| `updates.automatic` | Whether updates are checked, installed, or installed and restarted by themselves, or off; this release does not act on it yet. | not set yet | release |
-| `updates.restart_window` | The hours when a restart may happen by itself, such as 02:00-04:00; this release does not act on it yet. | none | release |
+| `updates.automatic` | Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due. | off | release |
+| `updates.restart_window` | The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour. | any hour | release |
 
 ### `system`
 

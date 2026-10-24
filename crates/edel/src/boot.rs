@@ -31,8 +31,13 @@ use edel::places;
 
 /// File system label of the EFI system partition.
 pub const ESP_LABEL: &str = "EDEL-ESP";
-/// GPT name and file system label of the data partition, partition 4.
+/// GPT name and file system label of the data partition, partition 4, and
+/// the name its unlocked device has when it is encrypted
+/// (`/dev/mapper/edel-data`, M8.2).
 pub const DATA_LABEL: &str = "edel-data";
+/// The label of an encrypted data partition's LUKS2 header, apart from the
+/// file system's inside it.
+pub const CRYPT_LABEL: &str = "edel-crypt";
 /// The data partition's GPT partition number.
 pub const DATA_PARTITION: u32 = 4;
 /// Size of the EFI system partition. Holds GRUB (about 1 MiB) with room to

@@ -20,7 +20,7 @@ export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 # Flatpak's triggers build the default apps' icon, desktop and MIME caches
 # at install when these tools are there (M6.2a); pipewire-tools gives
 # apps/make-repo.sh the pw-record it puts in the test runtime (M6.14b).
-apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi merge-usr mtools openssh-keygen pigz sfdisk tar flatpak \
+apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi merge-usr mtools openssh-keygen pigz qemu-img sfdisk tar flatpak \
 	gtk-update-icon-cache desktop-file-utils shared-mime-info pipewire-tools \
 	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev
 
@@ -139,6 +139,36 @@ rm -f out/fleet-seed.img
 mkfs.vfat -C -n EDEL-SEED out/fleet-seed.img 4096
 mcopy -i out/fleet-seed.img ci/fleet/erase.toml "::$settings_name"
 
+# The server (roadmap M7.4): ci/server/vm.toml, which carries the containers
+# add-on, with a FAT EDEL-SEED volume holding the server's settings (admin
+# ci with the system test's ssh key, ssh on, the containers add-on) and the
+# same settings named ci-cloud as the user data server-test.sh serves from
+# a stand-in for a cloud's metadata address.
+build "$version" ci/server/vm.toml --no-compress --health-timeout 30 --out out/server-test
+server_settings() {
+	cat <<EOF
+format = 1
+
+[network]
+hostname = "$1"
+
+[users.ci]
+admin = true
+ssh_keys = ["$(cat out/keys/ci-ssh.pub)"]
+
+[services]
+ssh = true
+
+[addons]
+installed = ["containers"]
+EOF
+}
+server_settings ci-server >out/server-test/seed.toml
+server_settings ci-cloud >out/server-test/user-data.toml
+rm -f out/server-test/seed.img
+mkfs.vfat -C -n EDEL-SEED out/server-test/seed.img 4096
+mcopy -i out/server-test/seed.img out/server-test/seed.toml "::$settings_name"
+
 # The install test image (roadmap M2.4, M2.5): the CI VM image (ci/vm/vm.toml) plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
@@ -148,6 +178,13 @@ mcopy -i out/fleet-seed.img ci/fleet/erase.toml "::$settings_name"
 build "$version" ci/vm/vm.toml --files ci/ab-test/files --files ci/install-test/files --slot-mib 1024 \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--no-addons --no-compress --out out/install-test
+# The updates test image (roadmap M7.5): ci/updates-test/vm.toml, under the
+# CI VM image's name, so the A/B test's update below is its update too, with
+# ci/updates-test/machine.toml (install and restart by itself) and a crontab
+# that runs the hourly job every minute from that update on the host.
+build "$version" ci/updates-test/vm.toml --files ci/updates-test/files --settings ci/updates-test/machine.toml \
+	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
+	--no-addons --no-compress --out out/updates-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 # With it, the test add-on ci-hello (M7.2a), built from its root, and
@@ -236,7 +273,7 @@ ln out/apps-test-update/edel-apps-test-x86_64.ext4.gz "$update/"
 tag=${EDEL_TAG:-v$version}
 rm -rf out/release out/channel
 mkdir -p out/release out/channel
-for f in out/*.ext4.gz out/*.img.gz out/*.tar.gz out/*.packages out/*.cdx.json out/*.*.toml; do
+for f in out/*.ext4.gz out/*.img.gz out/*.qcow2 out/*.tar.gz out/*.packages out/*.cdx.json out/*.*.toml; do
 	ln "$f" out/release/
 done
 # The update images are IMAGE.ext4.gz; the add-ons IMAGE.NAME.ext4.gz, each
@@ -260,5 +297,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/install-test out/keys out/release out/repro out/system-test
+	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/updates-test out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test

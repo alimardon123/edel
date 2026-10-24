@@ -191,15 +191,15 @@ pub fn normalize(value: &str, rules: Option<&str>) -> Result<String, String> {
         let (names, variants) = known(rules);
         for layout in &layouts {
             if !names.contains(&layout.name) {
-                return Err(format!(
-                    "{:?} is not a keyboard layout this machine knows; layouts are short names such as \"us\", \"de\", \"fr\" or \"ru\" (the list is {RULES})",
-                    layout.name
+                return Err(crate::i18n::trf(
+                    "{name} is not a keyboard layout this computer knows; layouts are short names such as \"us\", \"de\", \"fr\" or \"ru\", and the Keyboard layouts row on Settings' Region page lists them all",
+                    &[("name", &format!("{:?}", layout.name))],
                 ));
             }
             if layout.variant.is_some() && !variants.contains(&layout.to_string()) {
-                return Err(format!(
-                    "{layout} is not a variant of the {} layout this machine knows (the list is {RULES})",
-                    layout.name
+                return Err(crate::i18n::trf(
+                    "{layout} is not a variant of the {name} layout this computer knows; the Keyboard layouts row on Settings' Region page lists its variants",
+                    &[("layout", &layout.to_string()), ("name", &layout.name)],
                 ));
             }
         }

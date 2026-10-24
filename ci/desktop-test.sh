@@ -3099,7 +3099,7 @@ case_keyboard() {
 	# with a message that names its list; unset, the layout is US again.
 	guest 'keyboard bad'
 	wait_for 'DESKTOP-TEST: keyboard_bad ' || fail "the service did not report the refused layout"
-	value keyboard_bad | grep -q 'is not a keyboard layout this machine knows' ||
+	value keyboard_bad | grep -q 'is not a keyboard layout this computer knows' ||
 		fail "edel settings set region.keyboard=xx was not refused with its message: $(value keyboard_bad)"
 	guest 'keyboard de'
 	wait_for 'edel-compositor: keyboard layouts de, us' || fail "the compositor did not load the layouts de and us"

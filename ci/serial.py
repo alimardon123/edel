@@ -7,7 +7,8 @@ Python standard library only.
 Connects to SOCKET, the unix socket QEMU serves a serial port on
 (`-chardev socket,...,server=on`), retrying until it is there. For each
 pair in order it waits until the port has printed WAIT, then types
-ANSWER and Return. What the port printed goes to standard output, so a
+ANSWER and Return; an ANSWER of `@N TEXT` waits N seconds first, as a
+slow person would (M8.2). What the port printed goes to standard output, so a
 test can keep it and check that no password was echoed. Exits 1 when a
 WAIT has not come within the time limit (SERIAL_TIMEOUT, 900 s).
 """
@@ -49,6 +50,9 @@ def main(argv):
         seen = seen[seen.index(wait.encode()) + len(wait) :]
         # The prompt is out; give the program a moment to read.
         time.sleep(0.5)
+        if answer.startswith("@"):
+            pause, answer = answer[1:].split(" ", 1)
+            time.sleep(int(pause))
         sock.sendall(answer.encode() + b"\r")
     # What the program says after the last answer, until it goes quiet.
     quiet = time.monotonic() + 30

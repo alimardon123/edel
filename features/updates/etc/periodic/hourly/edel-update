@@ -1,0 +1,6 @@
+#!/bin/sh
+# Once an hour, from crond (roadmap M7.5): updates.automatic decides what
+# happens (edel update --automatic). The start is spread over the hour, so
+# machines that started together do not all ask for the list at once.
+sleep "$(($(od -An -N2 -tu2 /dev/urandom) % 3300))"
+exec edel update --automatic

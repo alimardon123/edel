@@ -20,3 +20,40 @@ repositories = ["main", "community"]
 # `docker buildx imagetools inspect alpine:3.24` (the multi-architecture
 # index's Digest, branch as above) and say so in the PR. Last read 2026-10-07.
 image_digest = "sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+
+# The id of every system account (an id from 100 to 999) the images' and
+# the add-ons' packages add or Alpine's base layout ships. busybox hands
+# such ids out in the order apk installs the packages, so one package more
+# would move the others, and a newer slot's new account could take an id
+# a machine already gave someone else, which data.rs's merge then has to
+# leave out. The build moves each to the id here and fails on one that
+# is not listed: give a new account the lowest id from 900 up that its
+# table below does not use yet, never one an account had before, and give
+# a user the id of its own group where that is free. Edel OS's own system
+# accounts (the live person, the admin group) have theirs in the code, at
+# 990. An id once listed stays with its name, even after its package goes.
+[alpine.users]
+klogd = 100
+messagebus = 101
+flatpak = 102
+geoclue = 103
+greetd = 104
+ntp = 123
+guest = 405
+
+[alpine.groups]
+users = 100
+klogd = 101
+messagebus = 102
+plugdev = 103
+pipewire = 104
+flatpak = 105
+geoclue = 106
+greetd = 107
+seat = 108
+lpadmin = 109
+scanner = 110
+ntp = 123
+abuild = 300
+utmp = 406
+ping = 999

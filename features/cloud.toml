@@ -1,0 +1,9 @@
+# Clouds (roadmap M7.4, ADR-009): the instance's user data is the
+# machine's first settings file, read by `edel boot cloud` (crates/edel/src/cloud.rs,
+# one entry per provider).
+format = 1
+summary = "Clouds: the instance's user data as the first settings file"
+why = "A server started in a cloud has no seed volume and nobody at its console, so its settings file (its users, ssh keys, hostname and add-ons) comes from the provider's user data, as cloud-init would take it but with no cloud-init and no cloud-config: the user data is the settings file itself. The service runs once at each boot and exits at once on a machine that has a settings file or whose firmware names no known cloud, so nothing waits on the network for it and nothing stays running."
+
+[services]
+default = ["edel-cloud"]

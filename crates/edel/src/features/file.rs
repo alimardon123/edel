@@ -5,6 +5,7 @@
 use super::is_name;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 /// The only feature format so far.
 pub const FORMAT: u32 = 1;
@@ -33,6 +34,12 @@ pub struct Feature {
     /// in an image definition).
     #[serde(default)]
     pub switchable: bool,
+    /// A settings key that switches this switchable feature (M7.5): its
+    /// services run only while the key is set to anything but `off` or
+    /// `false`, so the updates timer runs only while `updates.automatic`
+    /// asks for something; `services.NAME` still wins.
+    #[serde(default)]
+    pub while_set: Option<String>,
     /// Also built as a signed add-on (M7.2a).
     #[serde(default)]
     pub addon: bool,
@@ -115,6 +122,15 @@ pub struct Alpine {
     /// runs in a container nobody looked at (M3.9). Images do not use it.
     #[serde(default)]
     pub image_digest: Option<String>,
+    /// The id of each system user Alpine's packages add (an id from 100
+    /// to 999), pinned so that every build gives it the same one and a
+    /// newer slot's new account never takes an id a machine already gave
+    /// another (`account_ids`).
+    #[serde(default)]
+    pub users: BTreeMap<String, u32>,
+    /// The same for system groups.
+    #[serde(default)]
+    pub groups: BTreeMap<String, u32>,
 }
 
 /// OpenRC services to enable, by runlevel.

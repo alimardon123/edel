@@ -1,0 +1,18 @@
+# CI only (roadmap M7.4): a server for ci/server-test.sh, the CI VM image's
+# system (ci/vm/vm.toml) with the cloud feature and the containers add-on
+# carried on its data partition, as a server that chose it has it after
+# its first download. The released server is the one image
+# (images/edel.toml) with the server's settings.
+format = 2
+name = "edel-server"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "network", "cloud"]
+addons = ["containers"]
+
+[vm]
+kernel = "lts"
+slot_mib = 4096
+cmdline = "console=ttyS0"
+carry = ["containers"]

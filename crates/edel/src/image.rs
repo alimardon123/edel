@@ -187,6 +187,7 @@ impl Build<'_> {
             }
         }
         self.runner.run(apk.arg("add").args(&self.def.packages))?;
+        self.pin_accounts(root)?;
         // Before the initramfs is made, so it holds only what stays.
         self.keep_files(root)?;
         if let Some(vm) = &self.def.vm {
@@ -970,6 +971,7 @@ impl Build<'_> {
         self.gzip(&update)?;
         if self.compress {
             self.gzip(&disk)?;
+            self.qcow2(&disk)?;
         }
         println!("vm disk: {}", disk.display());
         println!("update image: {}", update.display());
@@ -1062,6 +1064,17 @@ impl Build<'_> {
     fn gzip(&self, file: &Path) -> Result<()> {
         self.runner
             .run(Command::new("pigz").args(["-k", "-f", "-n"]).arg(file))
+    }
+
+    /// Writes `<stem>.qcow2` next to the disk `disk`, compressed, the form
+    /// clouds and virtual machine hosts import (M7.4).
+    fn qcow2(&self, disk: &Path) -> Result<()> {
+        self.runner.run(
+            Command::new("qemu-img")
+                .args(["convert", "-q", "-c", "-f", "raw", "-O", "qcow2"])
+                .arg(disk)
+                .arg(disk.with_extension("qcow2")),
+        )
     }
 
     /// Makes the file system `image` of `root`'s files, labelled `label`:
@@ -1366,6 +1379,18 @@ impl Build<'_> {
         Ok(held)
     }
 
+    /// Moves the system accounts apk just added to `root` to the ids
+    /// `features/base.toml` pins, and fails on one it does not
+    /// (`account_ids`).
+    fn pin_accounts(&self, root: &Path) -> Result<()> {
+        self.runner
+            .step("move the system accounts to their pinned ids (features/base.toml)");
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        crate::account_ids::pin(root, &self.def.alpine.users, &self.def.alpine.groups)
+    }
+
     /// Takes the lines [`Build::hold_accounts`] added out again.
     fn release_accounts(&self, a_root: &Path, held: &[(&'static str, String)]) -> Result<()> {
         for (path, add) in held {
@@ -1440,6 +1465,7 @@ impl Build<'_> {
                 .args(["--arch", &self.def.arch, "--no-progress"]);
             self.runner
                 .run(apk.arg("--cache-dir").arg(cache).arg("add").args(&packages))?;
+            self.pin_accounts(&a_root)?;
         }
         self.release_accounts(&a_root, &held)?;
         for part in addon.parts() {
@@ -1839,12 +1865,14 @@ fn copy_into_tree(a_root: &Path, tree: &Path, copy: &addons::Copy) -> Result<()>
     } else {
         fs::copy(&src, &dst).with_context(|| format!("copying {}", src.display()))?;
     }
+    // The owner first: a change of owner drops the set-id bits and the
+    // file's capabilities, which the mode and the attributes then put back.
+    std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
+        .with_context(|| format!("setting the owner of {}", dst.display()))?;
     if !link {
         fs::set_permissions(&dst, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
     }
-    std::os::unix::fs::lchown(&dst, Some(meta.uid()), Some(meta.gid()))
-        .with_context(|| format!("setting the owner of {}", dst.display()))?;
-    Ok(())
+    crate::xattrs::write(&dst, &crate::xattrs::read(&src)?)
 }
 
 /// Gives each folder below `tree` at `rel` the time of the folder at the

@@ -1,0 +1,9 @@
+# The machine ci/updates-test.sh starts (roadmap M7.5): it installs and
+# restarts into updates by itself, at any hour.
+format = 1
+
+[network]
+hostname = "ci-updates"
+
+[updates]
+automatic = "install-and-restart"
