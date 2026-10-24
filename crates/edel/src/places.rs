@@ -166,6 +166,9 @@ pub const CONFIRMED: &str = run!("/confirmed");
 /// guard keeps the machine running rather than restarting it for ever;
 /// `edel status` shows it (M6.17).
 pub const NO_HEALTHY_SLOT: &str = run!("/no-healthy-slot");
+/// There while `edel boot mount-data` waits for the data's passphrase to
+/// be typed, so the guard's clock waits for the person (M8.2).
+pub const UNLOCK_WAITING: &str = run!("/unlock-waiting");
 /// Whether this boot has a screen, `yes` or `no`, decided once by the
 /// boot's `edel settings apply` (M8.17), so the guard, the login screen's
 /// live session and the console all follow the one answer the services did.

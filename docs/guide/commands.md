@@ -96,6 +96,8 @@ Install Edel OS on another disk, erasing it: the running system becomes slot A, 
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 | `--new-password-stdin` | Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it |
+| `--encrypt` | Encrypt the data partition with the password the install gives its person, or a passphrase asked for; laptops and computers with a screen are encrypted unless --no-encrypt |
+| `--no-encrypt` | Leave the data partition plain, readable by whoever has the disk |
 | `--unattended` | Install as the settings file's [install] table says, with nobody at the keyboard, once this slot is confirmed; without the table, do nothing (docs/FLEET.md) |
 
 ## `edel report [OPTIONS]`

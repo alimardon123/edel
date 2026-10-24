@@ -11,6 +11,7 @@ mod bom;
 mod boot;
 mod cloud;
 mod completion;
+mod crypt;
 mod data;
 mod def;
 mod default_apps;
@@ -212,10 +213,18 @@ enum Commands {
         /// --password-stdin), as Settings' installer page gives it
         #[arg(long, requires = "settings")]
         new_password_stdin: bool,
+        /// Encrypt the data partition with the password the install gives
+        /// its person, or a passphrase asked for; laptops and computers
+        /// with a screen are encrypted unless --no-encrypt
+        #[arg(long, conflicts_with = "no_encrypt")]
+        encrypt: bool,
+        /// Leave the data partition plain, readable by whoever has the disk
+        #[arg(long)]
+        no_encrypt: bool,
         /// Install as the settings file's [install] table says, with
         /// nobody at the keyboard, once this slot is confirmed; without
         /// the table, do nothing (docs/FLEET.md)
-        #[arg(long, conflicts_with_all = ["disk", "settings", "list", "find_settings", "plan", "yes"])]
+        #[arg(long, conflicts_with_all = ["disk", "settings", "list", "find_settings", "plan", "yes", "encrypt", "no_encrypt"])]
         unattended: bool,
     },
     /// Print what an issue about this machine needs, as TOML: the release,
@@ -970,6 +979,8 @@ fn run(command: Commands) -> Result<()> {
             plan,
             yes,
             new_password_stdin,
+            encrypt,
+            no_encrypt,
             ..
         } => {
             let settings = settings
@@ -982,6 +993,11 @@ fn run(command: Commands) -> Result<()> {
                 plan,
                 yes,
                 new_password_stdin,
+                match (encrypt, no_encrypt) {
+                    (true, _) => installer::Encrypt::On,
+                    (_, true) => installer::Encrypt::Off,
+                    _ => installer::Encrypt::Default,
+                },
             )
         }
         Commands::Report { esp, battery } => report::report(esp, battery),

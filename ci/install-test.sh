@@ -8,6 +8,8 @@
 # `edel install` with no arguments on the VM's second serial port, whose
 # questions ci/serial.py answers from out/install-tty.sock; the
 # transcript is out/install-tty.log, which must not show the password.
+# M8.2: that install is --encrypt; vdc then starts alone and its data's
+# passphrase is typed on its console, out/install-crypt.log.
 # M6.6b: the main install takes its settings file over https, from
 # https-serve.py on the runner with a throwaway authority made for this
 # run, which the guest fetches over plain http and adds to its own; the
@@ -105,10 +107,40 @@ esac
 if grep -q edel-ci-tty out/install-tty.log; then
 	tty_fail "the password was echoed on the terminal"
 fi
+[ "$(value 'tty header')" = keymap=de ] ||
+	tty_fail "vdc's data is not encrypted with its header naming the de console map: $(value 'tty header')"
+
+# M8.2: vdc alone starts and asks its data's passphrase on the serial
+# console. The typist answers a wrong one, then the right one after 130 s,
+# longer than the guard's 120 s: the wait is the person's, so the guard
+# never restarts the machine meanwhile.
+crypt_sock=out/install-crypt.sock
+crypt_log=out/install-crypt.log
+rm -f "$crypt_sock"
+python3 ci/serial.py "$crypt_sock" 'Type its passphrase, the password it was installed with: =not-the-one' \
+	'does not unlock this computer' "Type its passphrase, the password it was installed with: =@130 edel-ci-tty" \
+	>"$crypt_log" 2>&1 &
+typist=$!
+vm_console=$crypt_sock main_log=$log main_waited=$waited
+run_vm "$crypt_log" 'INSTALL-TEST: installed system up' "${INSTALL_TEST_TIMEOUT:-600}" -no-reboot \
+	-drive if=none,id=disk0,format=raw,file="$tty_disk",snapshot=on \
+	-device virtio-blk-pci,drive=disk0,bootindex=0
+vm_console='' log=$main_log crypt_waited=$waited waited=$main_waited
+kill "$typist" 2>/dev/null || :
+[ "$found" = 1 ] || fail "$crypt_log" "the encrypted disk did not start after its passphrase was typed"
+grep -q 'does not unlock this computer' "$crypt_log" || fail "$crypt_log" "a wrong passphrase was not refused"
+grep -q 'edel-data: /data is encrypted, on /dev/mapper/edel-data' "$crypt_log" ||
+	fail "$crypt_log" "/data is not on /dev/mapper/edel-data"
+if grep -q 'edel guard: health not reached' "$crypt_log"; then
+	fail "$crypt_log" "the guard counted the wait for the passphrase against the slot"
+fi
+if grep -q edel-ci-tty "$crypt_log"; then
+	fail "$crypt_log" "the passphrase was echoed on the console"
+fi
 tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1 >out/install-live-key
 [ -s out/install-live-key ] || fail "$log" "the live image printed no ssh host key"
 # The install walk (M8.15a): the guest times `edel install --yes` itself.
 set -- $(value 'walk install')
 walk install "seconds=${1:-}" "steps=${2:-}" || fail "$log" "edel install is over its budget (walk install, docs/REVIEW-experience.md)"
 cat "$log"
-echo "PASS: install refused its settings file over plain http, took it over https from a server its own authority vouched for, showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only, the profile picked among them (${waited}s)"
+echo "PASS: install refused its settings file over plain http, took it over https from a server its own authority vouched for, showed its plan and exited 3 without --yes, then installed onto the blank disk, slot A byte for byte the stick's; with no arguments it asked its questions on a serial terminal, the password unechoed, and installed vdc with only the answers in its settings file and ali's password hash root's only, the profile picked among them, its data encrypted with that password, which vdc then asked at its start, refusing a wrong one and waiting 130 s for the right one without the guard restarting it (${waited}s, then ${crypt_waited}s)"

@@ -187,13 +187,10 @@ pub fn install_args(disk: &str, file: &Path, plan: bool, password: bool) -> Vec<
         "--settings".to_string(),
         file.display().to_string(),
     ]);
-    if plan {
-        args.push("--plan".into());
-    } else {
-        args.push("--yes".into());
-        if password {
-            args.push("--new-password-stdin".into());
-        }
+    args.push(if plan { "--plan" } else { "--yes" }.into());
+    // The plan reads no password; it says the data is encrypted with it.
+    if password {
+        args.push("--new-password-stdin".into());
     }
     args
 }
@@ -1379,7 +1376,7 @@ impl Ui {
         widgets::say(&self.plan, tr("Working..."), false);
         let ui = self.clone();
         glib::spawn_future_local(async move {
-            let args = install_args(&disk, &file, true, false);
+            let args = install_args(&disk, &file, true, ui.password_needed());
             let done = gio::spawn_blocking(move || {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 cmd::edel_as_root(&args, None)
@@ -1683,6 +1680,10 @@ mod tests {
         assert_eq!(
             install_args("sda", file, true, false).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --plan"
+        );
+        assert_eq!(
+            install_args("sda", file, true, true).join(" "),
+            "install /dev/sda --settings /run/user/100/edel-install.toml --plan --new-password-stdin"
         );
         assert_eq!(
             install_args("sda", file, false, true).join(" "),

@@ -539,8 +539,16 @@ pub fn mount_data() -> Result<()> {
             eprintln!("warning: could not grow the data partition: {err:#}");
         }
     }
+    ensure_node(&dev);
+    // An encrypted data partition (M8.2) is unlocked first; it grew above
+    // while still closed, so the opened device is already its full size.
+    let encrypted = crate::crypt::is_luks(&dev).unwrap_or(false);
+    let dev = if encrypted {
+        crate::crypt::unlock(&dev)?
+    } else {
+        dev
+    };
     if !is_mounted(MOUNT_POINT)? {
-        ensure_node(&dev);
         run(Command::new("mount")
             .args(["-t", "ext4", "-o", "noatime"])
             .arg(&dev)
@@ -550,6 +558,12 @@ pub fn mount_data() -> Result<()> {
     grow_file_system(&dev);
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
     println!("edel-data: mounted {MOUNT_POINT}");
+    if encrypted {
+        println!(
+            "edel-data: {MOUNT_POINT} is encrypted, on {}",
+            dev.display()
+        );
+    }
     // Each step runs even when one before it failed: a failed /etc overlay
     // must not also leave /home, /var and /tmp off /data.
     let mut first_error = None;

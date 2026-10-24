@@ -56,6 +56,8 @@ pub struct Plan {
     pub slot_mib: u64,
     /// The settings file the new machine starts with
     pub system_file: String,
+    /// Whether the data partition is encrypted (M8.2)
+    pub encrypted: bool,
 }
 
 impl Plan {
@@ -193,11 +195,16 @@ impl fmt::Display for Plan {
                 &[("mib", &self.slot_mib.to_string())]
             )
         )?;
+        let data = if self.encrypted {
+            n_("  4: data, {mib} MiB, encrypted, starting from the settings file {file}")
+        } else {
+            n_("  4: data, {mib} MiB, starting from the settings file {file}")
+        };
         writeln!(
             f,
             "{}",
             trf(
-                "  4: data, {mib} MiB, starting from the settings file {file}",
+                data,
                 &[
                     ("mib", &self.data_mib().to_string()),
                     ("file", &self.system_file)
@@ -519,7 +526,7 @@ pub fn keyboard_for(layout: &str) -> String {
 }
 
 /// xkb layouts that type no Latin letters.
-const NON_LATIN: &[&str] = &[
+pub const NON_LATIN: &[&str] = &[
     "ru", "ua", "by", "bg", "rs", "mk", "kz", "kg", "mn", "gr", "il", "ir", "ara", "th", "kr",
     "jp", "cn", "tw", "in", "am", "ge",
 ];
@@ -766,6 +773,7 @@ mod tests {
             },
             slot_mib: SLOT_MIB,
             system_file: "/run/media/seed.toml".into(),
+            encrypted: false,
         }
     }
 
@@ -791,6 +799,14 @@ mod tests {
         ));
         assert!(shown.contains("  sda1: no name (FAT, 105 MB)\n"));
         assert!(shown.contains("  sda3: Windows (NTFS, 420 GB)\n"));
+        assert!(shown.contains(", starting from the settings file"));
+        let mut encrypted = plan(Vec::new());
+        encrypted.encrypted = true;
+        assert!(
+            encrypted
+                .to_string()
+                .contains("MiB, encrypted, starting from")
+        );
         assert!(shown.contains("  2: slot A, 4096 MiB, a copy of the running system\n"));
     }
 
