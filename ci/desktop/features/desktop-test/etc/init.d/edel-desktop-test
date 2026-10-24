@@ -728,6 +728,11 @@ commands() {
 			;;
 		# Ten windows opening and closing, timed (M5.11b).
 		'open ten') open_ten & ;;
+		# The files the compositor and shell-ui hold open (M8.11), which a
+		# leak per window makes grow.
+		'descriptors')
+			say "descriptors $(ls "/proc/$(pidof edel-compositor | cut -d' ' -f1)/fd" | wc -l) $(ls "/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/fd" | wc -l)"
+			;;
 		# A window that locks the pointer and says what it hears, and one
 		# that keeps the screen on, and the state file's count (M5.23).
 		'lock window')

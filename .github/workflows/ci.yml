@@ -473,7 +473,7 @@ jobs:
           - part: A
             cases: >-
               background floating titlebar tiling shape depth text cursor console pointer dmabuf outputs compositor
-              panel xwayland layers animations shortcuts workspaces windows launcher quick notify osd player
+              panel xwayland layers animations descriptors shortcuts workspaces windows launcher quick notify osd player
               fallback switcher presets own-presets buttons styles scroll sandbox everyday scale
           - part: B
             cases: >-

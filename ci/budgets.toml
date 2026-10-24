@@ -190,3 +190,9 @@ walk_rollback_seconds = 15
 walk_rollback_steps = 2
 walk_broken_update_seconds = 62
 walk_broken_update_steps = 1
+
+# Files the compositor and shell-ui may hold open beyond what they held
+# before twenty test windows opened and closed (M8.11, desktop case
+# descriptors). Not a measured budget but a leak check: a file kept per
+# window adds twenty, so anything at or over this fails.
+window_descriptors_left = 10

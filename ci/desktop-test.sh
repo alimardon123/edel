@@ -337,6 +337,8 @@
 #               window maps in the session (flatpak-mpv.png); `edel settings
 #               diff` then says nothing, no polkitd runs, and the key taken
 #               out again leaves the app installed (M6.1)
+#   descriptors twenty windows opened and closed leave the compositor and
+#               shell-ui fewer than window_descriptors_left more open files (M8.11)
 #   another-base last: the machine powers off, every partition but the
 #               data partition is written again from the image, and the new
 #               system lists mpv for ci, maps it with the title ci's setting
@@ -8773,6 +8775,48 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
+case_descriptors() {
+	# Files held open (M8.11, Sway #6310's "too many open files"): ten
+	# windows open and close once to warm what the first ones make, then
+	# the compositor's and shell-ui's open files are counted, twenty more
+	# windows open and close, and they are counted again. A file kept per
+	# window would add twenty; the budget allows fewer.
+	limit=$(budget window_descriptors_left)
+	ten() {
+		windows=$(value windows)
+		runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+		guest 'open ten'
+		wait_more 'DESKTOP-TEST: open_ten_tier ' "$runs" 90 || fail "no word from the test service on the ten windows"
+		i=0
+		while [ "$(value windows)" != "$windows" ]; do
+			i=$((i + 1))
+			[ "$i" -lt 100 ] || fail "the ten windows did not all close: $(value windows)"
+			sleep 0.2
+		done
+	}
+	held() {
+		asked=$(count 'DESKTOP-TEST: descriptors ')
+		guest 'descriptors'
+		wait_more 'DESKTOP-TEST: descriptors ' "$asked" || fail "the service did not count the open files"
+		value descriptors
+	}
+	ten
+	sleep 2
+	before=$(held)
+	ten
+	ten
+	sleep 2
+	after=$(held)
+	compositor=$((${after% *} - ${before% *}))
+	shell=$((${after#* } - ${before#* }))
+	echo "open files: the compositor ${before% *} then ${after% *}, shell-ui ${before#* } then ${after#* }, over twenty windows"
+	[ "$compositor" -lt "$limit" ] ||
+		fail "the compositor kept $compositor more files open after twenty windows closed (window_descriptors_left is $limit): a file kept per window"
+	[ "$shell" -lt "$limit" ] ||
+		fail "shell-ui kept $shell more files open after twenty windows closed (window_descriptors_left is $limit): a file kept per window"
+	echo "PASS: twenty windows opened and closed left the compositor $compositor and shell-ui $shell more open files, under $limit"
+}
+
 case_another_base() {
 	# Your apps survive another base (M8.13a), last in its part, after
 	# flatpak: ci leaves a setting of mpv's in ~/.var/app/io.mpv.Mpv and
@@ -8839,7 +8883,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
