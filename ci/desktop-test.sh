@@ -337,6 +337,10 @@
 #               window maps in the session (flatpak-mpv.png); `edel settings
 #               diff` then says nothing, no polkitd runs, and the key taken
 #               out again leaves the app installed (M6.1)
+#   another-base last: the machine powers off, every partition but the
+#               data partition is written again from the image, and the new
+#               system lists mpv for ci, maps it with the title ci's setting
+#               gives and has nothing to apply (M8.13a)
 #   web-app     `edel web-app add https://example.org` makes it an app of
 #               ci's: the launcher lists one more app, typing example.com
 #               shows the Install row first (web-app-row.png); the desktop
@@ -8769,13 +8773,80 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
+case_another_base() {
+	# Your apps survive another base (M8.13a), last in its part, after
+	# flatpak: ci leaves a setting of mpv's in ~/.var/app/io.mpv.Mpv and
+	# the machine powers off. The disk then gets a new system: every
+	# partition but the data partition is written again from the image,
+	# so the root, both slots and the boot's state are ones no system has
+	# started, and only the data partition is the first system's. The
+	# stand-in base is the same image's root, never started (the default
+	# taken, docs/ROADMAP.md); the seam is the data partition, whose
+	# layout, user ids and Flatpak installations edel::places owns. The
+	# new system must list mpv for ci, map mpv's window with the title the
+	# setting gives, and have nothing to apply in edel settings diff.
+	asked=$(count 'DESKTOP-TEST: another_base_left ')
+	guest 'another base leave'
+	wait_more 'DESKTOP-TEST: another_base_left ' "$asked" || fail "the service did not leave mpv's setting"
+	value another_base_left | grep -q 'title=edel-another-base' ||
+		fail "ci's mpv setting was not written: $(value another_base_left)"
+	i=0
+	while kill -0 "$qemu" 2>/dev/null; do
+		i=$((i + 1))
+		[ "$i" -lt 120 ] || fail "the first system did not power off within 120 s"
+		sleep 1
+	done
+	stop_vm
+	image="$dir/edel-desktop-x86_64.img"
+	parts=$(sfdisk -d "$image" 2>/dev/null | sed -n 's/^\([^ ]*[0-9]\) : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2 \3/p' | sed "s|^$image||")
+	echo "$parts" | grep -q '^4 ' || fail "the image's partition table has no data partition: $parts"
+	echo "$parts" | while read -r n start size; do
+		[ "$n" != 4 ] || continue
+		sfdisk -d "$grown" 2>/dev/null | grep -q "^$grown$n : start= *$start, size= *$size," ||
+			{ echo "partition $n is not where the image has it"; exit 1; }
+		dd if="$image" of="$grown" bs=512 skip="$start" seek="$start" count="$size" conv=notrunc status=none
+	done || fail "the new system could not be written over the first one's partitions"
+	rm -f "$QMP" "$commands"
+	keep_vm=1 run_vm out/desktop-another-base.log 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+		-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
+		-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
+		-qmp unix:"$QMP",server=on,wait=off \
+		-serial unix:"$commands",server=on,wait=off \
+		-drive if=none,id=disk0,format=raw,file="$grown" \
+		-device virtio-blk-pci,drive=disk0,bootindex=0
+	if [ "$found" = 0 ] || grep -q 'DESKTOP-TEST: FAIL' "$log"; then
+		tail -n 100 "$log"
+		fail "the new system on the first one's data partition gave no results (out/desktop-another-base.log)"
+	fi
+	tr -d '\r' <"$log" | grep -qa 'edel update: slot A confirmed' || fail "the new system did not confirm its own slot A"
+	asked=$(count 'DESKTOP-TEST: another_base_apps ')
+	guest 'another base apps'
+	wait_more 'DESKTOP-TEST: another_base_apps ' "$asked" 60 || fail "the service did not list ci's apps"
+	case " $(value another_base_apps) " in
+	*' io.mpv.Mpv '*) ;;
+	*) fail "the new system does not list mpv for ci: $(value another_base_apps)" ;;
+	esac
+	asked=$(count 'edel-compositor: mapped window edel-another-base ')
+	guest 'flatpak run'
+	wait_more 'edel-compositor: mapped window edel-another-base ' "$asked" 120 ||
+		fail "mpv did not map with the title its setting gives within 120 s; the log is $(tr -d '\r' <"$log" | grep -a 'edel-compositor: mapped window' | tail -n 3 | tr '\n' '|')"
+	python3 ci/qmp.py screendump "$dir/another-base-mpv.png"
+	asked=$(count 'DESKTOP-TEST: flatpak_diff ')
+	guest 'flatpak diff'
+	wait_more 'DESKTOP-TEST: flatpak_diff ' "$asked" || fail "the service did not run edel settings diff"
+	[ -z "$(value flatpak_diff)" ] ||
+		fail "edel settings diff has changes on the new system: $(value flatpak_diff)"
+	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
+}
+
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
 for c in "$@"; do
 	case "$c" in
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
+	another-base) [ "$c" = "$(eval echo \"\${$#}\")" ] || { echo "another-base runs last: it powers the VM off"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	fresh) [ "$#" = 1 ] || { echo "fresh runs alone: it boots the released image"; exit 1; } ;;
 	*)
@@ -9338,7 +9409,11 @@ case " $* " in
 	;;
 esac
 
-keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
+# another-base (M8.13a) starts a second system on what the first wrote,
+# so its run writes to the copy itself.
+snapshot=-snapshot
+case " $* " in *' another-base '*) snapshot='' ;; esac
+keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart $snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-global ICH9-LPC.disable_s3=0 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \

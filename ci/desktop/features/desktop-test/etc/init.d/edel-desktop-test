@@ -1685,6 +1685,18 @@ commands() {
 			edel settings reset apps.installed users.ci.admin >/dev/null 2>&1
 			as_ci "flatpak kill io.mpv.Mpv"
 			;;
+		# Your apps on another base (M8.13a): before the machine stops, a
+		# setting of mpv's in ci's own folder for it, which the next system
+		# must find; after it starts, the apps Flatpak lists for ci.
+		'another base leave')
+			as_ci "mkdir -p ~/.var/app/io.mpv.Mpv/config/mpv && echo title=edel-another-base >~/.var/app/io.mpv.Mpv/config/mpv/mpv.conf"
+			sync
+			say "another_base_left $(as_ci 'cat ~/.var/app/io.mpv.Mpv/config/mpv/mpv.conf' 2>&1)"
+			poweroff
+			;;
+		'another base apps')
+			say "another_base_apps $(as_ci 'flatpak list --user --app --columns=application' 2>&1 | tr '\n' ' ')"
+			;;
 		# Web apps (M6.4, part 1), as ci, so the files land in ci's own home:
 		# a website made an app (its desktop file and profile), listed, its
 		# file shown, and removed again. No Firefox here, so no window opens.
