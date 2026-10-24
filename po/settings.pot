@@ -221,7 +221,7 @@ msgstr ""
 msgid "Installs updates by itself; each starts at your next restart."
 msgstr ""
 
-msgid "Installs updates by itself and restarts in the hours below. A computer with a screen asks you to restart instead."
+msgid "Installs updates and restarts in the hours below; a computer with a screen asks you to restart."
 msgstr ""
 
 msgid "Edel OS updates when you choose."
