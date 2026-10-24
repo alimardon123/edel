@@ -56,8 +56,9 @@ out=$(ssh_ci 'podman run --rm edel:ci echo ok' 2>>out/server-ssh.log) || true
 [ "$out" = ok ] || fail out/server-ssh.log "podman run --rm edel:ci echo ok printed '${out:-nothing}'"
 # Containers' storage: ci's (rootless) and the system's /var/lib, both on
 # /data's file system, so they survive updates.
-store=$(ssh_ci 'podman info --format "{{.Store.GraphRoot}}"' 2>>out/server-ssh.log)
-same=$(ssh_ci "[ \"\$(stat -c %d '$store')\" = \"\$(stat -c %d /data)\" ] && [ \"\$(stat -c %d /var/lib)\" = \"\$(stat -c %d /data)\" ] && echo yes; findmnt -T /var/lib" 2>>out/server-ssh.log)
+store=$(ssh_ci 'podman info --format "{{.Store.GraphRoot}}"' 2>>out/server-ssh.log) ||
+	fail out/server-ssh.log "podman info did not say where its storage is"
+same=$(ssh_ci "[ \"\$(stat -c %d '$store')\" = \"\$(stat -c %d /data)\" ] && [ \"\$(stat -c %d /var/lib)\" = \"\$(stat -c %d /data)\" ] && echo yes; df -P /var/lib" 2>>out/server-ssh.log) || true
 echo "$same"
 case $same in
 yes*) ;;
