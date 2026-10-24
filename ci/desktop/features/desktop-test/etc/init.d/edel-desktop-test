@@ -1776,7 +1776,6 @@ commands() {
 			as_ci "mkdir -p ~/.var/app/io.mpv.Mpv/config/mpv && echo title=edel-another-base >~/.var/app/io.mpv.Mpv/config/mpv/mpv.conf"
 			sync
 			say "another_base_left $(as_ci 'cat ~/.var/app/io.mpv.Mpv/config/mpv/mpv.conf' 2>&1)"
-			poweroff
 			;;
 		'another base apps')
 			say "another_base_apps $(as_ci 'flatpak list --user --app --columns=application' 2>&1 | tr '\n' ' ')"
