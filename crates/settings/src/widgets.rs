@@ -895,6 +895,54 @@ pub fn menu_item(label: &str) -> gtk::Button {
         .build()
 }
 
+/// The window of every small dialog of ours (`ask_name`, `confirm`, the
+/// Updates page's password, the Shortcuts page's Change and the Appearance
+/// page's Add theme): modal over `near`'s window, titled `title`, `width`
+/// wide and not resizable. `more` adds what one dialog needs before the
+/// window is built, such as our look's `edel` class or a role.
+pub fn modal(
+    near: &gtk::Widget,
+    title: &str,
+    width: i32,
+    more: impl FnOnce(gtk::builders::WindowBuilder) -> gtk::builders::WindowBuilder,
+) -> gtk::Window {
+    let builder = gtk::Window::builder()
+        .title(title)
+        .modal(true)
+        .resizable(false)
+        .default_width(width);
+    let window = more(builder).build();
+    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
+        window.set_transient_for(Some(&parent));
+    }
+    window
+}
+
+/// A dialog's content: a column of its parts `spacing` apart, 20 px in
+/// from the window's edges.
+pub fn dialog_body(spacing: i32) -> gtk::Box {
+    gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(spacing)
+        .margin_top(20)
+        .margin_bottom(20)
+        .margin_start(20)
+        .margin_end(20)
+        .build()
+}
+
+/// A dialog's buttons, in order, 8 px apart at its right end.
+pub fn dialog_buttons(buttons: &[&gtk::Button]) -> gtk::Box {
+    let row = gtk::Box::builder()
+        .spacing(8)
+        .halign(gtk::Align::End)
+        .build();
+    for button in buttons {
+        row.append(*button);
+    }
+    row
+}
+
 /// Asks for a name in a small dialog over `near`'s window: `text` above an
 /// entry holding `current`, Cancel and `action`. `check` gives the name's
 /// problem, shown under the entry, or Ok, when the dialog closes.
@@ -907,16 +955,7 @@ pub fn ask_name(
     save_label: &str,
     check: impl Fn(&str) -> Result<(), String> + 'static,
 ) {
-    let window = gtk::Window::builder()
-        .title(title)
-        .modal(true)
-        .resizable(false)
-        .default_width(360)
-        .css_classes(["edel"])
-        .build();
-    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
-        window.set_transient_for(Some(&parent));
-    }
+    let window = modal(near, title, 360, |b| b.css_classes(["edel"]));
     let entry = gtk::Entry::builder()
         .text(current)
         .placeholder_text(placeholder)
@@ -936,20 +975,8 @@ pub fn ask_name(
         .build();
     let cancel = action(tr("Cancel"), false);
     let save = action(save_label, true);
-    let buttons = gtk::Box::builder()
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&save);
-    let body = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .margin_top(20)
-        .margin_bottom(20)
-        .margin_start(20)
-        .margin_end(20)
-        .build();
+    let buttons = dialog_buttons(&[&cancel, &save]);
+    let body = dialog_body(12);
     body.append(&text);
     body.append(&entry);
     body.append(&error);
@@ -986,17 +1013,10 @@ pub fn confirm(
     danger: bool,
     done: impl FnOnce() + 'static,
 ) {
-    let window = gtk::Window::builder()
-        .title(act)
-        .modal(true)
-        .resizable(false)
-        .default_width(360)
-        .css_classes(["edel"])
-        .accessible_role(gtk::AccessibleRole::AlertDialog)
-        .build();
-    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
-        window.set_transient_for(Some(&parent));
-    }
+    let window = modal(near, act, 360, |b| {
+        b.css_classes(["edel"])
+            .accessible_role(gtk::AccessibleRole::AlertDialog)
+    });
     window.update_property(&[gtk::accessible::Property::Label(message)]);
     let heading = gtk::Label::builder()
         .label(message)
@@ -1004,14 +1024,7 @@ pub fn confirm(
         .wrap(true)
         .css_classes(["edel-prompt-title"])
         .build();
-    let body = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(6)
-        .margin_top(20)
-        .margin_bottom(20)
-        .margin_start(20)
-        .margin_end(20)
-        .build();
+    let body = dialog_body(6);
     body.append(&heading);
     if !detail.is_empty() {
         let under = gtk::Label::builder()
@@ -1027,13 +1040,8 @@ pub fn confirm(
     if danger {
         act_button.add_css_class("edel-danger");
     }
-    let buttons = gtk::Box::builder()
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .margin_top(14)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&act_button);
+    let buttons = dialog_buttons(&[&cancel, &act_button]);
+    buttons.set_margin_top(14);
     body.append(&buttons);
     window.set_child(Some(&body));
     window.set_default_widget(Some(&cancel));
