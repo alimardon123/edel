@@ -4,7 +4,10 @@
 //! starting tier comes from the GPU (a software renderer starts at Lite)
 //! and the battery (unplugged, at most Balanced); then [`Deadline`] drops
 //! one tier whenever frames keep missing the screen's refresh, so the
-//! desktop always reacts on the next frame, on old hardware too.
+//! desktop always reacts on the next frame, on old hardware too. The
+//! battery saver (M8.31) holds drawing at Lite while it is on, and the
+//! deadline's own tier comes back when it goes off; the deadline itself
+//! still never rises.
 
 use std::fmt;
 use std::time::Duration;

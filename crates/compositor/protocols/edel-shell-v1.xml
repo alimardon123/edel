@@ -76,6 +76,15 @@
       <arg name="on" type="uint" summary="1 on the battery, 0 on the charger or with no battery"/>
     </request>
 
+    <request name="saver">
+      <description summary="the battery saver is on or off">
+        Whether the battery saver is on, as shell-ui decides it from
+        power.saver and the battery (M8.31), sent when it changes: the
+        compositor draws at most the Lite tier while it is on.
+      </description>
+      <arg name="on" type="uint" summary="1 while the battery saver is on, 0 when it is off"/>
+    </request>
+
     <request name="screens_off">
       <description summary="turn every screen off until the next input">
         Nobody has used the machine for power.screen_off_minutes (M7.16b):

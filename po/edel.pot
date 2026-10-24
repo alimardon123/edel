@@ -815,6 +815,9 @@ msgstr ""
 msgid "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here."
 msgstr ""
 
+msgid "Battery saver: auto turns it on at 20 percent or less on battery, on keeps it on, off never; it lightens effects and runs power-saver."
+msgstr ""
+
 msgid "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out."
 msgstr ""
 

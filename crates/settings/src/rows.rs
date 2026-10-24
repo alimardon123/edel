@@ -328,6 +328,10 @@ pub const ROWS: &[Row] = &[
         title: n_("On battery"),
     },
     Row {
+        key: edel::settings::SAVER,
+        title: n_("Battery saver"),
+    },
+    Row {
         key: edel::settings::GAME_MODE,
         title: n_("Game mode"),
     },
@@ -756,6 +760,8 @@ pub fn label(value: &str) -> String {
         "lock" => n_("Lock the screen"),
         "power-saver" => n_("Power saver"),
         "plugged-in" => n_("When plugged in"),
+        "on" => n_("On"),
+        "off" => n_("Off"),
         _ => return crate::files::title(&value.replace('-', " ")),
     };
     tr(word).to_string()

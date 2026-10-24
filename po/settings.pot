@@ -1190,6 +1190,9 @@ msgstr ""
 msgid "Plugged in, it runs at Balanced, or Performance when chosen here"
 msgstr ""
 
+msgid "Lighter effects and the power-saver profile; Automatic turns it on at 20 percent on battery"
+msgstr ""
+
 msgid "A fullscreen game gets variable refresh; Super+G turns it on or off"
 msgstr ""
 
@@ -1437,6 +1440,9 @@ msgid "Screen off after"
 msgstr ""
 
 msgid "Sleep on battery after"
+msgstr ""
+
+msgid "Battery saver"
 msgstr ""
 
 msgid "Game mode"

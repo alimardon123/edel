@@ -252,7 +252,45 @@ impl Shell {
             return;
         }
         self.rules = rules;
+        self.follow_saver();
         self.follow_idle();
+        self.follow_profile();
+    }
+
+    /// Decides the battery saver again (M8.31) from the rules and the last
+    /// status: when it changes, says so, tells the compositor, which draws
+    /// at most the Lite tier while it is on, and follows the profile. The
+    /// panels and an open quick settings card follow it too.
+    pub fn follow_saver(&mut self) {
+        let on = power_rules::saver(
+            &self.rules,
+            self.live.status.on_battery,
+            self.live.status.battery.as_ref().map(|b| b.percent),
+            self.saver_latched,
+        );
+        self.saver_latched = on && self.rules.saver_auto();
+        if on == self.saver {
+            if !self.saver_told {
+                self.saver_told = true;
+                self.link.saver(on);
+            }
+            return;
+        }
+        self.saver = on;
+        self.saver_told = true;
+        eprintln!(
+            "edel-shell-ui: battery saver {}",
+            if on { "on" } else { "off" }
+        );
+        self.link.saver(on);
+        if on && crate::on_path(crate::EDEL) && !edel::profile::offers_any() {
+            eprintln!("edel-shell-ui: {}", messages::no_profile_for_saver());
+        }
+        self.draw_all();
+        if let Some(card) = &mut self.quick {
+            card.state.saver = on;
+        }
+        self.draw_quick();
         self.follow_profile();
     }
 
@@ -287,8 +325,13 @@ impl Shell {
         if !crate::on_path(crate::EDEL) {
             return;
         }
-        let want =
-            power_rules::profile(&self.rules, self.live.status.on_battery, self.game).to_string();
+        let want = power_rules::profile(
+            &self.rules,
+            self.live.status.on_battery,
+            self.game,
+            self.saver,
+        )
+        .to_string();
         if !edel::profile::needs_apply(&want) {
             self.profile_asked = None;
             return;
