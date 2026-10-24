@@ -11,7 +11,7 @@ name = "edel"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "network", "cloud"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "network", "cloud", "updates"]
 # ssh is off where a screen is, a desktop's people sit at it, and on where
 # none is, as a server is used from afar; services.ssh in the settings
 # file decides either way (the seed, the installer, the console's key).

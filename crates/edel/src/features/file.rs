@@ -33,6 +33,12 @@ pub struct Feature {
     /// in an image definition).
     #[serde(default)]
     pub switchable: bool,
+    /// A settings key that switches this switchable feature (M7.5): its
+    /// services run only while the key is set to anything but `off` or
+    /// `false`, so the updates timer runs only while `updates.automatic`
+    /// asks for something; `services.NAME` still wins.
+    #[serde(default)]
+    pub while_set: Option<String>,
     /// Also built as a signed add-on (M7.2a).
     #[serde(default)]
     pub addon: bool,

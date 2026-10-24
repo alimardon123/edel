@@ -873,7 +873,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     }
     for step in services::plan(
         &machine.features,
-        &file.services,
+        &services::with_keys(&file.services, &machine.features, file),
         &machine.services_off,
         machine.screen,
         &machine.runlevels,

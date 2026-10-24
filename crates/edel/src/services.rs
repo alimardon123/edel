@@ -203,6 +203,29 @@ pub fn is_on(
     !feature.switchable || (!screen && named(&image.headless)) || !named(&image.off)
 }
 
+/// `wanted` with each switchable feature that names a key (`while_set`,
+/// M7.5) and is not named there on while `file` sets that key to
+/// anything but `off` or `false`.
+pub fn with_keys(
+    wanted: &BTreeMap<String, bool>,
+    installed: &[(String, Feature)],
+    file: &crate::settings::SettingsFile,
+) -> BTreeMap<String, bool> {
+    let doc = toml::Value::try_from(file).ok();
+    let set = |key: &str| {
+        doc.as_ref()
+            .and_then(|doc| key.split('.').try_fold(doc, |v, part| v.get(part)))
+            .is_some_and(|v| v.as_str() != Some("off") && v.as_bool() != Some(false))
+    };
+    let mut wanted = wanted.clone();
+    for (name, feature) in installed {
+        if let (true, Some(key)) = (feature.switchable, &feature.while_set) {
+            wanted.entry(name.clone()).or_insert_with(|| set(key));
+        }
+    }
+    wanted
+}
+
 /// The steps that make the runlevels `enabled` match `wanted`: a feature
 /// that is on has each of its services in its runlevel; one that is off
 /// has taken out those of its services that no feature that is on lists.
@@ -400,6 +423,38 @@ mod tests {
         assert_eq!(
             plan(&installed, &wanted, &off, false, &enabled),
             [step("greetd", false)]
+        );
+    }
+
+    #[test]
+    fn a_feature_that_follows_a_key_runs_only_while_the_key_asks() {
+        let updates = Feature {
+            while_set: Some("updates.automatic".into()),
+            ..feature(true, &["crond"])
+        };
+        let installed = vec![("updates".to_string(), updates)];
+        let file = |text: &str| crate::settings::read(text).unwrap().file;
+        let none = BTreeMap::new();
+        let on = |text: &str| {
+            with_keys(&none, &installed, &file(text))
+                .get("updates")
+                .copied()
+        };
+        assert_eq!(on("format = 1\n"), Some(false));
+        assert_eq!(
+            on("format = 1\n[updates]\nautomatic = \"off\"\n"),
+            Some(false)
+        );
+        assert_eq!(
+            on("format = 1\n[updates]\nautomatic = \"install\"\n"),
+            Some(true)
+        );
+        // services.NAME still wins.
+        let named = BTreeMap::from([("updates".to_string(), false)]);
+        let text = "format = 1\n[updates]\nautomatic = \"install\"\n";
+        assert_eq!(
+            with_keys(&named, &installed, &file(text)).get("updates"),
+            Some(&false)
         );
     }
 
