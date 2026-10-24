@@ -50,6 +50,23 @@ pub fn tail(text: &str, n: usize) -> String {
     out
 }
 
+/// The frame telemetry's numbers from one line the compositor logged:
+/// frames, render p50 and p99 in milliseconds, and idle frames (M8.1). The
+/// writer is `edel-compositor`'s telemetry `Summary`, whose `Display` prints
+/// `frames N, render p50 X ms, p99 Y ms, idle frames Z`; the line may carry
+/// the `edel-compositor: ` prefix or be the summary itself. The rest must
+/// parse exactly, so any other line gives None.
+pub fn frame_summary(line: &str) -> Option<(u64, f64, f64, u64)> {
+    let line = line.trim_end();
+    let text = line.strip_prefix("edel-compositor: ").unwrap_or(line);
+    let rest = text.strip_prefix("frames ")?;
+    let (frames, rest) = rest.split_once(", render p50 ")?;
+    let (p50, rest) = rest.split_once(" ms, p99 ")?;
+    let (p99, idle) = rest.split_once(" ms, idle frames ")?;
+    let ms = |text: &str| text.parse::<f64>().ok().filter(|v| v.is_finite());
+    Some((frames.parse().ok()?, ms(p50)?, ms(p99)?, idle.parse().ok()?))
+}
+
 /// One person's session logs.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Person {
@@ -248,6 +265,34 @@ mod tests {
         fs::write(&path, format!("{ENDED}\n")).unwrap();
         assert_eq!(ended_badly(&person, false), None);
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_frame_line_gives_its_numbers_and_nothing_else() {
+        assert_eq!(
+            frame_summary(
+                "edel-compositor: frames 300, render p50 1.20 ms, p99 3.40 ms, idle frames 0"
+            ),
+            Some((300, 1.2, 3.4, 0))
+        );
+        assert_eq!(
+            frame_summary("frames 6, render p50 3.00 ms, p99 9.00 ms, idle frames 1\n"),
+            Some((6, 3.0, 9.0, 1))
+        );
+        assert_eq!(
+            frame_summary("edel-compositor: output Virtual-1 ready"),
+            None
+        );
+        assert_eq!(
+            frame_summary("edel-compositor: frames 3, render p50 x ms, p99 1.00 ms, idle frames 0"),
+            None
+        );
+        assert_eq!(
+            frame_summary(
+                "edel-compositor: frames 3, render p50 1.00 ms, p99 1.00 ms, idle frames 0 extra"
+            ),
+            None
+        );
     }
 
     #[test]

@@ -241,8 +241,12 @@ commands() {
 			;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# layout.tiling, left false by the tiling case, would win over
-		# Hive's policy, so it goes first.
-		'preset hive') edel settings reset layout.tiling && edel settings set layout.preset=hive ;;
+		# Hive's policy, so it goes first; reset says there is nothing to
+		# reset in a part without that case, which is fine.
+		'preset hive')
+			edel settings reset layout.tiling >/dev/null 2>&1
+			edel settings set layout.preset=hive
+			;;
 		'preset windows-like') edel settings set layout.preset=windows-like ;;
 		'preset mac-like') edel settings set layout.preset=mac-like ;;
 		# Zen (M5.18b): tiling in the split style with no title bars, from the
@@ -307,12 +311,12 @@ commands() {
 			) &
 			;;
 		# A game stand-in for the smoothness gate (M7.7e): fullscreen, drawing
-		# on every frame, it times 300 frames as the screen presented them and
+		# on every frame, it times 1200 frames as the screen presented them and
 		# says its line once done. In the background, so the reader of
 		# commands is not held.
 		'smooth game')
 			(
-				as_ci edel-testclient --fullscreen --busy --smooth 300 --size 300x200 --colour 7a3fb0 --title game </dev/null >/tmp/smooth.log 2>&1
+				as_ci edel-testclient --fullscreen --busy --smooth 1200 --size 300x200 --colour 7a3fb0 --title game </dev/null >/tmp/smooth.log 2>&1
 				line=$(grep '^smooth ' /tmp/smooth.log | tail -n 1)
 				say "${line:-smooth none: $(grep -v '^frames ' /tmp/smooth.log | tail -n 3 | tr '\n' ';')}"
 			) &

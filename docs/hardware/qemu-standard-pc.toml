@@ -1,0 +1,176 @@
+# A sample report: CI's virtual machine (QEMU), written by hand from a CI
+# run of 2026-10-18 to show the format until the first laptop's report
+# arrives (M8.1). Its kernel log and system log are cut.
+format = 1
+version = "2026.10.1554"
+kernel = "6.18.57-0-virt"
+model = "QEMU Standard PC (Q35 + ICH9, 2009)"
+features = [
+    "ab-boot",
+    "apps",
+    "base",
+    "bluetooth",
+    "capture",
+    "completion",
+    "compositor",
+    "flatpak",
+    "fonts",
+    "graphics",
+    "input-method",
+    "laptop",
+    "location",
+    "login",
+    "machine",
+    "network",
+    "power",
+    "seat",
+    "settings",
+    "shell",
+    "sound",
+    "ssh",
+    "terminal",
+    "udev",
+    "wallpapers",
+    "xwayland",
+]
+feature_notes = []
+started = "Started in 5.85 s, 67 MiB of memory in use, 91 MiB used on the root"
+memory_in_use_mib = 412
+dmesg = "(cut for the sample)"
+system_log = "(cut for the sample)"
+pci = []
+missing_firmware = []
+sessions = []
+games = []
+
+[measured]
+boot_seconds = 5.85
+memory_at_boot_mib = 67
+root_used_mib = 91
+
+[[frame_times]]
+person = "ci"
+frames = 300
+render_p50_ms = 1.2
+render_p99_ms = 3.4
+idle_frames = 0
+
+[[basics]]
+feature = "bluetooth"
+name = "Bluetooth"
+test = "network"
+works = "yes"
+
+[[basics]]
+feature = "bluetooth"
+name = "Bluetooth audio"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "capture"
+name = "Screenshots and screen sharing"
+test = "capture"
+works = "yes"
+
+[[basics]]
+feature = "capture"
+name = "Camera"
+needs = "hardware"
+works = "no"
+
+[[basics]]
+feature = "compositor"
+name = "Second display"
+test = "outputs"
+works = "yes"
+
+[[basics]]
+feature = "compositor"
+name = "Display hotplug"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "flatpak"
+name = "Apps from Flathub"
+test = "flatpak"
+works = "yes"
+
+[[basics]]
+feature = "flatpak"
+name = "Printing"
+needs = "M7.6"
+works = "not answered"
+
+[[basics]]
+feature = "fonts"
+name = "Office documents' fonts"
+test = "office-fonts"
+works = "yes"
+
+[[basics]]
+feature = "graphics"
+name = "Video decoding in the browser (VA-API)"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "location"
+name = "Location"
+test = "location"
+works = "yes"
+
+[[basics]]
+feature = "network"
+name = "Network (DHCP)"
+test = "network"
+works = "yes"
+
+[[basics]]
+feature = "power"
+name = "Battery"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "power"
+name = "Suspend and resume"
+test = "suspend"
+works = "yes"
+
+[[basics]]
+feature = "power"
+name = "Lid"
+test = "lid"
+works = "yes"
+
+[[basics]]
+feature = "power"
+name = "Power key"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "seat"
+name = "Keyboard layouts"
+test = "keyboard"
+works = "yes"
+
+[[basics]]
+feature = "seat"
+name = "Game controller"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "seat"
+name = "Pen pressure"
+needs = "hardware"
+works = "not answered"
+
+[[basics]]
+feature = "sound"
+name = "Audio"
+test = "sound"
+works = "yes"

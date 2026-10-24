@@ -99,6 +99,10 @@ jobs:
         # The path lists that let a change skip the image build and the
         # desktop tests (ci/changes.sh), checked on fixed lists.
         run: sh ci/changes.sh --self-test
+      - name: The release checklist gates a tag's draft (M8.7)
+        # Its gather, its failure and the publish gate, proven on fixed
+        # pictures (ci/release-checklist.sh); no network, no release.
+        run: sh ci/release-checklist.sh --self-test
       - name: Visible defaults changed
         # The diff of design/, presets/ and docs/defaults.md against the
         # last kept release, or main before there is one, in the run's
@@ -479,7 +483,7 @@ jobs:
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid
           - part: D
-            cases: one-screen wakeups device-power screen-off memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming
+            cases: one-screen release-pictures wakeups device-power screen-off memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -568,6 +572,21 @@ jobs:
         if: always() && (needs.changes.outputs.desktop == 'yes' || needs.changes.result != 'success')
         run: sh ci/basics-test.sh
 
+      - name: The release checklist (M8.7)
+        # A tag's draft waits for these: the preset pictures of the
+        # release-pictures case, defaults.diff and the checklist issue's text
+        # (ci/release-checklist.sh). Fails when a picture is missing.
+        if: always() && (needs.changes.outputs.desktop == 'yes' || needs.changes.result != 'success')
+        run: sh ci/release-checklist.sh gather out/parts
+
+      - name: Keep the release checklist
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-release-checklist
+          if-no-files-found: error
+          path: out/release-checklist/
+
   # Publishes the docs site to the gh-pages branch, which GitHub Pages
   # serves at https://alimardon123.github.io/edel/ (M8.10a), after every
   # merge to main whose checks passed. Off until Alimardon sets the
@@ -644,6 +663,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # Opens a tag's release checklist issue (M8.7).
+      issues: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -656,6 +677,14 @@ jobs:
         with:
           name: edel-signed
           path: out
+      # A tag's draft holds the preset pictures and defaults.diff the
+      # desktop tests gathered, and only once they are ready (M8.7).
+      - name: Take the release checklist
+        if: github.ref_type == 'tag'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: edel-release-checklist
+          path: out/release-checklist
       - name: Upload to the preview, or to a draft release for a tag
         env:
           GH_TOKEN: ${{ github.token }}
