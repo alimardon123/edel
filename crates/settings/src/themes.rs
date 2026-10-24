@@ -1215,7 +1215,7 @@ fn values_text(keys: &[String]) -> String {
 /// what it sets, Cancel and Add theme (the default), as `widgets::ask_name`
 /// builds its dialog.
 fn import_dialog(card: &Rc<Card>, near: &gtk::Widget, plan: theme_file::Import) {
-    let window = widgets::modal(near, tr("Add theme"), 360, |b| b);
+    let window = widgets::modal(near, tr("Add theme"), 360, |b| b.css_classes(["edel"]));
     let title = gtk::Label::builder()
         .label(&plan.title)
         .xalign(0.0)
