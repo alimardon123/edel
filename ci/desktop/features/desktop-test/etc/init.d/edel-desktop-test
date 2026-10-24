@@ -739,6 +739,10 @@ commands() {
 		'descriptors')
 			say "descriptors $(ls "/proc/$(pidof edel-compositor | cut -d' ' -f1)/fd" | wc -l) $(ls "/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/fd" | wc -l)"
 			;;
+		# Forty windows that close before a frame of theirs is drawn
+		# (M8.21), and the desktop's processes, which must not change.
+		flash) say "flash $(as_ci edel-testclient --flash 40 --title flash </dev/null 2>&1) exit $?" ;;
+		pids) say "pids $(pidof edel-compositor) / $(pidof edel-shell-ui)" ;;
 		# A window that locks the pointer and says what it hears, and one
 		# that keeps the screen on, and the state file's count (M5.23).
 		'lock window')

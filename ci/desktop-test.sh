@@ -9090,6 +9090,39 @@ case_descriptors() {
 	echo "PASS: twenty windows opened and closed left the compositor $compositor and shell-ui $shell more open files, under $limit"
 }
 
+case_flash() {
+	# Windows that close at once (M8.21, the other projects' bugs review:
+	# Cinnamon #340, Sway #7303's crash on close): forty windows open and
+	# close one after another, each before the compositor draws a frame of
+	# it, every other one before its first configure. The compositor and
+	# shell-ui must run on as the same processes, every window that
+	# mapped must unmap, and the windows line must be as it was.
+	windows=$(value windows)
+	pids() {
+		asked=$(count 'DESKTOP-TEST: pids ')
+		guest 'pids'
+		wait_more 'DESKTOP-TEST: pids ' "$asked" || fail "the service did not say the desktop's processes"
+		value pids
+	}
+	before=$(pids)
+	mapped=$(count 'edel-compositor: mapped window flash at')
+	unmapped=$(count 'edel-compositor: unmapped window flash')
+	asked=$(count 'DESKTOP-TEST: flash ')
+	guest 'flash'
+	wait_more 'DESKTOP-TEST: flash ' "$asked" 60 || fail "no word from the test service on the forty windows"
+	[ "$(value flash)" = "flashed 40 exit 0" ] || fail "edel-testclient --flash 40 did not end well: $(value flash)"
+	sleep 2
+	after=$(pids)
+	[ "$after" = "$before" ] ||
+		fail "the desktop's processes changed while forty windows opened and closed at once: compositor and shell-ui $before before, $after after"
+	maps=$(($(count 'edel-compositor: mapped window flash at') - mapped))
+	unmaps=$(($(count 'edel-compositor: unmapped window flash') - unmapped))
+	[ "$maps" -ge 1 ] && [ "$maps" = "$unmaps" ] ||
+		fail "of the forty windows that closed at once, $maps mapped and $unmaps unmapped"
+	[ "$(value windows)" = "$windows" ] || fail "the windows line changed: \"$windows\" before, \"$(value windows)\" after"
+	echo "PASS: forty windows closed before a frame of theirs was drawn, every other one before its first configure; the compositor and shell-ui ran on as the same processes ($after), $maps mapped and $unmaps unmapped, and the windows line was as before"
+}
+
 case_another_base() {
 	# Your apps survive another base (M8.13a), last in its part, after
 	# flatpak: ci leaves a setting of mpv's in ~/.var/app/io.mpv.Mpv, the
@@ -9154,7 +9187,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
