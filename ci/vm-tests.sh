@@ -4,7 +4,8 @@
 # 2026-10-16), so the lanes run at once and none slows another:
 #   installed  install-test.sh, ab-test.sh (it boots the disk the first
 #              installed), then apps-test.sh, the default apps across an
-#              update
+#              update, then updates-test.sh, an update with nobody typing
+#              (M7.5)
 #   system     boot-test.sh, system-test.sh, developer-test.sh (M7.1),
 #              flatpak-test.sh, then
 #              `desktop-test.sh rollback`, which restarts the desktop VM
@@ -48,7 +49,7 @@ lane() {
 # run_lane LANE: the lane's tests, in order.
 run_lane() {
 	case "$1" in
-	installed) lane install-test.sh ab-test.sh apps-test.sh ;;
+	installed) lane install-test.sh ab-test.sh apps-test.sh updates-test.sh ;;
 	system) lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
@@ -72,7 +73,7 @@ archive() {
 # files LANE: what the lane's tests read from out/, as build.sh made it.
 files() {
 	case "$1" in
-	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test ;;
+	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test out/updates-test ;;
 	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-x86_64.img out/install-file.img ;;
 	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/keys out/edel-container-x86_64.tar.gz ;;

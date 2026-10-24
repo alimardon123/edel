@@ -178,6 +178,13 @@ mcopy -i out/server-test/seed.img out/server-test/seed.toml "::$settings_name"
 build "$version" ci/vm/vm.toml --files ci/ab-test/files --files ci/install-test/files --slot-mib 1024 \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--no-addons --no-compress --out out/install-test
+# The updates test image (roadmap M7.5): ci/updates-test/vm.toml, under the
+# CI VM image's name, so the A/B test's update below is its update too, with
+# ci/updates-test/settings.toml (install and restart by itself) and a crontab
+# that runs the hourly job every minute from that update on the host.
+build "$version" ci/updates-test/vm.toml --files ci/updates-test/files --settings ci/updates-test/settings.toml \
+	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
+	--no-addons --no-compress --out out/updates-test
 # Its update: the same image with a tagged boot loader, so installing it
 # must swap the loader once the new slot is confirmed (roadmap M1.8).
 # With it, the test add-on ci-hello (M7.2a), built from its root, and
@@ -290,5 +297,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/install-test out/keys out/release out/repro out/system-test
+	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/updates-test out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test
