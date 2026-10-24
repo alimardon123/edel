@@ -1086,8 +1086,11 @@ fn check_system_file(source: &settings_source::Local) -> Result<()> {
     let shown = source.shown().to_string();
     let text = std::fs::read_to_string(file)
         .with_context(|| trf("could not read {path}", &[("path", &shown)]))?;
-    let mut problems = settings::check(&text)
-        .with_context(|| trf("could not check {path}", &[("path", &shown)]))?;
+    let mut problems = match settings::check(&text) {
+        Ok(problems) => problems,
+        Err(e) if e.is::<settings::Mistake>() => return Err(settings::named(e, file, false)),
+        Err(e) => return Err(e.context(trf("could not check {path}", &[("path", &shown)]))),
+    };
     // On a machine, `[services]` names only features it can switch (M6.10).
     let installed = edel::services::installed();
     if !installed.is_empty() {

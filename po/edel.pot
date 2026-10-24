@@ -1235,7 +1235,10 @@ msgstr ""
 msgid "the desktop follows it at once"
 msgstr ""
 
-msgid "edel settings apply applies it"
+msgid "run doas edel settings apply to use it now, or it applies at the next start"
+msgstr ""
+
+msgid "run doas edel settings apply to use it"
 msgstr ""
 
 msgid "{path} is format {format}, so the change applies to this release only"
@@ -1320,12 +1323,6 @@ msgid "preset {name}"
 msgstr ""
 
 msgid "{word} default"
-msgstr ""
-
-msgid "{name}: no such page or key; did you mean {near}?"
-msgstr ""
-
-msgid "{name}: no such page or key; edel settings lists the pages"
 msgstr ""
 
 msgid "your own file"
@@ -1955,7 +1952,16 @@ msgstr ""
 msgid "{name} is not an icon theme this machine has; the ones it has are {names} (to use the release's, run edel settings reset on this key)"
 msgstr ""
 
-msgid "the file is not valid TOML"
+msgid "{path} has a mistake on line {line}, column {column} ({why}), so this change was not saved; fix that line, then run edel settings check {path}"
+msgstr ""
+
+msgid "{path} has a mistake on line {line}, column {column} ({why}); fix that line"
+msgstr ""
+
+msgid "the settings file has a mistake on line {line}, column {column} ({why}); fix that line"
+msgstr ""
+
+msgid "{path} has a mistake on line {line}, so none of its settings are used and the release's are; fix that line, or run edel settings check {path}"
 msgstr ""
 
 msgid "the file is format {format}, and this release reads format {current}"
@@ -1971,9 +1977,6 @@ msgid "{name} is not a colour; did you mean {near}?"
 msgstr ""
 
 msgid "{name} is not a colour; try a colour such as {names}, or see edel settings get appearance"
-msgstr ""
-
-msgid "{path} is not valid TOML; nothing is applied"
 msgstr ""
 
 msgid "{path} is format {format}, newer than this release reads, and there is no {older} beside it; nothing is applied"
@@ -2021,6 +2024,12 @@ msgstr ""
 msgid "{key} is a table of colours; set one colour in it, such as {key}.panel"
 msgstr ""
 
+msgid "{key}: no such key or page; did you mean {near}? edel settings lists the pages"
+msgstr ""
+
+msgid "{key}: no such key or page; edel settings lists the pages"
+msgstr ""
+
 msgid "unknown key; did you mean {near}?"
 msgstr ""
 
@@ -2046,6 +2055,9 @@ msgid "not a user name; use up to 32 lowercase letters, digits, - and _, startin
 msgstr ""
 
 msgid "a built-in preset's name in quotes, such as \"hive\""
+msgstr ""
+
+msgid "{value} is not a computer name; give letters, digits and hyphens, up to 63, such as lab-1"
 msgstr ""
 
 msgid "expected {expected}, not {value}"
@@ -2076,9 +2088,6 @@ msgid "unknown value {value}; use {allowed}"
 msgstr ""
 
 msgid "a whole number from {least} to {most}"
-msgstr ""
-
-msgid "a hostname: letters, digits and hyphens, up to 63"
 msgstr ""
 
 msgid "a login shell's full path, such as \"/bin/sh\""

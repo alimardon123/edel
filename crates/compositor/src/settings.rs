@@ -493,7 +493,8 @@ pub fn read(path: &Path, notes: &mut Vec<String>) -> Option<SettingsFile> {
             Some(read.file)
         }
         Err(e) => {
-            notes.push(format!("{e:#}; its settings are left at their defaults"));
+            // The message says what the release's settings do in its place.
+            notes.push(format!("{e:#}"));
             None
         }
     }

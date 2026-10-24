@@ -1747,6 +1747,9 @@ struct Written {
     desktop: bool,
     /// Whether a key that applies from the next login was written (M7.6b)
     next_login: bool,
+    /// Whether the next start applies it, as the boot's apply does (no
+    /// `apps.` key, which waits for an apply that may use the network)
+    at_start: bool,
     newer: Option<i64>,
 }
 
@@ -1765,8 +1768,12 @@ fn report_written(command: &str, what: &str, written: &Written) {
                         tr("it applies from the next login")
                     } else if written.desktop {
                         tr("the desktop follows it at once")
+                    } else if written.at_start {
+                        tr(
+                            "run doas edel settings apply to use it now, or it applies at the next start",
+                        )
                     } else {
-                        tr("edel settings apply applies it")
+                        tr("run doas edel settings apply to use it")
                     }
                 )
             ]
@@ -1814,7 +1821,11 @@ fn write_edit_at(
     let mut path = machine.to_path_buf();
     let mut newer = None;
     if let Ok(text) = fs::read_to_string(machine) {
-        let format = settings::format(&text).with_context(|| could_not_read(machine))?;
+        let format = match settings::format(&text) {
+            Ok(format) => format,
+            Err(e) if e.is::<settings::Mistake>() => return Err(settings::named(e, machine, true)),
+            Err(e) => return Err(e.context(could_not_read(machine))),
+        };
         if format > settings::FORMAT {
             path = settings::versioned(machine, settings::FORMAT);
             newer = Some(format);
@@ -1835,7 +1846,7 @@ fn write_edit_at(
             )
         ),
     };
-    let edited = change(&text)?;
+    let edited = change(&text).map_err(|e| settings::named(e, &path, true))?;
     // A change of root's ssh keys is the one a person must confirm (M6.5).
     if privilege::root_keys_change(&text, &edited) {
         privilege::confirm("changing root's ssh keys")?;
@@ -1860,11 +1871,15 @@ fn write_edit_at(
     fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     let next_login = keys.contains(&settings::LOW_LATENCY);
+    // The boot's apply runs the offline sections (ab-boot's edel-settings);
+    // the apps wait for an apply that may use the network.
+    let at_start = !keys.iter().any(|k| k.starts_with("apps."));
     Ok(Written {
         machine: shown,
         path,
         desktop,
         next_login,
+        at_start,
         newer,
     })
 }
@@ -2421,22 +2436,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
             {
                 (None, Some(w))
             }
-            None => match settings::nearest_key(w) {
-                Some(near) => bail!(
-                    "{}",
-                    trf(
-                        "{name}: no such page or key; did you mean {near}?",
-                        &[("name", w), ("near", &near)]
-                    )
-                ),
-                None => bail!(
-                    "{}",
-                    trf(
-                        "{name}: no such page or key; edel settings lists the pages",
-                        &[("name", w)]
-                    )
-                ),
-            },
+            None => bail!("{}", settings::no_such_key(w)),
         },
     };
     let wanted = |k: &str| match (section, key) {
