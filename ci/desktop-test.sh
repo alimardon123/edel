@@ -1021,7 +1021,7 @@ case_respawn() {
 	wait_for 'DESKTOP-TEST: startup_login_off' ||
 		fail "the service did not take startup.apps back after the login"
 	case "$(value greeter_said)" in
-	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*"greeter: desktop ci-other|"*) ;;
+	*"greeter: wrong username or password|"*"greeter: session started for ci|"*"greeter: desktop ci-other|"*) ;;
 	*) fail "the greeter did not refuse the wrong password and then start ci's CI other session: $(value greeter_said)" ;;
 	esac
 	# The session the chip chose (M5.10c3b): CI other's own session left
