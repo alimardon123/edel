@@ -166,6 +166,10 @@ pub const CONFIRMED: &str = run!("/confirmed");
 /// guard keeps the machine running rather than restarting it for ever;
 /// `edel status` shows it (M6.17).
 pub const NO_HEALTHY_SLOT: &str = run!("/no-healthy-slot");
+/// Whether this boot has a screen, `yes` or `no`, decided once by the
+/// boot's `edel settings apply` (M8.17), so the guard, the login screen's
+/// live session and the console all follow the one answer the services did.
+pub const SCREEN: &str = run!("/screen");
 /// The boot's "Started in" line, for `edel report` (M3.2).
 pub const STARTED: &str = run!("/started");
 /// Written by `edel update` and `edel rollback` once a slot waits for a
@@ -202,6 +206,10 @@ pub const DISKS_BY_ID: &str = "/dev/disk/by-id";
 /// Where an add-on is mounted while the slot's root is built or started
 /// (M7.2a), one folder per add-on.
 pub const ADDONS_RUN: &str = run!("/addons");
+/// The hardware packs this machine's devices match and it has not chosen,
+/// written at each start (M7.11): one line per pack, its name, a tab and its
+/// summary.
+pub const PACKS_FILE: &str = run!("/hardware-packs");
 /// The pending add-ons this boot tried (M7.2b), one name a line, which the
 /// guard's confirmation moves beside the others.
 pub const ADDONS_TRIED: &str = run!("/addons-tried");
@@ -228,6 +236,10 @@ pub const WALLPAPERS_DIR: &str = share!("/wallpapers");
 /// Speaker tuning profiles and the tables that match them to models
 /// (M6.15, `edel::speakers`).
 pub const SPEAKERS_DIR: &str = share!("/speakers");
+/// The PipeWire drop-in that gives sound little delay (M7.6b), in the
+/// slot; the compositor links it into the person's own drop-in folder
+/// ([`low_latency_link`]) while `sound.low_latency` is on.
+pub const LOW_LATENCY: &str = share!("/sound/low-latency.conf");
 /// Where each part's words in each language are (M5.24): `LANG/PART.po`.
 pub const LOCALE_DIR: &str = share!("/locale");
 /// Alpine's initramfs `init` with our one change, which finds a root
@@ -241,6 +253,11 @@ pub const HOMES: &str = "/home";
 /// A person's state directory for Edel OS inside their home, where
 /// `XDG_STATE_HOME` is not set: their session's log (M5.28a).
 pub const STATE_IN_HOME: &str = ".local/state/edel";
+/// A person's configuration folder in their home, when `XDG_CONFIG_HOME` is not set.
+pub const CONFIG_IN_HOME: &str = ".config";
+/// The person's link to [`LOW_LATENCY`] in their configuration folder:
+/// PipeWire's own drop-in folder for them, read when their PipeWire starts.
+pub const LOW_LATENCY_IN_CONFIG: &str = "pipewire/pipewire.conf.d/90-edel-low-latency.conf";
 /// The desktop session's log, in a person's state directory: the
 /// compositor and what it starts write to it (M5.28a).
 pub const SESSION_LOG: &str = "session.log";
@@ -342,6 +359,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("health_dir", HEALTH_DIR.to_string()),
         ("confirmed_file", CONFIRMED.to_string()),
         ("no_healthy_slot", NO_HEALTHY_SLOT.to_string()),
+        ("screen_file", SCREEN.to_string()),
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
@@ -357,6 +375,11 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("system_log", SYSTEM_LOG.to_string()),
         ("font_cache_dir", FONT_CACHE_DIR.to_string()),
         ("flathub_repo_file", FLATHUB_REPO_FILE.to_string()),
+        ("low_latency", LOW_LATENCY.to_string()),
+        (
+            "home_low_latency_link",
+            format!("{CONFIG_IN_HOME}/{LOW_LATENCY_IN_CONFIG}"),
+        ),
     ]
 }
 
@@ -397,6 +420,12 @@ pub fn person_dir() -> Option<PathBuf> {
     config_home().map(|config| config.join("edel"))
 }
 
+/// The person's link to [`LOW_LATENCY`] (M7.6b); none without
+/// `XDG_CONFIG_HOME` or `HOME`.
+pub fn low_latency_link() -> Option<PathBuf> {
+    config_home().map(|config| config.join(LOW_LATENCY_IN_CONFIG))
+}
+
 /// A person's configuration folder: `$XDG_CONFIG_HOME`, else `~/.config`;
 /// none without either variable.
 fn config_home() -> Option<PathBuf> {
@@ -406,7 +435,7 @@ fn config_home() -> Option<PathBuf> {
         .or_else(|| {
             std::env::var_os("HOME")
                 .filter(|v| !v.is_empty())
-                .map(|home| PathBuf::from(home).join(".config"))
+                .map(|home| PathBuf::from(home).join(CONFIG_IN_HOME))
         })
 }
 

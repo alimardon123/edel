@@ -653,6 +653,18 @@ msgstr ""
 msgid "Open Updates to install it; your apps and files stay as they are."
 msgstr ""
 
+msgid "An add-on serves this computer's hardware"
+msgstr ""
+
+msgid "{summary}. Add it in Settings, Add-ons; it starts at the next restart."
+msgstr ""
+
+msgid "{count} add-ons serve this computer's hardware"
+msgstr ""
+
+msgid "{names}. Add them in Settings, Add-ons; they start at the next restart."
+msgstr ""
+
 msgid "Open Updates"
 msgstr ""
 

@@ -76,6 +76,10 @@ pub struct Settings {
     /// `region.input_method` (M6.8): `fcitx5` starts it with the session;
     /// absent or `none` runs none (`session.rs`).
     pub input_method: Option<String>,
+    /// `sound.low_latency` (M7.6b), the person's over the machine's with
+    /// their profiles (`edel::settings::low_latency`): the low-latency
+    /// PipeWire file is linked in while it is true (`session.rs`).
+    pub low_latency: bool,
     /// `power.game_mode` (M7.7): when game mode is on by itself; absent
     /// means while plugged in.
     pub game_mode: When,
@@ -183,6 +187,7 @@ impl Settings {
         let person = person.map(edel::settings::in_use);
         let (machine, person) = (machine.as_ref(), person.as_ref());
         let mut settings = Settings {
+            low_latency: edel::settings::low_latency(machine, person),
             shape: edel::tokens::Shape::between(machine, person),
             text: edel::tokens::Text::between(machine, person),
             icons: edel::tokens::IconSize::between(machine, person),
@@ -980,5 +985,16 @@ mod tests {
         assert!(!on.colours_changed(&on.clone()));
         let tiled = file("format = 1\n[layout]\ntiling = true\n");
         assert!(!Settings::from_files(Some(&tiled), None).colours_changed(&plain));
+    }
+
+    #[test]
+    fn low_latency_is_the_persons_over_the_machines_and_its_profiles() {
+        assert!(!Settings::from_files(None, None).low_latency);
+        let creative = file("format = 1\n[system]\nprofiles = [\"creative\"]\n");
+        assert!(Settings::from_files(Some(&creative), None).low_latency);
+        let off = file("format = 1\n[sound]\nlow_latency = false\n");
+        assert!(!Settings::from_files(Some(&creative), Some(&off)).low_latency);
+        let on = file("format = 1\n[sound]\nlow_latency = true\n");
+        assert!(Settings::from_files(None, Some(&on)).low_latency);
     }
 }

@@ -11,7 +11,8 @@
 //! command gives the line that reproduces the state shown. It follows the
 //! settings files and the add-ons' folders while it is open, and the page is
 //! read again each time it is shown, as a pending add-on changes without a
-//! file change. It runs nothing on a timer.
+//! file change. A row names a hardware pack that serves this computer while
+//! it is not chosen (M7.11). It runs nothing on a timer.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -21,7 +22,9 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use edel::addon_state::{self, Facts, State};
+use edel::hardware::{self, Pack};
 use edel::i18n::{n_, tr};
+use edel::places;
 use edel::settings::PAGES;
 
 use crate::files::Files;
@@ -35,6 +38,10 @@ const KEY: &str = "addons.installed";
 const INTRO: &str = n_(
     "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart.",
 );
+
+/// The words a row adds when the hardware pack it names serves this computer
+/// and is not chosen (M7.11).
+const SERVES: &str = n_("Serves this computer's hardware");
 
 /// What the page says when the image has no add-on to offer.
 const NONE: &str = n_("This version of Edel OS has no add-ons to choose.");
@@ -67,6 +74,8 @@ struct Add {
     row: widgets::Row,
     /// The state the files gave at the last read, for the line.
     state: Cell<State>,
+    /// Whether the packs file names it and it is not chosen (M7.11).
+    serves: Cell<bool>,
     /// A refused change's message, which replaces the line until the next change.
     problem: RefCell<String>,
 }
@@ -78,7 +87,12 @@ impl Add {
         let problem = self.problem.borrow();
         if problem.is_empty() {
             self.row.subtitle.remove_css_class("edel-error");
-            let line = format!("{} · {}", self.summary, tr(self.state.get().line()));
+            let state = tr(self.state.get().line());
+            let line = if self.serves.get() {
+                format!("{} · {} · {state}", self.summary, tr(SERVES))
+            } else {
+                format!("{} · {state}", self.summary)
+            };
             self.row.subtitle.set_label(&line);
         } else {
             self.row.subtitle.add_css_class("edel-error");
@@ -101,10 +115,15 @@ struct Ui {
 /// switches are free.
 fn update(ui: &Rc<Ui>) {
     let facts = Facts::read();
+    let packs: Vec<Pack> = std::fs::read_to_string(places::PACKS_FILE)
+        .map(|text| hardware::read_packs(&text))
+        .unwrap_or_default();
     ui.quiet.set(true);
     for add in &ui.rows {
         let state = addon_state::state(&add.name, &facts);
         add.state.set(state);
+        add.serves
+            .set(!state.chosen() && packs.iter().any(|pack| pack.name == add.name));
         add.switch.set_active(state.chosen());
         add.switch.set_sensitive(!ui.busy.get());
         add.show();
@@ -226,6 +245,7 @@ pub fn page() -> gtk::Widget {
                 switch,
                 row,
                 state: Cell::new(State::Off),
+                serves: Cell::new(false),
                 problem: RefCell::new(String::new()),
             }
         })

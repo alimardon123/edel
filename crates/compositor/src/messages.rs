@@ -178,6 +178,11 @@ pub fn screens_lost(why: impl Display) -> String {
     )
 }
 
+/// A screen cannot be turned off: it stays on until the next input.
+pub fn screens_not_off(screen: &str, why: impl Display) -> String {
+    format!("could not turn screen {screen} off: {why}; it stays on and turns on at the next input")
+}
+
 /// Switching to another terminal fails.
 pub fn terminal_switch(vt: impl Display, why: impl Display) -> String {
     format!("could not switch to terminal {vt}: {why}")
@@ -286,6 +291,22 @@ pub fn wallpaper_not_read(path: &Path, why: &str) -> String {
     format!(
         "the wallpaper {} could not be shown, so the background colour shows instead: {why}; choose another in Settings, Appearance, or run edel settings reset appearance.wallpaper",
         path.display()
+    )
+}
+
+/// `sound.low_latency` is on but this system has no low-latency file (M7.6b).
+pub fn low_latency_missing(path: &Path) -> String {
+    format!(
+        "sound.low_latency is on, but there is no {}, so PipeWire keeps its own delay; the sound feature brings the file",
+        path.display()
+    )
+}
+
+/// The person's low-latency link could not be made or taken out (M7.6b).
+pub fn low_latency_not_linked(link: &Path, why: impl Display) -> String {
+    format!(
+        "could not change the low-latency sound link {}: {why}; PipeWire keeps the delay it has, and the link is tried again when sound.low_latency changes or at the next login",
+        link.display()
     )
 }
 
@@ -432,6 +453,7 @@ mod tests {
             SCREEN_LIST.to_string(),
             INPUT_LOST.to_string(),
             screens_lost("x"),
+            screens_not_off("x", "x"),
             terminal_switch(2, "x"),
             frame_not_drawn("x"),
             frame_not_shown("x"),
@@ -447,6 +469,8 @@ mod tests {
             session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
             input_method_missing("fcitx5"),
             input_method_ended("fcitx5", "ended (exit status: 1)"),
+            low_latency_missing(Path::new("/usr/share/edel/sound/low-latency.conf")),
+            low_latency_not_linked(Path::new("/home/ci/.config/pipewire/x.conf"), "x"),
         ];
         for text in all {
             assert!(!text.ends_with('.'), "{text}");
@@ -455,5 +479,16 @@ mod tests {
                 "{text}"
             );
         }
+    }
+
+    #[test]
+    fn low_latency_says_what_sound_keeps() {
+        assert_eq!(
+            low_latency_not_linked(
+                Path::new("/home/ci/.config/pipewire/pipewire.conf.d/90-edel-low-latency.conf"),
+                "Permission denied (os error 13)"
+            ),
+            "could not change the low-latency sound link /home/ci/.config/pipewire/pipewire.conf.d/90-edel-low-latency.conf: Permission denied (os error 13); PipeWire keeps the delay it has, and the link is tried again when sound.low_latency changes or at the next login"
+        );
     }
 }

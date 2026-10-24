@@ -149,6 +149,40 @@ impl Edel {
         let inhibited = self.idle_inhibited() > 0;
         self.idle_notifier.set_is_inhibited(inhibited);
     }
+
+    /// shell-ui asks for the screens to go off after the idle time
+    /// (M7.16b, `edel-shell-v1`'s `screens_off`). The screens turn off at
+    /// the next frame (`drm.rs`), which asks for it through `dirty`. A game
+    /// playing on some screen keeps them all on: shell-ui never asks then,
+    /// so this check is only a guard.
+    pub fn screens_off_asked(&mut self) {
+        if self.screens_off {
+            return;
+        }
+        if self
+            .space
+            .outputs()
+            .any(|output| self.playing_on(output).is_some())
+        {
+            eprintln!("edel-compositor: screens stay on: a game plays");
+            return;
+        }
+        self.screens_off = true;
+        self.dirty = true;
+        self.state_changed();
+    }
+
+    /// Input came: the screens that were off turn on again (M7.16b). A
+    /// full frame is asked, so each screen's first frame lights it.
+    pub fn screens_on(&mut self) {
+        if !std::mem::take(&mut self.screens_off) {
+            return;
+        }
+        eprintln!("edel-compositor: screens on");
+        self.repaint = true;
+        self.dirty = true;
+        self.state_changed();
+    }
 }
 
 impl IdleNotifierHandler for Edel {

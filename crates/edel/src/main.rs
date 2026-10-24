@@ -338,15 +338,15 @@ enum PlatformCommands {
 
 #[derive(Subcommand)]
 enum PowerCommands {
-    /// Show the power profile the kernel uses and the ones it offers, or set
-    /// it: power-saver, balanced or performance
+    /// Show the power profile and the processor's hint, or set both:
+    /// power-saver, balanced or performance
     Profile {
         /// The profile to set, as power.on_battery names them
         #[arg(value_name = "NAME")]
         name: Option<String>,
     },
     /// Charge to 100 percent once, for a trip: the charge limit comes back
-    /// after a sleep once unplugged, or at the next start
+    /// once it is unplugged, or at the next start
     ChargeFull,
 }
 
@@ -527,14 +527,14 @@ enum ImageCommands {
     Build(Box<BuildArgs>),
     /// Check an image definition without building it
     Check {
-        /// Image definition, for example images/vm.toml
+        /// Image definition, for example images/edel.toml
         definition: PathBuf,
     },
 }
 
 #[derive(clap::Args)]
 struct BuildArgs {
-    /// Image definition, for example images/vm.toml
+    /// Image definition, for example images/edel.toml
     definition: PathBuf,
     /// Directory for the finished images and the work area
     #[arg(long, default_value = "out")]
@@ -1213,7 +1213,7 @@ mod tests {
                 "s.toml",
                 "--plan",
             ],
-            &["edel", "image", "build", "images/vm.toml", "--plan"],
+            &["edel", "image", "build", "images/edel.toml", "--plan"],
         ] {
             assert!(Cli::try_parse_from(args).is_ok(), "{args:?}");
         }

@@ -1,9 +1,10 @@
 //! What shell-ui tells a person by itself (M5.9e), as notifications in its
 //! own list: that the last update did not start and the machine went back
-//! (once for each person, for each record), and that a newer release is
-//! out (once for each version). Apps never send these; the ids are ones
-//! the server never hands out, so a press on them stays inside shell-ui
-//! and no app is told (`notify_card.rs`).
+//! (once for each person, for each record), that a newer release is out
+//! (once for each version), and that an add-on serves this computer's
+//! hardware (once for each set of packs, M7.11). Apps never send these; the
+//! ids are ones the server never hands out, so a press on them stays inside
+//! shell-ui and no app is told (`notify_card.rs`).
 //!
 //! This file is plain data and tested without a display: the two
 //! notifications, the texts of the record and of the update check's
@@ -14,15 +15,18 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+use edel::hardware::Pack;
 use edel::i18n::{tr, trf};
 use edel::places;
 
 use crate::notify::{Notification, Urgency};
 
-/// The id of the notice that the last update went back, and of the notice
-/// that a newer release is out: ids the server never hands out.
+/// The id of the notice that the last update went back, of the notice
+/// that a newer release is out, and of the notice that a hardware pack
+/// serves this computer: ids the server never hands out.
 pub const FALLBACK_ID: u32 = u32::MAX;
 pub const UPDATE_ID: u32 = u32::MAX - 1;
+pub const HARDWARE_ID: u32 = u32::MAX - 2;
 
 /// What the notices say they come from.
 pub const APP: &str = "Edel OS";
@@ -33,13 +37,14 @@ pub const FIRST_CHECK_SECS: u64 = 600;
 pub const CHECK_EVERY_SECS: u64 = 6 * 3600;
 
 /// The stamps in the person's state folder: the record's date last shown,
-/// and the version last announced.
+/// the version last announced, and the hardware packs last named.
 pub const FALLBACK_SEEN: &str = "fallback-seen";
 pub const UPDATE_SEEN: &str = "update-seen";
+pub const HARDWARE_SEEN: &str = "hardware-seen";
 
-/// Whether `id` is one of the two notices shell-ui makes itself.
+/// Whether `id` is one of the notices shell-ui makes itself.
 pub fn is_ours(id: u32) -> bool {
-    id == FALLBACK_ID || id == UPDATE_ID
+    id == FALLBACK_ID || id == UPDATE_ID || id == HARDWARE_ID
 }
 
 /// The record's `date` value, as the stamp holds it; empty when the
@@ -129,6 +134,51 @@ pub fn update(lines: &str) -> Option<(String, Notification)> {
         urgency: Urgency::Normal,
     };
     Some((version, n))
+}
+
+/// The notice that an add-on serves this computer's hardware and is not
+/// chosen (M7.11), from the packs file; none when there are none. The key
+/// is the packs' names, so the same packs are not named twice (the stamp
+/// keeps it). Its buttons open Add-ons, as an add-on's fallback notice does.
+pub fn hardware(packs: &[Pack]) -> Option<(String, Notification)> {
+    if packs.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = packs.iter().map(|p| p.name.as_str()).collect();
+    let (summary, body) = match packs {
+        [one] => (
+            tr("An add-on serves this computer's hardware").to_string(),
+            trf(
+                "{summary}. Add it in Settings, Add-ons; it starts at the next restart.",
+                &[("summary", &one.summary)],
+            ),
+        ),
+        _ => (
+            trf(
+                "{count} add-ons serve this computer's hardware",
+                &[("count", &packs.len().to_string())],
+            ),
+            trf(
+                "{names}. Add them in Settings, Add-ons; they start at the next restart.",
+                &[("names", &names.join(", "))],
+            ),
+        ),
+    };
+    let n = Notification {
+        id: HARDWARE_ID,
+        app: APP.to_string(),
+        icon: "status-new".to_string(),
+        summary,
+        body,
+        actions: vec![
+            ("default".to_string(), String::new()),
+            ("addons".to_string(), tr("Open Add-ons").to_string()),
+            ("later".to_string(), tr("Later").to_string()),
+        ],
+        timeout: -1,
+        urgency: Urgency::Normal,
+    };
+    Some((names.join(","), n))
 }
 
 /// What a press on either notice does: a press on its body (the
@@ -226,6 +276,47 @@ mod tests {
         assert!(update(lines).is_none());
         assert!(update("").is_none());
         assert!(update("running: 1\n").is_none());
+    }
+
+    fn pack(name: &str, summary: &str) -> Pack {
+        Pack {
+            name: name.into(),
+            summary: summary.into(),
+        }
+    }
+
+    #[test]
+    fn one_hardware_pack_gives_a_notice_with_the_add_ons_button() {
+        let packs = [pack("graphics-nvidia", "NVIDIA graphics")];
+        let (key, n) = hardware(&packs).expect("a pack gives a notice");
+        assert_eq!(key, "graphics-nvidia");
+        assert_eq!(n.id, HARDWARE_ID);
+        assert!(is_ours(n.id));
+        assert_eq!(n.summary, "An add-on serves this computer's hardware");
+        assert_eq!(
+            n.body,
+            "NVIDIA graphics. Add it in Settings, Add-ons; it starts at the next restart."
+        );
+        assert!(n.has_default());
+        let buttons: Vec<&str> = n.buttons().map(|(key, _)| key.as_str()).collect();
+        assert_eq!(buttons, ["addons", "later"]);
+    }
+
+    #[test]
+    fn more_hardware_packs_are_named_together_and_keyed_by_their_names() {
+        let packs = [pack("graphics-nvidia", "NVIDIA"), pack("ci-hang", "Hangs")];
+        let (key, n) = hardware(&packs).expect("packs give a notice");
+        assert_eq!(key, "graphics-nvidia,ci-hang");
+        assert_eq!(n.summary, "2 add-ons serve this computer's hardware");
+        assert_eq!(
+            n.body,
+            "graphics-nvidia, ci-hang. Add them in Settings, Add-ons; they start at the next restart."
+        );
+    }
+
+    #[test]
+    fn no_pack_gives_no_notice() {
+        assert!(hardware(&[]).is_none());
     }
 
     #[test]

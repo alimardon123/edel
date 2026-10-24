@@ -1,12 +1,13 @@
 #!/bin/sh
-# Boots the VM disk the way a real machine would (UEFI firmware, GRUB, slot
-# A) and waits for the Edel OS login prompt on the serial console. The disk
-# is opened in snapshot mode, so the tested image stays exactly as built.
-# Then boots a copy of the disk made 3 GiB larger and checks that the data
-# partition grew to fill it (roadmap M1.2). Then boots it once more with
-# the virtual machine's clock set to 2020 and checks that edel-clock sets it
-# from the network, so serial shows 2026 or later (roadmap M1.13). The
-# desktop image is booted as a USB stick by desktop-test.sh live (M3.6).
+# Boots the one image (images/edel.toml) the way a real machine would (UEFI
+# firmware, GRUB, slot A) with no screen (`-vga none`, so the machine has no
+# graphics card and starts no desktop) and waits for the Edel OS login prompt
+# on the serial console. The disk is opened in snapshot mode, so the tested
+# image stays exactly as built. Then boots a copy of the disk made 3 GiB
+# larger and checks that the data partition grew to fill it (roadmap M1.2).
+# Then boots it once more with the virtual machine's clock set to 2020 and
+# checks that edel-clock sets it from the network, so serial shows 2026 or
+# later (roadmap M1.13). desktop-test.sh boots the same image with a screen.
 # The image has no seed, so nobody can log in, and its serial console asks
 # for the first person before the login prompt (M6.6b): the first boot
 # answers over a serial socket with ci/serial.py, giving `ci` a fresh ssh
@@ -17,7 +18,7 @@ set -eu
 # boot LOG PATTERN IMAGE: boots IMAGE on virtio until PATTERN.
 boot() {
 	log_file=$1 boot_pattern=$2 image=$3
-	run_vm "$log_file" "$boot_pattern" "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
+	run_vm "$log_file" "$boot_pattern" "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot -vga none \
 		-drive if=none,id=disk0,format=raw,file="$image" \
 		-device virtio-blk-pci,drive=disk0,bootindex=0
 	cat "$log_file"
@@ -33,7 +34,7 @@ python3 ci/serial.py "$console" 'Username: =ci' 'ssh key instead: =' \
 	"on one line: =$(cat "$key.pub")" >out/boot.log 2>&1 &
 typist=$!
 vm_console=$console vm_net=,hostfwd=tcp:127.0.0.1:2223-:22 keep_vm=1
-boot out/boot.log 'edel login:' out/edel-vm-x86_64.img
+boot out/boot.log 'edel login:' out/edel-x86_64.img
 vm_console='' vm_net='' keep_vm=0
 kill "$typist" 2>/dev/null || :
 logged_in=''
@@ -63,6 +64,10 @@ grep -q 'Nobody can log in to this computer yet' out/boot.log ||
 	{ echo "FAIL: the seedless image's console did not ask for its first person"; exit 1; }
 grep -q 'ci can log in now' out/boot.log ||
 	{ echo "FAIL: the console did not say ci can log in"; exit 1; }
+# Compressed memory on every machine (M7.15): edel-zram says the device is
+# in /proc/swaps once swapon took it.
+grep -q 'edel-zram: /dev/zram0 is in /proc/swaps' out/boot.log ||
+	{ grep 'edel-zram' out/boot.log || :; echo "FAIL: the machine made no compressed memory (no /dev/zram0 in /proc/swaps)"; exit 1; }
 if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'edel update: slot A confirmed' out/boot.log &&
 	grep -q 'edel-data: mounted /data' out/boot.log &&
@@ -71,18 +76,24 @@ if [ "$found" = 1 ] && grep -q 'Welcome to Edel OS' out/boot.log &&
 	grep -q 'Starting sshd' out/boot.log &&
 	grep -q 'Generating ed25519 SSH host key' out/boot.log &&
 	! grep -q 'generating new host keys' out/boot.log &&
-	grep -q 'edel guard: using the hardware watchdog' out/boot.log; then
-	echo "PASS: slot A booted Edel OS ${EDEL_VERSION:-0.1}, mounted /data, made this device's identity key, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed; its console asked for the first person, made ci an administrator with the key typed there, reached the login prompt in ${waited}s, and ci logged in over ssh"
+	grep -q 'edel guard: using the hardware watchdog' out/boot.log &&
+	grep -q 'edel guard: this machine has no screen' out/boot.log &&
+	! grep -q 'Starting greetd' out/boot.log; then
+	echo "PASS: slot A of the one image booted Edel OS ${EDEL_VERSION:-0.1} with no screen and started no desktop, mounted /data, made this device's identity key, made only an ed25519 host key, started sshd, guarded the boot with the hardware watchdog and was confirmed; its console asked for the first person, made ci an administrator with the key typed there, reached the login prompt in ${waited}s, and ci logged in over ssh"
 else
 	echo "FAIL: no confirmed boot of Edel OS ${EDEL_VERSION:-0.1} to the login prompt with /data mounted"
 	exit 1
 fi
 
 grown=out/grown.img
-cp --sparse=always out/edel-vm-x86_64.img "$grown"
+cp --sparse=always out/edel-x86_64.img "$grown"
 truncate -s +3G "$grown"
 boot out/boot-grown.log 'Username: ' "$grown"
 rm -f "$grown"
+# With no screen, ssh is on by default (images/edel.toml's headless), so a
+# seeded server is reachable without services.ssh; this boot typed nothing.
+grep -q 'Starting sshd' out/boot-grown.log ||
+	{ echo "FAIL: the one image with no screen did not start sshd by itself"; exit 1; }
 # busybox df -m: Filesystem 1M-blocks Used Available Use% Mounted on
 size=$(tr -d '\r' <out/boot-grown.log | awk '$NF == "/data" && $2 ~ /^[0-9]+$/ { print $2 }' | tail -n 1)
 if [ "$found" = 1 ] && [ "${size:-0}" -gt 2048 ]; then
@@ -97,8 +108,8 @@ fi
 # runner's), after the login prompt, so wait for its whole line (it ends with the earlier
 # time), not the prompt.
 run_vm out/boot-clock.log 'edel-clock: .*(it said [0-9: -]* UTC\)|check the network)' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \
-	-rtc base=2020-01-01 \
-	-drive if=none,id=disk0,format=raw,file=out/edel-vm-x86_64.img \
+	-vga none -rtc base=2020-01-01 \
+	-drive if=none,id=disk0,format=raw,file=out/edel-x86_64.img \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 cat out/boot-clock.log
 clock_line=$(tr -d '\r' <out/boot-clock.log | grep 'edel-clock: ' | tail -n 1 || true)

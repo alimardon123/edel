@@ -29,6 +29,12 @@ say() {
 	echo "DESKTOP-TEST: $*" >/dev/console
 }
 
+# pw_setting KEY: KEY's value in PipeWire's settings metadata, read as ci
+# with pw-metadata (M7.6b), such as 256 for clock.quantum.
+pw_setting() {
+	as_ci pw-metadata -n settings 0 "$1" 2>&1 | sed -n "s/.*key:'$1' value:'\([0-9]*\)'.*/\1/p" | head -n 1
+}
+
 # The session's D-Bus address, from shell-ui's environment.
 session_bus() {
 	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
@@ -336,10 +342,33 @@ commands() {
 				say "desktop_wakeups_per_second $(awk -v a="$comp_rate" -v b="$shell_rate" 'BEGIN { printf "%.2f", a + b }')"
 			) &
 			;;
+		# Compressed memory (M7.15): first 10 s of frames with the desktop
+		# idle, then a tmpfs filled with text (at nice 19) to all the memory
+		# and three quarters of the swap that is free, which fits only by
+		# swapping to zram, while 10 s more are timed; then what zram holds,
+		# and the fill is taken away.
+		'fill memory')
+			as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-calm.txt 2>&1
+			mkdir -p /tmp/fill
+			mount -t tmpfs -o size=8g fill /tmp/fill
+			mem_kib=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo)
+			free_kib=$(awk '/^MemAvailable:/ { print $2 }' /proc/meminfo)
+			fill_kib=$(awk '/^MemAvailable:/ { a = $2 } /^SwapFree:/ { s = $2 } END { printf "%d", a + s * 3 / 4 }' /proc/meminfo)
+			(yes 'Edel OS fills its memory past its size to try compressed memory' |
+				nice -n 19 head -c "$((fill_kib * 1024))" >/tmp/fill/data) &
+			fill=$!
+			as_ci timeout -s INT 10 weston-presentation-shm >/tmp/frames-fill.txt 2>&1
+			wait "$fill"
+			filled=$(du -m /tmp/fill/data | cut -f1)
+			used=$(awk '$1 == "/dev/zram0" { print $4 }' /proc/swaps)
+			say "memory_fill filled_mib=$filled available_mib=$((free_kib / 1024)) mem_mib=$((mem_kib / 1024)) zram_used_kib=${used:-0} calm_p99_ms=$(frame_ms /tmp/frames-calm.txt 99) full_p99_ms=$(frame_ms /tmp/frames-fill.txt 99)"
+			rm -f /tmp/fill/data
+			umount /tmp/fill
+			;;
 		# The devices' power saving (M7.16d), read from /sys and /proc and the
 		# Wi-Fi setting NetworkManager has: PCI devices that may sleep (graphics
 		# and the management engine left to their drivers), the SATA link
-		# policies (none when the VM has no SATA host), the sound chip's
+		# policies (unsupported where the controller refuses them), the sound chip's
 		# power_save, the NMI watchdog, and Wi-Fi's power save.
 		'device power')
 			pci_auto=0 pci_all=0
@@ -364,6 +393,29 @@ commands() {
 			done | sort -u | tr '\n' ',' | sed 's/,$//')
 			say "device_power pci=$pci_auto/$pci_all sata=${sata:-none} hda=$(cat /sys/module/snd_hda_intel/parameters/power_save 2>/dev/null || echo none) nmi=$(cat /proc/sys/kernel/nmi_watchdog 2>/dev/null)"
 			say "wifi_power $(NetworkManager --print-config 2>/dev/null | sed -n 's/^wifi.powersave=//p' | tail -n 1)"
+			;;
+		# The screens (M7.16b): each connected screen's DPMS, the state file's
+		# screens_off and each CRTC's active flag from the kernel's atomic state
+		# (debugfs, mounted here when it is not).
+		'screens')
+			mountpoint -q /sys/kernel/debug 2>/dev/null || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+			dpms=$(for c in /sys/class/drm/card*-*; do
+				[ "$(cat "$c/status" 2>/dev/null)" = connected ] || continue
+				cat "$c/dpms" 2>/dev/null
+			done | sort -u | tr '\n' ',' | sed 's/,$//')
+			active=$(sed -n 's/^[[:space:]]*active=\([01]\)[[:space:]]*$/\1/p' /sys/kernel/debug/dri/*/state 2>/dev/null | sort -u | tr '\n' ',' | sed 's/,$//')
+			say "screens dpms=$dpms off=$(sed -n 's/^screens_off = //p' "$state_file") active=$active"
+			;;
+		# The screens go off after one minute without input (M7.16b). [power] is
+		# the machine's section, so root sets it; reset puts the default back.
+		'screen off soon') edel settings set power.screen_off_minutes=1 ;;
+		'screen off reset') edel settings reset power.screen_off_minutes ;;
+		# The frames for 5 s after the screens came back on, as weston's
+		# presentation times give them, the first presented frame left out:
+		# it carries the modeset.
+		'frames after wake')
+			as_ci timeout -s INT 5 weston-presentation-shm >/tmp/frames-wake.txt 2>&1
+			say "frame_wake_p99_ms $(awk '{ for (i = 1; i < NF; i++) if ($i == "p2p" && $(i + 1) > 0) print $(i + 1) }' /tmp/frames-wake.txt | tail -n +2 | sort -n | awk '{ t[NR] = $1 } END { if (NR) printf "%.1f", t[int(NR * 99 / 100 + 0.999)] / 1000 }')"
 			;;
 		# An update that waits for a game (M7.7c): it has no release file, so
 		# once it may go on it fails at once, and its log says both.
@@ -1013,6 +1065,20 @@ commands() {
 		'sound memory')
 			say "sound_rss_kib $(for p in pipewire wireplumber; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
 			;;
+		# Low latency (M7.6b): the quantum the release's file asks for,
+		# whether ci's PipeWire drop-in is our link to it, what PipeWire's
+		# settings say as ci, and the link itself, last.
+		'sound latency')
+			link=/home/ci/$home_low_latency_link
+			say "sound_latency_wanted $(sed -n 's/^[[:space:]]*default\.clock\.quantum = \([0-9]*\)$/\1/p' "$low_latency")"
+			if [ "$(readlink "$link")" = "$low_latency" ]; then ours=yes; else ours=no; fi
+			say "sound_latency_ours $ours"
+			say "sound_latency_quantum $(pw_setting clock.quantum)"
+			say "sound_latency_max $(pw_setting clock.max-quantum)"
+			say "sound_latency_link $(readlink "$link" || echo none)"
+			;;
+		'sound latency bad') say "sound_latency_bad $(edel settings set sound.low_latency=fast 2>&1 | tr '\n' ' ')" ;;
+		'sound latency off') edel settings reset sound.low_latency ;;
 		# Network and Bluetooth (M5.8a): what nmcli says as ci, who may
 		# change the network (ci, in group seat, may; nobody may not: the
 		# D-Bus policy of the network feature, as there is no polkit),
@@ -1301,6 +1367,12 @@ commands() {
 		'fonts office')
 			say "fonts_office $(for f in Calibri Arial 'Times New Roman' 'Courier New'; do fc-match -f '%{family[0]}' "$f"; printf ';'; done 2>&1)"
 			;;
+		# The gaming feature's controllers (M7.6b): uinput loaded at boot by
+		# its modules-load.d file, its device the seat group's, mode 660,
+		# by its rule, and ci, who is in seat, may write it.
+		'gaming devices')
+			say "gaming_devices $(stat -c '%G %a' /dev/uinput 2>&1) $(as_ci 'test -w /dev/uinput && echo writable || echo refused' 2>&1)"
+			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No
 		# download: the plan alone shows whether Steam would install.
@@ -1318,6 +1390,78 @@ commands() {
 		'profile default')
 			edel settings reset system.profiles users.ci.admin >/tmp/profile.log 2>&1
 			say "profile_default $? $(edel settings get system.profiles_without 2>&1 | tr '\n' ' ')"
+			;;
+		# The profiles proved in the VM (M7.6b part 3): `profile on NAME
+		# [ASSIGNMENT...]` names profile NAME with ci an admin, as apps
+		# install for admins only, then sets each ASSIGNMENT the case gives
+		# (the apps it leaves out, apps.installed-=ID, so nothing comes from
+		# Flathub, and services.printing=true), applies, and says the status
+		# with the log's last lines, then edel settings diff's output.
+		'profile on '*)
+			rest=${command#profile on }
+			name=${rest%% *}
+			if [ "$rest" = "$name" ]; then rest=''; else rest=${rest#* }; fi
+			edel settings set "system.profiles=[\"$name\"]" users.ci.admin=true </dev/null >/tmp/profile-on.log 2>&1
+			status=$?
+			for assignment in $rest; do
+				[ "$status" = 0 ] || break
+				edel settings set "$assignment" </dev/null >>/tmp/profile-on.log 2>&1
+				status=$?
+			done
+			if [ "$status" = 0 ]; then
+				edel settings apply </dev/null >>/tmp/profile-on.log 2>&1
+				status=$?
+			fi
+			say "profile_on $name $status $(tail -n 5 /tmp/profile-on.log | tr '\n' ';')"
+			say "profile_diff $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		# `profile off [KEY...]`: the profile, ci's admin and each KEY reset
+		# (system.profiles_without goes with the profile, M7.6c), applied.
+		'profile off'*)
+			keys=${command#profile off}
+			edel settings reset system.profiles users.ci.admin $keys </dev/null >/tmp/profile-off.log 2>&1 &&
+				edel settings apply </dev/null >>/tmp/profile-off.log 2>&1
+			say "profile_off $? $(tail -n 3 /tmp/profile-off.log | tr '\n' ';')"
+			;;
+		# Printing (M7.6b part 3): what lpstat -r says as ci, and whether
+		# cupsd runs (OpenRC started it, or a process has its name).
+		'printing status')
+			if [ -e /run/openrc/started/cupsd ] || pidof cupsd >/dev/null; then cupsd='cupsd runs'; else cupsd='no cupsd'; fi
+			say "printing_status $(as_ci 'lpstat -r' </dev/null 2>&1 | tr '\n' ' ')/ $cupsd"
+			;;
+		# A stand-in for Steam (M7.6b part 3): ci's Flathub remote points at
+		# the test apps' repository the runner serves (ci/apps/make-repo.sh
+		# builds com.valvesoftware.Steam there, the test client), so edel
+		# settings apply's own `flatpak --user install flathub ID` installs
+		# it with no download; `gaming standin off` takes ci's apps, their
+		# runtime and the remote out again.
+		'gaming standin')
+			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >/dev/null 2>&1
+			as_ci 'flatpak --user remote-add --no-gpg-verify flathub http://10.0.2.2:8002/apps' </dev/null >/tmp/standin.log 2>&1
+			say "gaming_standin $? $(tr '\n' ';' </tmp/standin.log)"
+			;;
+		'gaming standin off')
+			as_ci 'flatpak --user uninstall --noninteractive -y --all' </dev/null >/tmp/standin.log 2>&1
+			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >>/tmp/standin.log 2>&1
+			say "gaming_standin_off $? $(as_ci 'flatpak --user list --columns=application' </dev/null 2>&1 | tr '\n' ';')"
+			;;
+		# Containers as the admin (M7.6b part 4): our own container image,
+		# which the runner serves (ci/build.sh's out/desktop-container), a
+		# root file system's archive, imported as edel:ci for ci, as
+		# container-test.sh's docker import takes it, then run as ci.
+		'podman run')
+			rm -f /tmp/edel-container.tar.gz
+			wget -q -O /tmp/edel-container.tar.gz http://10.0.2.2:8002/edel-container.tar.gz >/tmp/podman.log 2>&1
+			chmod 644 /tmp/edel-container.tar.gz
+			as_ci 'podman import /tmp/edel-container.tar.gz edel:ci' </dev/null >>/tmp/podman.log 2>&1
+			out=$(as_ci 'podman run --rm edel:ci echo ok' </dev/null 2>>/tmp/podman.log)
+			status=$?
+			say "podman_run $status ${out:-none} $(tail -n 5 /tmp/podman.log | tr '\n' ';')"
+			;;
+		'podman clean')
+			as_ci 'podman rmi -f edel:ci' </dev/null >/dev/null 2>&1
+			rm -f /tmp/edel-container.tar.gz
+			say "podman_clean $(as_ci 'podman images -q' </dev/null 2>/dev/null | wc -l)"
 			;;
 		'flatpak apps')
 			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&

@@ -1,0 +1,7 @@
+# NVIDIA graphics (M7.11, ADR-012): the first hardware pack.
+format = 1
+summary = "NVIDIA graphics: Mesa's open Vulkan driver (NVK) and the cards' firmware"
+why = "NVIDIA cards run on the kernel's open nouveau driver, which needs NVIDIA's signed firmware to start the cards from Ada on and to run Turing and newer at full speed; linux-firmware-nvidia holds it (about 100 MiB, so it is a pack and not on the always list). mesa-vulkan-nouveau is NVK, Mesa's open Vulkan driver for these cards, matching mesa-vulkan-intel and mesa-vulkan-ati in graphics.toml, so the system's own GTK 4 apps, Settings among them, find a Vulkan driver on NVIDIA cards as on Intel and AMD. Flatpak apps and games bring their own Mesa, NVK included, from their GL runtime. Matched by NVIDIA's PCI vendor ID on a display controller, so only machines with an NVIDIA card are offered it."
+packages = ["linux-firmware-nvidia", "mesa-vulkan-nouveau"]
+addon = true
+hardware = ["pci:v000010DEd*bc03sc*"]

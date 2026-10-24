@@ -4,6 +4,10 @@ format = 1
 summary = "Says hello, for CI's A/B test"
 why = "A test add-on with one of each thing an add-on carries: /usr/bin/ci-hello, /etc/ci-hello.conf and a service that writes what the file says to /run, which the A/B test reads."
 addon = true
+# It is also the test's hardware pack (M7.11): every virtio PCI device of the
+# A/B VM serves it, and once it is chosen `edel status` stops naming it (step 2
+# of the A/B test checks that).
+hardware = ["pci:v00001AF4d*"]
 
 [services]
 default = ["ci-hello"]

@@ -15,6 +15,10 @@ use anyhow::{Context, Result};
 /// The directory the kernel lists the backlights in.
 pub const ROOT: &str = "/sys/class/backlight";
 
+/// The directory the kernel lists the LEDs in, the keyboard's light among
+/// them (M7.16b).
+pub const LEDS: &str = "/sys/class/leds";
+
 /// One backlight: its directory's name, the directory itself, and its
 /// highest and current levels.
 #[derive(Debug, Clone, PartialEq)]
@@ -94,14 +98,59 @@ impl Backlight {
     /// Sets the level to `percent` of the highest, through the kernel's
     /// file the udev rule lets the people at the machine write.
     pub fn set_percent(&self, percent: u32) -> Result<()> {
+        self.set_level(level_for(self.max, percent))
+    }
+
+    /// Sets the raw level, as the kernel counts it (M7.16b: the idle dim
+    /// remembers and restores the raw level, not a percent).
+    pub fn set_level(&self, level: u32) -> Result<()> {
         let path = self.dir.join("brightness");
-        let level = level_for(self.max, percent);
         std::fs::write(&path, format!("{level}\n")).with_context(|| {
             format!(
                 "could not set the screen's brightness through {path:?}; the people at the machine may write it once the udev feature's rule has run, so log in again"
             )
         })
     }
+}
+
+/// The keyboard lights of this machine (M7.16b): the LEDs under [`LEDS`]
+/// whose names end in `kbd_backlight`, sorted. Empty on a machine without.
+pub fn keyboard() -> Vec<PathBuf> {
+    keyboard_at(Path::new(LEDS))
+}
+
+/// The keyboard lights listed in `dir`, sorted by name.
+pub fn keyboard_at(dir: &Path) -> Vec<PathBuf> {
+    let mut leds: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| {
+                    path.file_name()
+                        .is_some_and(|name| name.to_string_lossy().ends_with("kbd_backlight"))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    leds.sort();
+    leds
+}
+
+/// The raw level a keyboard light is at, if it reads.
+pub fn keyboard_level(led: &Path) -> Option<u32> {
+    number(&led.join("brightness"))
+}
+
+/// Sets a keyboard light to the raw `level`, through the file the udev
+/// rule lets the people at the machine write.
+pub fn set_keyboard(led: &Path, level: u32) -> Result<()> {
+    let path = led.join("brightness");
+    std::fs::write(&path, format!("{level}\n")).with_context(|| {
+        format!(
+            "could not set the keyboard light through {path:?}; the people at the machine may write it once the udev feature's rule has run, so log in again"
+        )
+    })
 }
 
 /// The level `percent` of `max` is: rounded, never above `max`, and never
@@ -163,6 +212,40 @@ mod tests {
         assert_eq!(find_in(&root), None, "an empty directory has none");
         std::fs::remove_dir_all(&root).unwrap();
         assert_eq!(find_in(&root), None, "a missing directory has none");
+    }
+
+    #[test]
+    fn keyboard_lights_are_the_kbd_backlight_leds_in_name_order() {
+        let root = scratch("keyboard-list");
+        for name in [
+            "input3::capslock",
+            "dell::kbd_backlight",
+            "asus::kbd_backlight",
+        ] {
+            std::fs::create_dir_all(root.join(name)).unwrap();
+        }
+        let names: Vec<String> = keyboard_at(&root)
+            .iter()
+            .map(|led| led.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["asus::kbd_backlight", "dell::kbd_backlight"]);
+        assert!(
+            keyboard_at(&root.join("missing")).is_empty(),
+            "no LEDs, no lights"
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_keyboard_light_reads_and_sets_its_raw_level() {
+        let root = scratch("keyboard-set");
+        let led = root.join("asus::kbd_backlight");
+        std::fs::create_dir_all(&led).unwrap();
+        std::fs::write(led.join("brightness"), "2\n").unwrap();
+        assert_eq!(keyboard_level(&led), Some(2));
+        set_keyboard(&led, 0).unwrap();
+        assert_eq!(keyboard_level(&led), Some(0));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]

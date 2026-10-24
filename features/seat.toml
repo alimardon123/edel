@@ -7,6 +7,9 @@ summary = "Seats: the screen and input for the person at the machine"
 why = "seatd hands the display and input devices to the compositor without logind; edel-rundir makes the session's directory for root, where the compositor, running as the person, leaves its health file for the boot guard."
 packages = ["seatd", "seatd-openrc"]
 
+# The desktop's (M8.17): without a graphics card, seatd stays off.
+screen = true
+
 [services]
 boot = ["edel-rundir"]
 default = ["seatd"]

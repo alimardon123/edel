@@ -92,6 +92,9 @@ msgstr ""
 msgid "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart."
 msgstr ""
 
+msgid "Serves this computer's hardware"
+msgstr ""
+
 msgid "This version of Edel OS has no add-ons to choose."
 msgstr ""
 
@@ -215,7 +218,7 @@ msgstr ""
 msgid "This laptop offers no charge limit, so it always charges to 100%."
 msgstr ""
 
-msgid "For a trip: charges to 100% until it is unplugged and sleeps, or restarts."
+msgid "For a trip: charges to 100% until it is unplugged, or restarts."
 msgstr ""
 
 msgid "Charge fully"
@@ -1163,6 +1166,12 @@ msgstr ""
 msgid "Without any input; a playing video keeps the screen on"
 msgstr ""
 
+msgid "Without any input; the backlight dims 30 seconds before"
+msgstr ""
+
+msgid "On battery, without any input; a playing video keeps it awake"
+msgstr ""
+
 msgid "Plugged in, it runs at Balanced, or Performance when chosen here"
 msgstr ""
 
@@ -1397,6 +1406,9 @@ msgstr ""
 msgid "On"
 msgstr ""
 
+msgid "Low latency"
+msgstr ""
+
 msgid "When the lid closes"
 msgstr ""
 
@@ -1404,6 +1416,12 @@ msgid "Power button"
 msgstr ""
 
 msgid "Lock the screen after"
+msgstr ""
+
+msgid "Screen off after"
+msgstr ""
+
+msgid "Sleep on battery after"
 msgstr ""
 
 msgid "Game mode"
@@ -1724,6 +1742,9 @@ msgstr ""
 msgid "Already used by {action}"
 msgstr ""
 
+msgid "Sound arrives within about 5 ms, for music and recording; it takes a little more power while sound plays, from the next login"
+msgstr ""
+
 msgid "Where sound plays, what listens, and how loud."
 msgstr ""
 
@@ -1752,6 +1773,12 @@ msgid "What listens"
 msgstr ""
 
 msgid "Level"
+msgstr ""
+
+msgid "Music and recording"
+msgstr ""
+
+msgid "From the profile"
 msgstr ""
 
 msgid "This computer's sound needs firmware it does not have: {files}. Run edel report and send it with your issue, so the firmware can be added."

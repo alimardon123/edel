@@ -78,8 +78,8 @@ pub const GROUPS: &[Group] = &[
 /// 2026-10-08, and their groups, M5.32b: the page people open most first,
 /// the desktop's pages, then the connections, the devices, the person's
 /// own and the system's). Every section of the file is one of them, and a
-/// page may have no section of the file (Sound, whose state is the sound
-/// system's own). Settings (M5.6) reads the same table.
+/// page may have no section of the file (Bluetooth, whose state is BlueZ's
+/// own). Settings (M5.6) reads the same table.
 pub const PAGES: &[Page] = &[
     Page {
         section: "appearance",
@@ -136,11 +136,11 @@ pub const PAGES: &[Page] = &[
     },
     Page {
         // The sound system's own state, not a section of the file: the
-        // volume and the chosen devices are WirePlumber's (M5.7b), so this
-        // page has no key, and `edel settings get sound` says so.
+        // volume and the chosen devices are WirePlumber's (M5.7b). The one
+        // key is low latency (M7.6b); `edel settings get sound` says so.
         section: "sound",
         title: n_("Sound"),
-        about: n_("the output and input devices and their volume"),
+        about: n_("the output and input devices, their volume, and low latency"),
         group: "devices",
     },
     Page {
@@ -226,7 +226,7 @@ pub const PAGES: &[Page] = &[
 ];
 
 /// Whether the settings file has no key under `section`, as a page such as
-/// Sound has none (M5.7b).
+/// Bluetooth has none (M5.7b).
 pub fn no_keys(section: &str) -> bool {
     !KEYS
         .iter()
@@ -614,6 +614,8 @@ pub const KEYS: &[Key] = &[
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
     ),
     now(LOCK_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(SCREEN_OFF_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(SLEEP_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
     now(
         POWER_BUTTON,
         Kind::OneOf(&["suspend", "poweroff", "ask", "nothing"]),
@@ -705,6 +707,9 @@ pub const KEYS: &[Key] = &[
     // What the profiles named leave out (M7.6c): written by `-=` and `+=`
     // on a list a profile adds to, never by hand.
     now("system.profiles_without", Kind::Without),
+    // Sound with little delay, for music and recording (M7.6b): the
+    // compositor links the low-latency PipeWire file in while it is on.
+    now(LOW_LATENCY, Kind::Flag),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -721,6 +726,8 @@ pub struct SettingsFile {
     pub workspaces: Workspaces,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub displays: BTreeMap<String, Display>,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub sound: Sound,
     #[serde(default, skip_serializing_if = "is_default")]
     pub appearance: Appearance,
     #[serde(default, skip_serializing_if = "is_default")]
@@ -778,6 +785,7 @@ impl Default for SettingsFile {
             panels: Panels::default(),
             workspaces: Workspaces::default(),
             displays: BTreeMap::new(),
+            sound: Sound::default(),
             appearance: Appearance::default(),
             lock_screen: LockScreen::default(),
             themes: BTreeMap::new(),
@@ -1487,6 +1495,12 @@ pub struct Power {
     /// Minutes without input before the screen locks; 0 never locks
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lock_after_minutes: Option<u32>,
+    /// Minutes without input before the screens turn off; 0 never turns them off
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_off_minutes: Option<u32>,
+    /// Minutes without input on battery before the computer sleeps; 0 never sleeps
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sleep_after_minutes: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1498,6 +1512,16 @@ pub struct Power {
     /// absent is off.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub battery_care: Option<bool>,
+}
+
+/// The Sound page's one key (M7.6b); the volume and the devices are
+/// WirePlumber's own state, never in the file.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Sound {
+    /// Whether sound plays with little delay, PipeWire's quantum from
+    /// `places::LOW_LATENCY`; absent is off, PipeWire's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub low_latency: Option<bool>,
 }
 
 /// The clipboard history (M7.13), shown on the Shortcuts page beside its
@@ -2095,6 +2119,14 @@ pub const POWER_BUTTON: &str = "power.power_button";
 /// (M7.8), 0 for never.
 pub const LOCK_AFTER_MINUTES: &str = "power.lock_after_minutes";
 
+/// The key the minutes without input before the screens turn off are kept
+/// under (M7.16b), 0 for never; the backlight dims 30 seconds before.
+pub const SCREEN_OFF_MINUTES: &str = "power.screen_off_minutes";
+
+/// The key the minutes without input on battery before the computer sleeps
+/// are kept under (M7.16b), 0 for never.
+pub const SLEEP_AFTER_MINUTES: &str = "power.sleep_after_minutes";
+
 /// The key how hard the machine works on battery is kept under (M7.8); its
 /// values are [`choices`]'. Plugged in, the machine works at Balanced, or at
 /// Performance when this is set to that.
@@ -2114,6 +2146,20 @@ pub const LOCK_AFTER_MINUTES_DEFAULT: u32 = 5;
 
 /// [`LOCK_AFTER_MINUTES_DEFAULT`] as the key table and the docs write it.
 pub const LOCK_AFTER_MINUTES_DEFAULT_TEXT: &str = "5";
+
+/// The minutes without input before the screens turn off when the file does
+/// not say (M7.16b): five.
+pub const SCREEN_OFF_MINUTES_DEFAULT: u32 = 5;
+
+/// [`SCREEN_OFF_MINUTES_DEFAULT`] as the key table and the docs write it.
+pub const SCREEN_OFF_MINUTES_DEFAULT_TEXT: &str = "5";
+
+/// The minutes without input on battery before the computer sleeps when the
+/// file does not say (M7.16b): fifteen.
+pub const SLEEP_AFTER_MINUTES_DEFAULT: u32 = 15;
+
+/// [`SLEEP_AFTER_MINUTES_DEFAULT`] as the key table and the docs write it.
+pub const SLEEP_AFTER_MINUTES_DEFAULT_TEXT: &str = "15";
 
 /// How hard the machine works on battery when the file does not say (M7.8):
 /// balanced.
@@ -2155,6 +2201,23 @@ pub const DO_NOT_DISTURB: &str = "notifications.do_not_disturb";
 /// The key that says whether apps may know where this computer is (M6.14c),
 /// the one name shell-ui, Settings and `edel settings` share.
 pub const LOCATION_ENABLED: &str = "location.enabled";
+
+/// The key that asks for sound with little delay (M7.6b), the one name
+/// the compositor, Settings and `edel settings` share: while it is true
+/// the compositor links `places::LOW_LATENCY` into the person's PipeWire
+/// drop-in folder before PipeWire starts; absent or false leaves
+/// PipeWire's own quantum.
+pub const LOW_LATENCY: &str = "sound.low_latency";
+
+/// Whether sound plays with little delay (M7.6b): the person's file over
+/// the machine's, each as [`in_use`] gives it, so a profile's line
+/// counts; off when neither says. The compositor and Settings both ask this.
+pub fn low_latency(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> bool {
+    person
+        .and_then(|f| f.sound.low_latency)
+        .or_else(|| machine.and_then(|f| f.sound.low_latency))
+        .unwrap_or(false)
+}
 
 /// Whether apps may know where this computer is: the file's choice, and on
 /// when the file names none (M6.14c).
@@ -4842,6 +4905,29 @@ version = "1.2"
         );
         assert_eq!(page("notifications").unwrap().title, "Notifications");
         assert!(!no_keys("notifications"));
+    }
+
+    #[test]
+    fn the_low_latency_key_is_one_line_on_the_sound_page() {
+        let on = "format = 1\n[sound]\nlow_latency = true\n";
+        let written = set("format = 1\n", LOW_LATENCY, "true").unwrap();
+        assert_eq!(written, "format = 1\n\n[sound]\nlow_latency = true\n");
+        assert!(check(&written).unwrap().is_empty());
+        assert!(!unset(&written, LOW_LATENCY).unwrap().contains("sound"));
+        let refused = set("format = 1\n", LOW_LATENCY, "fast").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "sound.low_latency: expected true or false, not \"fast\""
+        );
+        assert_eq!(page_of(LOW_LATENCY).map(|p| p.section), Some("sound"));
+        assert!(!no_keys("sound"));
+        let file = |text: &str| -> SettingsFile { toml::from_str(text).unwrap() };
+        assert!(low_latency(None, Some(&file(on))));
+        assert!(!low_latency(None, None));
+        assert!(!low_latency(
+            Some(&file(on)),
+            Some(&file("format = 1\n[sound]\nlow_latency = false\n"))
+        ));
     }
 
     #[test]

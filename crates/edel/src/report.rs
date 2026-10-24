@@ -19,8 +19,9 @@ use std::process::Command;
 
 use anyhow::Result;
 use edel::firmware::{Missing, missing_firmware};
+use edel::hardware::{self, Pack};
 use edel::i18n::trf;
-use edel::{features, places, scripts, session_log, settings};
+use edel::{addon_state, features, places, scripts, session_log, settings};
 use serde::{Deserialize, Serialize};
 
 use crate::battery_report;
@@ -259,12 +260,15 @@ pub(crate) struct MissingScript {
 /// The `logs:` lines `edel status` prints when something went wrong: a
 /// boot that fell back (`fell_back`), each session in `badly` that ended
 /// without closing, by person and log; then a `firmware:` line for the
-/// firmware the kernel lacked (`firmware`) and a `fonts:` line for the
-/// language's script with no font (`script`). None when all is well.
+/// firmware the kernel lacked (`firmware`), a `hardware:` line for each
+/// pack that serves this computer's hardware and is not chosen (`packs`,
+/// M7.11) and a `fonts:` line for the language's script with no font
+/// (`script`). None when all is well.
 pub(crate) fn pointers(
     fell_back: bool,
     badly: &[(String, PathBuf)],
     firmware: &[Missing],
+    packs: &[Pack],
     script: Option<&MissingScript>,
 ) -> Vec<String> {
     let mut lines = Vec::new();
@@ -290,12 +294,21 @@ pub(crate) fn pointers(
         lines.push(format!(
             "firmware: {}",
             trf(
-                "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a later release brings the hardware packs that hold them",
+                "the kernel asked for firmware this system does not carry; the first is {file} for {driver} ({count} missing in all); edel report lists them, and a hardware: line names a pack that holds them when this release has one",
                 &[
                     ("file", &first.file),
                     ("driver", &first.driver),
                     ("count", &firmware.len().to_string()),
                 ]
+            )
+        ));
+    }
+    for pack in packs {
+        lines.push(format!(
+            "hardware: {}",
+            trf(
+                "add-on {name} serves this computer's hardware ({summary}); to add it: edel settings set addons.installed+={name}, then edel settings apply; it starts at the next restart",
+                &[("name", &pack.name), ("summary", &pack.summary)]
             )
         ));
     }
@@ -311,7 +324,8 @@ pub(crate) fn pointers(
     lines
 }
 
-/// [`pointers`] for this machine now.
+/// [`pointers`] for this machine now. A pack this machine has chosen, and
+/// firmware a mounted pack now holds, are no longer named.
 pub(crate) fn pointers_now() -> Vec<String> {
     let badly: Vec<_> = session_log::people(Path::new(places::HOMES), as_root())
         .into_iter()
@@ -324,10 +338,22 @@ pub(crate) fn pointers_now() -> Vec<String> {
             ))
         })
         .collect();
+    let facts = addon_state::Facts::read();
+    let packs: Vec<Pack> = fs::read_to_string(places::PACKS_FILE)
+        .map(|text| hardware::read_packs(&text))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|pack| !addon_state::state(&pack.name, &facts).chosen())
+        .collect();
+    let firmware: Vec<Missing> = missing_firmware(&dmesg_now())
+        .into_iter()
+        .filter(|m| !hardware::has_firmware(Path::new(hardware::FIRMWARE_DIR), &m.file))
+        .collect();
     pointers(
         Path::new(places::LAST_FALLBACK).exists(),
         &badly,
-        &missing_firmware(&dmesg_now()),
+        &firmware,
+        &packs,
         missing_script_now().as_ref(),
     )
 }
@@ -767,13 +793,14 @@ mod tests {
 
     #[test]
     fn status_points_to_the_logs_only_when_something_went_wrong() {
-        assert!(pointers(false, &[], &[], None).is_empty());
+        assert!(pointers(false, &[], &[], &[], None).is_empty());
         let lines = pointers(
             true,
             &[(
                 "ci".into(),
                 "/home/ci/.local/state/edel/session.old.log".into(),
             )],
+            &[],
             &[],
             None,
         );
@@ -799,12 +826,29 @@ mod tests {
             script: "CJK".into(),
         };
         assert_eq!(
-            pointers(false, &[], &firmware, Some(&script)),
+            pointers(false, &[], &firmware, &[], Some(&script)),
             [
-                "firmware: the kernel asked for firmware this system does not carry; the first is iwlwifi-so-a0-gf-a0-90.ucode for iwlwifi (1 missing in all); edel report lists them, and a later release brings the hardware packs that hold them",
+                "firmware: the kernel asked for firmware this system does not carry; the first is iwlwifi-so-a0-gf-a0-90.ucode for iwlwifi (1 missing in all); edel report lists them, and a hardware: line names a pack that holds them when this release has one",
                 "fonts: the language ja needs CJK fonts, which this system does not carry; text in it shows as boxes until a later release brings them",
             ]
         );
+    }
+
+    /// `edel status` names each hardware pack that serves this computer
+    /// and is not chosen, with the words that add it (M7.11).
+    #[test]
+    fn status_names_a_hardware_pack_with_how_to_add_it() {
+        let packs = vec![Pack {
+            name: "graphics-nvidia".into(),
+            summary: "NVIDIA graphics".into(),
+        }];
+        assert_eq!(
+            pointers(false, &[], &[], &packs, None),
+            [
+                "hardware: add-on graphics-nvidia serves this computer's hardware (NVIDIA graphics); to add it: edel settings set addons.installed+=graphics-nvidia, then edel settings apply; it starts at the next restart"
+            ]
+        );
+        assert!(pointers(false, &[], &[], &[], None).is_empty());
     }
 
     #[test]

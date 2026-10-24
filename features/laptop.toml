@@ -3,15 +3,12 @@
 # which leaves the hardware report on the stick's EFI system partition at
 # every boot (M3.4, docs/TRY-IT.md).
 format = 1
-summary = "Real laptops: the long-term kernel, firmware for graphics and Wi-Fi, CPU microcode and the hardware report"
-why = "Laptops need linux-lts for their hardware drivers, firmware for the graphics and Wi-Fi in most of them (kept to the chips of the last ten years' laptops and desktops by the [[keep]] list below, M5.30), and CPU microcode, which GRUB loads before the initramfs (M3.3a); Intel's Sound Open Firmware (sof-firmware, its signed images and generic topologies kept, M6.15), without which the sound of Intel laptops since about 2019, the reference laptop's among them as far as we know, makes no sound at all, so it is on the always list until hardware packs exist (M7.11, ADR-012); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
+summary = "Real laptops: firmware for graphics, Wi-Fi and sound, and the hardware report"
+why = "Laptops need firmware for the graphics and Wi-Fi in most of them (kept to the chips of the last ten years' laptops and desktops by the [[keep]] list below, M5.30); Intel's Sound Open Firmware (sof-firmware, its signed images and generic topologies kept, M6.15), without which the sound of Intel laptops since about 2019, the reference laptop's among them as far as we know, makes no sound at all, so it is on the always list until hardware packs exist (M7.11, ADR-012); edel-report writes EFI/edel/report.toml, because the stick has no login yet to run edel report from (M3.4)."
 # eMMC disks of small laptops: without mmc the initramfs cannot find a
 # root installed on one.
 initramfs = ["mmc"]
 packages = [
-  "linux-lts",
-  "amd-ucode",
-  "intel-ucode",
   "linux-firmware-amdgpu",
   "linux-firmware-ath10k",
   "linux-firmware-ath11k",

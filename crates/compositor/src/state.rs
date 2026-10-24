@@ -151,6 +151,10 @@ pub struct Edel {
     /// `[displays]` changed: the backend scans and places its screens again
     /// (`drm.rs`).
     pub screens_changed: bool,
+    /// The screens are off until the next input (M7.16b, `everyday.rs`
+    /// `screens_off_asked`): `drm.rs` draws nothing and clears each one,
+    /// and `input.rs` turns them on again. Starts false.
+    pub screens_off: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
     /// Game mode (M7.7, `games.rs`).
@@ -378,6 +382,7 @@ impl Edel {
             // (M8.21 part g).
             app_icons: crate::decoration::AppIcons::new(edel::settings::ICON_THEME_DEFAULT),
             screens_changed: false,
+            screens_off: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             game: Default::default(),
             sun: Default::default(),
@@ -764,6 +769,10 @@ impl Edel {
                 crate::session::follow_input_method(&handle, self);
             }
         }
+        // The low-latency PipeWire file follows sound.low_latency (M7.6b).
+        if old.low_latency != new.low_latency {
+            crate::session::follow_low_latency(self);
+        }
         // Shell-ui reads the files again too (M5.9h), as the tray's list.
         self.tell_settings();
     }
@@ -1012,6 +1021,8 @@ impl Edel {
             "idle_inhibitors".into(),
             Value::Integer(self.idle_inhibited() as i64),
         );
+        // Whether the screens are off for nobody's use (M7.16b).
+        table.insert("screens_off".into(), Value::Boolean(self.screens_off));
         table.insert("outputs".into(), Value::Array(outputs));
         let focused = self.seat.get_keyboard().and_then(|k| k.current_focus());
         let hidden = self

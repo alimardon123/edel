@@ -19,6 +19,9 @@
 //! while the desktop runs: fcitx5 starts when `region.input_method` is
 //! fcitx5 and is stopped when it changes away (`follow_input_method`), so
 //! it runs only for a person who types in a language their keyboard lacks.
+//! The low-latency sound file (M7.6b) is the other link the settings
+//! make: `follow_low_latency` links it into the person's PipeWire drop-in
+//! folder before PipeWire starts, so it applies from the next login.
 
 use std::fs;
 use std::io::ErrorKind;
@@ -73,6 +76,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         return;
     }
     state.services.started = true;
+    follow_low_latency(state);
     let env = state.cursors.env();
     for command in state.settings.session_start() {
         spawn(handle, command, 1, env.clone());
@@ -80,6 +84,51 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     follow_input_method(handle, state);
     start_apps(state);
     start_welcome(state);
+}
+
+/// Links the person's low-latency PipeWire file in, or takes our link
+/// out, as `sound.low_latency` says (M7.6b): in `start`, before PipeWire,
+/// and again when the key changes, so PipeWire reads it at its next
+/// start, the next login. Never under the greeter or the development
+/// window, whose PipeWire is the developer's own; a file there that is
+/// not our link is the person's own and is left alone.
+pub fn follow_low_latency(state: &Edel) {
+    if !state.services.started || state.program.is_some() {
+        return;
+    }
+    let Some(link) = edel::places::low_latency_link() else {
+        return;
+    };
+    let file = edel::places::found_shared(edel::places::LOW_LATENCY);
+    let wanted = match (state.settings.low_latency, file.exists()) {
+        (true, true) => Some(file.as_path()),
+        (true, false) => {
+            eprintln!("edel-compositor: {}", messages::low_latency_missing(&file));
+            None
+        }
+        (false, _) => None,
+    };
+    let now = edel::sound::link_now(&link);
+    let step = edel::sound::link_step(now.as_ref().map(|n| n.as_deref()), wanted);
+    if let Err(e) = edel::sound::take_link_step(&link, &step) {
+        eprintln!(
+            "edel-compositor: {}",
+            messages::low_latency_not_linked(&link, format!("{e:#}"))
+        );
+        return;
+    }
+    match step {
+        edel::sound::LinkStep::Link(target) => eprintln!(
+            "edel-compositor: low latency on, {} links to {}, which PipeWire reads at its next start",
+            link.display(),
+            target.display()
+        ),
+        edel::sound::LinkStep::Remove => eprintln!(
+            "edel-compositor: low latency off, {} taken out, which PipeWire notices at its next start",
+            link.display()
+        ),
+        edel::sound::LinkStep::Keep => {}
+    }
 }
 
 /// Starts the input method when `region.input_method` is fcitx5 and
