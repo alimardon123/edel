@@ -24,6 +24,7 @@
 - [File formats](FORMATS.md)
 - [Platform levels](platform-levels.md)
 - [Releases](RELEASE.md)
+- [Security fixes](SECURITY.md)
 - [Messages and logs](MESSAGES.md)
 - [Layout guide for apps](layout-guide.md)
 - [The look](mockups/README.md)

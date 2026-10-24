@@ -1,0 +1,86 @@
+name: Monthly rebuild
+
+# The monthly security rebuild (roadmap M8.3, docs/SECURITY.md). On the first
+# of each month it refreshes the build container's digest in
+# features/base.toml, pushes the branch monthly/YYYY-MM, opens a pull request
+# with the package changes since the last release, and starts the workflow
+# "CI" on that branch, whose full run builds and tests every image from
+# Alpine's branch as it is that day. Merging the pull request tags the
+# release vYYYY.MM.0 and starts "CI" on the tag, which makes its draft
+# release once publishing is on (docs/RELEASE.md). One small job each, so
+# the shared limit of 20 jobs at once is left to the full run.
+#
+# A pull request or tag made with the workflow's own token starts no
+# workflow by itself, so both start "CI" with workflow_dispatch.
+on:
+  schedule:
+    # 03:17 UTC on the 1st, off the hour most schedules take.
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monthly
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    name: Open the month's rebuild
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Refresh the build container and write the package changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/monthly.sh prepare out/monthly/body.md
+      - name: Push the branch, open the pull request and start CI on it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          branch=$(sh ci/monthly.sh branch)
+          title="Rebuild every image from this month's Alpine packages ($branch)"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git diff --quiet || git commit -q -m "$title" -- features/base.toml
+          # The month's branch is this workflow's own: a second run that
+          # month replaces it.
+          git push -q --force origin "HEAD:refs/heads/$branch"
+          number=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh pr edit "$number" --body-file out/monthly/body.md
+          elif ! gh pr create --base main --head "$branch" --title "$title" --body-file out/monthly/body.md; then
+            # GitHub refuses until the repository allows it (docs/SECURITY.md).
+            echo "Open the pull request by hand: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          gh workflow run ci.yml --ref "$branch"
+          cat out/monthly/body.md >>"$GITHUB_STEP_SUMMARY"
+
+  tag:
+    name: Tag the month's release
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged && startsWith(github.event.pull_request.head.ref, 'monthly/') && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Tag the merge and start CI on the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          tag=$(sh ci/monthly.sh tag "$BRANCH")
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$SHA" >/dev/null
+          gh workflow run ci.yml --ref "$tag"
+          echo "Tagged $SHA as $tag and started CI on it." | tee -a "$GITHUB_STEP_SUMMARY"
