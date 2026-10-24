@@ -863,7 +863,8 @@ mod tests {
 
     #[test]
     fn a_file_the_account_may_not_write_says_what_to_do() {
-        let path = std::path::Path::new("/home/ali/.config/edel/settings.toml");
+        let path = places::settings_in(std::path::Path::new("/home/ali/.config/edel"));
+        let path = path.as_path();
         let said = refused(path, true, "could not write it".into());
         assert!(
             said.starts_with("Could not save this change in your settings file (/home/ali/"),
