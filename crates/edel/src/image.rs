@@ -1067,11 +1067,17 @@ impl Build<'_> {
     }
 
     /// Writes `<stem>.qcow2` next to the disk `disk`, compressed, the form
-    /// clouds and virtual machine hosts import (M7.4).
+    /// clouds and virtual machine hosts import (M7.4). `-W -m 16` compresses
+    /// on every core, a third of the time on one (31 s against 10 s for a
+    /// 973 MiB disk, measured 2026-10-24), with the same bytes' size; the
+    /// compression stays zlib, which every host reads, as zstd needs QEMU
+    /// 5.1 or newer to open the file (Reliable before Efficient).
     fn qcow2(&self, disk: &Path) -> Result<()> {
         self.runner.run(
             Command::new("qemu-img")
-                .args(["convert", "-q", "-c", "-f", "raw", "-O", "qcow2"])
+                .args([
+                    "convert", "-q", "-c", "-W", "-m", "16", "-f", "raw", "-O", "qcow2",
+                ])
                 .arg(disk)
                 .arg(disk.with_extension("qcow2")),
         )
