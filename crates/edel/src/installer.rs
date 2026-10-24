@@ -150,10 +150,11 @@ fn describe(name: &str) -> Result<Disk> {
     })
 }
 
-/// Whether the disk named `name` says it is removable, as a USB stick does.
+/// Whether the disk `name` is removable or on USB, as a stick is; a USB
+/// stick that tells the kernel it is fixed still counts, so `disk = "auto"`
+/// never takes it.
 fn removable(name: &str) -> bool {
-    fs::read_to_string(Path::new("/sys/block").join(name).join("removable"))
-        .is_ok_and(|v| v.trim() == "1")
+    edel::install::is_removable(Path::new("/sys"), name)
 }
 
 /// The disks the installer could offer, as `/sys/block` lists them, each
