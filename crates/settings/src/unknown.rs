@@ -274,7 +274,11 @@ mod tests {
         let found = entries(Some("format = [\n"), None);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].key, "");
-        assert!(found[0].message.starts_with("the file is not valid TOML"));
+        assert!(
+            found[0]
+                .message
+                .starts_with("the settings file has a mistake on line")
+        );
     }
 
     #[test]
