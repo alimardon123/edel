@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -1691,11 +1692,109 @@ pub struct Read {
     pub later: Vec<String>,
 }
 
+/// A settings file that is not TOML: the line and column toml stopped on,
+/// and toml's own words for the mistake (MESSAGES.md; the messages audit's
+/// rows 48 and 49). One owner of these words: every reader and writer
+/// shows them from here. Where the caller knows the file's path, [`named`]
+/// puts it in.
+#[derive(Debug)]
+pub struct Mistake {
+    line: usize,
+    column: usize,
+    why: String,
+}
+
+impl Mistake {
+    /// Where `span`, a byte range of `text` as toml gives it, starts, and
+    /// toml's `why`. With no span the mistake is placed at the first line.
+    fn new(text: &str, span: Option<Range<usize>>, why: &str) -> Self {
+        let offset = span.map_or(0, |span| span.start);
+        let before = text.get(..offset).unwrap_or(text);
+        Self {
+            line: before.matches('\n').count() + 1,
+            column: before
+                .rsplit('\n')
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .count()
+                + 1,
+            why: why.to_string(),
+        }
+    }
+
+    /// The mistake, in `path` when the caller knows it; `changing` when a
+    /// change was refused for it, which then names the check to run.
+    fn said(&self, path: Option<&Path>, changing: bool) -> String {
+        let line = self.line.to_string();
+        let column = self.column.to_string();
+        let path = path.map(|p| p.display().to_string());
+        let mut words = vec![
+            ("line", line.as_str()),
+            ("column", column.as_str()),
+            ("why", self.why.as_str()),
+        ];
+        match (&path, changing) {
+            (Some(path), true) => {
+                words.push(("path", path));
+                trf(
+                    "{path} has a mistake on line {line}, column {column} ({why}), so this change was not saved; fix that line, then run edel settings check {path}",
+                    &words,
+                )
+            }
+            (Some(path), false) => {
+                words.push(("path", path));
+                trf(
+                    "{path} has a mistake on line {line}, column {column} ({why}); fix that line",
+                    &words,
+                )
+            }
+            (None, _) => trf(
+                "the settings file has a mistake on line {line}, column {column} ({why}); fix that line",
+                &words,
+            ),
+        }
+    }
+
+    /// What a reader says of a file it does not use at all (row 49): the
+    /// release's settings apply in its place.
+    fn unread(&self, path: &Path) -> String {
+        let path = path.display().to_string();
+        trf(
+            "{path} has a mistake on line {line}, so none of its settings are used and the release's are; fix that line, or run edel settings check {path}",
+            &[("path", &path), ("line", &self.line.to_string())],
+        )
+    }
+}
+
+impl fmt::Display for Mistake {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.said(None, false))
+    }
+}
+
+impl std::error::Error for Mistake {}
+
+/// The error for a settings file whose text toml cannot read, from toml's
+/// span and message for the mistake.
+pub fn mistake(text: &str, span: Option<Range<usize>>, why: &str) -> anyhow::Error {
+    anyhow::Error::new(Mistake::new(text, span, why))
+}
+
+/// Names the file in a mistake made by [`mistake`], and says the change
+/// was not saved when `changing`; any other error is returned as it is.
+pub fn named(error: anyhow::Error, path: &Path, changing: bool) -> anyhow::Error {
+    match error.downcast_ref::<Mistake>() {
+        Some(mistake) => anyhow!("{}", mistake.said(Some(path), changing)),
+        None => error,
+    }
+}
+
 /// Reads a settings file leniently: unknown keys and values of the wrong
 /// kind are left out and reported, and every other key is kept. Only a file
 /// that is not TOML, or not in this release's format, is refused.
 pub fn read(text: &str) -> Result<Read> {
-    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
+    let table: Table = toml::from_str(text).map_err(|e| mistake(text, e.span(), e.message()))?;
     let format = format_of(&table)?;
     if format != FORMAT {
         bail!(
@@ -1956,10 +2055,10 @@ const COLOUR_EXAMPLES: usize = 3;
 /// instead. Without one this fails, and the caller applies nothing.
 pub fn read_on_machine(path: &Path) -> Result<Read> {
     let text = fs::read_to_string(path).with_context(|| could_not_read(path))?;
-    let table: Table = toml::from_str(&text).with_context(|| {
-        trf(
-            "{path} is not valid TOML; nothing is applied",
-            &[("path", &path.display().to_string())],
+    let table: Table = toml::from_str(&text).map_err(|e| {
+        anyhow!(
+            "{}",
+            Mistake::new(&text, e.span(), e.message()).unread(path)
         )
     })?;
     let format = format_of(&table)?;
@@ -2007,7 +2106,7 @@ fn could_not_read(path: &Path) -> String {
 
 /// The `format` of a settings file's text.
 pub fn format(text: &str) -> Result<i64> {
-    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
+    let table: Table = toml::from_str(text).map_err(|e| mistake(text, e.span(), e.message()))?;
     format_of(&table)
 }
 
@@ -2423,7 +2522,9 @@ pub fn set(text: &str, key: &str, value: &str) -> Result<String> {
         );
     }
     let new = toml_edit_value(&value)?;
-    let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| mistake(text, e.span(), e.message()))?;
     let (last, parents) = path.split_last().context(tr(
         "no key given; write KEY=VALUE, such as network.hostname=lab-1",
     ))?;
@@ -2628,7 +2729,7 @@ pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String
             false => Ok(text.to_string()),
         };
     }
-    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
+    let table: Table = toml::from_str(text).map_err(|e| mistake(text, e.span(), e.message()))?;
     let path: Vec<&str> = key.split('.').collect();
     let own = list_value_at(&table, &path)
         .and_then(Value::as_array)
@@ -2689,7 +2790,7 @@ fn edit_own_list(text: &str, key: &str, value: &str, add: bool) -> Result<String
         );
     }
     let item = list_item(value);
-    let table: Table = toml::from_str(text).context(tr("the file is not valid TOML"))?;
+    let table: Table = toml::from_str(text).map_err(|e| mistake(text, e.span(), e.message()))?;
     let mut list: Vec<String> = match list_value_at(&table, &path) {
         None => Vec::new(),
         Some(Value::Array(items)) if items.iter().all(Value::is_str) => items
@@ -2742,7 +2843,9 @@ pub fn unset(text: &str, key: &str) -> Result<String> {
 /// for which of its keys are set; only when none is in the file does it
 /// refuse, as there is nothing to reset.
 pub fn unset_all(text: &str, keys: &[&str]) -> Result<String> {
-    let mut doc: DocumentMut = text.parse().context(tr("the file is not valid TOML"))?;
+    let mut doc: DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| mistake(text, e.span(), e.message()))?;
     let mut removed = false;
     for key in keys {
         removed |= remove_key(&mut doc, key)?;
@@ -2835,11 +2938,27 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
     }
     KEYS.iter()
         .find(|k| matches(k.path, &names, false))
-        .ok_or_else(|| anyhow!("{key}: {}", unknown_key(key)))
+        .ok_or_else(|| anyhow!("{}", no_such_key(key)))
 }
 
-/// What is said of a key no page has, by `set`, `check` and `apply`: the
-/// nearest key when one is close, else where the keys are listed.
+/// What `get` and `set` say of a key no page or key has (row 51): the
+/// nearest key when one is close, else where the keys are listed. The one
+/// text for both commands, so the same mistake reads the same.
+pub fn no_such_key(key: &str) -> String {
+    match nearest_key(key) {
+        Some(near) => trf(
+            "{key}: no such key or page; did you mean {near}? edel settings lists the pages",
+            &[("key", key), ("near", &near)],
+        ),
+        None => trf(
+            "{key}: no such key or page; edel settings lists the pages",
+            &[("key", key)],
+        ),
+    }
+}
+
+/// What is said of a key no page has, by `check` and `apply`: the nearest
+/// key when one is close, else where the keys are listed.
 fn unknown_key(key: &str) -> String {
     match nearest_key(key) {
         Some(near) => trf("unknown key; did you mean {near}?", &[("near", &near)]),
@@ -3136,6 +3255,15 @@ fn matches(pattern: &str, path: &[String], prefix: bool) -> bool {
         .all(|(p, name)| *p == "*" || p == name)
 }
 
+/// What a refused `network.hostname` says, the same for every writer and
+/// reader (row 54).
+fn hostname_refusal(value: &Value) -> String {
+    trf(
+        "{value} is not a computer name; give letters, digits and hyphens, up to 63, such as lab-1",
+        &[("value", &value.to_string())],
+    )
+}
+
 /// `value` if it is of `kind` (a whole number becomes a number where one
 /// is expected), else what is wrong with it.
 fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
@@ -3194,7 +3322,7 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             fail(&or_list(&allowed))
         }
         (Kind::Hostname, Value::String(s)) if is_hostname(s) => Ok(value.clone()),
-        (Kind::Hostname, _) => fail(tr("a hostname: letters, digits and hyphens, up to 63")),
+        (Kind::Hostname, _) => Err(hostname_refusal(value)),
         (Kind::Shell, Value::String(s)) if is_shell_path(s) => Ok(value.clone()),
         (Kind::Shell, _) => fail(tr("a login shell's full path, such as \"/bin/sh\"")),
         (Kind::Keys, Value::String(s)) => crate::shortcuts::normalize(s).map(Value::String),
@@ -4448,11 +4576,68 @@ version = "1.2"
     }
 
     #[test]
+    fn a_mistake_in_the_file_names_its_line_and_the_file() {
+        let text = "format = 1\n[layout]\ntiling = \n";
+        let plain = read(text).unwrap_err().to_string();
+        assert!(
+            plain.starts_with("the settings file has a mistake on line 3, column "),
+            "{plain}"
+        );
+        assert!(plain.ends_with("); fix that line"), "{plain}");
+        let path = crate::places::settings_in(Path::new("/data/edel"));
+        let shown = path.display().to_string();
+        let named_text = named(read(text).unwrap_err(), &path, true).to_string();
+        assert!(
+            named_text.starts_with(&format!("{shown} has a mistake on line 3, column ")),
+            "{named_text}"
+        );
+        assert!(
+            named_text.ends_with(&format!(
+                "fix that line, then run edel settings check {shown}"
+            )),
+            "{named_text}"
+        );
+        // A writer refuses the same file with the same words.
+        let refused = set(text, "layout.tiling", "true").unwrap_err().to_string();
+        assert!(refused.contains("on line 3, column "), "{refused}");
+    }
+
+    #[test]
+    fn a_machine_file_that_is_not_toml_is_not_used_and_says_where() {
+        let dir = std::env::temp_dir().join(format!("edel-mistake-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = crate::places::settings_in(&dir);
+        fs::write(&path, "format = 1\n[network]\nhostname = \n").unwrap();
+        let error = read_on_machine(&path).unwrap_err().to_string();
+        let shown = path.display().to_string();
+        assert_eq!(
+            error,
+            format!(
+                "{shown} has a mistake on line 3, so none of its settings are used and the release's are; fix that line, or run edel settings check {shown}"
+            )
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn no_such_key_reads_the_same_for_get_and_set() {
+        assert_eq!(
+            no_such_key("layout.presset"),
+            "layout.presset: no such key or page; did you mean layout.preset? edel settings lists the pages"
+        );
+        assert_eq!(
+            no_such_key("nothing.near"),
+            "nothing.near: no such key or page; edel settings lists the pages"
+        );
+    }
+
+    #[test]
     fn set_refuses_what_check_refuses() {
         let error = |key, value| set(EDITED, key, value).unwrap_err().to_string();
         assert_eq!(
             error("network.hostnme", "a"),
-            "network.hostnme: unknown key; did you mean network.hostname?"
+            "network.hostnme: no such key or page; did you mean network.hostname? edel settings lists the pages"
         );
         assert!(error("nothing.near", "a").contains("edel settings lists the pages"));
         assert!(error("appearance.mode", "drak").contains("did you mean dark?"));
@@ -4476,7 +4661,11 @@ version = "1.2"
             assert!(page_of(key.path).is_some(), "{} is on no page", key.path);
         }
         assert!(error("users.ci.admin", "yes").contains("expected true or false"));
-        assert!(error("network.hostname", "not valid").contains("expected a hostname"));
+        assert!(error("network.hostname", "not valid").contains("is not a computer name"));
+        assert_eq!(
+            error("network.hostname", "not valid"),
+            "network.hostname: \"not valid\" is not a computer name; give letters, digits and hyphens, up to 63, such as lab-1"
+        );
         assert_eq!(
             error("updates.version", "\"1.2\""),
             "updates.version: not supported yet; this release does not act on it, so it cannot be set"

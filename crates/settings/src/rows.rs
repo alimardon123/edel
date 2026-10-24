@@ -772,6 +772,15 @@ pub fn describe(source: &Source, current: &str) -> String {
     }
 }
 
+/// The label of the choice Edel OS's own default gives, for every page that
+/// offers it, written once here (ADR-010).
+pub fn release_choice() -> String {
+    trf(
+        "Automatic ({current})",
+        &[("current", tr("Edel OS's choice"))],
+    )
+}
+
 /// What a row's line adds about where its value comes from, as the
 /// mockup's rows say it: nothing when the release decides, `From the
 /// preset` when the preset does, `Your choice` or `Set by this machine`.

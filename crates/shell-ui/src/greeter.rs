@@ -11,7 +11,7 @@
 //! thread; once greetd starts the session (`COMMAND` as one word, which
 //! greetd runs through the shell itself, so its quoting holds) the greeter
 //! ends, and so does its compositor, as greetd expects. A refusal says
-//! "Wrong user name or password" and asks again. Escape goes back a step.
+//! "Wrong username or password. Type them again." and asks again. Escape goes back a step.
 //! Power sits in the corner (`corner.rs`) and opens its menu, as the lock
 //! screen's does. Logs `greeter shown, N screens`, `greeter places ...`,
 //! `greeter: chose LOGIN` or `greeter: chose other`, `greeter: power menu

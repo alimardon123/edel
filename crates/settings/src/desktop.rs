@@ -65,7 +65,7 @@ impl Group {
             .label
             .set_label(&match rows::note(&source, false) {
                 Some(note) => note.to_string(),
-                None => trf("Automatic ({current})", &[("current", tr("the release"))]),
+                None => rows::release_choice(),
             });
         self.source
             .reset
@@ -171,7 +171,12 @@ fn wire(group: &Rc<Group>) {
         glib::spawn_future_local(async move {
             let asked = gio::spawn_blocking(|| panels::ask_editor(EDIT_DESKTOP))
                 .await
-                .unwrap_or_else(|_| Err(tr("the call to the desktop stopped").to_string()));
+                .unwrap_or_else(|_| {
+                    Err(
+                        tr("The desktop did not answer. Log out and in again, then try once more.")
+                            .to_string(),
+                    )
+                });
             let Some(group) = weak.upgrade() else {
                 return;
             };

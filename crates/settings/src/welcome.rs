@@ -1002,7 +1002,7 @@ impl Welcome {
                         ),
                     }
                 }
-                Err(_) => tr("The account could not be made. Try again.").to_string(),
+                Err(_) => tr("Your account could not be made, as the command stopped without an answer. Press Start using Edel OS again.").to_string(),
             };
             welcome.busy.set(false);
             button.set_sensitive(true);

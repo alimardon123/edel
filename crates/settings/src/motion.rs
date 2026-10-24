@@ -18,7 +18,7 @@ use std::time::Duration;
 use adw::prelude::*;
 use gtk::glib;
 
-use edel::i18n::{tr, trf};
+use edel::i18n::tr;
 use edel::settings::{self, Source};
 
 use crate::files::Files;
@@ -144,7 +144,7 @@ impl Group {
         } else if sources.iter().any(|s| matches!(s, Source::Machine(_))) {
             tr("Set by this machine").to_string()
         } else {
-            trf("Automatic ({current})", &[("current", tr("the release"))])
+            rows::release_choice()
         }
     }
 
