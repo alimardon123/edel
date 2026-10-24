@@ -46,15 +46,14 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 	. ci/names.sh
 	alone=out/budget-alone.img
 	cp --sparse=always "$vm" "$alone"
-	part=$(sfdisk -d "$alone" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-	dd if="$alone" of=out/budget-data.img bs=512 skip="${part% *}" count="${part#* }" status=none
+	partition_out "$alone" 4 out/budget-data.img
 	for addon in $(debugfs -R "ls -p $addons_dir_on_data" out/budget-data.img 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
 		for file in $(debugfs -R "ls -p $addons_dir_on_data/$addon" out/budget-data.img 2>/dev/null | awk -F/ '$6 ~ /\.ext4$/ { print $6 }'); do
 			debugfs -w -R "rm $addons_dir_on_data/$addon/$file" out/budget-data.img
 			echo "budget boots: without the carried add-on $addon/$file"
 		done
 	done
-	dd if=out/budget-data.img of="$alone" bs=512 seek="${part% *}" conv=notrunc status=none
+	partition_in out/budget-data.img "$alone" 4
 	rm -f out/budget-data.img
 	for n in 1 2 3; do
 		vm_stamp=1 run_vm "out/budget-boot-$n.log" 'Started in [0-9.]+ s' "${BOOT_TIMEOUT:-300}" -no-reboot -snapshot \

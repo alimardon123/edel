@@ -8848,7 +8848,8 @@ case_another_base() {
 		[ "$n" != 4 ] || continue
 		sfdisk -d "$grown" 2>/dev/null | grep -q "^$grown$n : start= *$start, size= *$size," ||
 			{ echo "partition $n is not where the image has it"; exit 1; }
-		dd if="$image" of="$grown" bs=512 skip="$start" seek="$start" count="$size" conv=notrunc status=none
+		dd if="$image" of="$grown" bs=4M iflag=skip_bytes,count_bytes oflag=seek_bytes skip=$((start * 512)) \
+			seek=$((start * 512)) count=$((size * 512)) conv=notrunc status=none
 	done || fail "the new system could not be written over the first one's partitions"
 	rm -f "$QMP" "$commands"
 	keep_vm=1 run_vm out/desktop-another-base.log 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
@@ -8922,8 +8923,7 @@ if [ "$*" = live ]; then
 	# stick's data partition (partition 4), which /home and /var live on.
 	stick_logs() {
 		stop_vm
-		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" status=none
+		partition_out "$stick" 4 "$dir/data.img"
 		# The VM was stopped with /data mounted, so the copy's journal is
 		# not written back; debugfs cannot read it until e2fsck replays it.
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
@@ -8943,17 +8943,14 @@ if [ "$*" = live ]; then
 	# target_data: the installed disk's data partition (partition 4),
 	# copied to $dir/target-data.img for debugfs; false while there is none.
 	target_data() {
-		part=$(sfdisk -d "$target" 2>/dev/null | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		[ -n "$part" ] || return 1
-		dd if="$target" of="$dir/target-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		partition_out "$target" 4 "$dir/target-data.img" || return 1
 		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
 	}
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
 	stick_session() {
-		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		partition_out "$stick" 4 "$dir/data.img"
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
 		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
 	}
@@ -9124,8 +9121,7 @@ if [ "$*" = live ]; then
 	# which GTK apps showing app icons read (shell-ui reads the files). Partition 4
 	# is copied and checked as stick_logs does, so the running stick is
 	# left alone.
-	part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-	dd if="$stick" of="$dir/apps-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+	partition_out "$stick" 4 "$dir/apps-data.img"
 	e2fsck -fy "$dir/apps-data.img" >/dev/null 2>&1 || true
 	icon_cache=$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/apps-data.img" 2>&1)
 	case $icon_cache in
@@ -9313,8 +9309,7 @@ if [ "$*" = fresh ]; then
 	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
 	# for debugfs, its journal replayed on the copy.
 	fresh_data() {
-		part=$(sfdisk -d "$fresh" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		dd if="$fresh" of="$dir/fresh-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		partition_out "$fresh" 4 "$dir/fresh-data.img"
 		e2fsck -fy "$dir/fresh-data.img" >/dev/null 2>&1 || true
 	}
 	# fresh_wait WORDS SECONDS: waits for WORDS in live's session log there.
