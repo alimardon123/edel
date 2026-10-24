@@ -10,7 +10,8 @@
 //! Channel row has a card of its own: Stable and Preview as segments, or a
 //! choice for another channel name (`updates.channel`, one line of the
 //! person's settings file like any other row, with Reset and Copy as
-//! command). Details, closed, hold what technical people want: the two
+//! command), and under it Automatic updates and Restart between
+//! (`automatic.rs`, M7.5b). Details, closed, hold what technical people want: the two
 //! slots and the raw output of the last command. Only there does the word
 //! slot appear.
 //!
@@ -263,9 +264,8 @@ pub fn page() -> gtk::Widget {
     group.set_margin_top(12);
     let holder = gtk::Box::builder().build();
     let channel_row = widgets::row(&group, rows::title("updates.channel"), holder.upcast_ref());
-    // The automatic updates row (`updates.automatic` and
-    // `updates.restart_window`) comes with M7.5, as a row of the key like
-    // Channel; until then nothing here claims it.
+    // Automatic updates and Restart between, the machine's keys (M7.5b).
+    crate::automatic::rows(&group);
 
     // Details, closed: the slots, and the last command as it ran.
     let inner = gtk::Box::builder()

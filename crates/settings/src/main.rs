@@ -15,6 +15,7 @@ mod actions;
 mod addons;
 mod apps;
 mod ask;
+mod automatic;
 mod battery_care;
 mod bluetooth;
 mod card;

@@ -215,6 +215,27 @@ msgstr ""
 msgid "Wrong password. Type it again."
 msgstr ""
 
+msgid "Looks for an update once an hour and installs nothing."
+msgstr ""
+
+msgid "Installs updates by itself; each starts at your next restart."
+msgstr ""
+
+msgid "Installs updates by itself and restarts in the hours below. A computer with a screen asks you to restart instead."
+msgstr ""
+
+msgid "Edel OS updates when you choose."
+msgstr ""
+
+msgid "{start} to {end}"
+msgstr ""
+
+msgid "Any hour"
+msgstr ""
+
+msgid "When an update may restart this computer by itself, in local time."
+msgstr ""
+
 msgid "This laptop offers no charge limit, so it always charges to 100%."
 msgstr ""
 
@@ -1493,6 +1514,12 @@ msgstr ""
 msgid "Channel"
 msgstr ""
 
+msgid "Automatic updates"
+msgstr ""
+
+msgid "Restart between"
+msgstr ""
+
 msgid "Developer mode"
 msgstr ""
 
@@ -1704,6 +1731,9 @@ msgid "Power saver"
 msgstr ""
 
 msgid "When plugged in"
+msgstr ""
+
+msgid "Check only"
 msgstr ""
 
 msgid "From the preset"

@@ -38,6 +38,7 @@ use edel::i18n::{tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
+use crate::widgets::CONTROL_WIDTH;
 use crate::{actions, cmd, icon, widgets};
 
 /// The language suggested when the stick has none set.
@@ -493,9 +494,6 @@ pub(crate) fn zone_list(now: &str) -> Vec<String> {
     zones.sort_by_key(|zone| edel::timezones::label(zone));
     zones
 }
-
-/// The width of every control at the right of a row on this page.
-const CONTROL_WIDTH: i32 = 240;
 
 /// An entry of the form, its text filled in.
 fn entry(text: &str) -> gtk::Entry {
