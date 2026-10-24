@@ -74,6 +74,9 @@ msgstr ""
 msgid "the release list has moved on to {version}"
 msgstr ""
 
+msgid "add-on {names} copied; it starts with the new system"
+msgstr ""
+
 msgid "add-on {names} copied; it starts at the first boot"
 msgstr ""
 
@@ -87,6 +90,9 @@ msgid "add-on {names} did not start at the last boot, so Edel OS started without
 msgstr ""
 
 msgid "add-on {name} is chosen but not here yet; edel settings apply fetches it, and it starts at the next restart"
+msgstr ""
+
+msgid "add-on {name} needs the {base} add-on, so it is left off; add it with edel settings set addons.installed+={base}"
 msgstr ""
 
 msgid "could not mount add-on {name}; the other add-ons still mount, and the next update fetches it again"

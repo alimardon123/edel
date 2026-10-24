@@ -2,7 +2,7 @@
 # which logs user ci in to the compositor at once and measures it
 # (ci/desktop-test.sh).
 # The gaming, printing, containers and ai-agents add-ons are built in here (M7.6b, M7.9),
-# as the desktop test mounts no add-ons, so the profiles case sees the
+# as the desktop test mounts only the desktop, so the profiles case sees the
 # gaming add-on's controllers' rule and uinput, profile-office runs CUPS
 # and profile-developer runs podman. Printing ships off (off), so no other
 # case's VM runs cupsd; the case turns it on with services.printing, as
@@ -14,7 +14,10 @@ name = "edel-desktop"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "sound", "network", "firewall", "bluetooth", "power", "capture", "location", "gaming", "printing", "containers", "ai-agents", "desktop-test"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "network", "firewall", "gaming", "printing", "containers", "ai-agents", "desktop-test"]
+# The desktop is the add-on the one image carries (M8.17c), so every case
+# runs on a machine with it, as a person's stick does.
+addons = ["desktop"]
 off = ["ssh", "printing"]
 
 [vm]
@@ -27,3 +30,4 @@ slot_mib = 2048
 # when it has no window to show the second in, so the kernel is told the
 # second is plugged in too (M4.6c); the seed settings file sets its mode.
 cmdline = "console=tty0 console=ttyS0,115200 video=Virtual-2:e"
+carry = ["desktop"]

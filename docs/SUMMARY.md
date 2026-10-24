@@ -5,6 +5,7 @@
 # Use Edel OS
 
 - [Try it](TRY-IT.md)
+- [Hardware reports](hardware.md)
 - [Install](INSTALL.md)
 - [Fleets](FLEET.md)
 - [How Edel OS works](guide/how-it-works.md)

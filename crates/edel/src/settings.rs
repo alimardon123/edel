@@ -2604,6 +2604,13 @@ fn list_value_at<'a>(table: &'a Table, path: &[&str]) -> Option<&'a Value> {
 /// brings it, and adding it again takes it off there; the file's own list
 /// gains it only when no profile brings it.
 pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String> {
+    // The slot's default add-ons are the system's to read (`os`); a part
+    // built without it edits no add-ons.
+    #[cfg(feature = "os")]
+    let default = crate::addon_state::running_default();
+    #[cfg(not(feature = "os"))]
+    let default: Vec<String> = Vec::new();
+    let text = &with_default_list(text, key, &default)?;
     let item = list_item(value);
     let file = (key != WITHOUT)
         .then(|| read(text).ok())
@@ -2631,6 +2638,29 @@ pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String
         false => text.to_string(),
     };
     edit_own_list(&text, WITHOUT, &quoted, true)
+}
+
+/// `text` with the slot's default add-ons (`default`) written as its own
+/// `addons.installed` when `key` is that list and the file names none of
+/// its own (M8.17c): a change to the list starts from what the machine
+/// has, so adding printing to a stick keeps its desktop. Any other key, or
+/// a file with its own list, is unchanged.
+fn with_default_list(text: &str, key: &str, default: &[String]) -> Result<String> {
+    if key != "addons.installed" || default.is_empty() {
+        return Ok(text.to_string());
+    }
+    let Ok(read) = read(text) else {
+        return Ok(text.to_string());
+    };
+    if read.file.addons.installed.is_some() {
+        return Ok(text.to_string());
+    }
+    let without = read.file.system.profiles_without.unwrap_or_default();
+    let mut text = text.to_string();
+    for name in default.iter().filter(|n| !without.contains(n)) {
+        text = edit_own_list(&text, key, name, true)?;
+    }
+    Ok(text)
 }
 
 /// The key that names what the profiles leave out (M7.6c).
@@ -3671,6 +3701,31 @@ pub fn write_slot_copy(root: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_change_to_the_add_ons_starts_from_the_slots_default() {
+        let default = ["desktop".to_string()];
+        let text = with_default_list("format = 1\n", "addons.installed", &default).unwrap();
+        assert_eq!(
+            read(&text).unwrap().file.addons.installed.unwrap(),
+            ["desktop"]
+        );
+        let own = "format = 1\n[addons]\ninstalled = []\n";
+        assert_eq!(
+            with_default_list(own, "addons.installed", &default).unwrap(),
+            own
+        );
+        let other = "format = 1\n";
+        assert_eq!(
+            with_default_list(other, "apps.installed", &default).unwrap(),
+            other
+        );
+        let without = "format = 1\n[system]\nprofiles_without = [\"desktop\"]\n";
+        assert_eq!(
+            with_default_list(without, "addons.installed", &default).unwrap(),
+            without
+        );
+    }
 
     #[test]
     fn default_app_roles_leave_out_the_unset_and_the_empty_ones() {

@@ -1,7 +1,8 @@
 //! `--smooth N` with `--busy` (roadmap M7.7e): the window asks
 //! `wp_presentation` for feedback on every frame it commits, and once it
 //! has N intervals between presented frames, it prints one line
-//! (`smooth frames=N p99_ms=... slowest_ms=... direct=... discarded=...`)
+//! (`smooth frames=N median_ms=... p99_ms=... slowest_ms=... direct=...
+//! discarded=...`)
 //! and exits. A presented frame that had the zero-copy flag went straight
 //! to the screen (`direct`). A discarded frame adds no interval, so the
 //! next presented frame's interval spans the gap and counts as slow, which
@@ -79,9 +80,10 @@ impl Smooth {
 
     /// The line `--smooth` prints when it is done.
     pub fn line(&self) -> String {
-        let (p99, slowest) = summary(&self.intervals);
+        let (median, p99, slowest) = summary(&self.intervals);
         format(
             self.intervals.len(),
+            median,
             p99,
             slowest,
             self.direct,
@@ -90,22 +92,32 @@ impl Smooth {
     }
 }
 
-/// The 99th percentile by nearest rank (the smallest value with at least
-/// 99 percent of the values at or below it) and the largest value. Both
-/// are zero for no values.
-pub fn summary(intervals: &[Duration]) -> (Duration, Duration) {
+/// The median and the 99th percentile, each by nearest rank (the smallest
+/// value with at least half, or 99 percent, of the values at or below
+/// it), and the largest value. The median is the pace the machine draws
+/// at, so the gate can weigh the slow frames against it. All are zero for
+/// no values.
+pub fn summary(intervals: &[Duration]) -> (Duration, Duration, Duration) {
     let mut sorted = intervals.to_vec();
     sorted.sort();
     let Some(&slowest) = sorted.last() else {
-        return (Duration::ZERO, Duration::ZERO);
+        return (Duration::ZERO, Duration::ZERO, Duration::ZERO);
     };
-    let rank = (sorted.len() * 99).div_ceil(100);
-    (sorted[rank - 1], slowest)
+    let at = |percent: usize| sorted[(sorted.len() * percent).div_ceil(100) - 1];
+    (at(50), at(99), slowest)
 }
 
-fn format(frames: usize, p99: Duration, slowest: Duration, direct: u32, discarded: u32) -> String {
+fn format(
+    frames: usize,
+    median: Duration,
+    p99: Duration,
+    slowest: Duration,
+    direct: u32,
+    discarded: u32,
+) -> String {
     format!(
-        "smooth frames={frames} p99_ms={:.1} slowest_ms={:.1} direct={direct} discarded={discarded}",
+        "smooth frames={frames} median_ms={:.1} p99_ms={:.1} slowest_ms={:.1} direct={direct} discarded={discarded}",
+        median.as_secs_f64() * 1000.0,
         p99.as_secs_f64() * 1000.0,
         slowest.as_secs_f64() * 1000.0,
     )
@@ -169,7 +181,11 @@ mod tests {
         let values: Vec<Duration> = (1..=100).map(Duration::from_millis).collect();
         assert_eq!(
             summary(&values),
-            (Duration::from_millis(99), Duration::from_millis(100))
+            (
+                Duration::from_millis(50),
+                Duration::from_millis(99),
+                Duration::from_millis(100)
+            )
         );
     }
 
@@ -181,13 +197,20 @@ mod tests {
             .collect();
         assert_eq!(
             summary(&values),
-            (Duration::from_millis(50), Duration::from_millis(50))
+            (
+                Duration::from_millis(16),
+                Duration::from_millis(50),
+                Duration::from_millis(50)
+            )
         );
     }
 
     #[test]
     fn summary_of_nothing_is_zero() {
-        assert_eq!(summary(&[]), (Duration::ZERO, Duration::ZERO));
+        assert_eq!(
+            summary(&[]),
+            (Duration::ZERO, Duration::ZERO, Duration::ZERO)
+        );
     }
 
     #[test]
@@ -196,11 +219,12 @@ mod tests {
             format(
                 300,
                 Duration::from_micros(16_660),
+                Duration::from_micros(16_660),
                 Duration::from_micros(33_400),
                 0,
                 2
             ),
-            "smooth frames=300 p99_ms=16.7 slowest_ms=33.4 direct=0 discarded=2"
+            "smooth frames=300 median_ms=16.7 p99_ms=16.7 slowest_ms=33.4 direct=0 discarded=2"
         );
     }
 }

@@ -62,6 +62,17 @@ pub struct Listed {
     /// `features/NAME/`, when the feature ships files.
     pub files: Option<PathBuf>,
     pub feature: Feature,
+    /// The features an add-on is made of, its `features` list (M8.17c);
+    /// empty for a feature and for an add-on of its own packages.
+    pub members: Vec<Listed>,
+}
+
+impl Listed {
+    /// This add-on and the features it is made of: what its build installs
+    /// and ships.
+    pub fn parts(&self) -> impl Iterator<Item = &Listed> {
+        std::iter::once(self).chain(&self.members)
+    }
 }
 
 /// An image definition with its features merged.
@@ -168,6 +179,11 @@ pub struct Vm {
     /// end of the disk on first boot, so it only needs room for a start.
     #[serde(default = "default_data_mib")]
     pub data_mib: u64,
+    /// Add-ons of this image the disk image holds on its data partition
+    /// and turns on (M8.17c): the stick carries the desktop, so a person
+    /// who starts or installs from it has the desktop with no extra step.
+    #[serde(default)]
+    pub carry: Vec<String>,
 }
 
 fn default_data_mib() -> u64 {
@@ -242,6 +258,7 @@ pub fn find_features(dirs: &[PathBuf]) -> Result<BTreeMap<String, Listed>> {
                     text,
                     files,
                     feature,
+                    members: Vec::new(),
                 },
             );
         }
@@ -454,17 +471,24 @@ impl ImageDef {
             apps_dropped,
         };
         for name in &file.addons {
-            if def.addons.iter().any(|l| &l.name == name) {
-                bail!("add-on {name} is listed twice");
-            }
-            let Some(addon) = found.remove(name) else {
-                bail!(
-                    "unknown feature {name}; the features are {}",
-                    known.join(", ")
-                );
-            };
-            check_addon(&def, &addon)?;
+            let addon = take_addon(&def, &[], name, &mut found, &known)?;
             def.addons.push(addon);
+        }
+        // The default apps come with the desktop the stick carries (M8.17c).
+        let carry = def
+            .vm
+            .as_ref()
+            .map(|vm| vm.carry.clone())
+            .unwrap_or_default();
+        for name in &carry {
+            let Some(addon) = def.addons.iter().find(|l| &l.name == name) else {
+                bail!("carry lists {name}, which is not in addons");
+            };
+            for part in addon.parts() {
+                def.apps.extend(part.feature.flatpak.iter().cloned());
+                def.apps_dropped
+                    .extend(part.feature.flatpak_dropped.iter().cloned());
+            }
         }
         def.validate()?;
         Ok(def)
@@ -610,36 +634,111 @@ fn both_refusal(name: &str) -> String {
     )
 }
 
+/// Takes add-on `name` out of `found` with the features it is made of
+/// (M8.17c), and checks it: `earlier` are the add-ons resolved before it
+/// beside the image's own, which an `on` names and whose parts it may not
+/// share. `known` lists every feature, for the message.
+pub fn take_addon(
+    image: &ImageDef,
+    earlier: &[Listed],
+    name: &str,
+    found: &mut BTreeMap<String, Listed>,
+    known: &[String],
+) -> Result<Listed> {
+    let before: Vec<&Listed> = image.addons.iter().chain(earlier).collect();
+    if before.iter().any(|l| l.name == name) {
+        bail!("add-on {name} is listed twice");
+    }
+    if before
+        .iter()
+        .any(|l| l.members.iter().any(|m| m.name == name))
+    {
+        bail!("{name} is a part of another add-on of this image, so it is not an add-on too");
+    }
+    let Some(mut addon) = found.remove(name) else {
+        bail!(
+            "unknown feature {name}; the features are {}",
+            known.join(", ")
+        );
+    };
+    for part in addon.feature.features.clone() {
+        if image.features.iter().any(|l| l.name == part) {
+            bail!(
+                "{part} is both a feature of this image and a part of add-on {name}; an image builds a feature in or carries it in an add-on, not both"
+            );
+        }
+        if let Some(other) = before
+            .iter()
+            .find(|l| l.name == part || l.members.iter().any(|m| m.name == part))
+        {
+            bail!(
+                "{part} is a part of add-on {name} and of {}; a feature is a part of one add-on",
+                other.name
+            );
+        }
+        let Some(member) = found.remove(&part) else {
+            bail!(
+                "add-on {name} is made of {part}, which is no feature; the features are {}",
+                known.join(", ")
+            );
+        };
+        if member.feature.addon {
+            bail!(
+                "add-on {name} is made of {part}, which is an add-on itself; its parts are features"
+            );
+        }
+        addon.members.push(member);
+    }
+    if let Some(base) = &addon.feature.on {
+        match before.iter().find(|l| &l.name == base) {
+            None => bail!(
+                "add-on {name} is built on {base}, which is not an add-on listed before it in this image"
+            ),
+            Some(l) if l.feature.on.is_some() => bail!(
+                "add-on {name} is built on {base}, which is built on another add-on; an add-on is built on the image or on one add-on over it"
+            ),
+            Some(_) => {}
+        }
+    }
+    check_addon(image, &addon)?;
+    Ok(addon)
+}
+
 /// Refuses an add-on the image cannot build (M7.2a). `merge` checks the
 /// definition's own add-ons and `edel image build --addon` the test ones,
-/// with these same rules.
+/// with these same rules, for the add-on and each feature it is made of.
 pub fn check_addon(image: &ImageDef, listed: &Listed) -> Result<()> {
     let name = &listed.name;
-    let feature = &listed.feature;
     if image.variant == Variant::Container {
         bail!("an add-on needs a bootable image; container images have none");
     }
-    if !feature.addon {
+    if !listed.feature.addon {
         bail!("add-on {name}: its feature file has no addon = true");
     }
     if image.features.iter().any(|l| &l.name == name) {
         bail!("{}", both_refusal(name));
     }
-    if !feature.programs.is_empty()
-        || !feature.health.is_empty()
-        || !feature.modules.is_empty()
-        || !feature.initramfs.is_empty()
-        || !feature.flatpak_dropped.is_empty()
-        || feature.alpine.is_some()
-    {
-        bail!("add-on {name}: an add-on brings packages, services, files and Flatpak apps only");
-    }
-    if feature
-        .keep
-        .iter()
-        .any(|k| !k.newest.is_empty() || k.newest_by.is_some())
-    {
-        bail!("add-on {name}: keep only lists files; newest needs the image's modules");
+    for part in listed.parts() {
+        let feature = &part.feature;
+        // The kernel's and the initramfs's parts are the image's: an
+        // add-on mounts over /usr once the system has started (M8.17c).
+        if !feature.modules.is_empty() || !feature.initramfs.is_empty() || feature.alpine.is_some()
+        {
+            bail!(
+                "add-on {name}: {} names kernel modules, mkinitfs features or the Alpine branch, which belong to the image",
+                part.name
+            );
+        }
+        if feature
+            .keep
+            .iter()
+            .any(|k| !k.newest.is_empty() || k.newest_by.is_some())
+        {
+            bail!(
+                "add-on {name}: {}'s keep only lists files; newest needs the image's modules",
+                part.name
+            );
+        }
     }
     Ok(())
 }
@@ -725,6 +824,7 @@ mod tests {
             text: text.into(),
             files: None,
             feature: features::check(name, text).unwrap(),
+            members: Vec::new(),
         }
     }
 
@@ -1059,27 +1159,13 @@ mod tests {
             (both, "hello is both a feature and an add-on of this image"),
             (
                 with_addon(
-                    &ADDON.replace("[services]", "programs = [\"hello\"]\n[services]"),
-                    r#"["hello"]"#,
-                ),
-                "an add-on brings packages, services, files and Flatpak apps only",
-            ),
-            (
-                with_addon(
-                    &ADDON.replace("[services]", "health = [\"network\"]\n[services]"),
-                    r#"["hello"]"#,
-                ),
-                "an add-on brings packages, services, files and Flatpak apps only",
-            ),
-            (
-                with_addon(
                     &ADDON.replace(
                         "packages = [\"hello\"]",
                         "packages = [\"hello\"]\nmodules = [\"ext4\"]",
                     ),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services, files and Flatpak apps only",
+                "names kernel modules, mkinitfs features or the Alpine branch, which belong to the image",
             ),
             (
                 with_addon(
@@ -1089,7 +1175,7 @@ mod tests {
                     ),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services, files and Flatpak apps only",
+                "names kernel modules, mkinitfs features or the Alpine branch, which belong to the image",
             ),
             (
                 with_addon(
@@ -1098,7 +1184,7 @@ mod tests {
                     ),
                     r#"["hello"]"#,
                 ),
-                "an add-on brings packages, services, files and Flatpak apps only",
+                "names kernel modules, mkinitfs features or the Alpine branch, which belong to the image",
             ),
             (
                 with_addon(
@@ -1107,7 +1193,7 @@ mod tests {
                     ),
                     r#"["hello"]"#,
                 ),
-                "keep only lists files; newest needs the image's modules",
+                "hello's keep only lists files; newest needs the image's modules",
             ),
             (
                 {
@@ -1149,6 +1235,132 @@ mod tests {
             !def.apps.iter().any(|a| a == "org.example.App"),
             "{:?}",
             def.apps
+        );
+    }
+
+    /// The image `VM` with the add-ons `addons` and the features `extra`
+    /// beside the usual ones, merged.
+    fn with_parts(extra: &[(&str, &str)], addons: &str, vm: &str) -> Result<ImageDef> {
+        let mut found = found();
+        for (name, text) in extra {
+            found.insert(name.to_string(), listed(name, text));
+        }
+        ImageDef::merge(
+            &VM.replace("[vm]", &format!("addons = {addons}\n[vm]{vm}")),
+            found,
+        )
+    }
+
+    const PART: &str = "format = 1\nsummary = \"part\"\nwhy = \"w\"\npackages = [\"mesa\"]\nprograms = [\"edel-compositor\"]\nhealth = [\"compositor\"]\nscreen = true\n[services]\ndefault = [\"seatd\"]\n";
+    const DESKTOP: &str =
+        "format = 1\nsummary = \"desktop\"\naddon = true\nfeatures = [\"part\"]\n";
+    const OVER: &str = "format = 1\nsummary = \"over\"\nwhy = \"w\"\npackages = [\"orca\"]\naddon = true\non = \"desktop\"\n";
+
+    #[test]
+    fn an_add_on_is_made_of_features_and_carried_on_the_disk() {
+        let def = with_parts(
+            &[("part", PART), ("desktop", DESKTOP), ("over", OVER)],
+            r#"["desktop", "over"]"#,
+            "\ncarry = [\"desktop\"]",
+        )
+        .unwrap();
+        assert_eq!(def.addons[0].members.len(), 1);
+        assert_eq!(
+            def.addons[0]
+                .parts()
+                .map(|l| l.name.as_str())
+                .collect::<Vec<_>>(),
+            ["desktop", "part"]
+        );
+        // The parts are the add-on's, not the image's.
+        assert!(!def.packages.contains(&"mesa".to_string()));
+        assert!(!def.health.contains(&"compositor".to_string()));
+        assert_eq!(def.vm.unwrap().carry, ["desktop"]);
+    }
+
+    #[test]
+    fn refuses_parts_and_bases_an_add_on_cannot_have() {
+        let modules = PART.replace("screen = true", "modules = [\"i915\"]");
+        let cases = [
+            (
+                with_parts(
+                    &[("part", PART), ("desktop", DESKTOP)],
+                    r#"["desktop"]"#,
+                    "\ncarry = [\"over\"]",
+                ),
+                "carry lists over, which is not in addons",
+            ),
+            (
+                with_parts(&[("desktop", DESKTOP)], r#"["desktop"]"#, ""),
+                "add-on desktop is made of part, which is no feature",
+            ),
+            (
+                with_parts(
+                    &[("part", &modules), ("desktop", DESKTOP)],
+                    r#"["desktop"]"#,
+                    "",
+                ),
+                "add-on desktop: part names kernel modules",
+            ),
+            (
+                with_parts(
+                    &[("part", PART), ("desktop", DESKTOP), ("over", OVER)],
+                    r#"["over", "desktop"]"#,
+                    "",
+                ),
+                "add-on over is built on desktop, which is not an add-on listed before it",
+            ),
+            (
+                with_parts(
+                    &[
+                        ("part", PART),
+                        ("desktop", DESKTOP),
+                        ("over", OVER),
+                        ("top", &OVER.replace("\"desktop\"", "\"over\"")),
+                    ],
+                    r#"["desktop", "over", "top"]"#,
+                    "",
+                ),
+                "add-on top is built on over, which is built on another add-on",
+            ),
+            (
+                with_parts(
+                    &[
+                        ("part", PART),
+                        ("desktop", DESKTOP),
+                        ("other", &DESKTOP.replace("desktop", "other")),
+                    ],
+                    r#"["desktop", "other"]"#,
+                    "",
+                ),
+                "part is a part of add-on other and of desktop",
+            ),
+            (
+                with_parts(
+                    &[("part", PART), ("desktop", DESKTOP)],
+                    r#"["desktop", "part"]"#,
+                    "",
+                ),
+                "part is a part of another add-on of this image",
+            ),
+        ];
+        for (result, message) in cases {
+            let err = result.unwrap_err();
+            assert!(format!("{err:#}").contains(message), "{err:#}");
+        }
+        let in_image = {
+            let mut found = found();
+            found.insert("part".into(), listed("part", PART));
+            found.insert("desktop".into(), listed("desktop", DESKTOP));
+            ImageDef::merge(
+                &VM.replace(r#""ssh"]"#, r#""ssh", "part"]"#)
+                    .replace("[vm]", "addons = [\"desktop\"]\n[vm]"),
+                found,
+            )
+        };
+        assert!(
+            format!("{:#}", in_image.unwrap_err())
+                .contains("part is both a feature of this image and a part of add-on desktop")
         );
     }
 

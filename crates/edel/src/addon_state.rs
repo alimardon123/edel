@@ -15,6 +15,75 @@ use crate::i18n::n_;
 use crate::places;
 use crate::services;
 use crate::version;
+use crate::settings::SettingsFile;
+
+/// The os-release key that names the add-ons a machine has while its
+/// settings file sets no `addons.installed` of its own (M8.17c): those its
+/// disk image carries, the stick's desktop, so a machine started or
+/// installed from the stick has the desktop with no step of its own.
+pub const DEFAULT_KEY: &str = "EDEL_ADDONS_DEFAULT";
+
+/// The default add-ons `os_release` names ([`DEFAULT_KEY`]), in order.
+pub fn default_in(os_release: &str) -> Vec<String> {
+    os_release
+        .lines()
+        .find_map(|line| line.strip_prefix(DEFAULT_KEY)?.strip_prefix('='))
+        .map(|value| {
+            value
+                .trim()
+                .trim_matches('"')
+                .split([' ', ','])
+                .filter(|n| !n.is_empty())
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The default add-ons of the running slot.
+pub fn running_default() -> Vec<String> {
+    default_in(&fs::read_to_string("/usr/lib/os-release").unwrap_or_default())
+}
+
+/// The add-ons `file` names, its profiles' included (M7.6), and while the
+/// file sets no `addons.installed` of its own, the image's `default` first,
+/// less what `system.profiles_without` leaves out (M8.17c). Every reader
+/// of a machine's add-ons asks this, so the default is read in one place.
+pub fn installed(file: &SettingsFile, default: &[String]) -> Vec<String> {
+    let own = file.addons.installed.is_some();
+    let named = crate::profiles::applied(file)
+        .addons
+        .installed
+        .unwrap_or_default();
+    if own {
+        return named;
+    }
+    let without = file.system.profiles_without.clone().unwrap_or_default();
+    let mut all: Vec<String> = default
+        .iter()
+        .filter(|name| !without.contains(name))
+        .cloned()
+        .collect();
+    for name in named {
+        if !all.contains(&name) {
+            all.push(name);
+        }
+    }
+    all
+}
+
+/// The add-ons this machine's settings file has ([`installed`]) with the
+/// running slot's default; none when the file is unreadable.
+pub fn installed_on_machine() -> Vec<String> {
+    let path = places::found(&places::machine_settings());
+    let default = running_default();
+    match crate::settings::read_on_machine(&path) {
+        Ok(read) => installed(&read.file, &default),
+        // No file yet: the first boot, before apply seeds it.
+        Err(_) if !path.exists() => default,
+        Err(_) => Vec::new(),
+    }
+}
 
 /// Where one add-on stands on this machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,11 +282,7 @@ impl Facts {
     /// missing.
     pub fn read() -> Facts {
         let dir = running_dir();
-        let path = places::found(&places::machine_settings());
-        let wanted = crate::settings::read_on_machine(&path)
-            .ok()
-            .and_then(|read| crate::profiles::applied(&read.file).addons.installed)
-            .unwrap_or_default();
+        let wanted = installed_on_machine();
         let mounted = mounted();
         let built_in = services::installed()
             .into_iter()
@@ -237,6 +302,42 @@ impl Facts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn file(text: &str) -> SettingsFile {
+        crate::settings::read(text).unwrap().file
+    }
+
+    #[test]
+    fn the_default_add_ons_are_the_machines_until_its_file_names_its_own() {
+        let default = default_in("NAME=\"Edel OS\"\nEDEL_ADDONS_DEFAULT=\"desktop\"\n");
+        assert_eq!(default, ["desktop"]);
+        assert!(default_in("NAME=\"Edel OS\"\n").is_empty());
+        assert_eq!(installed(&file("format = 1\n"), &default), ["desktop"]);
+        // A profile's add-on comes on top of the default, not instead of it.
+        assert_eq!(
+            installed(
+                &file("format = 1\n[system]\nprofiles = [\"office\"]\n"),
+                &default
+            ),
+            ["desktop", "printing"]
+        );
+        assert!(
+            installed(
+                &file("format = 1\n[system]\nprofiles_without = [\"desktop\"]\n"),
+                &default
+            )
+            .is_empty()
+        );
+        // A list of its own, even an empty one, is the machine's whole list.
+        assert!(installed(&file("format = 1\n[addons]\ninstalled = []\n"), &default).is_empty());
+        assert_eq!(
+            installed(
+                &file("format = 1\n[addons]\ninstalled = [\"printing\"]\n"),
+                &default
+            ),
+            ["printing"]
+        );
+    }
 
     fn names(list: &[&str]) -> Vec<String> {
         list.iter().map(|n| n.to_string()).collect()

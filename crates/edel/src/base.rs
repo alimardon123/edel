@@ -31,6 +31,10 @@ pub fn is_started_in(dir: &std::path::Path, service: &str) -> bool {
     dir.join(service).exists()
 }
 
+/// Where OpenRC reads each service's settings (`NAME` and
+/// `NAME.RUNLEVEL`), beside the folder its script lies in.
+pub const SERVICE_CONF_DIR: &str = "/etc/conf.d";
+
 /// Puts `service` into `runlevel`, so it starts at every boot.
 pub fn add_to_runlevel(service: &str, runlevel: &str) -> Command {
     let mut command = Command::new("rc-update");
