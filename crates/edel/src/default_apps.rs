@@ -334,9 +334,9 @@ pub fn follow() -> Result<()> {
             ),
         };
         println!("edel update: {said}");
+        // One line at the end says what failed and why, not a line here too.
         if let Err(err) = result {
-            eprintln!("warning: {said}: {err:#}");
-            failed.push(said);
+            failed.push(format!("{said}: {err:#}"));
         }
     }
     if failed.is_empty() {
