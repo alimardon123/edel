@@ -180,9 +180,9 @@ build "$version" ci/vm/vm.toml --files ci/ab-test/files --files ci/install-test/
 	--no-addons --no-compress --out out/install-test
 # The updates test image (roadmap M7.5): ci/updates-test/vm.toml, under the
 # CI VM image's name, so the A/B test's update below is its update too, with
-# ci/updates-test/settings.toml (install and restart by itself) and a crontab
+# ci/updates-test/machine.toml (install and restart by itself) and a crontab
 # that runs the hourly job every minute from that update on the host.
-build "$version" ci/updates-test/vm.toml --files ci/updates-test/files --settings ci/updates-test/settings.toml \
+build "$version" ci/updates-test/vm.toml --files ci/updates-test/files --settings ci/updates-test/machine.toml \
 	--health-timeout 30 --public-key out/keys/ci-1.pub --public-key out/keys/ci-2.pub \
 	--no-addons --no-compress --out out/updates-test
 # Its update: the same image with a tagged boot loader, so installing it
