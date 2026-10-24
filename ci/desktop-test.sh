@@ -349,6 +349,12 @@
 #               set shows in the diff and its reset undoes it, and dropping
 #               the add-on leaves the diff empty, no file of it in /etc
 #               or /usr/lib/edel and none of its apps in flatpak ps (M7.9)
+#   game-session  last, as it ends ci's session: with the gaming profile
+#               installing the stand-in for Steam, the login screen's
+#               Edel OS Game session logs ci in to the compositor alone,
+#               which runs flatpak run com.valvesoftware.Steam -gamepadui
+#               fullscreen in game mode with no shell-ui, and Super+Q
+#               ending the game brings the login screen back (M8.26)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -1064,6 +1070,92 @@ case_respawn() {
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
 	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login"
+}
+
+case_game_session() {
+	# A game session (M8.26): the gaming add-on's edel-game.desktop, which
+	# the login screen offers beside Edel OS. The gaming profile installs
+	# the stand-in for Steam (ci/apps/make-repo.sh), which takes Steam's
+	# -gamepadui as a game draws, on every frame. ci's session ends, ci
+	# logs in to Edel OS Game from the login screen's session chip, and
+	# the compositor runs the stand-in alone: fullscreen, game mode on and
+	# no shell-ui. Super+Q ends the game, which ends the session, and the
+	# login screen shows again. Kept as game-session.png.
+	asked=$(count 'DESKTOP-TEST: gaming_standin ')
+	guest 'gaming standin'
+	wait_more 'DESKTOP-TEST: gaming_standin ' "$asked" || fail "the service did not point ci's Flathub at the stand-in"
+	[ "$(value gaming_standin | cut -d' ' -f1)" = 0 ] || fail "adding the stand-in's remote for ci failed: $(value gaming_standin)"
+	profile_on gaming
+	asked=$(count 'DESKTOP-TEST: greeter_again ')
+	guest 'end session'
+	wait_more 'DESKTOP-TEST: greeter_again ' "$asked" 60 || fail "no word from the test service after ci's session ended"
+	again=$(value greeter_again)
+	[ "${again%% *}" != "${again##* }" ] || fail "the login screen did not show again after ci's session ended: $again"
+	guest 'greeter places'
+	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
+		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	box=$(printf '%s\n' "$places" | sed -n 's/.*person[0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) ci,.*/\1 \2 \3 \4/p')
+	[ -n "$box" ] || fail "ci is not on the greeter's people row: \"$places\""
+	chip=$(printf '%s\n' "$places" | sed -n 's/.*session \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) .*/\1 \2 \3 \4/p')
+	[ -n "$chip" ] || fail "the greeter has no session chip: \"$places\""
+	read -r cx cy cw ch <<-EOF
+		$chip
+	EOF
+	python3 ci/qmp.py click $((cx + cw / 2)) $((cy + ch / 2))
+	sleep 1
+	asked=$(count 'DESKTOP-TEST: greeter.log .*session[0-9][0-9]* [0-9+x]* Edel OS Game')
+	guest 'greeter places'
+	wait_more 'DESKTOP-TEST: greeter.log .*session[0-9][0-9]* [0-9+x]* Edel OS Game' "$asked" 10 ||
+		fail "the session chip's menu has no Edel OS Game row: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greeter.log ' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	row=$(printf '%s\n' "$places" | sed -n 's/.*session[0-9][0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) Edel OS Game.*/\1 \2 \3 \4/p')
+	read -r rx ry rw rh <<-EOF
+		$row
+	EOF
+	python3 ci/qmp.py click $((rx + rw / 2)) $((ry + rh / 2))
+	sleep 1
+	read -r bx by bw bh <<-EOF
+		$box
+	EOF
+	python3 ci/qmp.py click $((bx + bw / 2)) $((by + bh / 2))
+	sleep 1
+	started=$(count 'edel-compositor: a game session: flatpak run com.valvesoftware.Steam -gamepadui')
+	full=$(count 'edel-compositor: window edel-testclient fullscreen')
+	playing=$(count 'a game is playing')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: a game session: flatpak run com.valvesoftware.Steam -gamepadui' "$started" 90 || {
+		guest 'greeter log'
+		sleep 3
+		fail "logging in to Edel OS Game did not start the compositor's game session: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	}
+	wait_more 'edel-compositor: window edel-testclient fullscreen' "$full" 60 ||
+		fail "the stand-in for Steam did not show fullscreen in the game session"
+	wait_more 'a game is playing' "$playing" 30 || fail "the game session did not turn game mode on for the stand-in"
+	asked=$(count 'DESKTOP-TEST: game_session ')
+	guest 'game session'
+	wait_more 'DESKTOP-TEST: game_session ' "$asked" 10 || fail "no word from the test service about the game session's processes"
+	case "$(value game_session)" in
+	'compositor 1 shell-ui 0 greeter '*) ;;
+	*) fail "the game session runs one compositor and no shell-ui for ci, not: $(value game_session)" ;;
+	esac
+	shown=$(value game_session | sed 's/.* greeter //')
+	shot game-session 640 400 3333cc >/dev/null ||
+		fail "the middle of the screen is not the stand-in's #3333cc in the game session"
+	python3 ci/qmp.py key meta_l-q
+	# The game's end ends the session: ci runs no compositor, and the
+	# greeter has shown once more.
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: game_session ')
+		guest 'game session'
+		wait_more 'DESKTOP-TEST: game_session ' "$asked" 10 || fail "no word from the test service after the game ended"
+		[ "$(value game_session)" = "compositor 0 shell-ui 0 greeter $((shown + 1))" ] && break
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "ending the game with Super+Q did not end the session and bring the login screen back: $(value game_session)"
+		sleep 1
+	done
+	echo "PASS: with the gaming profile installing the stand-in for Steam, ci logged in to Edel OS Game from the login screen's session chip, the compositor ran flatpak run com.valvesoftware.Steam -gamepadui alone, fullscreen, in game mode and with no shell-ui, and Super+Q ending the game brought the login screen back"
 }
 
 case_layers() {
@@ -9802,12 +9894,12 @@ fi
 
 # The profile cases (M7.6b) take what a machine would download from this
 # host, the guest's 10.0.2.2, on a port of its own (rollback has 8001):
-# profile-gaming a stand-in for Steam and ai-agents its two apps' stand-ins from the test apps'
+# profile-gaming and game-session a stand-in for Steam and ai-agents its two apps' stand-ins from the test apps'
 # repository;
 # profile-developer our own container image (ci/build.sh's
 # out/desktop-container).
 case " $* " in
-*' profile-gaming '* | *' profile-developer '* | *' ai-agents '*)
+*' profile-gaming '* | *' profile-developer '* | *' ai-agents '* | *' game-session '*)
 	rm -rf "$dir/serve"
 	mkdir -p "$dir/serve"
 	ln -s "$PWD/out/apps-repo" "$dir/serve/apps"

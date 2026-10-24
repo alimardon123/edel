@@ -13,7 +13,7 @@ Each file is a few lines of the settings file and says in its comment what it br
 
 Pens and screen capture work on every desktop, with or without a profile.
 
-Game controllers come with Gaming, as the gaming add-on; `edel settings set addons.installed+=gaming` adds them without the profile.
+Game controllers come with Gaming, as the gaming add-on; `edel settings set addons.installed+=gaming` adds them without the profile. The add-on also puts Edel OS Game on the login screen's session chip: Steam's Big Picture alone, fullscreen and in game mode, with no panel or dock; closing Steam brings the login screen back.
 
 ## In the settings file
 

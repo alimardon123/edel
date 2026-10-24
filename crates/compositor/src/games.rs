@@ -64,6 +64,8 @@ pub struct Game {
     pub mode: GameMode,
     /// Whether the machine runs on its battery, as shell-ui says (M7.7c).
     pub on_battery: bool,
+    /// A game session (M8.26): game mode is on whatever the key says.
+    pub session: bool,
     /// Whether a game played at the last state change, so the log says
     /// when one starts and when it ends (M7.7c).
     pub stepped_aside: Cell<bool>,
@@ -90,7 +92,7 @@ struct Recording {
 impl Game {
     /// Whether game mode is on now.
     pub fn on(&self) -> bool {
-        self.mode.on(|| self.on_battery)
+        self.session || self.mode.on(|| self.on_battery)
     }
 
     /// A surface committed (M7.7d): when it is the game's, its next page

@@ -70,9 +70,10 @@ struct Input {
 }
 
 /// Starts the session's programs the first time the desktop is on
-/// screen, unless the session runs one program instead (the greeter).
+/// screen, unless the session runs one program instead (the greeter); a
+/// game session (M8.26) starts them too, but no startup apps or welcome.
 pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
-    if state.services.started || state.program.is_some() {
+    if state.services.started || state.greeter() {
         return;
     }
     state.services.started = true;
@@ -82,8 +83,11 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         spawn(handle, command, 1, env.clone());
     }
     follow_input_method(handle, state);
-    start_apps(state);
-    start_welcome(state);
+    // A game session (M8.26) opens its game alone.
+    if !state.game_session() {
+        start_apps(state);
+        start_welcome(state);
+    }
 }
 
 /// Links the person's low-latency PipeWire file in, or takes our link
@@ -93,7 +97,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
 /// window, whose PipeWire is the developer's own; a file there that is
 /// not our link is the person's own and is left alone.
 pub fn follow_low_latency(state: &Edel) {
-    if !state.services.started || state.program.is_some() {
+    if !state.services.started || state.greeter() {
         return;
     }
     let Some(link) = edel::places::low_latency_link() else {
@@ -136,7 +140,7 @@ pub fn follow_low_latency(state: &Edel) {
 /// programs have started, so never under the greeter, and never under the
 /// development window, which starts none of them.
 pub fn follow_input_method(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
-    if !state.services.started || state.program.is_some() {
+    if !state.services.started || state.greeter() {
         return;
     }
     let wanted = state.settings.input_method.as_deref() == Some(INPUT_METHOD);
