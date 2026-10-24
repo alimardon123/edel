@@ -3,7 +3,7 @@
 # containers add-on carried) with no screen (-vga none) and the EDEL-SEED
 # volume build.sh made, out/server-test/seed.img: the server's settings,
 # admin ci with the system test's key, ssh on and the containers add-on.
-# Over ssh as ci it runs edel status, imports our own container image
+# Over ssh as ci it runs doas edel status (the admin rule, M6.5), imports our own container image
 # (out/edel-container-x86_64.tar.gz, copied in, no network) and runs it,
 # and wants the containers' storage on /data. Then it boots a fresh copy
 # with no seed as an AWS instance (-smbios), the user network moved to
@@ -41,9 +41,9 @@ ssh_ci() {
 	ssh $ssh_opts -p 2224 ci@127.0.0.1 "$@"
 }
 tries=0
-until ssh_ci edel status >out/server-status.txt 2>out/server-ssh.log; do
+until ssh_ci doas edel status >out/server-status.txt 2>out/server-ssh.log; do
 	tries=$((tries + 1))
-	[ "$tries" -lt 10 ] || fail "$log" "ci could not log in over ssh with the seeded key and run edel status"
+	[ "$tries" -lt 10 ] || fail out/server-ssh.log "ci could not log in over ssh with the seeded key and run doas edel status"
 	sleep 3
 done
 cat out/server-status.txt
@@ -63,7 +63,7 @@ case $same in
 yes*) ;;
 *) fail out/server-ssh.log "the containers' storage ($store) or /var/lib is not on /data" ;;
 esac
-echo "PASS: the seeded server took ci's key over ssh, ran edel status and our own container, its storage on /data (${waited}s to the login prompt)"
+echo "PASS: the seeded server took ci's key over ssh, ran doas edel status and our own container, its storage on /data (${waited}s to the login prompt)"
 stop_vm
 trap - EXIT
 
