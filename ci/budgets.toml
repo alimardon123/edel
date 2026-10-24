@@ -91,11 +91,12 @@ desktop_behind_game_cpu_percent = 1
 # the same code it gave 11.2 to 19.1 ms, and 12.5 and 19.1 ms in two runs
 # in one boot, with render p50 0.59 ms on AMD runners at 2.6 GHz and
 # 0.98 ms on an Intel runner at 2.8 GHz. The ratio takes the runner's
-# pace out, as animation_p99_ms does for the animations. Its first value
-# comes from the next full run, before the change merges. CI's VM gives
-# the client shared memory buffers, which cannot go straight to the
-# screen, so the floor stays 0 there.
-game_frame_p99_ratio = 2.0
+# pace out, as animation_p99_ms does for the animations. Its first
+# measurement, on 2026-10-24, was 1.12 (median 8.9 ms, p99 10.0 ms over
+# 1200 frames); the limit is that plus 10 percent, as M7.7e asks.
+# CI's VM gives the client shared memory buffers, which cannot go
+# straight to the screen, so the floor stays 0 there.
+game_frame_p99_ratio = 1.24
 game_direct_percent_floor = 0
 
 # The compositor's and shell-ui's wakeups per second together, from their

@@ -241,8 +241,12 @@ commands() {
 			;;
 		# Presets (M5.4a): Hive, then back to Classic, the default;
 		# layout.tiling, left false by the tiling case, would win over
-		# Hive's policy, so it goes first.
-		'preset hive') edel settings reset layout.tiling && edel settings set layout.preset=hive ;;
+		# Hive's policy, so it goes first; reset says there is nothing to
+		# reset in a part without that case, which is fine.
+		'preset hive')
+			edel settings reset layout.tiling >/dev/null 2>&1
+			edel settings set layout.preset=hive
+			;;
 		'preset windows-like') edel settings set layout.preset=windows-like ;;
 		'preset mac-like') edel settings set layout.preset=mac-like ;;
 		# Zen (M5.18b): tiling in the split style with no title bars, from the
