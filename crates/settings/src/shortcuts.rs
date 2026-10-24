@@ -444,7 +444,9 @@ fn capture(near: &gtk::Button, ui: Weak<Ui>, index: usize) {
     let Some(ui_now) = ui.upgrade() else { return };
     let action = ui_now.lines[index].action;
     let key = ui_now.lines[index].key;
-    let window = widgets::modal(near.upcast_ref(), tr("Change shortcut"), 380, |b| b);
+    let window = widgets::modal(near.upcast_ref(), tr("Change shortcut"), 380, |b| {
+        b.css_classes(["edel"])
+    });
     let prompt = gtk::Label::builder()
         .label(trf(
             "Press the new keys for {action}",
