@@ -14,8 +14,8 @@ use crate::hardware::{self, Device, Pack};
 use crate::i18n::n_;
 use crate::places;
 use crate::services;
-use crate::version;
 use crate::settings::SettingsFile;
+use crate::version;
 
 /// The os-release key that names the add-ons a machine has while its
 /// settings file sets no `addons.installed` of its own (M8.17c): those its
