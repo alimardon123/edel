@@ -1604,6 +1604,9 @@ msgstr ""
 msgid "{what} needs your password"
 msgstr ""
 
+msgid "this changes the system, so it asks your password"
+msgstr ""
+
 msgid "could not read /etc/group to see who may change the system"
 msgstr ""
 
