@@ -215,14 +215,10 @@ pub fn read_stamp_in(dir: &Path, name: &str) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
-/// [`write_stamp`] in `dir`, which is made when missing: the value is
-/// written to `NAME.new` and renamed over the stamp, so a stamp is never
-/// half written.
+/// [`write_stamp`] in `dir`, which is made when missing, through
+/// `files::replace`, so a stamp is never half written.
 pub fn write_stamp_in(dir: &Path, name: &str, value: &str) -> io::Result<()> {
-    fs::create_dir_all(dir)?;
-    let new = dir.join(format!("{name}.new"));
-    fs::write(&new, format!("{value}\n"))?;
-    fs::rename(&new, dir.join(name))
+    crate::files::replace(&dir.join(name), format!("{value}\n").as_bytes())
 }
 
 #[cfg(test)]
