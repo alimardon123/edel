@@ -1445,10 +1445,16 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     // and diff act on them; the file itself still names only the profiles.
     lay_default_addons(&mut read.file);
     read.file = edel::profiles::applied(&read.file);
+    // Each line names the file, the key left out and its mistake; the
+    // rest of the file is used (the messages audit's row 50).
+    let shown = path.display().to_string();
     for problem in &read.problems {
         println!(
-            "edel settings: {}",
-            trf("left out {problem}", &[("problem", &problem.to_string())])
+            "warning: {}",
+            trf(
+                "{path}: not using {problem}",
+                &[("path", &shown), ("problem", &problem.to_string())]
+            )
         );
     }
     for key in &read.later {

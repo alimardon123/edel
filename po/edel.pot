@@ -1193,7 +1193,7 @@ msgstr ""
 msgid "no settings file, so nothing to apply"
 msgstr ""
 
-msgid "left out {problem}"
+msgid "warning: {path}: {problem}; that line is not used, and the others are"
 msgstr ""
 
 msgid "skipped {key}: not supported yet"
