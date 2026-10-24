@@ -2870,16 +2870,16 @@ msgstr ""
 msgid "slot {slot} is switched off, so there is nothing to roll back to: it holds no update, or the update failed to start; the running system is unchanged"
 msgstr ""
 
-msgid "cannot mount the EFI system partition {device}"
+msgid "could not open the start-up partition {device}, which says which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes"
 msgstr ""
 
 msgid "the EFI system partition has no {file}, so the slots cannot be read; this disk was not made by edel install, or it is damaged"
 msgstr ""
 
-msgid "could not read the GRUB environment"
+msgid "could not read which version starts next from the start-up partition; nothing was changed; if this repeats, run edel report and send the file it writes"
 msgstr ""
 
-msgid "could not open the GRUB environment"
+msgid "could not open the start-up partition's record of which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes"
 msgstr ""
 
 msgid "GRUB's environment block has no directory"
@@ -2894,7 +2894,7 @@ msgstr ""
 msgid "could not take the lock {path}: another edel command took it first; try again"
 msgstr ""
 
-msgid "{doing}: permission denied; this changes the system, so run it with doas: doas edel ..."
+msgid "{doing}: permission denied; {command} changes the system, so it needs an administrator: doas {command}"
 msgstr ""
 
 msgid "{command} (pid {pid}) is running"
@@ -2907,6 +2907,9 @@ msgid "another command is starting"
 msgstr ""
 
 msgid "cannot read {path}"
+msgstr ""
+
+msgid "the versions installed are shown to administrators only: doas edel status"
 msgstr ""
 
 msgid "installing an unsigned image; nothing checked where it came from"
