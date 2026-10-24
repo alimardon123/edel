@@ -65,6 +65,8 @@ pub mod profiles;
 #[cfg(feature = "os")]
 pub mod scripts;
 #[cfg(feature = "os")]
+pub mod security;
+#[cfg(feature = "os")]
 pub mod services;
 pub mod session_log;
 pub mod settings;

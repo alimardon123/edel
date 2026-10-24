@@ -3,13 +3,15 @@
 //! settings files, so GTK 4 and libadwaita apps draw in the desktop's
 //! colours. A change reaches apps already open through the settings portal
 //! (`portal.rs`) and the stylesheet's media queries, which GTK 4.22 matches
-//! live. The file is written only when its text differs, through a `.new`
-//! file renamed over it, as `terminal.rs` writes foot's theme. A file the
+//! live. The file is written only when its text differs, through
+//! `files::replace`, as `terminal.rs` writes foot's theme. A file the
 //! person wrote themselves is left alone, and so is one that is not UTF-8.
+//! Flatpak apps may read the file through the person's global Flatpak
+//! override, which `share_with_flatpak_apps` keeps holding the permission.
 //! `follow` runs at start (`main.rs`) and at each change of the look
 //! (`follow.rs`).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use edel::places;
 use edel::tokens::GTK_CSS_MARK;
@@ -39,10 +41,9 @@ pub enum Written {
     Theirs,
 }
 
-/// Writes `text` to `path` through `PATH.new` renamed over it, only when the
-/// file is absent or ours (its text starts with [`GTK_CSS_MARK`] or
-/// is [`former`]) and differs; a file of the person's own is left alone.
-/// Creates the folder.
+/// Writes `text` to `path` with `files::replace`, only when the file is
+/// absent or ours (its text starts with [`GTK_CSS_MARK`] or is [`former`])
+/// and differs; a file of the person's own is left alone.
 pub fn write_css(path: &Path, text: &str) -> std::io::Result<Written> {
     match std::fs::read_to_string(path) {
         Ok(have) if have == text => return Ok(Written::Same),
@@ -55,14 +56,7 @@ pub fn write_css(path: &Path, text: &str) -> std::io::Result<Written> {
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Ok(Written::Theirs),
         Err(e) => return Err(e),
     }
-    if let Some(folder) = path.parent() {
-        std::fs::create_dir_all(folder)?;
-    }
-    let mut new = path.as_os_str().to_owned();
-    new.push(".new");
-    let new = PathBuf::from(new);
-    std::fs::write(&new, text)?;
-    std::fs::rename(&new, path)?;
+    crate::files::replace(path, text.as_bytes())?;
     Ok(Written::Wrote)
 }
 
@@ -78,6 +72,7 @@ pub fn follow() {
     if !Path::new(places::SHARE_DIR).is_dir() {
         return;
     }
+    share_with_flatpak_apps();
     let Some(path) = places::person_gtk_css() else {
         return;
     };
@@ -92,11 +87,32 @@ pub fn follow() {
     }
 }
 
+/// Lets every Flatpak app of this person read gtk.css's folder, read-only
+/// (M6.18): the person's global override file gets
+/// `edel::app_permissions::GTK_CSS_FILESYSTEM` unless it names the folder
+/// already. Flatpak reads a person's override files for every app, theirs
+/// and the default apps alike, but its system ones only for apps of a
+/// system installation, and people install theirs `--user` (M6.1); written
+/// at each login, it reaches accounts made before M6.18 or without
+/// /etc/skel. Logs `edel-shell-ui: Flatpak apps may read gtk.css` when it
+/// wrote; a failure logs `messages::apps_colours_not_shared`.
+fn share_with_flatpak_apps() {
+    let Some(dir) = places::person_flatpak_overrides_dir() else {
+        return;
+    };
+    let path = dir.join(edel::app_permissions::GLOBAL_OVERRIDE);
+    match crate::app_permissions::write_changed(&path, edel::app_permissions::gtk_css_readable) {
+        Ok(true) => eprintln!("edel-shell-ui: Flatpak apps may read gtk.css"),
+        Ok(false) => {}
+        Err(e) => eprintln!("edel-shell-ui: {}", messages::apps_colours_not_shared(e)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn folder(name: &str) -> PathBuf {
+    fn folder(name: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!("edel-apps-colours-{name}-{}", std::process::id()))
     }
 

@@ -3,7 +3,9 @@
 # machine becomes is its settings file: with a screen it starts the
 # desktop, greetd's greeter on our compositor (M4.7b, M5.10b); with no
 # graphics card it starts no desktop service (the features marked screen)
-# and its console asks for the first person (M6.6b). A bootable A/B disk,
+# and its console asks for the first person (M6.6b). The firewall (M8.14) is
+# one of those: it closes inbound connections where there is a screen, and a
+# server keeps the ports its containers publish. A bootable A/B disk,
 # so its variant is vm. The container image is the other image, as a
 # container cannot be a disk.
 format = 2
@@ -11,7 +13,7 @@ name = "edel"
 variant = "vm"
 arch = "x86_64"
 hostname = "edel"
-features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "network"]
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "laptop", "completion", "network", "firewall"]
 # ssh is off where a screen is, a desktop's people sit at it, and on where
 # none is, as a server is used from afar; services.ssh in the settings
 # file decides either way (the seed, the installer, the console's key).
@@ -21,7 +23,7 @@ headless = ["ssh"]
 # mounted on a machine whose settings file names them (M7.2a). The
 # desktop is one of them (M8.17c), and wallpapers, fonts-cjk, orca and
 # graphics-nvidia are built on it.
-addons = ["desktop", "wallpapers", "fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming", "graphics-nvidia"]
+addons = ["desktop", "wallpapers", "fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming", "graphics-nvidia", "ai-agents"]
 
 [vm]
 kernel = "lts"

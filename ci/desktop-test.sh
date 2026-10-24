@@ -193,6 +193,15 @@
 #               bluetooth) draws each page and says on its stderr what its
 #               headline is ("Connected", "This computer has no Bluetooth");
 #               kept as network.png and bluetooth.png
+#   firewall    the firewall (M8.14 part A): its table loads with policy drop
+#               and ssh's drop-in; a listener on port 8080 answers the
+#               machine itself, and the host gets no bytes from it through
+#               QEMU's port 2290, nor from port 22 (2292) while ssh is off;
+#               firewall off lets the host in, firewall on shuts it again,
+#               and ssh on answers the host with its SSH banner. Part B
+#               (M8.14): edel status and Settings' System page say the
+#               firewall is on, the data plain and no update checked, and
+#               off once it is switched off (system-security.png)
 #   power       UPower, and the Power and Users pages (M5.8b): upower -e
 #               exits 0 as ci with upowerd running (QEMU has no battery, so
 #               it lists the display device and perhaps a power cable);
@@ -331,6 +340,12 @@
 #               ends 0, the diff is empty, and podman runs our own
 #               container image, imported as edel:ci, as ci, an admin,
 #               printing ok (M7.6b)
+#   ai-agents   the AI agents add-on (built in): addons.installed+= makes
+#               apply install its two Flatpak stand-ins for ci, Newelle
+#               starts from the launcher, a stand-in agent's edel settings
+#               set shows in the diff and its reset undoes it, and dropping
+#               the add-on leaves the diff empty, no file of it in /etc
+#               or /usr/lib/edel and none of its apps in flatpak ps (M7.9)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -481,6 +496,28 @@ wait_for() {
 		[ "$i" -lt $((${2:-20} * 5)) ] || return 1
 		sleep 0.2
 	done
+}
+
+# inbound PORT: what the host gets from the guest's forwarded PORT when it
+# connects and sends nothing, read for up to 5 s and printed as it arrives
+# (the firewall case reads it). QEMU's user network accepts a connection on
+# the host at once, so a port the firewall closes shows as no bytes, not as
+# a refused connection; a refused connection prints nothing.
+inbound() {
+	python3 -c 'import socket, sys
+s = socket.socket()
+s.settimeout(5)
+data = b""
+try:
+    s.connect(("127.0.0.1", int(sys.argv[1])))
+    while True:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        data += chunk
+except OSError:
+    pass
+sys.stdout.write(data.decode(errors="replace"))' "$1"
 }
 
 # The background colour the compositor clears to, from the design tokens.
@@ -1650,6 +1687,117 @@ case_network() {
 		echo "Network and Bluetooth (M5.8a): resident (VmRSS) and proportional (Pss) memory of the daemons, KiB: $(value network_rss_kib)." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	echo "PASS: nmcli -t general status reports connected ($(value network_status)), ci may change the network and nobody may not, bluetoothctl list exits 0 with no adapter in the VM, and Settings drew its Network and Bluetooth pages (daemons, KiB: $(value network_rss_kib))"
+}
+
+case_firewall() {
+	# The firewall (M8.14 part A). Its table must load with policy drop and
+	# ssh's drop-in (rules 0, drop=1, ssh=1). The listener must answer the
+	# machine itself first, so a closed port from the host means the firewall
+	# closed it. From the host, port 2290 (the listener) and 2292 (ssh) must
+	# give no bytes. firewall off lets the host in; firewall on shuts it
+	# again; ssh on gives the SSH banner. Then the machine is left as found.
+	# edel status as ci reads it, once the service has run it (M8.14 part B),
+	# into status_now.
+	security_status() {
+		asked=$(count 'DESKTOP-TEST: security_status ')
+		guest 'security status'
+		wait_more 'DESKTOP-TEST: security_status ' "$asked" 30 || fail "the service did not run edel status"
+		status_now=$(value security_status)
+	}
+	asked=$(count 'DESKTOP-TEST: firewall_rules ')
+	guest 'firewall rules'
+	wait_more 'DESKTOP-TEST: firewall_rules ' "$asked" 15 || fail "the service did not read the firewall's table"
+	[ "$(value firewall_rules)" = "0 drop=1 ssh=1" ] || fail "the firewall's table should load with policy drop and ssh's drop-in: $(value firewall_rules)"
+	guest 'firewall listen'
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: firewall_local ')
+		guest 'firewall local'
+		wait_more 'DESKTOP-TEST: firewall_local ' "$asked" 15 || fail "the service did not try the listener on port 8080"
+		value firewall_local | grep -q edel-open && break
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "the listener on port 8080 answers nothing, even to the machine itself: $(value firewall_local)"
+		sleep 1
+	done
+	closed=$(inbound 2290)
+	case "$closed" in *edel-open*) fail "the firewall let the host reach the listener: $closed" ;; esac
+	ssh_closed=$(inbound 2292)
+	case "$ssh_closed" in *SSH-*) fail "ssh answers the host while services.ssh is off: $ssh_closed" ;; esac
+	asked=$(count 'DESKTOP-TEST: ran firewall off: ')
+	guest 'firewall off'
+	wait_more 'DESKTOP-TEST: ran firewall off: ' "$asked" 60 || fail "the service did not switch the firewall off"
+	[ "$(value 'ran firewall off:')" = 0 ] || fail "edel settings could not switch the firewall off: $(value 'ran firewall off:')"
+	i=0
+	while :; do
+		open=$(inbound 2290)
+		case "$open" in *edel-open*) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 6 ] || fail "with the firewall off the host still gets no answer from the listener: \"$open\""
+		sleep 5
+	done
+	# With the firewall off, edel status says so.
+	security_status
+	case "$status_now" in
+	*'firewall: off;'*) ;;
+	*) fail "edel status should say the firewall is off once services.firewall is false: $status_now" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: ran firewall on: ')
+	guest 'firewall on'
+	wait_more 'DESKTOP-TEST: ran firewall on: ' "$asked" 60 || fail "the service did not switch the firewall on"
+	[ "$(value 'ran firewall on:')" = 0 ] || fail "edel settings could not switch the firewall on: $(value 'ran firewall on:')"
+	i=0
+	while :; do
+		shut=$(inbound 2290)
+		case "$shut" in *edel-open*) ;; *) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 6 ] || fail "with the firewall on again the host still reaches the listener: \"$shut\""
+		sleep 5
+	done
+	# The three facts (M8.14 part B), with the firewall on: edel status says
+	# so, and Settings' System page shows them and logs the same words.
+	security_status
+	case "$status_now" in
+	*'updates: not checked yet;'*'data: not encrypted;'*'firewall: on;'*) ;;
+	*) fail "edel status should say no update checked, the data not encrypted and the firewall on, in that order: $status_now" ;;
+	esac
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'security window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its System page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	sleep 3
+	shot system-security $((x + w - 40)) $((y + h - 40)) "$(token window)" >/dev/null ||
+		fail "the System page at $((x + w - 40)),$((y + h - 40)) is not the window token's #$(token window)"
+	asked=$(count 'DESKTOP-TEST: security_log ')
+	guest 'security log'
+	wait_more 'DESKTOP-TEST: security_log ' "$asked" || fail "the service did not read Settings' log"
+	case "$(value security_log)" in
+	*'edel-settings: system security firewall on, data not-encrypted, updates not-checked'*) ;;
+	*) fail "Settings' System page did not log the three facts: $(value security_log)" ;;
+	esac
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	asked=$(count 'DESKTOP-TEST: ran ssh on: ')
+	guest 'ssh on'
+	wait_more 'DESKTOP-TEST: ran ssh on: ' "$asked" 60 || fail "the service did not switch ssh on"
+	[ "$(value 'ran ssh on:')" = 0 ] || fail "edel settings could not switch ssh on: $(value 'ran ssh on:')"
+	i=0
+	while :; do
+		banner=$(inbound 2292)
+		case "$banner" in *SSH-2.0*) break ;; esac
+		i=$((i + 1))
+		[ "$i" -lt 12 ] || fail "with ssh on the host gets no SSH banner through the firewall: \"$banner\""
+		sleep 5
+	done
+	asked=$(count 'DESKTOP-TEST: ran ssh default: ')
+	guest 'ssh default'
+	wait_more 'DESKTOP-TEST: ran ssh default: ' "$asked" 60 || fail "the service did not put ssh back"
+	asked=$(count 'DESKTOP-TEST: ran firewall listen off: ')
+	guest 'firewall listen off'
+	wait_more 'DESKTOP-TEST: ran firewall listen off: ' "$asked" || fail "the service did not stop the listener"
+	echo "PASS: firewall: the table loads with policy drop and ssh's drop-in; the listener answers the machine itself; from the host, port 2290 gives no bytes and port 2292 no SSH banner while ssh is off; firewall off let the listener's answer through, firewall on shut it again, and ssh on gave the SSH banner through; edel status said the firewall on, the data not encrypted and no update checked, and off with the firewall off, and Settings' System page showed and logged the same (system-security.png); ssh and the listener are back as they were"
 }
 
 case_power() {
@@ -5939,7 +6087,8 @@ case_own_bars() {
 	guest 'headerbar off'
 	# A libadwaita window (M6.18), its header bar in our colours: Flatpak
 	# apps may read gtk.css, which shell-ui writes from the tokens and the
-	# settings, so the person's override must show it.
+	# settings, so the person's override, which shell-ui writes too (no
+	# file in /etc/skel holds it), must show it.
 	guest 'flatpak override'
 	wait_for 'DESKTOP-TEST: flatpak_override ' 30 || fail "the service did not print the Flatpak override"
 	value flatpak_override | grep -q 'xdg-config/gtk-4.0:ro' ||
@@ -5972,10 +6121,26 @@ case_own_bars() {
 	# The person's own header bar colours (M6.18): the window is closed,
 	# shell-ui writes gtk.css again, and the window opened below reads it.
 	guest 'headerbar off'
+	# An account with no override file, as one made before M6.18: shell-ui's
+	# next pass, the colours below, gives Flatpak apps gtk.css again.
+	guest 'flatpak override drop'
+	printed=$(count 'DESKTOP-TEST: flatpak_override ')
+	guest 'flatpak override'
+	wait_more 'DESKTOP-TEST: flatpak_override ' "$printed" 30 || fail "the service did not print the Flatpak override after dropping it"
+	! value flatpak_override | grep -q 'xdg-config/gtk-4.0' ||
+		fail "flatpak override --user --reset left the person's global override: $(value flatpak_override)"
+	shared=$(count 'edel-shell-ui: Flatpak apps may read gtk.css')
 	written=$(count "edel-shell-ui: apps' colours written")
 	guest 'title colours'
 	wait_more "edel-shell-ui: apps' colours written" "$written" 30 ||
 		fail "shell-ui did not write apps' colours for the person's title_bar: $(tr -d '\r' <"$log" | grep -a "apps' colours" | tail -n 1)"
+	wait_more 'edel-shell-ui: Flatpak apps may read gtk.css' "$shared" 30 ||
+		fail "shell-ui did not give Flatpak apps gtk.css again on an account without the override: $(tr -d '\r' <"$log" | grep -a 'Flatpak apps' | tail -n 1)"
+	printed=$(count 'DESKTOP-TEST: flatpak_override ')
+	guest 'flatpak override'
+	wait_more 'DESKTOP-TEST: flatpak_override ' "$printed" 30 || fail "the service did not print the Flatpak override again"
+	value flatpak_override | grep -q 'xdg-config/gtk-4.0:ro' ||
+		fail "an account without the override did not get gtk.css again: $(value flatpak_override)"
 	mapped=$(count 'edel-compositor: mapped window adwaita')
 	windows=$(count 'DESKTOP-TEST: windows .*adwaita@')
 	guest 'headerbar adw'
@@ -6001,7 +6166,7 @@ case_own_bars() {
 		fail "taking appearance.mode out did not bring the light scheme back"
 	guest 'headerbar off'
 	guest 'colours default'
-	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png); a libadwaita window's header bar took the light title_bar, high contrast's live, and the person's own colour in light and in dark, and Flatpak apps may read gtk.css (adwaita-light.png, adwaita-contrast.png, adwaita-own-light.png, adwaita-own-dark.png)"
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png); a libadwaita window's header bar took the light title_bar, high contrast's live, and the person's own colour in light and in dark, and Flatpak apps may read gtk.css, an account without the override getting it again (adwaita-light.png, adwaita-contrast.png, adwaita-own-light.png, adwaita-own-dark.png)"
 }
 
 case_capture() {
@@ -8775,6 +8940,90 @@ case_flatpak() {
 	echo "PASS: edel settings apply added Flathub for ci and installed io.mpv.Mpv with flatpak --user in $((applied - start)) s, mpv's window mapped $((mapped - applied)) s after flatpak run (flatpak-mpv.png), edel settings diff had nothing left, no polkitd ran, and the key taken out left the app installed"
 }
 
+case_ai_agents() {
+	# AI agents (M7.9): the add-on, built into this image, brings its
+	# Flatpak apps only while addons.installed names it, through apply's
+	# own flatpak --user install, here from stand-ins this host serves as
+	# ci's Flathub (ci/apps/make-repo.sh); one starts from the launcher; a
+	# stand-in agent changes the system only with edel settings set, as
+	# ci, which the diff shows and a reset undoes; dropping the add-on
+	# leaves the diff empty, no file of it in /etc or /usr/lib/edel and no
+	# process of its apps (flatpak ps, seen to list Newelle while it runs).
+	# The add-on's only file is its feature file, the image's own list of
+	# what it offers.
+	python3 -I - features/ai-agents.toml <<-'EOF' || fail "features/ai-agents.toml is not an add-on of the two agents' Flatpak apps alone"
+		import sys, tomllib
+		f = tomllib.load(open(sys.argv[1], "rb"))
+		assert f.get("addon") is True
+		assert not f.get("packages") and not f.get("services") and not f.get("programs")
+		assert f.get("flatpak") == ["com.jeffser.Alpaca", "io.github.qwersyk.Newelle"], f.get("flatpak")
+	EOF
+	[ ! -e features/ai-agents ] || fail "features/ai-agents/ exists; the add-on carries no files, so dropping it leaves none"
+	asked=$(count 'DESKTOP-TEST: gaming_standin ')
+	guest 'gaming standin'
+	wait_more 'DESKTOP-TEST: gaming_standin ' "$asked" || fail "the service did not point ci's Flathub at the stand-ins"
+	[ "$(value gaming_standin | cut -d' ' -f1)" = 0 ] || fail "adding the stand-ins' remote for ci failed: $(value gaming_standin)"
+	asked=$(count 'DESKTOP-TEST: agents_diff ')
+	guest 'agents on'
+	wait_more 'DESKTOP-TEST: agents_diff ' "$asked" 300 || fail "the service did not name the add-on and apply"
+	case "$(value agents_plan)" in
+	*'install com.jeffser.Alpaca, io.github.qwersyk.Newelle'*) ;;
+	*) fail "with ai-agents in addons.installed, edel settings diff does not install its two apps: $(value agents_plan)" ;;
+	esac
+	[ "$(value agents_on | cut -d' ' -f1)" = 0 ] || fail "naming the add-on or applying failed: $(value agents_on)"
+	[ -z "$(value agents_diff)" ] || fail "with the add-on applied, edel settings diff still has changes: $(value agents_diff)"
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	launched=$(count 'edel-shell-ui: launched Newelle')
+	opened=$(count 'edel-compositor: mapped window newelle')
+	python3 ci/qmp.py type newelle
+	python3 ci/qmp.py key ret
+	wait_more 'edel-shell-ui: launched Newelle' "$launched" || fail "the launcher did not list the stand-in for Newelle that edel settings apply installed"
+	case "$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Newelle' | tail -n 1)" in
+	*flatpak*io.github.qwersyk.Newelle*) ;;
+	*) fail "the stand-in was not started through flatpak run: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launched Newelle' | tail -n 1)" ;;
+	esac
+	wait_more 'edel-compositor: mapped window newelle' "$opened" 60 || fail "the stand-in for Newelle did not map a window within 60 s"
+	python3 ci/qmp.py screendump "$dir/ai-agents.png"
+	asked=$(count 'DESKTOP-TEST: agents_processes ')
+	guest 'agents processes'
+	wait_more 'DESKTOP-TEST: agents_processes ' "$asked" 30 || fail "the service did not ask flatpak ps"
+	case " $(value agents_processes) " in
+	*' io.github.qwersyk.Newelle '*) ;;
+	*) fail "with Newelle's window up, flatpak ps as ci does not list it, so the no-process check could not fail: $(value agents_processes)" ;;
+	esac
+	closed=$(count 'edel-compositor: unmapped window newelle')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window newelle' "$closed" || fail "Super+Q did not close the stand-in for Newelle"
+	asked=$(count 'DESKTOP-TEST: agent_reset ')
+	guest 'agent standin'
+	wait_more 'DESKTOP-TEST: agent_reset ' "$asked" 60 || fail "the stand-in agent did not finish"
+	set_line=$(value agent_set)
+	[ "${set_line%% *}" = 0 ] || fail "the stand-in agent's doas edel settings set, as ci, failed: $set_line"
+	case "$set_line" in
+	*region.timezone*Asia/Tashkent*) ;;
+	*) fail "the stand-in agent's change does not show in edel settings diff: $set_line" ;;
+	esac
+	reset_line=$(value agent_reset)
+	[ "${reset_line%% *}" = 0 ] || fail "edel settings reset region.timezone, as ci, failed: $reset_line"
+	case "$reset_line" in
+	*region.timezone*) fail "the reset did not undo the stand-in agent's change: $reset_line" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: agents_processes ')
+	guest 'agents off'
+	wait_more 'DESKTOP-TEST: agents_processes ' "$asked" 120 || fail "the service did not drop the add-on"
+	[ "$(value agents_off | cut -d' ' -f1)" = 0 ] || fail "dropping the add-on or applying failed: $(value agents_off)"
+	[ -z "$(value agents_left)" ] || fail "with the add-on dropped, edel settings diff still has changes: $(value agents_left)"
+	[ -z "$(value agents_files)" ] || fail "with the add-on dropped, files of it are in /etc or /usr/lib/edel: $(value agents_files)"
+	[ "$(value agents_processes)" = none ] || fail "with the add-on dropped, its apps still run: $(value agents_processes)"
+	asked=$(count 'DESKTOP-TEST: gaming_standin_off ')
+	guest 'gaming standin off'
+	wait_more 'DESKTOP-TEST: gaming_standin_off ' "$asked" 60 || fail "the service did not take the stand-ins out"
+	echo "PASS: the AI agents add-on brought nothing until addons.installed named it; then edel settings apply installed the stand-ins for Alpaca and Newelle from ci's Flathub (this host) with the diff then empty, the launcher started Newelle with flatpak run and its window mapped (ai-agents.png), flatpak ps listed it while it ran, a stand-in agent's doas edel settings set as ci showed in the diff and its reset undid it, and dropping the add-on left the diff empty, no file of it in /etc or /usr/lib/edel and none of its apps running (flatpak ps)"
+}
+
+
 case_descriptors() {
 	# Files held open (M8.11, Sway #6310's "too many open files"): ten
 	# windows open and close once to warm what the first ones make, then
@@ -8884,7 +9133,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -9435,11 +9684,12 @@ fi
 
 # The profile cases (M7.6b) take what a machine would download from this
 # host, the guest's 10.0.2.2, on a port of its own (rollback has 8001):
-# profile-gaming a stand-in for Steam from the test apps' repository;
+# profile-gaming a stand-in for Steam and ai-agents its two apps' stand-ins from the test apps'
+# repository;
 # profile-developer our own container image (ci/build.sh's
 # out/desktop-container).
 case " $* " in
-*' profile-gaming '* | *' profile-developer '*)
+*' profile-gaming '* | *' profile-developer '* | *' ai-agents '*)
 	rm -rf "$dir/serve"
 	mkdir -p "$dir/serve"
 	ln -s "$PWD/out/apps-repo" "$dir/serve/apps"
@@ -9450,11 +9700,19 @@ case " $* " in
 	;;
 esac
 
+# The firewall case reaches the listener (port 8080 in the guest) and ssh
+# (port 22) from the host through two ports of the user network; no other
+# case forwards a port into the guest. Each is explicit, so nothing set
+# earlier in the script reaches this VM.
+fw_net=
+case " $* " in
+*' firewall '*) fw_net=",hostfwd=tcp:127.0.0.1:2290-:8080,hostfwd=tcp:127.0.0.1:2292-:22" ;;
+esac
 # another-base (M8.13a) starts a second system on what the first wrote,
 # so its run writes to the copy itself.
 snapshot=-snapshot
 case " $* " in *' another-base '*) snapshot='' ;; esac
-keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart $snapshot \
+vm_net=$fw_net keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart $snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-global ICH9-LPC.disable_s3=0 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \

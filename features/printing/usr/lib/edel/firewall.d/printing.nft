@@ -1,0 +1,2 @@
+# Scanners answer WS-Discovery from port 3702 (sane-airscan, M8.14), a reply the firewall would not match.
+add rule inet edel input udp sport 3702 accept comment "scanners answering WS-Discovery"

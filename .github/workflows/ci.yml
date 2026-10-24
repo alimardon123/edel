@@ -511,14 +511,14 @@ jobs:
               titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness
               keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper
               settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome display
-              sound network power updates portal own-bars capture tray
+              sound network firewall power updates portal own-bars capture tray
           - part: C
             cases: >-
               one-screen scheme sun terminal accent contrast wallpaper glass desktop-widgets completion lock lock-edit lock-looks
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid another-base
           - part: D
-            cases: one-screen release-pictures wakeups device-power screen-off memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming
+            cases: one-screen release-pictures wakeups device-power screen-off memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

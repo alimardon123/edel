@@ -13,6 +13,7 @@ Edel OS does the same jobs with fewer, different tools. Its system is read-only 
 | `apt upgrade`, `dnf upgrade` | `edel update`, which installs the next release beside this one; `edel rollback` goes back |
 | `/etc` files by hand | one settings file, `edel settings set`, `diff`, `export` and `apply`; a file copies a machine to another |
 | `sudo` | `doas`; an administrator runs `edel` through it with no password, and `edel` asks for one before a change that could break or open the machine (an install, an update) |
+| `ufw` or `firewalld` | the `firewall` feature: on where there is a screen, off without one; `services.firewall = true` or `false` sets it either way |
 | a PPA, a changed kernel, your own packages | developer mode (`system.developer_mode`), which keeps the system's own parts yours to change and undoes them with one reset |
 
 Everything Settings does, `edel` does too, with the same names: `edel settings` lists the pages, and `edel settings get KEY` says where a value comes from.

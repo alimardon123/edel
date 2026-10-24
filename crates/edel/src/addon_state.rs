@@ -15,6 +15,7 @@ use crate::i18n::n_;
 use crate::places;
 use crate::services;
 use crate::settings::SettingsFile;
+use crate::version;
 
 /// The os-release key that names the add-ons a machine has while its
 /// settings file sets no `addons.installed` of its own (M8.17c): those its
@@ -229,11 +230,7 @@ pub fn unchosen_packs(
 /// The add-ons folder of the running version (`VERSION_ID`).
 pub fn running_dir() -> PathBuf {
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
-    let version = os_release
-        .lines()
-        .find_map(|line| line.strip_prefix("VERSION_ID="))
-        .unwrap_or_default()
-        .trim_matches('"');
+    let version = version::os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     Path::new(places::ADDONS_DIR).join(version)
 }
 

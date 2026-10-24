@@ -26,6 +26,8 @@
 
 use std::cell::RefCell;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState};
@@ -136,6 +138,9 @@ struct Greeter {
     /// compositor's `edel-shell-v1`, which tells the greeter of the lid.
     rules: Rules,
     _lid_link: Option<EdelShellV1>,
+    /// Set while a suspend or a shut down holds the others off
+    /// (`power::spawn`).
+    suspending: Arc<AtomicBool>,
 }
 
 /// The user data of `edel-shell-v1` at the greeter: the lid's news reaches
@@ -219,6 +224,7 @@ pub fn run(cmd: String) -> Result<()> {
         zones_warned: RefCell::new(Vec::new()),
         rules,
         _lid_link: globals.bind(&qh, 1..=1, LidEvents).ok(),
+        suspending: Arc::new(AtomicBool::new(false)),
         registry: RegistryState::new(&globals),
         outputs: OutputState::new(&globals, &qh),
         seat: SeatState::new(&globals, &qh),
@@ -417,10 +423,8 @@ impl Greeter {
         if sessions::remembered(&text, login).as_deref() == id {
             return;
         }
-        let tmp = path.with_extension("new");
-        let written = std::fs::write(&tmp, sessions::remember(&text, login, id))
-            .and_then(|()| std::fs::rename(&tmp, path));
-        if let Err(e) = written {
+        let text = sessions::remember(&text, login, id);
+        if let Err(e) = crate::files::replace(path, text.as_bytes()) {
             eprintln!("edel-shell-ui: {}", messages::session_not_kept(e));
         }
     }
@@ -501,39 +505,15 @@ impl Greeter {
                 Do::Nothing | Do::Ask => return,
             };
         eprintln!("edel-shell-ui: greeter: lid closed, {}", choice.name());
-        let spawned = std::thread::Builder::new()
-            .name("power".into())
-            .spawn(move || {
-                if let Err(e) = power::run(choice) {
-                    eprintln!("edel-shell-ui: {e}");
-                }
-            });
-        if let Err(e) = spawned {
-            eprintln!(
-                "edel-shell-ui: {}",
-                messages::power_failed(choice.name(), e)
-            );
-        }
+        self.run_power(choice);
     }
 
-    /// Closes Power's menu, then runs `choice` on a thread of its own, so
-    /// the drawing never waits for it.
+    /// Closes Power's menu, then runs `choice` with `power::spawn`, as the
+    /// session does, so a suspend or a shut down holds the lid and the
+    /// others off for 3 s (M7.8).
     fn run_power(&mut self, choice: power::Choice) {
         self.menu = false;
-        eprintln!("edel-shell-ui: greeter: power: {}", choice.name());
-        let spawned = std::thread::Builder::new()
-            .name("power".into())
-            .spawn(move || {
-                if let Err(e) = power::run(choice) {
-                    eprintln!("edel-shell-ui: {e}");
-                }
-            });
-        if let Err(e) = spawned {
-            eprintln!(
-                "edel-shell-ui: {}",
-                messages::power_failed(choice.name(), e)
-            );
-        }
+        power::spawn(choice, &self.suspending, "greeter: ");
         self.draw();
     }
 

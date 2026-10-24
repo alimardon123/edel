@@ -12,6 +12,9 @@
 
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use edel::i18n::n_;
 
@@ -27,6 +30,49 @@ pub enum Choice {
 
 /// The menu's rows, top to bottom (M5.10c).
 pub const CHOICES: [Choice; 3] = [Choice::Suspend, Choice::Restart, Choice::ShutDown];
+
+/// How long a suspend or a shut down holds the others off after its command
+/// returns: the computer wakes or goes down, and the lid's and the button's
+/// news that came with it is not acted on again.
+const GUARD: Duration = Duration::from_secs(3);
+
+/// Runs `choice` on a thread of its own, so the drawing never waits for it,
+/// logging `edel-shell-ui: WHOpower: NAME` (`who` is empty in the session,
+/// `greeter: ` at the login screen). A suspend or a shut down holds the
+/// others off for `GUARD` after its command returns (M7.8): while `busy`
+/// is set, another is logged as ignored and not run.
+pub fn spawn(choice: Choice, busy: &Arc<AtomicBool>, who: &str) {
+    let guarded = matches!(choice, Choice::Suspend | Choice::ShutDown);
+    if guarded && busy.swap(true, Ordering::SeqCst) {
+        eprintln!(
+            "edel-shell-ui: {who}power: {} ignored, one is already under way",
+            choice.name()
+        );
+        return;
+    }
+    eprintln!("edel-shell-ui: {who}power: {}", choice.name());
+    let held = Arc::clone(busy);
+    let spawned = std::thread::Builder::new()
+        .name("power".into())
+        .spawn(move || {
+            if let Err(e) = run(choice) {
+                eprintln!("edel-shell-ui: {e}");
+            }
+            if guarded {
+                std::thread::sleep(GUARD);
+                held.store(false, Ordering::SeqCst);
+            }
+        });
+    if let Err(e) = spawned {
+        if guarded {
+            busy.store(false, Ordering::SeqCst);
+        }
+        eprintln!(
+            "edel-shell-ui: {}",
+            messages::power_failed(choice.name(), e)
+        );
+    }
+}
 
 impl Choice {
     /// The row's words, passed through `tr` where they are shown.

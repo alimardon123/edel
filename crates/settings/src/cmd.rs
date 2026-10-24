@@ -47,6 +47,26 @@ pub fn edel(args: &[&str]) -> Outcome {
     run("edel", args)
 }
 
+/// Runs `edel ARGS` as root when doas allows it (`edel_as_root`), else as
+/// the person (M8.14). The update check writes what `edel status` reads, and
+/// only root may write it, so the check runs as root wherever doas lets the
+/// person; a person doas refuses still gets the check's own result. Call it
+/// from a thread of its own.
+pub fn edel_as_root_or_self(args: &[&str]) -> Outcome {
+    or_self(edel_as_root(args, None), || edel(args))
+}
+
+/// `root` as it is, unless doas refused to run the command (it says so on
+/// standard error, starting `doas:`, and the command never ran); then what
+/// `own` gives.
+fn or_self(root: Outcome, own: impl FnOnce() -> Outcome) -> Outcome {
+    if !root.ok && root.err.starts_with("doas:") {
+        own()
+    } else {
+        root
+    }
+}
+
 /// Restarts the machine: `edel restart` (M5.10c), the same command the lock
 /// screen's power menu runs. The same call on a page's Restart now and a
 /// person's own hand. It goes through doas when the person is not root (M6.5),
@@ -202,6 +222,24 @@ mod tests {
             out: out.into(),
             err: err.into(),
         }
+    }
+
+    #[test]
+    fn a_refused_root_run_gives_the_persons_own_result() {
+        let refused = outcome(false, "", "doas: Operation not permitted");
+        let own = outcome(true, "running: A\nnewer: no", "");
+        assert_eq!(or_self(refused, || own.clone()), own);
+    }
+
+    #[test]
+    fn a_root_run_that_ran_is_kept_even_when_it_failed() {
+        let failed = outcome(false, "", "edel update: could not read the list");
+        let kept = or_self(failed.clone(), || {
+            panic!("the person's own run is not needed")
+        });
+        assert_eq!(kept, failed);
+        let done = outcome(true, "running: A", "");
+        assert_eq!(or_self(done.clone(), || panic!("not needed")), done);
     }
 
     #[test]

@@ -13,10 +13,23 @@ pub const REBOOT: &str = "/sbin/reboot";
 pub const POWEROFF: &str = "/sbin/poweroff";
 /// The program that suspends the machine to memory, run as root (M5.10c).
 pub const SUSPEND: &str = "/usr/sbin/zzz";
+/// The folder where OpenRC keeps a mark for each service it has started,
+/// one file named after it (M8.14: the firewall's facts read it).
+pub const STARTED_SERVICES: &str = "/run/openrc/started";
 /// The one program the base's small tools are links to (busybox's
 /// applets). A package an add-on brings may replace such a link with a
 /// program of its own; the add-on then keeps the base's (M7.2a).
 pub const APPLETS: &str = "busybox";
+
+/// Whether OpenRC has started `service` and not stopped it since (M8.14).
+pub fn is_started(service: &str) -> bool {
+    is_started_in(std::path::Path::new(STARTED_SERVICES), service)
+}
+
+/// [`is_started`] with the marks in `dir`.
+pub fn is_started_in(dir: &std::path::Path, service: &str) -> bool {
+    dir.join(service).exists()
+}
 
 /// Where OpenRC reads each service's settings (`NAME` and
 /// `NAME.RUNLEVEL`), beside the folder its script lies in.
@@ -151,6 +164,16 @@ pub fn replay_device_events() -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_service_is_started_while_its_mark_is_there() {
+        let dir = std::env::temp_dir().join(format!("edel-started-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("edel-firewall"), "").unwrap();
+        assert!(is_started_in(&dir, "edel-firewall"));
+        assert!(!is_started_in(&dir, "sshd"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     fn line(command: &Command) -> Vec<String> {
         std::iter::once(command.get_program())

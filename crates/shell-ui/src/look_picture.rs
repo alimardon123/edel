@@ -11,7 +11,6 @@
 //! player paused on "Night Drive" by "Aurora", and a battery at 82 percent
 //! where the look has one.
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -239,21 +238,11 @@ fn sample_player() -> player::PlayerView {
     }
 }
 
-/// Writes `picture` to `out` as a PNG, through `out` with `.new` added and
-/// renamed over it. The folder is made when it is missing.
+/// Writes `picture` to `out` as a PNG with `files::replace`, which makes
+/// the folder when it is missing.
 pub(crate) fn write_png(picture: &Pixmap, out: &Path) -> Result<()> {
-    if let Some(dir) = out.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-        fs::create_dir_all(dir)
-            .with_context(|| format!("could not make the folder {}", dir.display()))?;
-    }
-    let mut temp = out.as_os_str().to_owned();
-    temp.push(".new");
-    let temp = PathBuf::from(temp);
-    picture
-        .save_png(&temp)
-        .with_context(|| format!("could not write {}", temp.display()))?;
-    fs::rename(&temp, out).with_context(|| format!("could not rename into {}", out.display()))?;
-    Ok(())
+    let png = picture.encode_png().context("could not make the PNG")?;
+    crate::files::replace(out, &png).with_context(|| format!("could not write {}", out.display()))
 }
 
 #[cfg(test)]

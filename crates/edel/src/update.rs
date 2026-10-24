@@ -492,6 +492,11 @@ pub fn platform_status() -> Result<()> {
 
 /// Prints both slots and which one is running.
 pub fn status() -> Result<()> {
+    // The three facts a person reads first (M8.14), before anything that
+    // needs root, so a person without it sees them too.
+    for line in edel::security::now().lines() {
+        println!("{line}");
+    }
     let disk = Disk::find()?;
     let env = Esp::mount(&disk)?.load()?;
     println!("running: {}", disk.running);
@@ -581,6 +586,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
         let release = crate::release::open_checked(location, accept)?;
+        crate::release::record_check(&release.manifest.version);
         manifest = Some(release.manifest);
         (release.reader, Some(release.sha256), release.size)
     };

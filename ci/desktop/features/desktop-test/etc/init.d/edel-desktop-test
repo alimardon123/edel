@@ -525,6 +525,9 @@ commands() {
 		'title colours') edel settings set 'appearance.colours.light.title_bar=#f0b8cc' 'appearance.colours.dark.title_bar=#4a2a6a' ;;
 		# The Flatpak permission every person has, so apps read gtk.css (M6.18).
 		'flatpak override') say "flatpak_override $(as_ci 'flatpak override --user --show' </dev/null 2>&1 | tr '\n' ' ')" ;;
+		# The person's global override taken away, as an account made before
+		# M6.18 or without /etc/skel has none; shell-ui's next pass writes it.
+		'flatpak override drop') as_ci 'flatpak override --user --reset' </dev/null >/dev/null 2>&1 ;;
 		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.
@@ -1115,6 +1118,39 @@ commands() {
 			say "bluetooth_list $status: $(echo "$out" | tr '\n' ';')"
 			say "bluetooth_daemon $(pidof bluetoothd >/dev/null && echo running || echo stopped), adapters in the kernel: $(ls /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
 			;;
+		# The firewall (M8.14 part A): the table's rules, a listener on port
+		# 8080 that answers each connection with edel-open (busybox nc, as
+		# the image has no httpd), the machine's own connection to it, and the
+		# switches the case uses. The host reaches the listener and ssh through
+		# QEMU's forwarded ports (desktop-test.sh's fw_net).
+		'firewall rules')
+			say "firewall_rules $(nft list table inet edel >/tmp/fw.txt 2>&1; echo $?) drop=$(grep -c 'policy drop' /tmp/fw.txt) ssh=$(grep -c 'dport 22' /tmp/fw.txt)"
+			;;
+		'firewall listen')
+			( while :; do echo edel-open | nc -l -p 8080; done ) >/dev/null 2>&1 &
+			echo $! >/tmp/fw.pid
+			;;
+		'firewall local')
+			say "firewall_local $(echo | timeout 5 nc 127.0.0.1 8080 2>&1 | tr '\n' ' ')"
+			;;
+		'firewall listen off')
+			kill "$(cat /tmp/fw.pid)" 2>/dev/null
+			pkill -f 'nc -l -p 8080' || true
+			;;
+		'firewall off') edel settings set services.firewall=false && edel settings apply ;;
+		'firewall on') edel settings reset services.firewall && edel settings apply ;;
+		'ssh on') edel settings set services.ssh=true && edel settings apply ;;
+		'ssh default') edel settings reset services.ssh && edel settings apply ;;
+		# The three facts (M8.14 part B): the lines `edel status` prints, as
+		# ci reads them, Settings' System page opened as ci with its stderr
+		# kept, and the line that page logged for the facts.
+		'security status')
+			say "security_status $(as_ci edel status 2>&1 | grep -E '^(updates|data|firewall):' | tr '\n' ';')"
+			;;
+		'security window')
+			as_ci edel-settings --page system </dev/null >/tmp/security.log 2>&1 &
+			;;
+		'security log') say "security_log $(grep 'system security' /tmp/security.log 2>/dev/null | tail -n 1)" ;;
 		'network window')
 			as_ci edel-settings --page network </dev/null >/tmp/network.log 2>&1 &
 			;;
@@ -1453,6 +1489,49 @@ commands() {
 			as_ci 'flatpak --user uninstall --noninteractive -y --all' </dev/null >/tmp/standin.log 2>&1
 			as_ci 'flatpak --user remote-delete --force flathub' </dev/null >>/tmp/standin.log 2>&1
 			say "gaming_standin_off $? $(as_ci 'flatpak --user list --columns=application' </dev/null 2>&1 | tr '\n' ';')"
+			;;
+		# AI agents (M7.9): the add-on named with ci an admin, as apps
+		# install for admins only; the plan before apply, then apply and
+		# the diff after it.
+		'agents on')
+			edel settings set addons.installed+=ai-agents users.ci.admin=true </dev/null >/tmp/agents.log 2>&1
+			status=$?
+			say "agents_plan $(edel settings diff 2>&1 | tr '\n' ';')"
+			if [ "$status" = 0 ]; then
+				edel settings apply </dev/null >>/tmp/agents.log 2>&1
+				status=$?
+			fi
+			say "agents_on $status $(tail -n 5 /tmp/agents.log | tr '\n' ';')"
+			say "agents_diff $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		# A stand-in agent (M7.9): what an agent ci started does to the
+		# system, as ci, through the commands everyone uses: a key set with
+		# doas edel settings set, which the diff then shows, then reset.
+		'agent standin')
+			as_ci 'doas edel settings set region.timezone=Asia/Tashkent' </dev/null >/tmp/agent.log 2>&1
+			say "agent_set $? $(edel settings diff 2>&1 | tr '\n' ';') $(tail -n 3 /tmp/agent.log | tr '\n' ';')"
+			as_ci 'doas edel settings reset region.timezone' </dev/null >>/tmp/agent.log 2>&1
+			say "agent_reset $? $(edel settings diff 2>&1 | tr '\n' ';')"
+			;;
+		# Which of the add-on's apps run (M7.9), as Flatpak lists ci's
+		# running sandboxes; the case asks once while Newelle's window is
+		# up, so the check is seen to find one.
+		'agents processes')
+			procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+			say "agents_processes ${procs:-none}"
+			;;
+		# The add-on dropped (M7.9), the way the Add-ons switch drops it,
+		# and ci's admin reset, applied; the diff, any file of it in /etc
+		# or /usr/lib/edel, and any process of its apps.
+		'agents off')
+			edel settings set addons.installed-=ai-agents </dev/null >/tmp/agents.log 2>&1 &&
+				edel settings reset users.ci.admin </dev/null >>/tmp/agents.log 2>&1 &&
+				edel settings apply </dev/null >>/tmp/agents.log 2>&1
+			say "agents_off $? $(tail -n 3 /tmp/agents.log | tr '\n' ';')"
+			say "agents_left $(edel settings diff 2>&1 | tr '\n' ';')"
+			say "agents_files $(find /etc /usr/lib/edel -name '*ai-agents*' 2>/dev/null | tr '\n' ' ')"
+			procs=$(as_ci 'flatpak ps --columns=application' </dev/null 2>/dev/null | grep -E '^(com\.jeffser\.Alpaca|io\.github\.qwersyk\.Newelle)$' | tr '\n' ' ')
+			say "agents_processes ${procs:-none}"
 			;;
 		# Containers as the admin (M7.6b part 4): our own container image,
 		# which the runner serves (ci/build.sh's out/desktop-container), a

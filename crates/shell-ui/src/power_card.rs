@@ -8,9 +8,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::time::Duration;
 
 use smithay_client_toolkit::dispatch2::Dispatch2;
 use smithay_client_toolkit::reexports::client::globals::GlobalList;
@@ -25,11 +22,6 @@ use crate::messages;
 use crate::power;
 use crate::power_rules::{self, Do, Stage};
 use crate::status::Cmd;
-
-/// How long a suspend or a shut down holds the others off after its command
-/// returns: the computer wakes or goes down, and the lid's and the button's
-/// news that came with it is not acted on again.
-const GUARD: Duration = Duration::from_secs(3);
 
 /// Whether the power profile is kept (M7.8): `edel` is here and the kernel
 /// has a profile file. The status is read then, even on a panel without the
@@ -144,43 +136,14 @@ impl Shell {
         }
     }
 
-    /// Carries `choice` out on a thread of its own, closing Power's menu
-    /// first when it is open. A suspend or a shut down holds the others off
-    /// for `GUARD` after its command returns (M7.8).
+    /// Carries `choice` out with `power::spawn`, closing Power's menu first
+    /// when it is open; a suspend or a shut down holds the others off for
+    /// 3 s (M7.8).
     pub(crate) fn run_power(&mut self, choice: power::Choice) {
         if self.lock.as_ref().is_some_and(|card| card.menu) {
             self.set_power_menu(false);
         }
-        let guarded = matches!(choice, power::Choice::Suspend | power::Choice::ShutDown);
-        if guarded && self.suspending.swap(true, Ordering::SeqCst) {
-            eprintln!(
-                "edel-shell-ui: power: {} ignored, one is already under way",
-                choice.name()
-            );
-            return;
-        }
-        eprintln!("edel-shell-ui: power: {}", choice.name());
-        let suspending = Arc::clone(&self.suspending);
-        let spawned = std::thread::Builder::new()
-            .name("power".into())
-            .spawn(move || {
-                if let Err(e) = power::run(choice) {
-                    eprintln!("edel-shell-ui: {e}");
-                }
-                if guarded {
-                    std::thread::sleep(GUARD);
-                    suspending.store(false, Ordering::SeqCst);
-                }
-            });
-        if let Err(e) = spawned {
-            if guarded {
-                self.suspending.store(false, Ordering::SeqCst);
-            }
-            eprintln!(
-                "edel-shell-ui: {}",
-                messages::power_failed(choice.name(), e)
-            );
-        }
+        power::spawn(choice, &self.suspending, "");
     }
 
     /// One step of the idle ladder ran out (M7.8, M7.16b): the light dims,

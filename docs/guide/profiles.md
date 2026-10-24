@@ -62,3 +62,13 @@ profiles_without = ["com.valvesoftware.Steam"]
 ```
 
 Adding it again (`apps.installed+=com.valvesoftware.Steam`) takes it off that list, and choosing another profile keeps only what the new one still brings, so you never edit the key by hand. Everything else the profile brings, including later releases' changes, still comes.
+
+## AI agents
+
+AI agents are an add-on, not a profile, so they come only to people who pick them: the AI agents switch on Settings' Add-ons page, or one line:
+
+```sh
+edel settings set addons.installed+=ai-agents
+```
+
+It brings two apps from Flathub: Newelle, an assistant that can run commands for you, with a model on your computer or your own account with a provider, and Alpaca, a chat app for models that run on your computer. Neither runs until you start it, and Edel OS sends nothing anywhere; an agent's account and key are yours, kept by the agent. An agent changes the system only as you could, through `edel settings set` and the other `edel` commands, so `edel settings diff` shows what it changed, `edel settings reset` undoes a setting and `edel rollback` an update. Command-line agents run in a dev container, with the Developer profile's Podman. Taking the add-on out (`addons.installed-=ai-agents`) brings no more apps and leaves the ones you have, which you remove as any app. While the add-on is on, it brings both apps back at the next apply; to keep only one, take the add-on out and add that app alone (`apps.installed+=ID`).

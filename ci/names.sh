@@ -23,6 +23,7 @@ installed_mark=/data/edel/installed
 greeter_dir=/data/edel/greeter
 greeter_sessions=/data/edel/greeter/sessions.toml
 share_dir=/usr/share/edel
+firewall_rules=/usr/lib/edel/firewall/edel.nft
 esp_dir=/EFI/edel
 home_session_log=.local/state/edel/session.log
 system_log=/var/log/messages
