@@ -3015,7 +3015,7 @@ case_updates() {
 	asked=$(count 'DESKTOP-TEST: channel_update ')
 	guest 'channel update'
 	wait_more 'DESKTOP-TEST: channel_update ' "$asked" 40 || fail "edel update --check did not finish in 30 s"
-	value channel_update | grep -q 'no release named; taking https://[^ ]*/preview/release.toml' ||
+	value channel_update | grep -q 'checking https://[^ ]*/preview/release.toml' ||
 		fail "edel update --check with no release does not take the preview channel's list: $(value channel_update)"
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'updates window'
@@ -3078,7 +3078,7 @@ case_updates() {
 	asked=$(count 'DESKTOP-TEST: channel_update ')
 	guest 'channel update'
 	wait_more 'DESKTOP-TEST: channel_update ' "$asked" 40 || fail "edel update --check did not finish in 30 s after the reset"
-	value channel_update | grep -q 'no release named; taking https://[^ ]*/release.toml' ||
+	value channel_update | grep -q 'checking https://[^ ]*/release.toml' ||
 		fail "edel update --check with no release names no channel's list after the reset: $(value channel_update)"
 	value channel_update | grep -q '/preview/' &&
 		fail "edel update --check still takes the preview channel after the reset: $(value channel_update)"

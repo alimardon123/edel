@@ -345,7 +345,7 @@ pub fn guard() -> Result<()> {
             match on_timeout(watchdog.is_some(), retry) {
                 Timeout::LetTheWatchdog => {
                     eprintln!(
-                        "edel guard: this slot is not healthy after {timeout} s; letting the watchdog restart the machine"
+                        "edel guard: this version of Edel OS did not finish starting in {timeout} s; the watchdog restarts the computer, so Edel OS can go back to the version before; your files are safe"
                     );
                     // Closing without the magic byte leaves the watchdog
                     // running.
@@ -353,7 +353,7 @@ pub fn guard() -> Result<()> {
                 }
                 Timeout::RestartItself => {
                     eprintln!(
-                        "edel guard: this slot is not healthy after {timeout} s and the machine has no watchdog; restarting it now, so the boot loader counts the try"
+                        "edel guard: this version of Edel OS did not finish starting in {timeout} s; restarting the computer now, so Edel OS can go back to the version before; your files are safe"
                     );
                     restart_now();
                 }
@@ -437,7 +437,7 @@ fn on_timeout(has_watchdog: bool, may_retry: bool) -> Timeout {
 /// seconds it waited and the health names not reached.
 pub fn stood_down_text(seconds: u64, missing: &str) -> String {
     edel::i18n::trf(
-        "this slot is not healthy after {seconds} s ({missing} not reached) and no slot has a try left, so the machine keeps running instead of restarting again; edel report says what failed",
+        "Edel OS did not finish starting in {seconds} s ({missing} did not start), and no version has a start left, so the computer keeps running as it is; run edel report and send the file it writes",
         &[("seconds", &seconds.to_string()), ("missing", missing)],
     )
 }
@@ -617,9 +617,7 @@ mod tests {
             stood_down_note("120\tcompositor\n"),
             Some(stood_down_text(120, "compositor"))
         );
-        assert!(
-            stood_down_text(120, "compositor").contains("after 120 s (compositor not reached)")
-        );
+        assert!(stood_down_text(120, "compositor").contains("in 120 s (compositor did not start)"));
         assert_eq!(stood_down_note("garbled"), None);
     }
 

@@ -585,7 +585,12 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         let path = Path::new(location);
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
-        let release = crate::release::open_checked(location, accept)?;
+        let release = crate::release::open_checked(location, accept).inspect_err(|err| {
+            // Up to date is a check that worked: the security status says so.
+            if let Some(up) = err.downcast_ref::<crate::release::UpToDate>() {
+                crate::release::record_check(&up.version);
+            }
+        })?;
         crate::release::record_check(&release.manifest.version);
         manifest = Some(release.manifest);
         (release.reader, Some(release.sha256), release.size)
@@ -667,7 +672,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     println!(
         "edel update: {}",
         trf(
-            "slot {slot} written and checked; restart to use it; if it fails to start, Edel OS goes back to slot {running} on its own",
+            "slot {slot} written and checked; restart to use it (edel restart); if it fails to start, Edel OS goes back to slot {running} on its own",
             &[
                 ("slot", &slot.to_string()),
                 ("running", &disk.running.to_string())
@@ -758,9 +763,12 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
     if let Some(failed) = confirm(&mut env, disk.running) {
-        let msg = format!(
-            "slot {failed} did not start, so slot {} is running instead; switching slot {failed} off",
-            disk.running
+        let msg = trf(
+            "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again",
+            &[
+                ("failed", &failed.to_string()),
+                ("running", &disk.running.to_string()),
+            ],
         );
         lines.push(format!("edel update: {msg}"));
         let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
@@ -832,7 +840,7 @@ fn write_record(text: impl Fn(&str) -> String) -> Result<()> {
 
 /// Makes the other slot start at the next boot.
 pub fn rollback() -> Result<()> {
-    let _lock = Lock::take("update", "edel update")?;
+    let _lock = Lock::take("update", "edel rollback")?;
     let disk = Disk::find()?;
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
@@ -842,7 +850,7 @@ pub fn rollback() -> Result<()> {
     println!(
         "edel rollback: {}",
         trf(
-            "slot {slot} starts after the next restart; slot {running} stays installed",
+            "slot {slot} starts after the next restart (edel restart); slot {running} stays installed, so edel rollback again undoes this",
             &[
                 ("slot", &target.to_string()),
                 ("running", &disk.running.to_string())
