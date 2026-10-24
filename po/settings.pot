@@ -347,9 +347,6 @@ msgstr ""
 msgid "Address"
 msgstr ""
 
-msgid "Keyboards that ask you to type a code on them cannot be paired here yet; pair them with bluetoothctl."
-msgstr ""
-
 msgid "could not run {program}: {why}; its rule for edel comes with the machine feature"
 msgstr ""
 
@@ -1095,6 +1092,21 @@ msgid "Automatic puts them by the status area; a banner keeps clear of panels"
 msgstr ""
 
 msgid "What the notifications button shows while some are unread"
+msgstr ""
+
+msgid "Pair with {name}"
+msgstr ""
+
+msgid "Type this code on {name}"
+msgstr ""
+
+msgid "Then press Enter on it. This closes by itself once {name} is paired."
+msgstr ""
+
+msgid "Does {name} show this number?"
+msgstr ""
+
+msgid "Pair only if the numbers are the same. If they differ, choose Cancel: another device may be posing as {name}."
 msgstr ""
 
 msgid "The panels as they apply now"

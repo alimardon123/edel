@@ -158,6 +158,24 @@ msgstr ""
 msgid "measuring the battery for {minutes} minutes; leave the computer alone, unplugged, with its screen on"
 msgstr ""
 
+msgid "{name} is no longer nearby; search again, then pair"
+msgstr ""
+
+msgid "pairing with {name}"
+msgstr ""
+
+msgid "{name} wants a code typed on this computer, which Settings cannot take yet; type bluetoothctl in a terminal, then pair {address} at its prompt, and enter the code there"
+msgstr ""
+
+msgid "could not reach Bluetooth over the system bus: {error}; restart the computer if this stays"
+msgstr ""
+
+msgid "a pairing is running already; finish it, then try again"
+msgstr ""
+
+msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
+msgstr ""
+
 msgid "this machine has no {program}, so it has no Bluetooth; the bluetooth feature brings BlueZ"
 msgstr ""
 
@@ -177,9 +195,6 @@ msgid "{name} did not answer; check that it is on and close by, then try again"
 msgstr ""
 
 msgid "{command} failed: {said}"
-msgstr ""
-
-msgid "Bluetooth is not running, though this computer has an adapter; it starts with the machine, so restart the computer if it stays off"
 msgstr ""
 
 msgid "could not keep the runtime {runtime} for a person's own apps"
