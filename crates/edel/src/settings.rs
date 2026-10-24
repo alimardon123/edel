@@ -2089,6 +2089,13 @@ pub fn in_use(file: &SettingsFile) -> SettingsFile {
     crate::themes::themed(&crate::presets::applied(&crate::profiles::applied(file)))
 }
 
+/// The value the machine's own settings file chooses for `key`, read now;
+/// None when the file or the key is not there.
+pub fn on_machine(key: &str) -> Option<String> {
+    let path = crate::places::found(&crate::places::machine_settings());
+    chosen(key, std::fs::read_to_string(path).ok().as_deref(), None)
+}
+
 /// `key`'s value as the files say it now: the person's file over the
 /// machine's, as a string; none when neither sets it.
 pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
