@@ -6,6 +6,8 @@ summary = "Chinese, Japanese and Korean letters: Noto Sans CJK"
 why = "Text in Chinese, Japanese and Korean needs a font that has their characters, and Noto Sans CJK is the one Noto family for all three (ADR-008's fonts row). Its package is 89 MiB, so it is an add-on for the people who read those languages rather than part of every desktop (Efficient over Functional, decided 2026-10-12); of it only the sans faces, regular and bold, are kept, 39 MiB, as the interface draws sans text alone."
 packages = ["font-noto-cjk"]
 addon = true
+# Built over the desktop, whose libraries and font cache it uses (M8.17c).
+on = "desktop"
 
 [[keep]]
 under = "usr/share/fonts/noto"

@@ -18,6 +18,10 @@ pub const SUSPEND: &str = "/usr/sbin/zzz";
 /// program of its own; the add-on then keeps the base's (M7.2a).
 pub const APPLETS: &str = "busybox";
 
+/// Where OpenRC reads each service's settings (`NAME` and
+/// `NAME.RUNLEVEL`), beside the folder its script lies in.
+pub const SERVICE_CONF_DIR: &str = "/etc/conf.d";
+
 /// Puts `service` into `runlevel`, so it starts at every boot.
 pub fn add_to_runlevel(service: &str, runlevel: &str) -> Command {
     let mut command = Command::new("rc-update");

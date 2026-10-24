@@ -36,6 +36,15 @@ pub struct Feature {
     /// Also built as a signed add-on (M7.2a).
     #[serde(default)]
     pub addon: bool,
+    /// The features an add-on is made of (M8.17c): the desktop is one
+    /// add-on of many features, each still its own file, so each is added,
+    /// changed or dropped alone.
+    #[serde(default)]
+    pub features: Vec<String>,
+    /// The add-on this add-on is built over and mounted above (M8.17c):
+    /// the screen reader over the desktop, whose libraries it uses.
+    #[serde(default)]
+    pub on: Option<String>,
     /// The hardware a hardware pack serves (M7.11, ADR-012): patterns of the
     /// kernel's modalias strings, `*` any run of characters and `?` one, as
     /// `/sys/bus/*/devices/*/modalias` and `/sys/class/dmi/id/modalias` show
@@ -236,6 +245,29 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
             bail!("{field} entry {m:?} may only use a-z, 0-9, '_' and '-'");
         }
     }
+    if (!feature.features.is_empty() || feature.on.is_some()) && !feature.addon {
+        bail!("features and on are for add-ons; add addon = true");
+    }
+    if let Some(f) = feature
+        .features
+        .iter()
+        .chain(&feature.on)
+        .find(|f| !is_name(f))
+    {
+        bail!("{f:?} is not a feature name");
+    }
+    if !feature.features.is_empty() {
+        if adds || !feature.keep.is_empty() || !feature.health.is_empty() {
+            bail!(
+                "an add-on made of features brings nothing of its own; its features bring the packages, services, programs and files"
+            );
+        }
+        if feature.on.is_some() {
+            bail!(
+                "an add-on made of features is built over the image alone; on is for an add-on over it"
+            );
+        }
+    }
     if name != "apps" && !(feature.flatpak.is_empty() && feature.flatpak_dropped.is_empty()) {
         bail!("only the apps feature lists flatpak apps");
     }
@@ -365,6 +397,34 @@ mod tests {
         [services]
         default = ["sshd"]
     "#;
+
+    #[test]
+    fn only_an_add_on_is_made_of_features_or_built_on_one() {
+        let made = "format = 1\nsummary = \"d\"\naddon = true\nfeatures = [\"seat\"]\n";
+        assert_eq!(check("desktop", made).unwrap().features, ["seat"]);
+        let cases = [
+            (
+                made.replace("addon = true\n", ""),
+                "features and on are for add-ons",
+            ),
+            (
+                format!("{made}packages = [\"mesa\"]\nwhy = \"w\"\n"),
+                "an add-on made of features brings nothing of its own",
+            ),
+            (
+                format!("{made}on = \"base\"\n"),
+                "on is for an add-on over it",
+            ),
+            (
+                made.replace("\"seat\"", "\"Seat\""),
+                "\"Seat\" is not a feature name",
+            ),
+        ];
+        for (text, message) in cases {
+            let err = check("desktop", &text).unwrap_err();
+            assert!(format!("{err:#}").contains(message), "{err:#}");
+        }
+    }
 
     #[test]
     fn checks_a_feature() {

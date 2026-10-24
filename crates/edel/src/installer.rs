@@ -612,7 +612,14 @@ fn install_on(
         );
     }
     let _lock = Lock::take("install", "edel install")?;
-    write(&plan, &slot, running_mib, system_file, password)
+    let written = write(&plan, &slot, running_mib, system_file, password);
+    // Settings shows the failure on its page; the system log keeps it,
+    // where `edel report` and a later look find it.
+    if let Err(err) = &written {
+        let msg = format!("edel install: {err:#}");
+        let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
+    }
+    written
 }
 
 /// How long the device manager may take over a new partition table's
@@ -835,12 +842,14 @@ fn write(
             file.write_all(format!("{user}:{hash}\n").as_bytes())?;
             file.sync_all()?;
         }
-        copy_default_apps(&data.0)?;
-        // The add-ons the file chooses, tried at the first boot (M7.2b).
+        // The add-ons the file chooses, tried at the first boot (M7.2b),
+        // before the default apps, whose copy can fail with the system
+        // installed: the desktop is one of them (M8.17c).
         crate::addons::stage_for_install(
             &fs::read_to_string(system_file).unwrap_or_default(),
             &data.0,
         );
+        copy_default_apps(&data.0)?;
     }
     run(&mut Command::new("sync"))?;
     println!(

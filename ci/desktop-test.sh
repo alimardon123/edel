@@ -4023,9 +4023,10 @@ case_default_apps() {
 	varcache=$(echo "$fonts" | cut -d' ' -f2)
 	own=$(echo "$fonts" | cut -d' ' -f3)
 	[ "${baked:-0}" -gt 0 ] || fail "the slot carries no fonts' cache: the check said \"$fonts\""
+	own_dirs=$(echo "$fonts" | cut -d' ' -f4-)
 	[ "$varcache" != var-cache ] ||
-		fail "/var/cache/fontconfig exists, so Flatpak would hand apps that stale cache instead of the slot's"
-	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, so the slot's cache was stale"
+		fail "/var/cache/fontconfig exists, for $own_dirs, so Flatpak would hand apps that stale cache instead of the slot's"
+	[ "${own:-0}" = 0 ] || fail "ci's fontconfig built $own caches of its own, for $own_dirs, so the slot's cache was stale for those folders"
 	# What it saves (M6.2a): the same fonts listed five times with the
 	# baked cache and five times with none, as each app's first start did
 	# before. Reported, and the cache must win: a cache that saves nothing
@@ -9067,6 +9068,32 @@ if [ "$*" = live ]; then
 	echo "$installed" | grep -q '^admin = true' || fail "ali is not an administrator in the installed settings file"
 	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
 	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
+	# The desktop add-on the stick runs goes straight beside the new slot,
+	# in its version's folder, not to be tried (M8.17c). The installer
+	# copies it last, after the default apps, so the test waits until the
+	# file is there and its size holds between two looks.
+	carried=''
+	size=''
+	i=0
+	while [ "$i" -lt 30 ]; do
+		target_data
+		was=$size
+		carried=''
+		size=''
+		for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
+			found=$(debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 == "desktop.ext4" { print $7 }')
+			[ -n "$found" ] && carried=$version size=$found
+		done
+		[ -n "$carried" ] && [ "${size:-0}" -gt 0 ] && [ "$size" = "$was" ] && break
+		i=$((i + 1))
+		sleep 10
+	done
+	if [ -z "$carried" ] || [ "$size" != "$was" ]; then
+		debugfs -R "ls -l $addons_dir_on_data" "$dir/target-data.img" 2>&1 | sed 's/^/  target addons: /'
+		stick_logs
+		fail "the installed disk has no desktop add-on beside its slot"
+	fi
+	echo "PASS: the installed disk holds the desktop add-on in $addons_dir/$carried"
 	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
 	# plugged in, and Settings, opened again, finds it and gives the keys
