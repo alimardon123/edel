@@ -289,6 +289,11 @@ impl Edel {
         // A game plays alone on its screen (M7.7c): its window is drawn,
         // the layers over it and the cursor, nothing else.
         let game = self.playing_on(output).cloned();
+        // The frame rate overlay over it (M8.27), under the cursor.
+        if game.is_some() {
+            let overlay = self.frame_rate_elements(renderer, output, scale);
+            elements.extend(overlay);
+        }
         let windows: Vec<_> = match &game {
             Some(top) => vec![top.clone()],
             None => self.space.elements().rev().cloned().collect(),

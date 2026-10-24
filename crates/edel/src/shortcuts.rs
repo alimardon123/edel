@@ -415,6 +415,13 @@ pub const ACTIONS: &[Action] = &[
         ),
     ),
     action(
+        "toggle_frame_rate",
+        "Super+Shift+G",
+        false,
+        Group::System,
+        n_("Show or hide the frame rate over a fullscreen game until the next login"),
+    ),
+    action(
         "show_tray",
         "Super+Shift+B",
         false,

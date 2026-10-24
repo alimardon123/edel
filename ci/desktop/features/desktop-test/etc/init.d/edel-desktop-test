@@ -428,6 +428,11 @@ commands() {
 			;;
 		'update log') say "update $(tr '\n' ';' </tmp/update.log)" ;;
 		# A window that asks to fill its screen (M5.20).
+		# A game stand-in that draws on every frame until it is closed, for
+		# the frame rate overlay (M8.27).
+		'frame rate game')
+			as_ci edel-testclient --fullscreen --busy --size 300x200 --colour 7a3fb0 --title framerate </dev/null >/dev/null 2>&1 &
+			;;
 		'full window')
 			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
 			;;

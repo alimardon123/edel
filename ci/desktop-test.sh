@@ -284,6 +284,9 @@
 #               share that went straight to the
 #               screen at least game_direct_percent_floor; one more run when
 #               the first is over (M7.7e)
+#   frame-rate  Super+Shift+G shows the frame rate overlay over a fullscreen
+#               game stand-in (frame-rate.png), the game timed again with it
+#               on within game_frame_p99_ratio, and hidden again (M8.27)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -5918,6 +5921,67 @@ case_smoothness() {
 		echo "Smoothness (M7.7e): a game's frames median $5 ms, p99 $6 ms, $1 times the median (budget $limit times), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	echo "PASS: a fullscreen game stand-in in game mode presented its frames with p99 $6 ms, $1 times its median $5 ms (budget $limit times), slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
+}
+
+case_frame_rate() {
+	# The frame rate overlay (M8.27): over a fullscreen game stand-in in
+	# game mode (the VM has no battery), Super+Shift+G shows the compositor's
+	# panel of the game's frame rate, frame time and slowest 1 percent with
+	# a graph in the upper left corner, kept as frame-rate.png, the rest of
+	# the screen the game's colour; nothing is put into the game. With it
+	# on, the smoothness gate's game is timed again and its slowest 1
+	# percent must stay within game_frame_p99_ratio times its median (the
+	# frames are composited now, so the direct share is not asked); a run
+	# over is measured once more. Super+Shift+G hides it again.
+	limit=$(budget game_frame_p99_ratio)
+	playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
+	guest 'frame rate game'
+	wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
+		fail "the game stand-in did not play as a game"
+	on=$(count 'edel-compositor: the frame rate overlay on (Super+Shift+G)')
+	shows=$(count 'edel-compositor: the frame rate overlay shows ')
+	python3 ci/qmp.py key meta_l-shift-g
+	wait_more 'edel-compositor: the frame rate overlay on (Super+Shift+G)' "$on" || fail "Super+Shift+G did not turn the frame rate overlay on"
+	wait_more 'edel-compositor: the frame rate overlay shows ' "$shows" 20 || fail "the overlay showed no numbers over the game"
+	numbers=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: the frame rate overlay shows ' | tail -n 1)
+	case "$numbers" in
+	*'shows '[0-9]*' fps, '[0-9]*.[0-9]' ms   1% '[0-9]*.[0-9]' ms') ;;
+	*) fail "the overlay's numbers do not read as a frame rate, a frame time and the slowest 1 percent: $numbers" ;;
+	esac
+	shot frame-rate 100 24 '!7a3fb0' >/dev/null || fail "the upper left corner shows the game, not the overlay (frame-rate.png)"
+	shot frame-rate 640 600 7a3fb0 >/dev/null || fail "the middle of the screen is not the game's colour with the overlay on (frame-rate.png)"
+	ended=$(count 'edel-compositor: the game ended; the desktop is back')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 || fail "Super+Q did not end the game stand-in"
+	best=''
+	for run in 1 2; do
+		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
+		n=$(count 'DESKTOP-TEST: smooth ')
+		guest 'smooth game'
+		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
+			fail "the timed game stand-in did not play as a game (run $run)"
+		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
+		line=$(value smooth)
+		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
+		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
+		[ -n "$median" ] && [ -n "$p99" ] || fail "the timed game stand-in failed (run $run): $line"
+		ratio=$(awk -v p="$p99" -v m="$median" 'BEGIN { if (m > 0) printf "%.2f", p / m; else print 99 }')
+		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($ratio times the median)"
+		if [ -z "$best" ] || awk -v p="$ratio" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$ratio $median $p99"
+		fi
+		awk -v p="${best%% *}" -v b="$limit" 'BEGIN { exit !(p <= b) }' && break
+	done
+	set -- $best
+	awk -v p="$1" -v b="$limit" 'BEGIN { exit !(p <= b) }' ||
+		fail "with the frame rate overlay on, a game's slowest frames are worse than the budget in both runs: p99 $3 ms is $1 times its median $2 ms (budget $limit times)"
+	off=$(count 'edel-compositor: the frame rate overlay off (Super+Shift+G)')
+	python3 ci/qmp.py key meta_l-shift-g
+	wait_more 'edel-compositor: the frame rate overlay off (Super+Shift+G)' "$off" || fail "Super+Shift+G did not turn the frame rate overlay off"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on a game's frames had p99 $3 ms, $1 times the median $2 ms (budget $limit times)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on a game's frames had p99 $3 ms, $1 times its median $2 ms (budget $limit times); Super+Shift+G hid it"
 }
 
 case_portal() {
