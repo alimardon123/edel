@@ -462,7 +462,16 @@ impl Machine {
         // whose files the slot keeps, so they come with no restart, and of
         // those built in or mounted.
         let offered = services::installed_in(Path::new(places::OFFERED_ADDONS_DIR));
-        let addon_apps = addon_apps(features.iter().chain(&offered));
+        // An add-on built over another (`on`, M8.17c) brings its apps only
+        // where that one is: ai-agents' need the desktop's Flatpak.
+        let mounted = edel::addon_state::mounted();
+        let chosen = edel::addon_state::installed(file, &edel::addon_state::running_default());
+        let has = |base: &str| {
+            features.iter().any(|(name, _)| name == base)
+                || mounted.iter().any(|name| name == base)
+                || chosen.iter().any(|name| name == base)
+        };
+        let addon_apps = addon_apps(features.iter().chain(&offered), has);
         // Asked only when the file wants apps, its own or its add-ons'
         // (M7.9), so a machine without any never starts flatpak (M6.1).
         let lists_apps = file.apps.installed.as_ref().is_some_and(|l| !l.is_empty())
@@ -510,7 +519,7 @@ impl Machine {
             ),
             runlevels: services::enabled_in(Path::new("/etc/runlevels")),
             screen: services::screen_now(),
-            addons: edel::addon_state::mounted(),
+            addons: mounted,
             addon_links: crate::addons::Links::read(),
             default_addons: edel::addon_state::running_default(),
             mime_defaults: fs::read_to_string(places::MIME_DEFAULTS).ok(),
@@ -528,14 +537,17 @@ impl Machine {
 }
 
 /// The Flatpak apps of each add-on among `features` (M7.9), by name: an
-/// add-on's `flatpak` list. A name found twice (built in and offered)
-/// keeps the first one's list.
+/// add-on's `flatpak` list, left out when the add-on it is built over
+/// (`on`) is not one the machine `has`. A name found twice (built in and
+/// offered) keeps the first one's list.
 fn addon_apps<'a>(
     features: impl Iterator<Item = &'a (String, edel::features::Feature)>,
+    has: impl Fn(&str) -> bool,
 ) -> BTreeMap<String, Vec<String>> {
     let mut apps = BTreeMap::new();
     for (name, feature) in features {
-        if feature.addon && !feature.flatpak.is_empty() {
+        let base_here = feature.on.as_deref().is_none_or(&has);
+        if feature.addon && !feature.flatpak.is_empty() && base_here {
             apps.entry(name.clone())
                 .or_insert_with(|| feature.flatpak.clone());
         }
@@ -3497,6 +3509,20 @@ mod tests {
             .unwrap()
             .file;
         assert!(ids_for_ci(&plan(&dropped, &machine).0).is_empty());
+    }
+
+    #[test]
+    fn an_addons_apps_wait_for_the_addon_it_is_built_over() {
+        let feature = |text: &str| edel::features::read(text).unwrap().0;
+        let agents = feature(
+            "format = 1\nsummary = \"a\"\nwhy = \"b\"\naddon = true\non = \"desktop\"\nflatpak = [\"com.jeffser.Alpaca\"]\n",
+        );
+        let features = [("ai-agents".to_string(), agents)];
+        assert!(addon_apps(features.iter(), |_| false).is_empty());
+        assert_eq!(
+            addon_apps(features.iter(), |base| base == "desktop")["ai-agents"],
+            ["com.jeffser.Alpaca"]
+        );
     }
 
     #[test]
