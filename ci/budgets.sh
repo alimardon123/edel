@@ -10,6 +10,20 @@ budget() {
 	awk -F= -v key="$1" '{ k = $1; gsub(/ /, "", k) } k == key { v = $2; sub(/#.*/, "", v); gsub(/ /, "", v); print v }' ci/budgets.toml
 }
 
+# walk_boot_seconds LOG: the seconds a boot in LOG took from the kernel
+# running /init to the `Started in` line, Edel OS's own part of the start.
+# The kernel's part before it is Alpine's, the same for every change, and
+# it is what a slow runner stretches most (a fresh lane's kernel reached
+# /init a quarter later than usual on 2026-10-24 and its walk failed), so
+# a walk times only what a change can make slower. Prints nothing when
+# either line is missing, which walk then fails.
+walk_boot_seconds() {
+	tr -d '\r' <"$1" | awk '
+		init == "" && /\] Run \/init as init process/ { s = $0; sub(/\] Run \/init.*/, "", s); sub(/.*\[ */, "", s); init = s }
+		started == "" && /Started in [0-9.]+ s/ { s = $0; sub(/.*Started in /, "", s); sub(/ s.*/, "", s); started = s }
+		END { if (init != "" && started != "") printf "%.2f\n", started - init }'
+}
+
 # Every key press, typed word or click a person makes on a walk goes through
 # press, so the steps are counted where they are made.
 walk_steps=0

@@ -39,9 +39,7 @@ fresh_stick() {
 }
 # The data partition's settings file of the disk $1.
 settings_of() {
-	part=$(sfdisk -d "$1" 2>/dev/null | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-	[ -n "$part" ] || return 1
-	dd if="$1" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+	partition_out "$1" 4 "$dir/data.img" || return 1
 	e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
 	debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/data.img" 2>/dev/null
 }

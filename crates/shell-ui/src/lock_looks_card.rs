@@ -86,7 +86,7 @@ impl LockLooks {
     /// The lock's view of the time and the person for the pictures: no
     /// notices, the battery the status area reads.
     fn look_view(&self) -> lock::View {
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let (time, date) = lock::time_and_date(&now);
         let mut view = lock::View::new(time, date, lock::user());
         view.when = Some(lock::When::of(&now));

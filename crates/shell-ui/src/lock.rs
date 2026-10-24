@@ -2133,7 +2133,7 @@ mod tests {
         parts.push(clock("UTC"));
         parts.push(clock("Mars/Base"));
         let lock = with_parts(Some(&parts));
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let warned = RefCell::new(Vec::new());
         let zoned = zoned_times(&lock, &now, &warned);
         assert_eq!(zoned.len(), 1, "{zoned:?}");

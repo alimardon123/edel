@@ -3,7 +3,12 @@
 //! in a list. The zone files are tzdata's, in `places::ZONEINFO_DIR`; nothing is
 //! downloaded.
 
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::SystemTime;
+
+use jiff::tz::TimeZone;
 
 use crate::i18n::tr;
 use crate::languages;
@@ -145,6 +150,57 @@ pub fn answer(value: &str) -> Result<String, String> {
     }
 }
 
+/// The machine's time zone, from the link `places::LOCALTIME` (UTC with no
+/// link), read again as soon as the link changes. jiff keeps its own
+/// system zone for five minutes, so a clock built on it showed the old zone
+/// that long after a person picked another, a mistake other desktops' bug
+/// trackers show (M8.11, docs/REVIEW-bugs.md).
+pub fn system() -> TimeZone {
+    system_in(Path::new(places::LOCALTIME))
+}
+
+/// The time now in [`system`]'s zone, what every clock shows.
+pub fn now() -> jiff::Zoned {
+    jiff::Timestamp::now().to_zoned(system())
+}
+
+/// What a zone link was when it was last read: where it points and when
+/// it was made.
+type Seen = (Option<PathBuf>, Option<SystemTime>);
+
+/// [`system`] for the link at `link`, kept while the link stays as it was.
+fn system_in(link: &Path) -> TimeZone {
+    static KEPT: Mutex<Option<(PathBuf, Seen, TimeZone)>> = Mutex::new(None);
+    let seen: Seen = (
+        fs::read_link(link).ok(),
+        fs::symlink_metadata(link).and_then(|m| m.modified()).ok(),
+    );
+    let mut kept = KEPT.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((path, was, zone)) = kept.as_ref()
+        && path == link
+        && *was == seen
+    {
+        return zone.clone();
+    }
+    let zone = read_zone(link, seen.0.as_deref());
+    *kept = Some((link.to_path_buf(), seen, zone.clone()));
+    zone
+}
+
+/// The zone in the file at `link`, named after what follows `zoneinfo/` in
+/// its `target` (`Europe/Berlin`), or `Local` for a file that is not a link;
+/// UTC when there is no file or it is not a zone's.
+fn read_zone(link: &Path, target: Option<&Path>) -> TimeZone {
+    let name = target
+        .and_then(|t| t.to_str())
+        .and_then(|t| t.rsplit_once("zoneinfo/").map(|(_, name)| name.to_string()))
+        .unwrap_or_else(|| "Local".to_string());
+    fs::read(link)
+        .ok()
+        .and_then(|data| TimeZone::tzif(&name, &data).ok())
+        .unwrap_or(TimeZone::UTC)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +321,27 @@ mod tests {
     fn answers_refuse_a_zone_the_machine_lacks() {
         assert!(answer("  ").is_err());
         assert!(answer("../etc").is_err());
+    }
+
+    #[test]
+    fn the_zone_follows_its_link_at_once() {
+        let zones = Path::new("/usr/share/zoneinfo");
+        if !zones.join("Europe/Berlin").is_file() || !zones.join("Asia/Tokyo").is_file() {
+            return; // this machine has no tzdata
+        }
+        let dir = std::env::temp_dir().join(format!("edel-zone-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let link = dir.join("localtime");
+        assert_eq!(system_in(&link), TimeZone::UTC);
+        std::os::unix::fs::symlink(zones.join("Europe/Berlin"), &link).unwrap();
+        assert_eq!(system_in(&link).iana_name(), Some("Europe/Berlin"));
+        fs::remove_file(&link).unwrap();
+        std::os::unix::fs::symlink(zones.join("Asia/Tokyo"), &link).unwrap();
+        let tokyo = system_in(&link);
+        assert_eq!(tokyo.iana_name(), Some("Asia/Tokyo"));
+        let noon = jiff::Timestamp::from_second(1_700_000_000).unwrap();
+        assert_eq!(noon.to_zoned(tokyo).offset().seconds(), 9 * 3600);
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
