@@ -4,7 +4,8 @@
 # 2026-10-16), so the lanes run at once and none slows another:
 #   installed  install-test.sh, ab-test.sh (it boots the disk the first
 #              installed), then apps-test.sh, the default apps across an
-#              update
+#              update, then updates-test.sh, an update with nobody typing
+#              (M7.5)
 #   system     boot-test.sh, system-test.sh, developer-test.sh (M7.1),
 #              flatpak-test.sh, then
 #              `desktop-test.sh rollback`, which restarts the desktop VM
@@ -13,7 +14,8 @@
 #   fresh      `desktop-test.sh fresh`, the released image as a computer's
 #              own disk with nobody on it; it reads live's archive
 #   fleet      fleet-test.sh, the fleet images and the stick that installs
-#              itself (M7.3)
+#              itself (M7.3), then server-test.sh, the seeded server and
+#              the cloud instance (M7.4)
 # Each lane runs its tests in order and stops at the first failure.
 #
 #   sh ci/vm-tests.sh             every lane on this machine: installed beside
@@ -47,11 +49,11 @@ lane() {
 # run_lane LANE: the lane's tests, in order.
 run_lane() {
 	case "$1" in
-	installed) lane install-test.sh ab-test.sh apps-test.sh ;;
+	installed) lane install-test.sh ab-test.sh apps-test.sh updates-test.sh ;;
 	system) lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
-	fleet) lane fleet-test.sh ;;
+	fleet) lane fleet-test.sh server-test.sh ;;
 	*) no_lane "$1" ;;
 	esac
 }
@@ -71,10 +73,10 @@ archive() {
 # files LANE: what the lane's tests read from out/, as build.sh made it.
 files() {
 	case "$1" in
-	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test ;;
+	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test out/updates-test ;;
 	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-x86_64.img out/install-file.img ;;
-	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img ;;
+	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/keys out/edel-container-x86_64.tar.gz ;;
 	*) no_lane "$1" ;;
 	esac
 }

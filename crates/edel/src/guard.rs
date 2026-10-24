@@ -277,7 +277,7 @@ pub fn guard() -> Result<()> {
     if on_hardware {
         println!("edel guard: using the hardware watchdog (watchdog0)");
     }
-    let start = Instant::now();
+    let mut start = Instant::now();
     let mut stood_down = false;
     let mut said_no_screen = false;
     loop {
@@ -299,6 +299,11 @@ pub fn guard() -> Result<()> {
         }
         if let Some(dog) = watchdog.as_mut() {
             let _ = dog.write_all(b".");
+        }
+        // While the data's passphrase is asked (M8.2), the time is the
+        // person's, not the slot's: the clock starts again once it is typed.
+        if Path::new(places::UNLOCK_WAITING).exists() {
+            start = Instant::now();
         }
         if healthy(&files) {
             // A healthy machine is never reset, even when confirming fails.

@@ -1,0 +1,14 @@
+# CI only (roadmap M7.5): ci/updates-test.sh's machine, the CI VM image's
+# system (ci/vm/vm.toml) with the updates feature, under the same image
+# name, so the A/B test's update (out/ab-test/update/) is its update too.
+format = 2
+name = "edel-vm"
+variant = "vm"
+arch = "x86_64"
+hostname = "edel"
+features = ["base", "machine", "udev", "ab-boot", "ssh", "kernel", "seat", "network", "updates"]
+
+[vm]
+kernel = "lts"
+slot_mib = 4096
+cmdline = "console=ttyS0"

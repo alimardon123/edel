@@ -37,6 +37,7 @@ Install a newer Edel OS into the other slot from RELEASE, or from this machine's
 | `--channel CHANNEL` | Take a release list for this channel once, rather than the one this machine follows (updates.channel) |
 | `--allow-http` | Read RELEASE over plain http (for a local test server) |
 | `--unsigned` | Install a slot image without a signed release.toml (for testing) |
+| `--automatic` | Do what updates.automatic says: nothing, check, install, or install and restart inside updates.restart_window, as the hourly timer does |
 
 ## `edel rollback`
 
@@ -95,6 +96,8 @@ Install Edel OS on another disk, erasing it: the running system becomes slot A, 
 | `--plan` | Only show the plan: what would be erased and written; change nothing |
 | `--yes` | Erase the disk without asking, for unattended installs; without it and without a terminal, install shows its plan and exits 3 |
 | `--new-password-stdin` | Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it |
+| `--encrypt` | Encrypt the data partition with the password the install gives its person, or a passphrase asked for; laptops and computers with a screen are encrypted unless --no-encrypt |
+| `--no-encrypt` | Leave the data partition plain, readable by whoever has the disk |
 | `--unattended` | Install as the settings file's [install] table says, with nobody at the keyboard, once this slot is confirmed; without the table, do nothing (docs/FLEET.md) |
 
 ## `edel report [OPTIONS]`

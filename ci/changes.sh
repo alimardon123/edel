@@ -21,7 +21,7 @@ kind() {
 	case "$1" in
 	features/* | images/* | presets/* | design/* | crates/*/src/* | po/*) echo all ;;
 	docs/* | *.md | book.toml | SUMMARY.md | theme/* | LICENSE | .github/workflows/release.yml | ci/audit.sh | ci/audit-exceptions.toml | ci/site.sh | ci/one-place.sh | ci/seams.sh | ci/keys-check.sh | ci/defaults-diff.sh | ci/changes.sh) echo none ;;
-	ci/boot-test.sh | ci/system-test.sh | ci/install-test.sh | ci/install-test/* | ci/ab-test.sh | ci/ab-test/* | ci/apps-test.sh | ci/apps-test/* | ci/flatpak-test.sh | ci/flatpak/* | ci/fleet-test.sh | ci/fleet/* | ci/developer-test.sh | ci/developer-test/* | ci/vm-tests.sh | ci/sizes.sh | ci/https-serve.py | ci/initramfs-check.sh | ci/kernel-options.toml | ci/container-test.sh | ci/repro-check.sh | ci/keys-carried.sh | ci/release.sh | ci/channel.sh | ci/sign.sh | ci/package-report.sh | ci/bom.sh) echo vm ;;
+	ci/boot-test.sh | ci/system-test.sh | ci/install-test.sh | ci/install-test/* | ci/ab-test.sh | ci/ab-test/* | ci/apps-test.sh | ci/apps-test/* | ci/flatpak-test.sh | ci/flatpak/* | ci/fleet-test.sh | ci/fleet/* | ci/server-test.sh | ci/server/* | ci/updates-test.sh | ci/updates-test/* | ci/developer-test.sh | ci/developer-test/* | ci/vm-tests.sh | ci/sizes.sh | ci/https-serve.py | ci/initramfs-check.sh | ci/kernel-options.toml | ci/container-test.sh | ci/repro-check.sh | ci/keys-carried.sh | ci/release.sh | ci/channel.sh | ci/sign.sh | ci/package-report.sh | ci/bom.sh) echo vm ;;
 	ci/desktop-part.sh | ci/basics-test.sh | ci/release-checklist.sh) echo desktop ;;
 	*) echo all ;;
 	esac

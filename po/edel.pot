@@ -197,6 +197,39 @@ msgstr ""
 msgid "{command} failed: {said}"
 msgstr ""
 
+msgid "{provider} gave this machine no user data, so it starts without a settings file"
+msgstr ""
+
+msgid "could not read {provider}'s user data: {why}; the machine starts without a settings file"
+msgstr ""
+
+msgid "{provider}'s user data is not a settings file this release can read: {why}"
+msgstr ""
+
+msgid "kept {provider}'s user data as {path}; restarting to start with it"
+msgstr ""
+
+msgid "could not start {tool}"
+msgstr ""
+
+msgid "cryptsetup could not encrypt {device}, so the disk is half written; run edel install again"
+msgstr ""
+
+msgid "cryptsetup could not open {device} ({status})"
+msgstr ""
+
+msgid "the data partition is encrypted and there is no console to ask its passphrase on"
+msgstr ""
+
+msgid "This computer's data is encrypted. Type its passphrase, the password it was installed with: "
+msgstr ""
+
+msgid "no console could take the data's passphrase"
+msgstr ""
+
+msgid "That passphrase does not unlock this computer's data; type it again."
+msgstr ""
+
 msgid "could not keep the runtime {runtime} for a person's own apps"
 msgstr ""
 
@@ -311,16 +344,25 @@ msgstr ""
 msgid "and writes:"
 msgstr ""
 
-msgid "  1: EFI system partition, {mib} MiB"
+msgid "  1: start-up files, {size}"
 msgstr ""
 
-msgid "  2: slot A, {mib} MiB, a copy of the running system"
+msgid "  2: Edel OS, {size}, a copy of this system"
 msgstr ""
 
-msgid "  3: slot B, {mib} MiB, empty until the first update"
+msgid "  3: room for the next update, {size}, empty until then"
 msgstr ""
 
-msgid "  4: data, {mib} MiB, starting from the settings file {file}"
+msgid "  4: your files and settings, {size}, encrypted, with your answers"
+msgstr ""
+
+msgid "  4: your files and settings, {size}, with your answers"
+msgstr ""
+
+msgid "  4: your files and settings, {size}, encrypted, from {file}"
+msgstr ""
+
+msgid "  4: your files and settings, {size}, from {file}"
 msgstr ""
 
 msgid "Language"
@@ -350,13 +392,10 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
-msgid "{name:?} is not a username; use lowercase letters, digits, - and _, starting with a letter"
-msgstr ""
-
 msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
 msgstr ""
 
-msgid "lowercase letters, digits, - and _, starting with a letter, and not root or {live}"
+msgid "{name} is the system's own account; choose another username"
 msgstr ""
 
 msgid "one of {names}"
@@ -380,6 +419,24 @@ msgstr ""
 msgid "no partitions"
 msgstr ""
 
+msgid "the data is not encrypted, as the install gives nobody a password to encrypt it with; --encrypt asks for a passphrase"
+msgstr ""
+
+msgid "could not read the data's passphrase from standard input; give it on one line"
+msgstr ""
+
+msgid "Passphrase for the data: "
+msgstr ""
+
+msgid "a passphrase cannot be empty"
+msgstr ""
+
+msgid "The same passphrase again: "
+msgstr ""
+
+msgid "the two passphrases differ; type them again"
+msgstr ""
+
 msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
 msgstr ""
 
@@ -389,7 +446,7 @@ msgstr ""
 msgid "unknown"
 msgstr ""
 
-msgid "run as root to see"
+msgid "doas edel install --list shows it"
 msgstr ""
 
 msgid "no disk found to install on"
@@ -416,7 +473,7 @@ msgstr ""
 msgid "{tool} has no input"
 msgstr ""
 
-msgid "{tool} could not hash the password; nothing was changed"
+msgid "the password could not be prepared for the new disk ({tool} failed), so nothing was changed; this stick may be damaged: write it again from the download"
 msgstr ""
 
 msgid "Edel OS asks a few questions, then shows the plan before it changes anything. Press Return to take the suggestion in brackets."
@@ -431,7 +488,7 @@ msgstr ""
 msgid "one of the disks listed above, such as sda"
 msgstr ""
 
-msgid "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
+msgid "edel install asks its questions on a terminal; run it in one, use Install Edel OS in Settings, or name the disk and give --settings FILE"
 msgstr ""
 
 msgid "--new-password-stdin gives one person a password, and {path} names {count}; name one person in it"
@@ -440,7 +497,7 @@ msgstr ""
 msgid "/dev/{name} is the disk this system runs from; install to another disk"
 msgstr ""
 
-msgid "/dev/{name} has a mounted file system; unmount it first"
+msgid "/dev/{name} is in use, as one of its parts is open (in Files, say); eject it there, or choose another disk; nothing was changed"
 msgstr ""
 
 msgid "could not check {path}"
@@ -458,25 +515,40 @@ msgstr ""
 msgid "stopped, because {name} was not typed; nothing was changed"
 msgstr ""
 
-msgid "this system lacks {tools}, so nothing was changed; install them (apk add) and run edel install again"
+msgid "this system lacks {tools}, which installing needs, so nothing was changed; this stick is damaged or not an Edel OS stick: write it again from the download"
+msgstr ""
+
+msgid "the data is not encrypted after all, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type"
+msgstr ""
+
+msgid "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt"
+msgstr ""
+
+msgid "a passphrase may hold only a-z, A-Z, digits, spaces and signs, which the start's prompt can always type; nothing was changed"
+msgstr ""
+
+msgid "the disk is only partly installed, so run edel install again"
 msgstr ""
 
 msgid "{device} did not appear after partitioning, so the disk is only partly installed; run edel install again"
 msgstr ""
 
+msgid "could not open {device} to copy files onto it"
+msgstr ""
+
 msgid "partitioning {disk}"
 msgstr ""
 
-msgid "could not start sfdisk"
+msgid "could not partition {disk}: the partitioning tool did not start; this stick may be damaged: write it again from the download"
 msgstr ""
 
-msgid "sfdisk has no input"
-msgstr ""
-
-msgid "sfdisk could not partition {disk}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed"
+msgid "could not partition {disk}: it may be in use or locked against writing (some SD cards have a switch); it may be half written, so run edel install again once that is fixed"
 msgstr ""
 
 msgid "copying the running system into slot A"
+msgstr ""
+
+msgid "could not finish writing {part}"
 msgstr ""
 
 msgid "slot A on the new disk differs from the running slot after copying, so the copy is damaged and the disk cannot start yet; run edel install again"
@@ -485,22 +557,40 @@ msgstr ""
 msgid "slot A is the running slot byte for byte ({mib} MiB)"
 msgstr ""
 
-msgid "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again"
+msgid "the copy of Edel OS on {disk} is damaged and cannot start yet (the file system check stopped with code {code}); run edel install again, and if it fails again the disk may be failing"
 msgstr ""
 
 msgid "writing the boot loader"
 msgstr ""
 
+msgid "could not format the start-up partition {part}"
+msgstr ""
+
 msgid "creating the data partition"
 msgstr ""
 
-msgid "done; restart from {disk} to use it"
+msgid "encrypting the data partition with the password"
+msgstr ""
+
+msgid "the new encrypted data partition did not open with its passphrase; run edel install again"
+msgstr ""
+
+msgid "could not format the data partition {part}"
+msgstr ""
+
+msgid "Edel OS is installed on {disk}; restart, and take the stick out when the screen goes dark"
 msgstr ""
 
 msgid "copying the default apps"
 msgstr ""
 
+msgid "could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"
+msgstr ""
+
 msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
+msgstr ""
+
+msgid "stopped before the copy was checked, so {partition} was made unable to start on purpose; run edel install again"
 msgstr ""
 
 msgid "already installed to {id}; nothing to do"
@@ -833,10 +923,10 @@ msgstr ""
 msgid "A release to stay on instead of following the channel; this release does not act on it yet."
 msgstr ""
 
-msgid "Whether updates are checked, installed, or installed and restarted by themselves, or off; this release does not act on it yet."
+msgid "Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due."
 msgstr ""
 
-msgid "The hours when a restart may happen by itself, such as 02:00-04:00; this release does not act on it yet."
+msgid "The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour."
 msgstr ""
 
 msgid "The Flathub apps installed for each administrator, by app id such as io.mpv.Mpv."
@@ -900,6 +990,12 @@ msgid "The apps and add-ons the profiles should not bring, which taking one out 
 msgstr ""
 
 msgid "Sound arrives within about 5 ms, for music and recording, at a little more power while it plays; it applies from the next login."
+msgstr ""
+
+msgid "{name} is not a keyboard layout this computer knows; layouts are short names such as \"us\", \"de\", \"fr\" or \"ru\", and the Keyboard layouts row on Settings' Region page lists them all"
+msgstr ""
+
+msgid "{layout} is not a variant of the {name} layout this computer knows; the Keyboard layouts row on Settings' Region page lists its variants"
 msgstr ""
 
 msgid "English (United States)"
@@ -2114,7 +2210,7 @@ msgstr ""
 msgid "{table} is not a table in the file; change it by hand"
 msgstr ""
 
-msgid "{key}: {name} is not a user name"
+msgid "{key}: {why}"
 msgstr ""
 
 msgid "{key} is a table of colours; set one colour in it, such as {key}.panel"
@@ -2145,9 +2241,6 @@ msgid "the key table and the structs disagree"
 msgstr ""
 
 msgid "expected a table"
-msgstr ""
-
-msgid "not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _"
 msgstr ""
 
 msgid "a built-in preset's name in quotes, such as \"hive\""
@@ -2288,6 +2381,12 @@ msgstr ""
 msgid "a channel name in quotes, such as \"stable\""
 msgstr ""
 
+msgid "{value} is not a span of hours; write the start and the end in 24-hour time, such as \"02:00-04:00\""
+msgstr ""
+
+msgid "a span of hours in quotes, such as \"02:00-04:00\""
+msgstr ""
+
 msgid "a cursor theme's name in quotes, such as \"default\""
 msgstr ""
 
@@ -2343,6 +2442,15 @@ msgid "a colour in quotes, such as \"#1e1e2e\""
 msgstr ""
 
 msgid "{value} is not a wallpaper; give a wallpaper's name such as \"hills\", a picture's path, a colour such as \"#1f2b48\", or \"none\" (to show the release's, run edel settings reset on this key)"
+msgstr ""
+
+msgid "use up to 32 lowercase letters, digits, - and _, starting with a letter or _"
+msgstr ""
+
+msgid "choose a username: {rule}"
+msgstr ""
+
+msgid "{name} is not a username: {rule}"
 msgstr ""
 
 msgid "{others} or {last}"
@@ -2906,6 +3014,12 @@ msgstr ""
 msgid "another command is starting"
 msgstr ""
 
+msgid "could not start {program}"
+msgstr ""
+
+msgid "{program} stopped with code {code}"
+msgstr ""
+
 msgid "cannot read {path}"
 msgstr ""
 
@@ -2958,6 +3072,18 @@ msgid "the boot loader was not updated ({why}); the slot is confirmed and the bo
 msgstr ""
 
 msgid "slot {slot} starts after the next restart (edel restart); slot {running} stays installed, so edel rollback again undoes this"
+msgstr ""
+
+msgid "{version} is available; edel update installs it"
+msgstr ""
+
+msgid "{version} did not start here before, so it is not installed again; a newer release will be"
+msgstr ""
+
+msgid "restarting to start the update"
+msgstr ""
+
+msgid "the update starts at the next restart"
 msgstr ""
 
 msgid "a web app named {name} is already there ({id}); remove it first with edel web-app remove {name}"
@@ -3074,6 +3200,9 @@ msgstr ""
 msgid "Install a slot image without a signed release.toml (for testing)"
 msgstr ""
 
+msgid "Do what updates.automatic says: nothing, check, install, or install and restart inside updates.restart_window, as the hourly timer does"
+msgstr ""
+
 msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"
 msgstr ""
 
@@ -3129,6 +3258,12 @@ msgid "Erase the disk without asking, for unattended installs; without it and wi
 msgstr ""
 
 msgid "Read the password of the settings file's one person from the first line of standard input (after the administrator's, with --password-stdin), as Settings' installer page gives it"
+msgstr ""
+
+msgid "Encrypt the data partition with the password the install gives its person, or a passphrase asked for; laptops and computers with a screen are encrypted unless --no-encrypt"
+msgstr ""
+
+msgid "Leave the data partition plain, readable by whoever has the disk"
 msgstr ""
 
 msgid "Install as the settings file's [install] table says, with nobody at the keyboard, once this slot is confirmed; without the table, do nothing (docs/FLEET.md)"

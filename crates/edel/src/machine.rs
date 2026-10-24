@@ -115,6 +115,26 @@ pub(crate) fn accounts(passwd: &str) -> Vec<Account> {
 
 /// A person's account, not a system one: root, or a uid from 1000 below
 /// `nobody`'s.
+/// The person with the lowest id, the one the install made: the data's
+/// passphrase follows their keyboard (M8.2b).
+pub(crate) fn first_person(passwd: &str) -> Option<Account> {
+    accounts(passwd)
+        .into_iter()
+        .filter(|a| a.uid != 0 && is_person(a))
+        .min_by_key(|a| a.uid)
+}
+
+/// The keyboard in the first person's own settings file, if it names one.
+pub(crate) fn first_persons_keyboard() -> Option<String> {
+    let first = first_person(&fs::read_to_string("/etc/passwd").ok()?)?;
+    let file = places::person_settings_in(Path::new(&first.home));
+    settings::read(&fs::read_to_string(file).ok()?)
+        .ok()?
+        .file
+        .region
+        .keyboard
+}
+
 pub(crate) fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
@@ -138,7 +158,12 @@ pub fn add_live_account(name: &str) -> Result<()> {
         .any(|a| a.name == name)
     {
         let home = format!("/home/{name}");
-        run(&mut base::add_system_person(name, default_shell(), &home))?;
+        run(&mut base::add_system_person(
+            name,
+            places::LIVE_UID,
+            default_shell(),
+            &home,
+        ))?;
         unlock(name)?;
     }
     let greeter = accounts(&fs::read_to_string("/etc/passwd")?)
@@ -1022,7 +1047,7 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     }
     for step in services::plan(
         &machine.features,
-        &file.services,
+        &services::with_keys(&file.services, &machine.features, file),
         &machine.services_off,
         machine.screen,
         &machine.runlevels,
@@ -1262,7 +1287,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             }
         }
         Change::Unlock(name) => unlock(name)?,
-        Change::AdminGroup => run(&mut base::add_group(ADMIN_GROUP))?,
+        Change::AdminGroup => run(&mut base::add_group(ADMIN_GROUP, edel::users::ADMIN_GID))?,
         Change::Admin { name, on: true } => run(&mut base::add_to_group(name, ADMIN_GROUP))?,
         Change::Admin { name, on: false } => run(&mut base::remove_from_group(name, ADMIN_GROUP))?,
         Change::Keys { name, keys } => write_keys(&find_account(name)?, &keys_text(keys))?,
@@ -3215,6 +3240,16 @@ mod tests {
             err.to_string(),
             "\"network.hostname\": write KEY=VALUE, such as network.hostname=lab-1"
         );
+    }
+
+    #[test]
+    fn the_first_person_is_the_lowest_id_above_root() {
+        let passwd = "root:x:0:0::/root:/bin/sh\nbo:x:1001:1001::/home/bo:/bin/sh\nali:x:1000:1000::/home/ali:/bin/sh\nnobody:x:65534:65534::/:/sbin/nologin\n";
+        assert_eq!(
+            first_person(passwd).map(|a| a.home).as_deref(),
+            Some("/home/ali")
+        );
+        assert!(first_person("root:x:0:0::/root:/bin/sh\n").is_none());
     }
 
     #[test]

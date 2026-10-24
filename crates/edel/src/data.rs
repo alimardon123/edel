@@ -133,9 +133,11 @@ fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
         .lines()
         .filter(|l| !l.is_empty() && !known.contains(&name(l)))
         .filter(|l| {
-            // Alpine hands out system ids per build, so a slot's new
-            // account may carry an id this machine already gave someone
-            // else; adding it would make two names share one id.
+            // Builds pin every system account's id (account_ids.rs), so
+            // a slot's new account has an id no build gave another; a
+            // machine made before the pins, or an account made by hand,
+            // may still hold it, and adding the line would make two
+            // names share one id.
             let clash = id(l).is_some_and(|i| taken.contains(&i));
             if clash {
                 eprintln!(
@@ -518,6 +520,16 @@ fn hardware_packs(probe: bool) {
     }
 }
 
+/// The keyboard of the machine's settings file, else of its first
+/// person's own file, for the encrypted data's prompt (M8.2b).
+fn follow_keyboard(device: &Path) {
+    let machine = edel::settings::on_machine("region.keyboard");
+    let person = || crate::machine::first_persons_keyboard();
+    // No keyboard anywhere is the default, the kernel's US map.
+    let keyboard = machine.or_else(person).unwrap_or_else(|| "us".into());
+    crate::crypt::follow_keyboard(device, &keyboard);
+}
+
 /// Grows the data partition if the disk has room, mounts it at `/data` and
 /// grows its file system to fill it.
 pub fn mount_data() -> Result<()> {
@@ -537,8 +549,17 @@ pub fn mount_data() -> Result<()> {
             eprintln!("warning: could not grow the data partition: {err:#}");
         }
     }
+    ensure_node(&dev);
+    // An encrypted data partition (M8.2) is unlocked first; it grew above
+    // while still closed, so the opened device is already its full size.
+    let encrypted = crate::crypt::is_luks(&dev).unwrap_or(false);
+    let part_device = dev.clone();
+    let dev = if encrypted {
+        crate::crypt::unlock(&dev)?
+    } else {
+        dev
+    };
     if !is_mounted(MOUNT_POINT)? {
-        ensure_node(&dev);
         run(Command::new("mount")
             .args(["-t", "ext4", "-o", "noatime"])
             .arg(&dev)
@@ -548,6 +569,12 @@ pub fn mount_data() -> Result<()> {
     grow_file_system(&dev);
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
     println!("edel-data: mounted {MOUNT_POINT}");
+    if encrypted {
+        println!(
+            "edel-data: {MOUNT_POINT} is encrypted, on {}",
+            dev.display()
+        );
+    }
     // Each step runs even when one before it failed: a failed /etc overlay
     // must not also leave /home, /var and /tmp off /data.
     let mut first_error = None;
@@ -574,6 +601,9 @@ pub fn mount_data() -> Result<()> {
             eprintln!("edel-data: {step}: {err:#}");
             first_error.get_or_insert(err);
         }
+    }
+    if encrypted {
+        follow_keyboard(&part_device);
     }
     // After /etc, so the rules' groups are known (M8.17c).
     crate::addons::take_device_rules();

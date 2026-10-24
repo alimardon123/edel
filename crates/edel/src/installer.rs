@@ -39,7 +39,73 @@ pub const TOOLS: &[(&str, &str)] = &[
     ("mkfs.vfat", "dosfstools"),
     ("mkfs.ext4", "e2fsprogs"),
     ("e2fsck", "e2fsprogs"),
+    ("cryptsetup", "cryptsetup"),
 ];
+
+/// The name the new disk's data has while `edel install` writes it
+/// encrypted (M8.2), apart from a running machine's own.
+const INSTALL_MAPPER: &str = "edel-install-data";
+
+/// Whether to encrypt the data partition (M8.2): `--encrypt`,
+/// `--no-encrypt`, or neither, which is the machine's default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Encrypt {
+    Default,
+    On,
+    Off,
+}
+
+/// Whether the data is encrypted, and why not when the default would
+/// have: laptops and computers with a screen are, as they are the ones
+/// lost or left, when the install gives a password to encrypt with; a
+/// virtual machine or a computer without a screen starts unattended and
+/// stays plain unless `--encrypt`.
+fn encrypt_data(
+    asked: Encrypt,
+    form: &str,
+    screen: bool,
+    given: bool,
+) -> (bool, Option<&'static str>) {
+    match asked {
+        Encrypt::Off => (false, None),
+        Encrypt::On => (true, None),
+        Encrypt::Default if form == "laptop" || (form == "pc" && screen) => {
+            if given {
+                (true, None)
+            } else {
+                (
+                    false,
+                    Some(n_(
+                        "the data is not encrypted, as the install gives nobody a password to encrypt it with; --encrypt asks for a passphrase",
+                    )),
+                )
+            }
+        }
+        Encrypt::Default => (false, None),
+    }
+}
+
+/// Asks the data's passphrase twice on the terminal, or reads one line of
+/// standard input when there is no terminal.
+fn ask_passphrase() -> Result<Password> {
+    if !io::stdin().is_terminal() {
+        return privilege::read_password_line(io::stdin().lock()).context(tr(
+            "could not read the data's passphrase from standard input; give it on one line",
+        ));
+    }
+    loop {
+        let first = privilege::read_secret(tr("Passphrase for the data: "))?;
+        if first.letters() == 0 {
+            println!("  {}", tr("a passphrase cannot be empty"));
+            continue;
+        }
+        let again = privilege::read_secret(tr("The same passphrase again: "))?;
+        if first.text() == again.text() {
+            return Ok(first);
+        }
+        println!("  {}", tr("the two passphrases differ; type them again"));
+    }
+}
 
 const MIB: u64 = 1024 * 1024;
 /// The first block of a slot: it holds the ext4 superblock and its UUID.
@@ -94,6 +160,14 @@ fn could_not_read(path: &Path) -> String {
     )
 }
 
+/// `could not write PATH`, the start of a failure to write a file.
+fn could_not_write(path: &Path) -> String {
+    trf(
+        "could not write {path}",
+        &[("path", &path.display().to_string())],
+    )
+}
+
 /// The target disk as sysfs and blkid see it.
 fn describe(name: &str) -> Result<Disk> {
     let sys = Path::new("/sys/block").join(name);
@@ -132,7 +206,7 @@ fn describe(name: &str) -> Result<Disk> {
         // not the same as an empty one (a dry run needs no root).
         if line.trim().is_empty() && File::open(Path::new("/dev").join(&part)).is_err() {
             label = Some(tr("unknown").into());
-            fs = Some(tr("run as root to see").into());
+            fs = Some(tr("doas edel install --list shows it").into());
         }
         partitions.push(Partition {
             name: part,
@@ -150,10 +224,11 @@ fn describe(name: &str) -> Result<Disk> {
     })
 }
 
-/// Whether the disk named `name` says it is removable, as a USB stick does.
+/// Whether the disk `name` is removable or on USB, as a stick is; a USB
+/// stick that tells the kernel it is fixed still counts, so `disk = "auto"`
+/// never takes it.
 fn removable(name: &str) -> bool {
-    fs::read_to_string(Path::new("/sys/block").join(name).join("removable"))
-        .is_ok_and(|v| v.trim() == "1")
+    edel::install::is_removable(Path::new("/sys"), name)
 }
 
 /// The disks the installer could offer, as `/sys/block` lists them, each
@@ -330,7 +405,7 @@ pub(crate) fn hash(password: &Password) -> Result<String> {
         bail!(
             "{}",
             trf(
-                "{tool} could not hash the password; nothing was changed",
+                "the password could not be prepared for the new disk ({tool} failed), so nothing was changed; this stick may be damaged: write it again from the download",
                 &tool
             )
         );
@@ -341,7 +416,7 @@ pub(crate) fn hash(password: &Password) -> Result<String> {
 /// The questions on the terminal (M6.6b), in `install::QUESTIONS`' order,
 /// up to the disk, which the caller asks; More options only when asked
 /// for. Returns the answers and the password's hash.
-fn ask_questions() -> Result<(Answers, Option<String>)> {
+fn ask_questions() -> Result<(Answers, Option<Password>)> {
     println!(
         "{}\n",
         tr(
@@ -349,7 +424,7 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
         )
     );
     let mut answers = Answers::default();
-    let mut hashed = None;
+    let mut password = None;
     let questions = asked();
     let more = ask_line(
         tr("More options (computer name, layout)? yes or no"),
@@ -383,7 +458,7 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
                     Some(ask_until(title, Some(suggestion), edel::timezones::answer)?)
             }
             "user" => answers.user = Some(ask_until(title, None, edel::install::user_answer)?),
-            "password" => hashed = Some(hash(&ask_password()?)?),
+            "password" => password = Some(ask_password()?),
             "network.hostname" => {
                 let suggestion = suggested_hostname(
                     answers.user.as_deref().unwrap_or("edel"),
@@ -420,7 +495,7 @@ fn ask_questions() -> Result<(Answers, Option<String>)> {
             _ => {}
         }
     }
-    Ok((answers, hashed))
+    Ok((answers, password))
 }
 
 /// Asks which disk, after showing the list; the running disk is refused
@@ -446,39 +521,66 @@ pub fn install(
     dry_run: bool,
     yes: bool,
     new_password: bool,
+    encrypt: Encrypt,
 ) -> Result<()> {
     let asking = system_file.is_none() || disk.is_none();
     if asking && !io::stdin().is_terminal() {
         bail!(
             "{}",
             tr(
-                "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
+                "edel install asks its questions on a terminal; run it in one, use Install Edel OS in Settings, or name the disk and give --settings FILE"
             )
         );
     }
-    let (written, hashed) = match system_file {
-        Some(file) if new_password => (file.to_path_buf(), Some(password_from_stdin(file)?)),
+    // A plan reads no password: it only says one will come.
+    let (written, password) = match system_file {
+        Some(file) if new_password && !dry_run => {
+            let (person, password) = password_from_stdin(file)?;
+            (file.to_path_buf(), Some((person, password)))
+        }
         Some(file) => (file.to_path_buf(), None),
         None => {
-            let (answers, hashed) = ask_questions()?;
+            let (answers, password) = ask_questions()?;
             let text = answers.settings_text()?;
             let file = PathBuf::from(edel::places::INSTALL_ANSWERS);
-            fs::create_dir_all(edel::places::RUN_DIR)?;
-            fs::write(&file, text)?;
-            (file, hashed.map(|h| (answers.user.unwrap_or_default(), h)))
+            fs::create_dir_all(edel::places::RUN_DIR)
+                .with_context(|| could_not_write(Path::new(&edel::places::RUN_DIR)))?;
+            fs::write(&file, text).with_context(|| could_not_write(Path::new(&file)))?;
+            (
+                file,
+                password.map(|p| (answers.user.unwrap_or_default(), p)),
+            )
         }
+    };
+    let hashed = match &password {
+        Some((person, clear)) => Some((person.clone(), hash(clear)?)),
+        None => None,
+    };
+    let data = Data {
+        asked: encrypt,
+        given: new_password || password.is_some(),
+        password: password.map(|(_, clear)| clear),
     };
     let disk = match disk {
         Some(d) => d.to_string(),
         None => ask_disk()?,
     };
-    install_on(&disk, &written, hashed.as_ref(), dry_run, yes)
+    install_on(&disk, &written, hashed.as_ref(), data, dry_run, yes)
+}
+
+/// What the person asked of the data partition, and the password the
+/// install gives, which encrypts it on the machines whose default that is.
+struct Data {
+    asked: Encrypt,
+    /// Whether the install gives a password (a plan only says it will).
+    given: bool,
+    password: Option<Password>,
 }
 
 /// The one person of `file` and the hash of the password standard input
 /// gives them (`--new-password-stdin`, M6.6a): Settings' installer page asks
 /// the password and hands it over this way, never on a command line.
-fn password_from_stdin(file: &Path) -> Result<(String, String)> {
+fn password_from_stdin(file: &Path) -> Result<(String, Password)> {
     let text = fs::read_to_string(file).with_context(|| could_not_read(file))?;
     let people: Vec<String> = settings::read(&text)?.file.users.into_keys().collect();
     let [person] = people.as_slice() else {
@@ -500,7 +602,7 @@ fn password_from_stdin(file: &Path) -> Result<(String, String)> {
             tr("the new password on standard input is empty; nothing was changed")
         );
     }
-    Ok((person.clone(), hash(&password)?))
+    Ok((person.clone(), password))
 }
 
 /// Installs on `disk` with the settings file `system_file` and, when the
@@ -509,6 +611,7 @@ fn install_on(
     disk: &str,
     system_file: &Path,
     password: Option<&(String, String)>,
+    data: Data,
     dry_run: bool,
     yes: bool,
 ) -> Result<()> {
@@ -531,7 +634,7 @@ fn install_on(
         bail!(
             "{}",
             trf(
-                "/dev/{name} has a mounted file system; unmount it first",
+                "/dev/{name} is in use, as one of its parts is open (in Files, say); eject it there, or choose another disk; nothing was changed",
                 &[("name", name)]
             )
         );
@@ -561,13 +664,23 @@ fn install_on(
         .into_owned();
     let running_mib =
         read_number(&Path::new("/sys/class/block").join(&slot_name).join("size"))? * 512 / MIB;
+    let (encrypted, why_plain) = encrypt_data(
+        data.asked,
+        edel::install::form_factor(Path::new("/sys")),
+        edel::services::screen_now(),
+        data.given,
+    );
     let plan = Plan {
         disk: describe(name)?,
         slot_mib: SLOT_MIB.max(running_mib),
         system_file: system_file.display().to_string(),
+        encrypted,
     };
     plan.check()?;
     print!("{plan}");
+    if let Some(why) = why_plain {
+        println!("{}", tr(why));
+    }
     if dry_run {
         println!(
             "edel install: {}",
@@ -606,13 +719,67 @@ fn install_on(
         bail!(
             "{}",
             trf(
-                "this system lacks {tools}, so nothing was changed; install them (apk add) and run edel install again",
+                "this system lacks {tools}, which installing needs, so nothing was changed; this stick is damaged or not an Edel OS stick: write it again from the download",
                 &[("tools", &missing.join(", "))]
             )
         );
     }
+    // The person's password is the data's passphrase (one to remember);
+    // a console types only plain letters for sure at the start.
+    let passphrase = match (encrypted, data.password) {
+        (false, _) => None,
+        (true, Some(clear)) if crate::crypt::typable(clear.text().unwrap_or_default()) => {
+            Some(clear)
+        }
+        (true, Some(_)) if data.asked == Encrypt::Default => {
+            println!(
+                "edel install: {}",
+                tr(
+                    "the data is not encrypted after all, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type"
+                )
+            );
+            None
+        }
+        (true, Some(_)) => bail!(
+            "{}",
+            tr(
+                "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt"
+            )
+        ),
+        (true, None) => {
+            let typed = ask_passphrase()?;
+            if !crate::crypt::typable(typed.text().unwrap_or_default()) {
+                bail!(
+                    "{}",
+                    tr(
+                        "a passphrase may hold only a-z, A-Z, digits, spaces and signs, which the start's prompt can always type; nothing was changed"
+                    )
+                );
+            }
+            Some(typed)
+        }
+    };
     let _lock = Lock::take("install", "edel install")?;
-    let written = write(&plan, &slot, running_mib, system_file, password);
+    // Every failure once the disk is touched ends with what to do.
+    let written = write(
+        &plan,
+        &slot,
+        running_mib,
+        system_file,
+        password,
+        passphrase.as_ref(),
+    )
+    .map_err(|err| {
+        let line = format!("{err:#}");
+        if line.contains("edel install again") {
+            err
+        } else {
+            anyhow::anyhow!(
+                "{line}; {}",
+                tr("the disk is only partly installed, so run edel install again")
+            )
+        }
+    });
     // Settings shows the failure on its page; the system log keeps it,
     // where `edel report` and a later look find it.
     if let Err(err) = &written {
@@ -652,8 +819,13 @@ struct Mounted(PathBuf);
 
 impl Mounted {
     fn new(device: &Path, dir: &Path, args: &[&str]) -> Result<Mounted> {
-        fs::create_dir_all(dir)?;
-        run(Command::new("mount").args(args).arg(device).arg(dir))?;
+        fs::create_dir_all(dir).with_context(|| could_not_write(Path::new(&dir)))?;
+        run(Command::new("mount").args(args).arg(device).arg(dir)).with_context(|| {
+            trf(
+                "could not open {device} to copy files onto it",
+                &[("device", &device.display().to_string())],
+            )
+        })?;
         Ok(Mounted(dir.to_path_buf()))
     }
 }
@@ -673,6 +845,7 @@ fn write(
     running_mib: u64,
     system_file: &Path,
     password: Option<&(String, String)>,
+    passphrase: Option<&Password>,
 ) -> Result<()> {
     let name = &plan.disk.name;
     let disk = Path::new("/dev").join(name);
@@ -694,17 +867,23 @@ fn write(
         .arg(&disk)
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .context(tr("could not start sfdisk"))?;
+        .context(trf(
+            "could not partition {disk}: the partitioning tool did not start; this stick may be damaged: write it again from the download",
+            &[("disk", &disk.display().to_string())],
+        ))?;
     sfdisk
         .stdin
         .take()
-        .context(tr("sfdisk has no input"))?
+        .context(trf(
+            "could not partition {disk}: the partitioning tool did not start; this stick may be damaged: write it again from the download",
+            &[("disk", &disk.display().to_string())],
+        ))?
         .write_all(layout.sfdisk_script().as_bytes())?;
     if !sfdisk.wait()?.success() {
         bail!(
             "{}",
             trf(
-                "sfdisk could not partition {disk}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed",
+                "could not partition {disk}: it may be in use or locked against writing (some SD cards have a switch); it may be half written, so run edel install again once that is fixed",
                 &[("disk", &disk.display().to_string())]
             )
         );
@@ -743,7 +922,12 @@ fn write(
     drop(to);
     // Byte for byte as the running slot, read back from the disk (M1.12).
     let length = running_mib * MIB;
-    run(Command::new("blockdev").arg("--flushbufs").arg(part(2)))?;
+    run(Command::new("blockdev").arg("--flushbufs").arg(part(2))).with_context(|| {
+        trf(
+            "could not finish writing {part}",
+            &[("part", &part(2).display().to_string())],
+        )
+    })?;
     if update::hash_prefix(&part(2), length)? != update::hash_prefix(slot, length)? {
         bail!(
             "{}",
@@ -764,8 +948,14 @@ fn write(
         bail!(
             "{}",
             trf(
-                "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again",
-                &[("status", &status.to_string())]
+                "the copy of Edel OS on {disk} is damaged and cannot start yet (the file system check stopped with code {code}); run edel install again, and if it fails again the disk may be failing",
+                &[
+                    ("disk", &disk.display().to_string()),
+                    (
+                        "code",
+                        &status.code().map_or("none".into(), |c| c.to_string())
+                    ),
+                ]
             )
         );
     }
@@ -774,7 +964,13 @@ fn write(
     println!("edel install: {}", tr("writing the boot loader"));
     run(Command::new("mkfs.vfat")
         .args(["-F", "32", "-n", ESP_LABEL])
-        .arg(part(1)))?;
+        .arg(part(1)))
+    .with_context(|| {
+        trf(
+            "could not format the start-up partition {part}",
+            &[("part", &part(1).display().to_string())],
+        )
+    })?;
     {
         let esp = Mounted::new(
             &part(1),
@@ -784,23 +980,60 @@ fn write(
         let (_, efi_name) = boot::efi_target(std::env::consts::ARCH)?;
         let boot_dir = esp.0.join("EFI/BOOT");
         let edel_dir = esp.0.join(GRUB_PREFIX.trim_start_matches('/'));
-        fs::create_dir_all(&boot_dir)?;
-        fs::create_dir_all(&edel_dir)?;
+        fs::create_dir_all(&boot_dir).with_context(|| could_not_write(Path::new(&boot_dir)))?;
+        fs::create_dir_all(&edel_dir).with_context(|| could_not_write(Path::new(&edel_dir)))?;
         let slot_dir = Path::new(SLOT_DIR);
-        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))?;
+        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))
+            .with_context(|| could_not_write(Path::new(&boot_dir.join(efi_name))))?;
         for file in ["grub.cfg", "loader.toml"] {
-            fs::copy(slot_dir.join(file), edel_dir.join(file))?;
+            fs::copy(slot_dir.join(file), edel_dir.join(file))
+                .with_context(|| could_not_write(Path::new(&edel_dir.join(file))))?;
         }
-        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())?;
+        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())
+            .with_context(|| could_not_write(Path::new(&edel_dir.join("grubenv"))))?;
     }
 
     println!("edel install: {}", tr("creating the data partition"));
+    // Before the mount below, so the unmount comes first.
+    let mut _opened = None;
+    let data_device = match passphrase {
+        Some(passphrase) => {
+            println!(
+                "edel install: {}",
+                tr("encrypting the data partition with the password")
+            );
+            crate::crypt::close(INSTALL_MAPPER);
+            let keyboard = settings::read(&fs::read_to_string(system_file)?)
+                .ok()
+                .and_then(|read| read.file.region.keyboard)
+                .unwrap_or_default();
+            let keymap = crate::crypt::keymap_for(&keyboard, |path| Path::new(path).exists());
+            crate::crypt::format(&part(4), passphrase, keymap.as_deref())?;
+            if !crate::crypt::open(&part(4), INSTALL_MAPPER, passphrase)? {
+                bail!(
+                    "{}",
+                    tr(
+                        "the new encrypted data partition did not open with its passphrase; run edel install again"
+                    )
+                );
+            }
+            _opened = Some(crate::crypt::Opened(INSTALL_MAPPER.to_string()));
+            crate::crypt::mapper(INSTALL_MAPPER)
+        }
+        None => part(4),
+    };
     run(Command::new("mkfs.ext4")
         .args(["-q", "-L", DATA_LABEL])
-        .arg(part(4)))?;
+        .arg(&data_device))
+    .with_context(|| {
+        trf(
+            "could not format the data partition {part}",
+            &[("part", &part(4).display().to_string())],
+        )
+    })?;
     {
         let data = Mounted::new(
-            &part(4),
+            &data_device,
             &Path::new(edel::places::INSTALL_DIR).join("data"),
             &["-t", "ext4"],
         )?;
@@ -813,7 +1046,7 @@ fn write(
                 .unwrap_or(&machine),
         );
         fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
-        fs::copy(system_file, target)?;
+        fs::copy(system_file, &target).with_context(|| could_not_write(Path::new(&target)))?;
         // The mark that this disk was installed, so a USB disk holding it
         // is no stick: no live login, no install without a password
         // (M6.17).
@@ -838,7 +1071,8 @@ fn write(
                 .write(true)
                 .create_new(true)
                 .mode(0o600)
-                .open(&first)?;
+                .open(&first)
+                .with_context(|| could_not_write(&first))?;
             file.write_all(format!("{user}:{hash}\n").as_bytes())?;
             file.sync_all()?;
         }
@@ -851,11 +1085,16 @@ fn write(
         );
         copy_default_apps(&data.0)?;
     }
-    run(&mut Command::new("sync"))?;
+    run(&mut Command::new("sync")).with_context(|| {
+        trf(
+            "could not finish writing {part}",
+            &[("part", &disk.display().to_string())],
+        )
+    })?;
     println!(
         "edel install: {}",
         trf(
-            "done; restart from {disk} to use it",
+            "Edel OS is installed on {disk}; restart, and take the stick out when the screen goes dark",
             &[("disk", &disk.display().to_string())]
         )
     );
@@ -878,15 +1117,15 @@ fn copy_default_apps(data: &Path) -> Result<()> {
             .strip_prefix("/")
             .unwrap_or(apps),
     );
-    fs::create_dir_all(&target)?;
+    fs::create_dir_all(&target).with_context(|| could_not_write(Path::new(&target)))?;
     let mut pack = Command::new("tar")
         .arg("-C")
         .arg(apps)
         .args(["-cf", "-", "."])
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .context("could not start tar to copy the default apps")?;
-    let stream = pack.stdout.take().context("tar gave no output to copy")?;
+        .context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
+    let stream = pack.stdout.take().context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
     run(Command::new("tar")
         .arg("-C")
         .arg(&target)
@@ -943,8 +1182,11 @@ impl Drop for HalfCopy {
             let _ = part.sync_all();
         }
         eprintln!(
-            "edel install: stopped; cleared the start of {} so it cannot be started",
-            self.partition.display()
+            "edel install: {}",
+            trf(
+                "stopped before the copy was checked, so {partition} was made unable to start on purpose; run edel install again",
+                &[("partition", &self.partition.display().to_string())]
+            )
         );
     }
 }
@@ -1020,9 +1262,16 @@ pub fn unattended() -> Result<()> {
         )
     );
     let target = PathBuf::from(edel::places::INSTALL_UNATTENDED);
-    fs::create_dir_all(edel::places::RUN_DIR)?;
+    fs::create_dir_all(edel::places::RUN_DIR)
+        .with_context(|| could_not_write(Path::new(&edel::places::RUN_DIR)))?;
     fs::write(&target, fleet::without_install(&text)?)?;
-    install_on(&name, &target, None, false, true)?;
+    // Nobody is there to type a passphrase at its starts.
+    let data = Data {
+        asked: Encrypt::Off,
+        given: false,
+        password: None,
+    };
+    install_on(&name, &target, None, data, false, true)?;
     let date = crate::release::today_text();
     crate::machine::write_whole(
         Path::new(edel::places::INSTALLED_TO),
@@ -1171,6 +1420,22 @@ fn count_down(device: &str, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn laptops_and_screens_are_encrypted_when_the_install_gives_a_password() {
+        let d = Encrypt::Default;
+        assert_eq!(encrypt_data(d, "laptop", false, true), (true, None));
+        assert_eq!(encrypt_data(d, "pc", true, true), (true, None));
+        assert_eq!(encrypt_data(d, "pc", false, true), (false, None));
+        assert_eq!(encrypt_data(d, "vm", true, true), (false, None));
+        let (on, why) = encrypt_data(d, "laptop", true, false);
+        assert!(!on && why.is_some_and(|w| w.contains("--encrypt")));
+        assert_eq!(encrypt_data(Encrypt::On, "vm", false, false), (true, None));
+        assert_eq!(
+            encrypt_data(Encrypt::Off, "laptop", true, true),
+            (false, None)
+        );
+    }
 
     #[test]
     fn names_partitions_the_way_the_kernel_does() {

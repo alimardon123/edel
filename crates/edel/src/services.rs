@@ -110,17 +110,31 @@ fn listed(os_release: &str, key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The graphics drivers of servers' management chips (BMCs): their card
+/// only mirrors the console to a remote viewer, so it is no screen anyone
+/// sits at (M7.4).
+const BMC_DRIVERS: [&str; 2] = ["ast", "mgag200"];
+
 /// Whether this machine has a screen: the kernel shows a graphics card
-/// under `sys` (`/sys`), `class/drm/cardN`. A server or a virtual machine
-/// with no display device has none; the firmware's framebuffer counts, so
-/// a machine whose graphics driver fails still has its screen.
+/// under `sys` (`/sys`), `class/drm/cardN`, whose driver is not a BMC's
+/// ([`BMC_DRIVERS`]). A server or a virtual machine with no display device
+/// has none; the firmware's framebuffer counts, so a machine whose
+/// graphics driver fails still has its screen.
 pub fn has_screen(sys: &Path) -> bool {
     fs::read_dir(sys.join("class/drm")).is_ok_and(|entries| {
         entries.filter_map(|e| e.ok()).any(|e| {
-            e.file_name()
+            let card = e
+                .file_name()
                 .to_str()
                 .and_then(|n| n.strip_prefix("card"))
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+            let bmc = fs::read_link(e.path().join("device/driver")).is_ok_and(|driver| {
+                driver
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| BMC_DRIVERS.contains(&n))
+            });
+            card && !bmc
         })
     })
 }
@@ -187,6 +201,29 @@ pub fn is_on(
     }
     let named = |list: &[String]| list.iter().any(|o| o == name);
     !feature.switchable || (!screen && named(&image.headless)) || !named(&image.off)
+}
+
+/// `wanted` with each switchable feature that names a key (`while_set`,
+/// M7.5) and is not named there on while `file` sets that key to
+/// anything but `off` or `false`.
+pub fn with_keys(
+    wanted: &BTreeMap<String, bool>,
+    installed: &[(String, Feature)],
+    file: &crate::settings::SettingsFile,
+) -> BTreeMap<String, bool> {
+    let doc = toml::Value::try_from(file).ok();
+    let set = |key: &str| {
+        doc.as_ref()
+            .and_then(|doc| key.split('.').try_fold(doc, |v, part| v.get(part)))
+            .is_some_and(|v| v.as_str() != Some("off") && v.as_bool() != Some(false))
+    };
+    let mut wanted = wanted.clone();
+    for (name, feature) in installed {
+        if let (true, Some(key)) = (feature.switchable, &feature.while_set) {
+            wanted.entry(name.clone()).or_insert_with(|| set(key));
+        }
+    }
+    wanted
 }
 
 /// The steps that make the runlevels `enabled` match `wanted`: a feature
@@ -390,6 +427,38 @@ mod tests {
     }
 
     #[test]
+    fn a_feature_that_follows_a_key_runs_only_while_the_key_asks() {
+        let updates = Feature {
+            while_set: Some("updates.automatic".into()),
+            ..feature(true, &["crond"])
+        };
+        let installed = vec![("updates".to_string(), updates)];
+        let file = |text: &str| crate::settings::read(text).unwrap().file;
+        let none = BTreeMap::new();
+        let on = |text: &str| {
+            with_keys(&none, &installed, &file(text))
+                .get("updates")
+                .copied()
+        };
+        assert_eq!(on("format = 1\n"), Some(false));
+        assert_eq!(
+            on("format = 1\n[updates]\nautomatic = \"off\"\n"),
+            Some(false)
+        );
+        assert_eq!(
+            on("format = 1\n[updates]\nautomatic = \"install\"\n"),
+            Some(true)
+        );
+        // services.NAME still wins.
+        let named = BTreeMap::from([("updates".to_string(), false)]);
+        let text = "format = 1\n[updates]\nautomatic = \"install\"\n";
+        assert_eq!(
+            with_keys(&named, &installed, &file(text)).get("updates"),
+            Some(&false)
+        );
+    }
+
+    #[test]
     fn a_screen_is_a_graphics_card_the_kernel_shows() {
         let sys = std::env::temp_dir().join(format!("edel-screen-{}", std::process::id()));
         let drm = sys.join("class/drm");
@@ -399,6 +468,16 @@ mod tests {
         fs::create_dir_all(drm.join("card0")).unwrap();
         assert!(has_screen(&sys));
         assert!(!has_screen(&sys.join("nothing")));
+        // A server's management chip mirrors its console, no screen.
+        let drivers = sys.join("bus/pci/drivers");
+        fs::create_dir_all(drivers.join("ast")).unwrap();
+        fs::create_dir_all(drivers.join("i915")).unwrap();
+        fs::create_dir_all(drm.join("card0/device")).unwrap();
+        std::os::unix::fs::symlink(drivers.join("ast"), drm.join("card0/device/driver")).unwrap();
+        assert!(!has_screen(&sys));
+        fs::create_dir_all(drm.join("card1/device")).unwrap();
+        std::os::unix::fs::symlink(drivers.join("i915"), drm.join("card1/device/driver")).unwrap();
+        assert!(has_screen(&sys));
         fs::remove_dir_all(&sys).unwrap();
     }
 

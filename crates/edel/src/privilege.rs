@@ -400,7 +400,7 @@ impl Drop for Echo {
 }
 
 /// Runs `stty` with `args` on the terminal, returning what it printed.
-fn stty(tty: &File, args: &[&str]) -> io::Result<String> {
+pub(crate) fn stty(tty: &File, args: &[&str]) -> io::Result<String> {
     let output = Command::new("stty")
         .args(args)
         .stdin(Stdio::from(tty.try_clone()?))
@@ -429,11 +429,18 @@ pub fn read_secret(prompt: &str) -> Result<Password> {
             "could not read the password: there is no terminal to ask on; run it in a terminal, or give the password on standard input with --password-stdin",
         )
     };
-    let mut tty = File::open(TERMINAL).with_context(no_terminal)?;
-    let mut shown = OpenOptions::new()
+    let tty = File::open(TERMINAL).with_context(no_terminal)?;
+    let shown = OpenOptions::new()
         .write(true)
         .open(TERMINAL)
         .with_context(no_terminal)?;
+    read_secret_from(tty, shown, prompt)
+}
+
+/// Shows `prompt` on `shown` and reads one line from the terminal `tty`
+/// with echo off; `edel boot mount-data` asks the data's passphrase on
+/// each console with it (M8.2). Ctrl-C cancels.
+pub fn read_secret_from(mut tty: File, mut shown: File, prompt: &str) -> Result<Password> {
     let _echo = Echo::off(&tty)?;
     write!(shown, "{prompt}")?;
     shown.flush()?;

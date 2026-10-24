@@ -103,8 +103,8 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `services.*` | the image's | image |
 | `updates.channel` | the image's | image |
 | `updates.version` | follows the channel | release |
-| `updates.automatic` | not set yet | release |
-| `updates.restart_window` | none | release |
+| `updates.automatic` | off | release |
+| `updates.restart_window` | any hour | release |
 | `apps.installed` | `[]` | release |
 | `apps.camera` | `{}` | release |
 | `apps.microphone` | `{}` | release |
