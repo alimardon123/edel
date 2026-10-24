@@ -3,14 +3,22 @@
 # 2026-10-16): the image build and boot tests ("Build and boot images") and
 # the desktop tests ("Desktop tests"). A change that cannot touch them skips
 # those jobs; the joined checks still report success. A draft runs the Rust
-# checks only, unless it carries the label full-ci.
+# checks only, unless it carries the label full-ci, or labels lane-NAME
+# (lane-fresh, say), which run those VM test lanes alone: on images an
+# earlier run of the pull request built, when everything changed since is
+# test-side (`test_side`), so a test fix is proven in minutes; else
+# on a new build. A draft never merges, and marking it ready runs
+# everything, so one full run still comes before each merge.
 #
 #   sh ci/changes.sh               decide for this checkout (CI's first job)
 #   sh ci/changes.sh --self-test   check the classification on fixed lists
 #
-# Reads EVENT, DRAFT and FULL_CI from the environment, and for a pull
-# request BASE_REF, ACTION, BEFORE, AFTER and REPO (GH_TOKEN for gh). Prints images=,
-# desktop=, lanes= and a reason line. Appends the first three to
+# Reads EVENT, DRAFT, FULL_CI and LABELS (the pull request's, by spaces)
+# from the environment, and for a pull request BASE_REF, ACTION, BEFORE,
+# AFTER, HEAD_REF, HEAD_SHA and REPO (GH_TOKEN for gh). Prints images=,
+# desktop=, lanes=, reuse= and number= (the run whose images a lane run
+# takes, and its run number, which numbered them; both empty when the
+# images are built) and a reason line. Appends all but the reason to
 # $GITHUB_OUTPUT, and a short Markdown section to $GITHUB_STEP_SUMMARY,
 # when those variables are set and not empty.
 set -eu
@@ -88,6 +96,28 @@ self_test() {
 	try "yes yes" ".github/workflows/ci.yml" ".github/workflows/ci.yml"
 	try "yes yes" "Cargo.lock" "Cargo.lock"
 	try "no no" "" "empty input"
+	# Which changes leave an earlier build's images good for a lane run.
+	for case in "yes ci/desktop-test.sh ci/budgets.toml docs/ROADMAP.md" "no ci/desktop-test.sh ci/desktop/seed.toml" "no ci/build.sh" "no crates/edel/src/main.rs" "yes "; do
+		count=$((count + 1))
+		want=${case%% *}
+		printf '%s\n' ${case#* } >"$tmp"
+		if test_side <"$tmp"; then got=yes; else got=no; fi
+		if [ "$got" = "$want" ]; then
+			echo "PASS: test side only: ${case#* } -> $got"
+		else
+			echo "FAIL: test side only: ${case#* }: wanted $want, got $got"
+			fails=$((fails + 1))
+		fi
+	done
+	# Lane labels name lanes vm-tests.sh has, and nothing else.
+	count=$((count + 1))
+	got=$(lane_labels "full-ci lane-fresh lane-system lane-nowhere desktop")
+	if [ "$got" = "system fresh" ]; then
+		echo "PASS: lane labels lane-fresh and lane-system -> $got"
+	else
+		echo "FAIL: lane labels: wanted system fresh, got $got"
+		fails=$((fails + 1))
+	fi
 	# Each archive vm-tests.sh packs has its own artifact in the workflow,
 	# which the lanes reading it download by name.
 	for name in $(sh ci/vm-tests.sh archives); do
@@ -124,6 +154,55 @@ proven() {
 	[ "$ran" = true ]
 }
 
+# test_side: true when every path on standard input is one of the VM
+# tests' own scripts, run on the runner and held by no image, or cannot
+# affect the heavy jobs, so images built before them still serve.
+test_side() {
+	while IFS= read -r path; do
+		[ -n "$path" ] || continue
+		case $path in
+		ci/boot-test.sh | ci/system-test.sh | ci/install-test.sh | ci/ab-test.sh | ci/apps-test.sh | ci/flatpak-test.sh | ci/fleet-test.sh | ci/developer-test.sh | ci/desktop-test.sh | ci/vm-tests.sh | ci/vm.sh | ci/budgets.sh | ci/budgets.toml | ci/qmp.py | ci/serial.py | ci/https-serve.py) ;;
+		*) [ "$(kind "$path")" = none ] || return 1 ;;
+		esac
+	done
+}
+
+# lane_labels LABELS: the VM test lanes the labels lane-NAME ask for, by
+# spaces, in vm-tests.sh's order; labels naming no lane are left out.
+lane_labels() {
+	for name in $(sh ci/vm-tests.sh lanes); do
+		case " $1 " in
+		*" lane-$name "*) printf '%s ' "$name" ;;
+		esac
+	done | sed 's/ $//'
+}
+
+# reusable: sets reuse and number to the newest run of this pull request's
+# branch, in the last 20 hours (its archives are kept a day), whose image
+# build passed and whose commit differs from HEAD_SHA in test-side paths
+# only. False when there is none, or anything cannot be read.
+reusable() {
+	[ -n "${HEAD_REF:-}" ] && [ -n "${HEAD_SHA:-}" ] && [ -n "${REPO:-}" ] || return 1
+	since=$(date -u -d '20 hours ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null) || return 1
+	gh api "repos/$REPO/actions/runs?branch=$HEAD_REF&event=pull_request&per_page=20" \
+		--jq ".workflow_runs[] | select(.name == \"CI\" and .created_at >= \"$since\") | \"\\(.id) \\(.run_number) \\(.head_sha)\"" \
+		>"$tmp.runs" 2>/dev/null || return 1
+	while read -r id n sha; do
+		built=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" \
+			--jq '[.jobs[] | select(.name == "Build images" and .conclusion == "success")] | length' 2>/dev/null) || continue
+		[ "$built" = 1 ] || continue
+		git fetch -q --depth=1 origin "$sha" "$HEAD_SHA" 2>/dev/null || continue
+		git diff --name-only "$sha" "$HEAD_SHA" >"$tmp" 2>/dev/null || continue
+		if test_side <"$tmp"; then
+			reuse=$id number=$n
+			rm -f "$tmp.runs"
+			return 0
+		fi
+	done <"$tmp.runs"
+	rm -f "$tmp.runs"
+	return 1
+}
+
 if [ "${1:-}" = --self-test ]; then
 	self_test
 	exit 0
@@ -134,16 +213,31 @@ trap 'rm -f "$tmp"' EXIT
 
 # Lanes of the VM tests, read from ci/vm-tests.sh, as a JSON array.
 names=$(sh ci/vm-tests.sh lanes)
-lanes=$(printf '%s\n' "$names" | awk 'NF { s = s (n++ ? "," : "") "\"" $1 "\"" } END { print "[" s "]" }')
+json() {
+	printf '%s\n' $1 | awk 'NF { s = s (n++ ? "," : "") "\"" $1 "\"" } END { print "[" s "]" }'
+}
+lanes=$(json "$names")
+reuse=''
+number=''
+asked=$(lane_labels "${LABELS:-}")
 
 if [ "${EVENT:-}" != pull_request ]; then
 	images=yes
 	desktop=yes
 	reason="a push or a tag runs everything"
+elif [ "${DRAFT:-}" = true ] && [ "${FULL_CI:-}" != true ] && [ -n "$asked" ]; then
+	images=yes
+	desktop=no
+	lanes=$(json "$asked")
+	if reusable; then
+		reason="a draft labelled for the lanes $asked runs them alone, on the images run $reuse built, as only test-side paths changed since"
+	else
+		reason="a draft labelled for the lanes $asked runs them alone, on a new build (no run of the last 20 hours built images that still serve)"
+	fi
 elif [ "${DRAFT:-}" = true ] && [ "${FULL_CI:-}" != true ]; then
 	images=no
 	desktop=no
-	reason="a draft runs Rust checks only; mark it ready, or add the label full-ci and push, for the rest"
+	reason="a draft runs Rust checks only; mark it ready, or add the label full-ci and push, for the rest (or lane-NAME for one VM test lane)"
 elif [ -n "${BASE_REF:-}" ] && [ "$BASE_REF" != main ]; then
 	images=no
 	desktop=no
@@ -162,10 +256,10 @@ else
 	decide <"$tmp"
 fi
 
-printf 'images=%s\ndesktop=%s\nlanes=%s\n' "$images" "$desktop" "$lanes"
+printf 'images=%s\ndesktop=%s\nlanes=%s\nreuse=%s\nnumber=%s\n' "$images" "$desktop" "$lanes" "$reuse" "$number"
 echo "reason: $reason"
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
-	printf 'images=%s\ndesktop=%s\nlanes=%s\n' "$images" "$desktop" "$lanes" >>"$GITHUB_OUTPUT"
+	printf 'images=%s\ndesktop=%s\nlanes=%s\nreuse=%s\nnumber=%s\n' "$images" "$desktop" "$lanes" "$reuse" "$number" >>"$GITHUB_OUTPUT"
 fi
 if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 	{
