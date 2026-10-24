@@ -204,15 +204,6 @@ pub fn disk_block<'a>(list: &'a str, name: &str) -> Option<&'a str> {
         .find(|block| block.starts_with(&head))
 }
 
-/// `text` with a capital first letter, as a sentence starts.
-fn capitalized(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
-}
-
 /// Where the answers are written: the person's runtime folder, which only
 /// they and root read.
 fn answers_file() -> PathBuf {
@@ -1201,7 +1192,7 @@ impl Ui {
                     ui.file_line.set_label(&trf(
                         "{place}, but it cannot be used: {why}",
                         &[
-                            ("place", &capitalized(&place)),
+                            ("place", &crate::status::capital(&place)),
                             ("why", &format!("{why:#}")),
                         ],
                     ));
@@ -1247,7 +1238,7 @@ impl Ui {
                 trf(
                     "{place}. In use: it answers {what}, so only the rest is asked.",
                     &[
-                        ("place", &capitalized(&found.place)),
+                        ("place", &crate::status::capital(&found.place)),
                         ("what", &answered_words(&found.answered)),
                     ],
                 )
@@ -1255,7 +1246,7 @@ impl Ui {
                 trf(
                     "{place}. It answers: {what}. Use it, and only the rest is asked.",
                     &[
-                        ("place", &capitalized(&found.place)),
+                        ("place", &crate::status::capital(&found.place)),
                         ("what", &answered_words(&found.answered)),
                     ],
                 )

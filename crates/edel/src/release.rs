@@ -23,6 +23,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use edel::i18n::{tr, trf};
+use edel::{places, security, users};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -349,6 +350,8 @@ pub fn parse_manifest(text: &str) -> Result<Manifest> {
 
 /// Compares dotted versions number by number (`edel::version::compare`).
 pub use edel::version::compare as compare_versions;
+/// The value of `key` in an os-release text (`edel::version`).
+pub use edel::version::os_release_value;
 
 /// The entry for `image` in `manifest`, refused when the version is not
 /// newer than `running` (unless `allow_downgrade`).
@@ -547,9 +550,32 @@ pub fn open_addon(location: &str, entry: &AddonEntry, allow_http: bool) -> Resul
     open_image(&at)
 }
 
+/// Keeps when the channel's list was last verified and the version it
+/// offered (M8.14), so `edel status` and Settings can say whether the
+/// machine is up to date. Only root writes it, so a person's check does
+/// nothing here. A failure is a warning: the check itself went well.
+pub(crate) fn record_check(version: &str) {
+    if users::current() != Some(0) {
+        return;
+    }
+    let text = security::last_check_text(&today_text(), version);
+    let written =
+        fs::create_dir_all(places::DATA_DIR).and_then(|()| fs::write(places::LAST_CHECK, text));
+    if let Err(err) = written {
+        eprintln!(
+            "warning: {}",
+            trf(
+                "could not keep the time of this check in {path}: {cause}; edel status will say not checked yet",
+                &[("path", places::LAST_CHECK), ("cause", &err.to_string())]
+            )
+        );
+    }
+}
+
 /// `edel update --check`: the running version and the one at `location`.
 pub fn check(location: &str, accept: &Accept) -> Result<()> {
     let manifest = verified(location, accept)?;
+    record_check(&manifest.version);
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE");
@@ -582,14 +608,6 @@ fn check_lines(manifest: &Manifest, running: &str, image: Option<&str>) -> Vec<S
         lines.push(format!("size: {}", entry.size));
     }
     lines
-}
-
-/// The value of `key` in an os-release text, without quotes.
-pub fn os_release_value(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
-        let (k, v) = line.split_once('=')?;
-        (k.trim() == key).then(|| v.trim().trim_matches('"').to_string())
-    })
 }
 
 /// `edel release keygen`: a new key pair, `NAME.key` (secret, mode 0600)

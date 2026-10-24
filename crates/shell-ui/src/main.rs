@@ -37,6 +37,7 @@ mod desktop;
 mod edit_kit;
 mod editor;
 mod editor_card;
+mod files;
 mod follow;
 mod glass;
 mod greetd;

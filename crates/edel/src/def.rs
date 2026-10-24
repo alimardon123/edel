@@ -434,8 +434,12 @@ impl ImageDef {
             [] => bail!("no feature names the Alpine branch; list the base feature first"),
         };
 
+        // An add-on's apps (M7.9) are installed by edel settings apply for
+        // the people who chose it, never baked into an image, even where
+        // the add-on is built in.
         let apps: Vec<String> = listed
             .iter()
+            .filter(|l| !l.feature.addon)
             .flat_map(|l| l.feature.flatpak.iter().cloned())
             .collect();
         let apps_dropped: Vec<String> = listed
@@ -1209,6 +1213,30 @@ mod tests {
             let err = result.unwrap_err();
             assert!(format!("{err:#}").contains(message), "{err:#}");
         }
+    }
+
+    #[test]
+    fn an_addons_flatpak_apps_are_never_baked_in() {
+        let with_apps = ADDON.replace(
+            "addon = true",
+            "addon = true\nflatpak = [\"org.example.App\"]",
+        );
+        // Accepted as an add-on (M7.9), and not among the image's apps.
+        let def = with_addon(&with_apps, r#"["hello"]"#).unwrap();
+        assert!(
+            !def.apps.iter().any(|a| a == "org.example.App"),
+            "{:?}",
+            def.apps
+        );
+        // Built in, as CI's desktop image builds its add-ons: still not.
+        let mut found = found();
+        found.insert("hello".into(), listed("hello", &with_apps));
+        let def = ImageDef::merge(&VM.replace(r#""ssh"]"#, r#""ssh", "hello"]"#), found).unwrap();
+        assert!(
+            !def.apps.iter().any(|a| a == "org.example.App"),
+            "{:?}",
+            def.apps
+        );
     }
 
     /// The image `VM` with the add-ons `addons` and the features `extra`

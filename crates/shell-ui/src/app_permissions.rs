@@ -187,34 +187,41 @@ fn write_files(changes: &[(String, bool)]) {
 
 /// Writes the app's override file in `dir` with the files choice laid on
 /// it (`ask` takes the home away, else gives it back). Only what differs is
-/// written, through a `.new` file renamed over the old one, the way
-/// `terminal.rs` writes its theme. A file left with nothing in it is
+/// written, through `files::replace`. A file left with nothing in it is
 /// removed. Says whether it wrote. An id that is no Flatpak id writes
 /// nothing, so no path can leave the folder.
 fn write_override(dir: &Path, app: &str, ask: bool) -> std::io::Result<bool> {
     if !edel::apps::is_flatpak_id(app) {
         return Ok(false);
     }
-    let path = dir.join(app);
-    let old = match std::fs::read_to_string(&path) {
+    write_changed(&dir.join(app), |old| override_text(old, ask))
+}
+
+/// Lays `change` on the Flatpak override file at `path` (an absent file is
+/// empty text) and writes what it gives with `files::replace`; None from
+/// `change` writes nothing, and empty text removes the file. Says whether
+/// it wrote.
+/// `apps_colours.rs` writes the person's global file with it (M6.18).
+pub fn write_changed(
+    path: &Path,
+    change: impl FnOnce(&str) -> Option<String>,
+) -> std::io::Result<bool> {
+    let old = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
-    let Some(text) = override_text(&old, ask) else {
+    let Some(text) = change(&old) else {
         return Ok(false);
     };
     if text.is_empty() {
-        return match std::fs::remove_file(&path) {
+        return match std::fs::remove_file(path) {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
             Err(e) => Err(e),
         };
     }
-    std::fs::create_dir_all(dir)?;
-    let new = dir.join(format!("{app}.new"));
-    std::fs::write(&new, text)?;
-    std::fs::rename(&new, &path)?;
+    crate::files::replace(path, text.as_bytes())?;
     Ok(true)
 }
 
@@ -300,6 +307,28 @@ mod tests {
         let escape = format!("../edel-shell-ui-escape-{pid}");
         assert!(!write_override(&dir, &escape, true).unwrap());
         assert!(!outside.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_global_override_is_written_once() {
+        use edel::app_permissions::{GLOBAL_OVERRIDE, GTK_CSS_FILESYSTEM, gtk_css_readable};
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("edel-shell-ui-global-{pid}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join(GLOBAL_OVERRIDE);
+        let temporary = dir.join(format!("{GLOBAL_OVERRIDE}.new"));
+
+        // An absent file is made with the line, once, and no .new is left.
+        assert!(write_changed(&file, gtk_css_readable).unwrap());
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains(GTK_CSS_FILESYSTEM)
+        );
+        assert!(!write_changed(&file, gtk_css_readable).unwrap());
+        assert!(!temporary.exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }

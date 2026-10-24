@@ -404,7 +404,7 @@ impl fmt::Display for Change {
             }
             Change::Seat(name) => write!(f, "group {SEAT_GROUP}: add {name}"),
             Change::Flatpak { name, ids } => {
-                write!(f, "apps.installed for {name}: install {}", ids.join(", "))
+                write!(f, "apps for {name}: install {}", ids.join(", "))
             }
             Change::MimeDefaults(text) if text.is_empty() => {
                 write!(f, "remove {} (no default apps set)", places::MIME_DEFAULTS)
@@ -446,6 +446,9 @@ struct Machine {
     flatpak: BTreeMap<String, BTreeSet<String>>,
     /// The features this machine has, for `[services]` (M6.10)
     features: Vec<(String, edel::features::Feature)>,
+    /// The Flatpak apps each add-on brings (M7.9), by add-on name: of the
+    /// add-ons this release offers and of those built in or mounted
+    addon_apps: BTreeMap<String, Vec<String>>,
     /// The features the image left off (`EDEL_SERVICES_OFF`)
     services_off: services::Defaults,
     /// The services in OpenRC's runlevels now
@@ -479,9 +482,16 @@ impl Machine {
         let passwd = fs::read_to_string("/etc/passwd")?;
         let mut keys = BTreeMap::new();
         let mut flatpak = BTreeMap::new();
-        // Asked only when the file lists apps, so a machine without any
-        // never starts flatpak (M6.1).
-        let lists_apps = file.apps.installed.as_ref().is_some_and(|l| !l.is_empty());
+        let features = services::installed();
+        // The add-ons' apps (M7.9): of the add-ons this release offers,
+        // whose files the slot keeps, so they come with no restart, and of
+        // those built in or mounted.
+        let offered = services::installed_in(Path::new(places::OFFERED_ADDONS_DIR));
+        let addon_apps = addon_apps(features.iter().chain(&offered));
+        // Asked only when the file wants apps, its own or its add-ons'
+        // (M7.9), so a machine without any never starts flatpak (M6.1).
+        let lists_apps = file.apps.installed.as_ref().is_some_and(|l| !l.is_empty())
+            || !wanted_apps(file, &addon_apps).is_empty();
         for account in accounts(&passwd) {
             if lists_apps
                 && file
@@ -505,7 +515,6 @@ impl Machine {
                 fs::metadata(s).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
             })
             .collect();
-        let features = services::installed();
         Ok(Machine {
             hostname: fs::read_to_string("/etc/hostname").unwrap_or_default(),
             hostname_set: Path::new(ETC_UPPER).join("hostname").exists(),
@@ -520,6 +529,7 @@ impl Machine {
             developer: Path::new(DEVELOPER_FLAG).exists(),
             flatpak,
             features,
+            addon_apps,
             services_off: services::Defaults::read(
                 &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
             ),
@@ -540,6 +550,43 @@ impl Machine {
             charge_full_once: Path::new(places::CHARGE_FULL_ONCE).exists(),
         })
     }
+}
+
+/// The Flatpak apps of each add-on among `features` (M7.9), by name: an
+/// add-on's `flatpak` list. A name found twice (built in and offered)
+/// keeps the first one's list.
+fn addon_apps<'a>(
+    features: impl Iterator<Item = &'a (String, edel::features::Feature)>,
+) -> BTreeMap<String, Vec<String>> {
+    let mut apps = BTreeMap::new();
+    for (name, feature) in features {
+        if feature.addon && !feature.flatpak.is_empty() {
+            apps.entry(name.clone())
+                .or_insert_with(|| feature.flatpak.clone());
+        }
+    }
+    apps
+}
+
+/// The Flatpak apps `file` asks for (M6.1, M7.9): `apps.installed`, then
+/// the apps of each add-on `addons.installed` names, in that order, none
+/// twice. `file` has its profiles laid under it (`edel::profiles::applied`,
+/// as [`load`] reads it), so a profile's add-on brings its apps too.
+fn wanted_apps(file: &SettingsFile, addon_apps: &BTreeMap<String, Vec<String>>) -> Vec<String> {
+    let from_addons = file
+        .addons
+        .installed
+        .iter()
+        .flatten()
+        .filter_map(|name| addon_apps.get(name))
+        .flatten();
+    let mut wanted: Vec<String> = Vec::new();
+    for id in file.apps.installed.iter().flatten().chain(from_addons) {
+        if !wanted.contains(id) {
+            wanted.push(id.clone());
+        }
+    }
+    wanted
 }
 
 /// The people of `users` that `places::FIRST_PASSWORDS`' `text` has a
@@ -729,6 +776,9 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
     let mut admin_group = members(&machine.group, ADMIN_GROUP).is_some();
     let seated = members(&machine.group, SEAT_GROUP);
     let mut seat = Vec::new();
+    // The apps the file wants, its own and its add-ons' (M7.9). Named
+    // wanted_ids, as a later `wanted` in plan is the default apps.
+    let wanted_ids = wanted_apps(file, &machine.addon_apps);
     for (name, user) in &file.users {
         let account = all.iter().find(|a| &a.name == name);
         // A shell the machine lacks would lock the user out: OpenSSH and
@@ -784,15 +834,14 @@ fn plan(file: &SettingsFile, machine: &Machine) -> (Vec<Change>, Vec<String>) {
                 on: admin,
             });
         }
-        // The Flatpak apps the file lists, for each admin person: the ones
-        // they lack, in one change (M6.1). Nothing is ever uninstalled.
+        // The Flatpak apps the file lists, and those of the add-ons it
+        // names (M7.9), for each admin person: the ones they lack, in one
+        // change (M6.1). Nothing is ever uninstalled, so a dropped add-on
+        // keeps its apps for the people who have them.
         if admin {
             let have = machine.flatpak.get(name);
-            let ids: BTreeSet<String> = file
-                .apps
-                .installed
+            let ids: BTreeSet<String> = wanted_ids
                 .iter()
-                .flatten()
                 .filter(|id| !have.is_some_and(|h| h.contains(*id)))
                 .cloned()
                 .collect();
@@ -3058,6 +3107,7 @@ mod tests {
             developer: false,
             flatpak: BTreeMap::new(),
             features: Vec::new(),
+            addon_apps: BTreeMap::new(),
             services_off: services::Defaults::default(),
             runlevels: BTreeSet::new(),
             screen: true,
@@ -3425,7 +3475,7 @@ mod tests {
         );
         assert_eq!(
             flatpak(&changes)[0].to_string(),
-            "apps.installed for ci: install org.gnome.Calculator"
+            "apps for ci: install org.gnome.Calculator"
         );
         // All there: no change.
         machine.flatpak.insert(
@@ -3446,6 +3496,64 @@ mod tests {
                 name: "ci".into(),
                 ids: vec!["io.mpv.Mpv".into()],
             }]
+        );
+    }
+
+    #[test]
+    fn an_addon_brings_its_apps_while_the_file_names_it() {
+        fn ids_for_ci(changes: &[Change]) -> Vec<String> {
+            changes
+                .iter()
+                .filter_map(|c| match c {
+                    Change::Flatpak { name, ids } if name == "ci" => Some(ids.join(",")),
+                    _ => None,
+                })
+                .collect()
+        }
+        let file = settings::read(
+            "format = 1\n[addons]\ninstalled = [\"ai-agents\"]\n[users.ci]\nadmin = true\n",
+        )
+        .unwrap()
+        .file;
+        let mut machine = machine();
+        machine.addon_apps = BTreeMap::from([(
+            "ai-agents".to_string(),
+            vec![
+                "io.github.qwersyk.Newelle".to_string(),
+                "com.jeffser.Alpaca".to_string(),
+            ],
+        )]);
+        assert_eq!(
+            ids_for_ci(&plan(&file, &machine).0),
+            ["com.jeffser.Alpaca,io.github.qwersyk.Newelle"]
+        );
+        // Dropped from the file: nothing to install, nothing uninstalled.
+        let dropped = settings::read("format = 1\n[users.ci]\nadmin = true\n")
+            .unwrap()
+            .file;
+        assert!(ids_for_ci(&plan(&dropped, &machine).0).is_empty());
+    }
+
+    #[test]
+    fn wanted_apps_lists_the_files_then_the_addons_none_twice() {
+        let file = settings::read(
+            "format = 1\n[apps]\ninstalled = [\"io.mpv.Mpv\"]\n[addons]\ninstalled = [\"ai-agents\", \"gaming\"]\n",
+        )
+        .unwrap()
+        .file;
+        let apps = BTreeMap::from([
+            (
+                "ai-agents".to_string(),
+                vec!["com.jeffser.Alpaca".to_string(), "io.mpv.Mpv".to_string()],
+            ),
+            (
+                "printing".to_string(),
+                vec!["org.gnome.SimpleScan".to_string()],
+            ),
+        ]);
+        assert_eq!(
+            wanted_apps(&file, &apps),
+            ["io.mpv.Mpv", "com.jeffser.Alpaca"]
         );
     }
 
