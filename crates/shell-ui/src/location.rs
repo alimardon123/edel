@@ -16,8 +16,9 @@
 //!   it ends. On it shell-ui is GeoClue's agent for the person, as GeoClue
 //!   holds every client until its user has one: it answers that the place
 //!   may be had, and GeoClue lets in only the portal, which asked the app
-//!   already. The waiter then polls GeoClue's `InUse` once a second, with no
-//!   name owner counted as not in use.
+//!   already. The waiter then follows GeoClue's `InUse` by its signals, so
+//!   nothing wakes while it does not change, with no name owner counted as
+//!   not in use.
 //! - asks every time: an app set to `ask` has its entry deleted whenever it
 //!   appears, so the portal asks again next time, a Deny too.
 //!
@@ -31,14 +32,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use edel::app_permissions::{STORE_BUS, STORE_INTERFACE, STORE_PATH};
 use edel::app_use::Kind;
 use edel::places;
 use edel::settings::{self, LOCATION_ENABLED};
+use futures_lite::StreamExt;
 use smithay_client_toolkit::reexports::calloop::channel;
-use zbus::zvariant::OwnedValue;
+use zbus::zvariant::{OwnedValue, Value};
 
 use crate::Shell;
 use crate::in_use::InUse;
@@ -58,9 +60,8 @@ const AGENT_ID: &str = "edel-shell-ui";
 /// GeoClue's `GCLUE_ACCURACY_LEVEL_EXACT`, the most an agent allows.
 const EXACT: u32 = 8;
 /// How long GeoClue may take to say it is in use after an app got the place,
-/// how often it is asked, and the back-off of a failed subscription.
+/// and the back-off of a failed subscription.
 const WAIT_FOR_USE: Duration = Duration::from_secs(10);
-const POLL: Duration = Duration::from_secs(1);
 const FIRST_WAIT: Duration = Duration::from_secs(1);
 const LONGEST_WAIT: Duration = Duration::from_secs(30);
 
@@ -341,63 +342,142 @@ fn agent_connection() -> zbus::Result<zbus::blocking::Connection> {
     Ok(system)
 }
 
-/// Whether GeoClue is using the place: a name with no owner is not.
-fn geoclue_in_use(system: &zbus::blocking::Connection) -> zbus::Result<bool> {
-    let dbus = zbus::blocking::fdo::DBusProxy::new(system)?;
-    if !dbus.name_has_owner(zbus::names::BusName::try_from(GEOCLUE_BUS)?)? {
+/// GeoClue's `InUse` among a `PropertiesChanged` signal's changed
+/// properties, when it is there and a boolean. Pure.
+fn in_use_of(changed: &HashMap<&str, Value<'_>>) -> Option<bool> {
+    changed
+        .get("InUse")
+        .and_then(|value| bool::try_from(value).ok())
+}
+
+/// How following GeoClue ended.
+enum Ended {
+    /// GeoClue used the place and stopped, or could no longer be asked.
+    Stopped,
+    /// GeoClue did not say it used the place within `WAIT_FOR_USE`.
+    NeverUsed,
+    /// The system bus closed before GeoClue was in use.
+    Closed,
+}
+
+/// What wakes the waiter: GeoClue's `InUse` as a change says it, any change
+/// of its name's owner (so `InUse` is read again, which also orders a stop
+/// and a restart that come together), the bus closing, or `WAIT_FOR_USE`
+/// passing before GeoClue was in use.
+enum Wake {
+    InUse(bool),
+    Owner,
+    Closed,
+    Late,
+}
+
+/// Whether GeoClue is using the place now, read fresh: a name with no owner
+/// is not.
+async fn geoclue_in_use(
+    dbus: &zbus::fdo::DBusProxy<'_>,
+    properties: &zbus::fdo::PropertiesProxy<'_>,
+) -> zbus::Result<bool> {
+    if !dbus
+        .name_has_owner(zbus::names::BusName::try_from(GEOCLUE_BUS)?)
+        .await?
+    {
         return Ok(false);
     }
-    // Properties are read fresh each time, never from a cache.
-    let proxy = zbus::blocking::proxy::Builder::<zbus::blocking::Proxy>::new(system)
+    let value = properties
+        .get(
+            zbus::names::InterfaceName::try_from(GEOCLUE_INTERFACE)?,
+            "InUse",
+        )
+        .await?;
+    Ok(bool::try_from(value)?)
+}
+
+/// Follows GeoClue's `InUse` by events, so nothing wakes while it does not
+/// change: the manager's `PropertiesChanged`, whoever owns GeoClue's name
+/// now or later, and each change of the name's owner, as GeoClue may start
+/// after the app got the place, stop or restart. It waits up to
+/// `WAIT_FOR_USE` for GeoClue to say it is in use, then until it is not (or
+/// its name has no owner).
+async fn follow_use(system: &zbus::Connection) -> zbus::Result<Ended> {
+    let dbus = zbus::fdo::DBusProxy::new(system).await?;
+    let properties = zbus::fdo::PropertiesProxy::builder(system)
         .destination(GEOCLUE_BUS)?
         .path(GEOCLUE_PATH)?
-        .interface(GEOCLUE_INTERFACE)?
         .cache_properties(zbus::proxy::CacheProperties::No)
-        .build()?;
-    proxy.get_property::<bool>("InUse")
+        .build()
+        .await?;
+    // Listening before the first read, so a change in between is not lost.
+    let changes = properties
+        .receive_properties_changed_with_args(&[(0, GEOCLUE_INTERFACE)])
+        .await?;
+    let owners = dbus
+        .receive_name_owner_changed_with_args(&[(0, GEOCLUE_BUS)])
+        .await?;
+    let mut wakes = changes
+        .filter_map(|change| {
+            let args = change.args().ok()?;
+            in_use_of(args.changed_properties()).map(Wake::InUse)
+        })
+        .or(owners.map(|_| Wake::Owner));
+    let mut deadline = async_io::Timer::after(WAIT_FOR_USE);
+    let mut used = false;
+    let mut in_use = geoclue_in_use(&dbus, &properties).await?;
+    loop {
+        if in_use {
+            used = true;
+        } else if used {
+            return Ok(Ended::Stopped);
+        }
+        let next = async { wakes.next().await.unwrap_or(Wake::Closed) };
+        let wake = if used {
+            next.await
+        } else {
+            let late = async {
+                (&mut deadline).await;
+                Wake::Late
+            };
+            futures_lite::future::or(next, late).await
+        };
+        in_use = match wake {
+            Wake::InUse(now) => now,
+            // Once GeoClue was in use, a failed read or a closed bus ends
+            // the use with nothing to say: the sign showed it.
+            Wake::Owner => match geoclue_in_use(&dbus, &properties).await {
+                Ok(now) => now,
+                Err(_) if used => false,
+                Err(e) => return Err(e),
+            },
+            Wake::Closed if used => return Ok(Ended::Stopped),
+            Wake::Closed => return Ok(Ended::Closed),
+            Wake::Late => return Ok(Ended::NeverUsed),
+        };
+    }
 }
 
 /// Waits while GeoClue uses the place, on a system-bus connection of its own
-/// that lives only here and serves GeoClue's agent. It waits up to
-/// `WAIT_FOR_USE` for GeoClue to say it is in use, then until it does not (or
-/// its name has no owner). When GeoClue never says so, or there is no system
-/// bus or no agent, the sign ends the use after that wait and says why once.
-/// Then it clears the apps and sends no uses.
+/// that lives only here and serves GeoClue's agent, following GeoClue by
+/// events (`follow_use`). When GeoClue never says it is in use within
+/// `WAIT_FOR_USE`, or there is no system bus or no agent, the sign ends the
+/// use after that wait and says why once. Then it clears the apps and sends
+/// no uses.
 fn wait_for_use(holding: Holding) {
-    let mut reason = None;
     let system = agent_connection().or_else(|e| {
         // Another agent, as on another desktop, may still let the portal in.
         eprintln!("edel-shell-ui: {}", messages::location_agent_not_added(&e));
         zbus::blocking::Connection::system()
     });
-    match system {
-        Err(e) => reason = Some(e.to_string()),
-        Ok(system) => {
-            let deadline = Instant::now() + WAIT_FOR_USE;
-            loop {
-                match geoclue_in_use(&system) {
-                    Ok(true) => {
-                        while geoclue_in_use(&system).unwrap_or(false) {
-                            std::thread::sleep(POLL);
-                        }
-                        break;
-                    }
-                    Ok(false) if Instant::now() < deadline => std::thread::sleep(POLL),
-                    Ok(false) => {
-                        reason = Some(format!(
-                            "GeoClue did not start using the place within {} s",
-                            WAIT_FOR_USE.as_secs()
-                        ));
-                        break;
-                    }
-                    Err(e) => {
-                        reason = Some(e.to_string());
-                        break;
-                    }
-                }
-            }
-        }
-    }
+    let reason = match system {
+        Err(e) => Some(e.to_string()),
+        Ok(system) => match zbus::block_on(follow_use(system.inner())) {
+            Ok(Ended::Stopped) => None,
+            Ok(Ended::NeverUsed) => Some(format!(
+                "GeoClue did not start using the place within {} s",
+                WAIT_FOR_USE.as_secs()
+            )),
+            Ok(Ended::Closed) => Some("the system bus closed".to_string()),
+            Err(e) => Some(e.to_string()),
+        },
+    };
     if let Some(reason) = reason {
         eprintln!("edel-shell-ui: {}", messages::location_not_in_use(reason));
     }
@@ -520,5 +600,20 @@ mod tests {
         let ffmpeg = uses.iter().find(|u| u.app == "ffmpeg").unwrap();
         assert!(maps.flatpak, "a Flatpak id is a Flatpak app");
         assert!(!ffmpeg.flatpak);
+    }
+
+    #[test]
+    fn a_change_says_in_use_only_when_it_carries_the_flag() {
+        let on = HashMap::from([
+            ("InUse", Value::from(true)),
+            ("AvailableAccuracyLevel", Value::from(8u32)),
+        ]);
+        assert_eq!(in_use_of(&on), Some(true));
+        let off = HashMap::from([("InUse", Value::from(false))]);
+        assert_eq!(in_use_of(&off), Some(false));
+        let other = HashMap::from([("AvailableAccuracyLevel", Value::from(8u32))]);
+        assert_eq!(in_use_of(&other), None, "a change of another property");
+        let odd = HashMap::from([("InUse", Value::from("yes"))]);
+        assert_eq!(in_use_of(&odd), None, "not a boolean");
     }
 }
