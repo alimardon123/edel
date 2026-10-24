@@ -2037,11 +2037,21 @@ fn target_for(is_root: bool, keys: &[&str], command: &str) -> Result<Target> {
 /// [`edit`] for the person's own settings file (M6.11), which the desktop
 /// reads over the machine's for the keys it follows.
 fn edit_person(what: &str, keys: &[&str], change: impl Fn(&str) -> Result<String>) -> Result<()> {
-    let file = places::person_settings().with_context(|| {
+    edit_person_as("edel settings", what, keys, change)
+}
+
+/// [`edit_person`] for `command`, such as `edel preset`.
+fn edit_person_as(
+    command: &str,
+    what: &str,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    let file = person_file().with_context(|| {
         tr("HOME is not set, so there is no folder for the person's settings file; set HOME and try again")
     })?;
-    let written = write_edit_at("edel settings", &places::found(&file), keys, change)?;
-    report_written("edel settings", what, &written);
+    let written = write_edit_at(command, &file, keys, change)?;
+    report_written(command, what, &written);
     Ok(())
 }
 
@@ -2113,6 +2123,66 @@ pub fn reset(keys: &[String], yes: bool) -> Result<()> {
 
 /// The machine's settings file as it is, or the release's empty one, for
 /// the theme and preset commands to read.
+/// The themes and presets a person sees: the machine's file with the
+/// person's own themes and presets over it, and the person's choice of
+/// each over the machine's, as the desktop and Settings read them (the
+/// messages audit's row 60).
+fn seen_file() -> Result<settings::SettingsFile> {
+    let mut file = settings::read(&theme_text())
+        .with_context(|| could_not_read(&machine_file()))?
+        .file;
+    if is_root() {
+        return Ok(file);
+    }
+    let Some(own) = person_file()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|text| settings::read(&text).ok())
+    else {
+        return Ok(file);
+    };
+    let own = own.file;
+    file.themes.extend(own.themes);
+    file.presets.extend(own.presets);
+    if own.layout.preset.is_some() {
+        file.layout.preset = own.layout.preset;
+    }
+    if own.appearance.theme.is_some() {
+        file.appearance.theme = own.appearance.theme;
+    }
+    Ok(file)
+}
+
+/// The text `edel theme` and `edel preset` change: the person's own file,
+/// or the machine's for root, as `edel settings set` writes them.
+fn own_text() -> String {
+    match person_file().filter(|_| !is_root()) {
+        Some(path) => {
+            fs::read_to_string(path).unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT))
+        }
+        None => theme_text(),
+    }
+}
+
+/// The person's own settings file, where it is found.
+fn person_file() -> Option<PathBuf> {
+    places::person_settings().map(|file| places::found(&file))
+}
+
+/// Writes a theme or preset change where `edel settings set` would: the
+/// person's own file, as Settings does, or the machine's for root, so a
+/// person needs no administrator for their own (row 60).
+fn edit_own(
+    command: &str,
+    what: &str,
+    keys: &[&str],
+    change: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    match target_for(is_root(), keys, command)? {
+        Target::Machine => edit_as(command, what, keys, change),
+        Target::Person => edit_person_as(command, what, keys, change),
+    }
+}
+
 fn theme_text() -> String {
     fs::read_to_string(machine_file())
         .unwrap_or_else(|_| format!("format = {}\n", settings::FORMAT))
@@ -2122,11 +2192,7 @@ fn theme_text() -> String {
 /// line with its name, its title and what it is (`edel theme` in the
 /// command table).
 pub fn theme_list() -> Result<()> {
-    let text = theme_text();
-    let file = settings::read(&text)
-        .with_context(|| could_not_read(&machine_file()))?
-        .file;
-    for row in themes::rows(&file) {
+    for row in themes::rows(&seen_file()?) {
         let mut marks = Vec::new();
         if row.built_in {
             marks.push(tr("(built in)"));
@@ -2144,7 +2210,7 @@ pub fn theme_list() -> Result<()> {
 /// person's own, one write, and the screen stays the same.
 pub fn theme_save(name: &str) -> Result<()> {
     let what = trf("saved the theme {name}", &[("name", name)]);
-    edit_as("edel theme", &what, &["appearance.theme"], |text| {
+    edit_own("edel theme", &what, &["appearance.theme"], |text| {
         themes::save_text(text, name)
     })
 }
@@ -2153,7 +2219,7 @@ pub fn theme_save(name: &str) -> Result<()> {
 /// it is the theme in use.
 pub fn theme_delete(name: &str) -> Result<()> {
     let what = trf("deleted the theme {name}", &[("name", name)]);
-    edit_as("edel theme", &what, &["appearance.theme"], |text| {
+    edit_own("edel theme", &what, &["appearance.theme"], |text| {
         themes::delete_text(text, name)
     })
 }
@@ -2162,7 +2228,7 @@ pub fn theme_delete(name: &str) -> Result<()> {
 /// so it shows as it was made; says so and writes nothing when there are
 /// none.
 pub fn theme_reset() -> Result<()> {
-    let text = theme_text();
+    let text = own_text();
     if themes::reset_text(&text)?.is_none() {
         println!(
             "edel theme: {}",
@@ -2171,7 +2237,7 @@ pub fn theme_reset() -> Result<()> {
         return Ok(());
     }
     let what = tr("reset the theme in use");
-    edit_as("edel theme", what, &["appearance.theme"], |text| {
+    edit_own("edel theme", what, &["appearance.theme"], |text| {
         Ok(themes::reset_text(text)?.unwrap_or_else(|| text.to_string()))
     })
 }
@@ -2181,10 +2247,7 @@ pub fn theme_reset() -> Result<()> {
 /// in this folder when no FILE is given. A file that is there is never
 /// written over, and a theme that would not read back is not written at all.
 pub fn theme_export(name: &str, file: Option<&Path>) -> Result<()> {
-    let text = theme_text();
-    let read = settings::read(&text)
-        .with_context(|| could_not_read(&machine_file()))?
-        .file;
+    let read = seen_file()?;
     let Some(theme) = themes::lookup(name, &read.themes) else {
         bail!(
             "{}",
@@ -2251,10 +2314,7 @@ fn import_line(title: &str, name: &str, pictures: usize) -> String {
 /// line with its name, its title, its base and what it is (`edel preset` in
 /// the command table).
 pub fn preset_list() -> Result<()> {
-    let file = settings::read(&theme_text())
-        .with_context(|| could_not_read(&machine_file()))?
-        .file;
-    for row in presets::rows(&file) {
+    for row in presets::rows(&seen_file()?) {
         let mut marks = Vec::new();
         if row.built_in {
             marks.push(tr("(built in)"));
@@ -2272,7 +2332,7 @@ pub fn preset_list() -> Result<()> {
 /// person's own, one write, and the screen stays the same.
 pub fn preset_save(name: &str) -> Result<()> {
     let what = trf("saved the preset {name}", &[("name", name)]);
-    edit_as("edel preset", &what, &["layout.preset"], |text| {
+    edit_own("edel preset", &what, &["layout.preset"], |text| {
         presets::save_text(text, name)
     })
 }
@@ -2281,7 +2341,7 @@ pub fn preset_save(name: &str) -> Result<()> {
 /// it is the preset in use.
 pub fn preset_delete(name: &str) -> Result<()> {
     let what = trf("deleted the preset {name}", &[("name", name)]);
-    edit_as("edel preset", &what, &["layout.preset"], |text| {
+    edit_own("edel preset", &what, &["layout.preset"], |text| {
         presets::delete_text(text, name)
     })
 }
