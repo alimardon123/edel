@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use clap::{FromArgMatches, Parser, Subcommand};
 use edel::i18n::{self, trf};
-use edel::{settings, users};
+use edel::{places, settings, users};
 
 use crate::def::ImageDef;
 use crate::run::Runner;
@@ -427,8 +427,9 @@ enum SettingsCommands {
     /// Check a settings file strictly: every unknown key, value or format,
     /// and every key this release does not act on yet, is refused
     Check {
-        /// The settings file, a path or an https:// address
-        file: String,
+        /// The settings file, a path or an https:// address; without one,
+        /// your own file and the machine's
+        file: Option<String>,
     },
     /// Ask for the first person on a console when nobody can log in, as
     /// the consoles do before their login prompt (M6.6b); with --user, make
@@ -993,9 +994,10 @@ fn run(command: Commands) -> Result<()> {
                 machine::import(settings_source::local(&file)?.path())
             }
             Some(SettingsCommands::Export) => machine::export(),
-            Some(SettingsCommands::Check { file }) => {
+            Some(SettingsCommands::Check { file: Some(file) }) => {
                 check_system_file(&settings_source::local(&file)?)
             }
+            Some(SettingsCommands::Check { file: None }) => check_own_files(),
             Some(SettingsCommands::FirstBoot {
                 user: Some(user),
                 assignments,
@@ -1079,6 +1081,38 @@ fn web_app_list() {
     }
     for app in apps {
         println!("{}  {}", app.name, app.url);
+    }
+}
+
+/// `edel settings check` with no file: the person's own file and the
+/// machine's, those that exist, so a person who just edited theirs needs
+/// no path (the messages audit's row 52). Fails when either has a problem.
+fn check_own_files() -> Result<()> {
+    let files: Vec<PathBuf> = places::person_settings()
+        .into_iter()
+        .chain([places::machine_settings()])
+        .filter(|path| path.exists())
+        .collect();
+    if files.is_empty() {
+        println!(
+            "{}",
+            i18n::tr(
+                "no settings file yet, so there is nothing to check; every setting is at its default"
+            )
+        );
+        return Ok(());
+    }
+    let mut failed = None;
+    for path in &files {
+        let source = settings_source::local(&path.to_string_lossy())?;
+        if let Err(e) = check_system_file(&source) {
+            eprintln!("edel settings: {e:#}");
+            failed = Some(e);
+        }
+    }
+    match failed {
+        Some(_) => std::process::exit(1),
+        None => Ok(()),
     }
 }
 
