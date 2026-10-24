@@ -22,8 +22,8 @@ pub fn theme_text(dark: bool) -> &'static str {
     }
 }
 
-/// Writes `dir`'s theme file for `dark`, through a `.new` file that is then
-/// renamed over it, and only when its text differs from what is there.
+/// Writes `dir`'s theme file for `dark` with `files::replace`, and only when
+/// its text differs from what is there.
 /// Says whether it wrote.
 pub fn write_theme(dir: &Path, dark: bool) -> std::io::Result<bool> {
     let path = dir.join(places::FOOT_THEME);
@@ -31,10 +31,7 @@ pub fn write_theme(dir: &Path, dark: bool) -> std::io::Result<bool> {
     if std::fs::read_to_string(&path).is_ok_and(|have| have == text) {
         return Ok(false);
     }
-    std::fs::create_dir_all(dir)?;
-    let new = dir.join(format!("{}.new", places::FOOT_THEME));
-    std::fs::write(&new, text)?;
-    std::fs::rename(&new, &path)?;
+    crate::files::replace(&path, text.as_bytes())?;
     Ok(true)
 }
 

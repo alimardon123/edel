@@ -1017,6 +1017,7 @@ dependencies = [
  "accesskit",
  "accesskit_unix",
  "anyhow",
+ "async-io",
  "cosmic-text",
  "edel",
  "futures-lite",
