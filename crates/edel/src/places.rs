@@ -454,7 +454,8 @@ fn config_home() -> Option<PathBuf> {
 /// A person's GTK 4 stylesheet, `$XDG_CONFIG_HOME/gtk-4.0/gtk.css`, else
 /// `~/.config/gtk-4.0/gtk.css`, which every GTK 4 and libadwaita app reads
 /// at its start and shell-ui writes from the tokens (M6.18); a Flatpak app
-/// reads it through the shell feature's read-only override of that folder.
+/// reads it through the read-only permission shell-ui keeps in the person's
+/// global override (`app_permissions::GTK_CSS_FILESYSTEM`).
 /// None without either variable.
 pub fn person_gtk_css() -> Option<PathBuf> {
     config_home().map(|config| config.join("gtk-4.0").join("gtk.css"))

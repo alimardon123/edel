@@ -6071,7 +6071,8 @@ case_own_bars() {
 	guest 'headerbar off'
 	# A libadwaita window (M6.18), its header bar in our colours: Flatpak
 	# apps may read gtk.css, which shell-ui writes from the tokens and the
-	# settings, so the person's override must show it.
+	# settings, so the person's override, which shell-ui writes too (no
+	# file in /etc/skel holds it), must show it.
 	guest 'flatpak override'
 	wait_for 'DESKTOP-TEST: flatpak_override ' 30 || fail "the service did not print the Flatpak override"
 	value flatpak_override | grep -q 'xdg-config/gtk-4.0:ro' ||
@@ -6104,10 +6105,26 @@ case_own_bars() {
 	# The person's own header bar colours (M6.18): the window is closed,
 	# shell-ui writes gtk.css again, and the window opened below reads it.
 	guest 'headerbar off'
+	# An account with no override file, as one made before M6.18: shell-ui's
+	# next pass, the colours below, gives Flatpak apps gtk.css again.
+	guest 'flatpak override drop'
+	printed=$(count 'DESKTOP-TEST: flatpak_override ')
+	guest 'flatpak override'
+	wait_more 'DESKTOP-TEST: flatpak_override ' "$printed" 30 || fail "the service did not print the Flatpak override after dropping it"
+	! value flatpak_override | grep -q 'xdg-config/gtk-4.0' ||
+		fail "flatpak override --user --reset left the person's global override: $(value flatpak_override)"
+	shared=$(count 'edel-shell-ui: Flatpak apps may read gtk.css')
 	written=$(count "edel-shell-ui: apps' colours written")
 	guest 'title colours'
 	wait_more "edel-shell-ui: apps' colours written" "$written" 30 ||
 		fail "shell-ui did not write apps' colours for the person's title_bar: $(tr -d '\r' <"$log" | grep -a "apps' colours" | tail -n 1)"
+	wait_more 'edel-shell-ui: Flatpak apps may read gtk.css' "$shared" 30 ||
+		fail "shell-ui did not give Flatpak apps gtk.css again on an account without the override: $(tr -d '\r' <"$log" | grep -a 'Flatpak apps' | tail -n 1)"
+	printed=$(count 'DESKTOP-TEST: flatpak_override ')
+	guest 'flatpak override'
+	wait_more 'DESKTOP-TEST: flatpak_override ' "$printed" 30 || fail "the service did not print the Flatpak override again"
+	value flatpak_override | grep -q 'xdg-config/gtk-4.0:ro' ||
+		fail "an account without the override did not get gtk.css again: $(value flatpak_override)"
 	mapped=$(count 'edel-compositor: mapped window adwaita')
 	windows=$(count 'DESKTOP-TEST: windows .*adwaita@')
 	guest 'headerbar adw'
@@ -6133,7 +6150,7 @@ case_own_bars() {
 		fail "taking appearance.mode out did not bring the light scheme back"
 	guest 'headerbar off'
 	guest 'colours default'
-	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png); a libadwaita window's header bar took the light title_bar, high contrast's live, and the person's own colour in light and in dark, and Flatpak apps may read gtk.css (adwaita-light.png, adwaita-contrast.png, adwaita-own-light.png, adwaita-own-dark.png)"
+	echo "PASS: apps' own title bars read the button layout from the portal: $first by default, $left with layout.window_buttons = left, $back after the reset; the Edel icon theme holds the window glyphs; a GTK 4 header bar window put its close button on the left and then on the right with the setting, drawn from the Edel icon theme's window-close-symbolic.svg (headerbar-left.png, headerbar-right.png); a libadwaita window's header bar took the light title_bar, high contrast's live, and the person's own colour in light and in dark, and Flatpak apps may read gtk.css, an account without the override getting it again (adwaita-light.png, adwaita-contrast.png, adwaita-own-light.png, adwaita-own-dark.png)"
 }
 
 case_capture() {

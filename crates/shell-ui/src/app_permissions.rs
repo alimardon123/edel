@@ -6,8 +6,8 @@
 //! thread of its own, so the panel never waits on the bus. The rules, which
 //! entries and lines a choice makes, are `edel::app_permissions`.
 
-use std::io::ErrorKind;
-use std::path::Path;
+use std::io::{ErrorKind, Write};
+use std::path::{Path, PathBuf};
 
 use edel::app_permissions::{
     Entry, STORE_BUS, STORE_INTERFACE, STORE_PATH, asked_every_time, dropped, entries, files_asked,
@@ -195,26 +195,51 @@ fn write_override(dir: &Path, app: &str, ask: bool) -> std::io::Result<bool> {
     if !edel::apps::is_flatpak_id(app) {
         return Ok(false);
     }
-    let path = dir.join(app);
-    let old = match std::fs::read_to_string(&path) {
+    write_changed(&dir.join(app), |old| override_text(old, ask))
+}
+
+/// Lays `change` on the Flatpak override file at `path` (an absent file is
+/// empty text) and writes what it gives, through `PATH.new` renamed over
+/// the old file; None from `change` writes nothing, and empty text removes
+/// the file. `PATH.new` is made afresh, never written through a link left
+/// at that name. Creates the folder. Says whether it wrote.
+/// `apps_colours.rs` writes the person's global file with it (M6.18).
+pub fn write_changed(
+    path: &Path,
+    change: impl FnOnce(&str) -> Option<String>,
+) -> std::io::Result<bool> {
+    let old = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(e) if e.kind() == ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
-    let Some(text) = override_text(&old, ask) else {
+    let Some(text) = change(&old) else {
         return Ok(false);
     };
     if text.is_empty() {
-        return match std::fs::remove_file(&path) {
+        return match std::fs::remove_file(path) {
             Ok(()) => Ok(true),
             Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
             Err(e) => Err(e),
         };
     }
-    std::fs::create_dir_all(dir)?;
-    let new = dir.join(format!("{app}.new"));
-    std::fs::write(&new, text)?;
-    std::fs::rename(&new, &path)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut new = path.as_os_str().to_owned();
+    new.push(".new");
+    let new = PathBuf::from(new);
+    match std::fs::remove_file(&new) {
+        Ok(()) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
+    }
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&new)?
+        .write_all(text.as_bytes())?;
+    std::fs::rename(&new, path)?;
     Ok(true)
 }
 
@@ -300,6 +325,41 @@ mod tests {
         let escape = format!("../edel-shell-ui-escape-{pid}");
         assert!(!write_override(&dir, &escape, true).unwrap());
         assert!(!outside.exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_global_override_is_written_once_and_never_through_a_link() {
+        use edel::app_permissions::{GLOBAL_OVERRIDE, GTK_CSS_FILESYSTEM, gtk_css_readable};
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("edel-shell-ui-global-{pid}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        let file = dir.join(GLOBAL_OVERRIDE);
+        let temporary = dir.join(format!("{GLOBAL_OVERRIDE}.new"));
+
+        // An absent file is made with the line, once, and no .new is left.
+        assert!(write_changed(&file, gtk_css_readable).unwrap());
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains(GTK_CSS_FILESYSTEM)
+        );
+        assert!(!write_changed(&file, gtk_css_readable).unwrap());
+        assert!(!temporary.exists());
+
+        // A link left at the .new name is replaced, never written through.
+        let outside = std::env::temp_dir().join(format!("edel-shell-ui-global-outside-{pid}"));
+        let _ = std::fs::remove_file(&outside);
+        std::fs::remove_file(&file).unwrap();
+        std::os::unix::fs::symlink(&outside, &temporary).unwrap();
+        assert!(write_changed(&file, gtk_css_readable).unwrap());
+        assert!(!outside.exists());
+        assert!(
+            std::fs::read_to_string(&file)
+                .unwrap()
+                .contains(GTK_CSS_FILESYSTEM)
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
