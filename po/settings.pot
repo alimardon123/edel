@@ -524,6 +524,12 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
+msgid "This account has no home folder to keep your settings in."
+msgstr ""
+
+msgid "Could not save this change in your settings file ({path}): this account may not write it. Log out and in again, or ask an administrator."
+msgstr ""
+
 msgid "no disk to install on"
 msgstr ""
 
@@ -2327,7 +2333,7 @@ msgstr ""
 msgid "{name} can log in now, but the computer did not restart: {why}. Restart it to log in as {name}."
 msgstr ""
 
-msgid "the account could not be made; try again"
+msgid "The account could not be made. Try again."
 msgstr ""
 
 msgid "Add the fonts this language needs"

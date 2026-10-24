@@ -40,7 +40,7 @@ use edel::settings::Source;
 use crate::files::Files;
 use crate::install;
 use crate::style::Theme;
-use crate::{actions, cmd, preview, region, widgets};
+use crate::{actions, cmd, preview, region, status, widgets};
 
 /// The settings keys the Welcome chooses, as `edel settings` names them.
 const LANGUAGE_KEY: &str = "region.language";
@@ -988,18 +988,21 @@ impl Welcome {
                             .map_or("none".to_string(), |code| code.to_string())
                     );
                     match restart {
-                        None => made.shown(),
+                        None => status::said(&made.shown()),
                         Some(restart) if restart.ok => {
                             eprintln!("edel-settings: welcome restart asked");
                             return;
                         }
                         Some(restart) => trf(
                             "{name} can log in now, but the computer did not restart: {why}. Restart it to log in as {name}.",
-                            &[("name", &name), ("why", &restart.shown())],
+                            &[
+                                ("name", &name),
+                                ("why", status::unprefixed(&restart.shown())),
+                            ],
                         ),
                     }
                 }
-                Err(_) => tr("the account could not be made; try again").to_string(),
+                Err(_) => tr("The account could not be made. Try again.").to_string(),
             };
             welcome.busy.set(false);
             button.set_sensitive(true);

@@ -8,6 +8,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use edel::i18n::{tr, trf};
 use edel::presets::{self, Panel, Policy};
 use edel::{panel_edit, places, settings};
 
@@ -724,11 +725,31 @@ impl Files {
     /// none, with the functions `edel settings set` and `reset` use, so a
     /// refused value reads the same in both; the message when it cannot.
     pub fn set(&self, key: &str, value: Option<&str>) -> Result<(), String> {
-        let path = self
-            .person
-            .as_ref()
-            .ok_or("there is no home folder to keep your settings in")?;
-        settings::write(path, key, value).map_err(|e| format!("{e:#}"))
+        let path = self.person.as_ref().ok_or_else(|| {
+            tr("This account has no home folder to keep your settings in.").to_string()
+        })?;
+        settings::write(path, key, value).map_err(|e| {
+            let denied = e.chain().any(|cause| {
+                cause
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|e| e.kind() == std::io::ErrorKind::PermissionDenied)
+            });
+            refused(path, denied, format!("{e:#}"))
+        })
+    }
+}
+
+/// Why a change to the person's file at `path` was not saved: a sentence
+/// that says what to do when the account may not write the file
+/// (`denied`), else the writer's own `words` (`docs/MESSAGES.md`).
+fn refused(path: &std::path::Path, denied: bool, words: String) -> String {
+    if denied {
+        trf(
+            "Could not save this change in your settings file ({path}): this account may not write it. Log out and in again, or ask an administrator.",
+            &[("path", &path.display().to_string())],
+        )
+    } else {
+        words
     }
 }
 
@@ -838,6 +859,18 @@ mod tests {
         assert_eq!(row, format!("{command:#}"));
         assert!(row.contains("did you mean"), "{row}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_the_account_may_not_write_says_what_to_do() {
+        let path = std::path::Path::new("/home/ali/.config/edel/settings.toml");
+        let said = refused(path, true, "could not write it".into());
+        assert!(
+            said.starts_with("Could not save this change in your settings file (/home/ali/"),
+            "{said}"
+        );
+        assert!(said.ends_with("ask an administrator."), "{said}");
+        assert_eq!(refused(path, false, "x: y".into()), "x: y");
     }
 
     #[test]
