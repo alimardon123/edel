@@ -383,7 +383,9 @@ fn main() -> Result<()> {
             // maps; the next window's commit and this one's end follow
             // at once, within the compositor's frame.
             if round % 2 == 0 {
-                queue.roundtrip(&mut client).context("waiting for the configure")?;
+                queue
+                    .roundtrip(&mut client)
+                    .context("waiting for the configure")?;
             }
             if round + 1 < times {
                 let window = shell.create_window(
