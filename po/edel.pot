@@ -1154,6 +1154,90 @@ msgstr ""
 msgid "could not replace {path}"
 msgstr ""
 
+msgid "this computer's name is now {name}"
+msgstr ""
+
+msgid "this computer's name is back to the release's"
+msgstr ""
+
+msgid "the time zone is now {zone}"
+msgstr ""
+
+msgid "the time zone is back to UTC"
+msgstr ""
+
+msgid "apps that ask are told you are in {zone}"
+msgstr ""
+
+msgid "apps that ask are told no place"
+msgstr ""
+
+msgid "apps may now find the place from nearby Wi-Fi"
+msgstr ""
+
+msgid "apps no longer find the place from nearby Wi-Fi"
+msgstr ""
+
+msgid "the battery now stops charging at {percent} percent"
+msgstr ""
+
+msgid "added the account {name}"
+msgstr ""
+
+msgid "{name} now logs in to {shell}"
+msgstr ""
+
+msgid "{name} can now log in with an ssh key"
+msgstr ""
+
+msgid "made the group {group}, whose people are administrators"
+msgstr ""
+
+msgid "{name} is now an administrator"
+msgstr ""
+
+msgid "{name} is no longer an administrator"
+msgstr ""
+
+msgid "{name} now logs in with {count} ssh keys"
+msgstr ""
+
+msgid "turned on {service}, so it starts with the computer"
+msgstr ""
+
+msgid "turned off {service}, so it no longer starts with the computer"
+msgstr ""
+
+msgid "removed the passwords edel install left, as nobody in the file has one"
+msgstr ""
+
+msgid "{names} now log in with the password edel install asked for"
+msgstr ""
+
+msgid "developer mode is on"
+msgstr ""
+
+msgid "developer mode is off"
+msgstr ""
+
+msgid "{name} may now use the screen, keyboard and mouse"
+msgstr ""
+
+msgid "installed {apps} for {name}"
+msgstr ""
+
+msgid "no default apps are set now"
+msgstr ""
+
+msgid "the default apps are set"
+msgstr ""
+
+msgid "the add-ons' files are in place ({made} linked, {removed} taken out)"
+msgstr ""
+
+msgid "each person's ids for rootless containers are written"
+msgstr ""
+
 msgid "add-on {name} starts at the next restart, once edel settings apply has fetched it"
 msgstr ""
 
