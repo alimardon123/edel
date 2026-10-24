@@ -185,6 +185,8 @@ pub const UPDATE_LOCK: &str = run!("/update.lock");
 /// The account a stick logs in by itself (M3.6), which may also run
 /// `edel install` there (M6.6a); never a person's login name.
 pub const LIVE_USER: &str = "live";
+/// Its id, the same on every stick, as `edel::users::ADMIN_GID` is.
+pub const LIVE_UID: u32 = 990;
 /// greetd's config with the live session (M3.6).
 pub const GREETD_LIVE: &str = run!("/greetd.toml");
 /// Where a seed stick or partition is mounted while it is read (M2.2).

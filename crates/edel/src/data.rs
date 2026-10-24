@@ -133,9 +133,11 @@ fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
         .lines()
         .filter(|l| !l.is_empty() && !known.contains(&name(l)))
         .filter(|l| {
-            // Alpine hands out system ids per build, so a slot's new
-            // account may carry an id this machine already gave someone
-            // else; adding it would make two names share one id.
+            // Builds pin every system account's id (account_ids.rs), so
+            // a slot's new account has an id no build gave another; a
+            // machine made before the pins, or an account made by hand,
+            // may still hold it, and adding the line would make two
+            // names share one id.
             let clash = id(l).is_some_and(|i| taken.contains(&i));
             if clash {
                 eprintln!(

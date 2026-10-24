@@ -4,6 +4,7 @@
 //! files. Add-ons (ADR-007) will live here too, so there is one tool to
 //! learn. The settings file parser is the library half (`edel::settings`).
 
+mod account_ids;
 mod addons;
 mod battery_report;
 mod bom;

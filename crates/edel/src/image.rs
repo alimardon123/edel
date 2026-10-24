@@ -187,6 +187,7 @@ impl Build<'_> {
             }
         }
         self.runner.run(apk.arg("add").args(&self.def.packages))?;
+        self.pin_accounts(root)?;
         // Before the initramfs is made, so it holds only what stays.
         self.keep_files(root)?;
         if let Some(vm) = &self.def.vm {
@@ -1378,6 +1379,18 @@ impl Build<'_> {
         Ok(held)
     }
 
+    /// Moves the system accounts apk just added to `root` to the ids
+    /// `features/base.toml` pins, and fails on one it does not
+    /// (`account_ids`).
+    fn pin_accounts(&self, root: &Path) -> Result<()> {
+        self.runner
+            .step("move the system accounts to their pinned ids (features/base.toml)");
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        crate::account_ids::pin(root, &self.def.alpine.users, &self.def.alpine.groups)
+    }
+
     /// Takes the lines [`Build::hold_accounts`] added out again.
     fn release_accounts(&self, a_root: &Path, held: &[(&'static str, String)]) -> Result<()> {
         for (path, add) in held {
@@ -1452,6 +1465,7 @@ impl Build<'_> {
                 .args(["--arch", &self.def.arch, "--no-progress"]);
             self.runner
                 .run(apk.arg("--cache-dir").arg(cache).arg("add").args(&packages))?;
+            self.pin_accounts(&a_root)?;
         }
         self.release_accounts(&a_root, &held)?;
         for part in addon.parts() {

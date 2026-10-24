@@ -5,6 +5,7 @@
 use super::is_name;
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 /// The only feature format so far.
 pub const FORMAT: u32 = 1;
@@ -120,6 +121,15 @@ pub struct Alpine {
     /// runs in a container nobody looked at (M3.9). Images do not use it.
     #[serde(default)]
     pub image_digest: Option<String>,
+    /// The id of each system user Alpine's packages add (an id from 100
+    /// to 999), pinned so that every build gives it the same one and a
+    /// newer slot's new account never takes an id a machine already gave
+    /// another (`account_ids`).
+    #[serde(default)]
+    pub users: BTreeMap<String, u32>,
+    /// The same for system groups.
+    #[serde(default)]
+    pub groups: BTreeMap<String, u32>,
 }
 
 /// OpenRC services to enable, by runlevel.

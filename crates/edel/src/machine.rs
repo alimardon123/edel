@@ -138,7 +138,12 @@ pub fn add_live_account(name: &str) -> Result<()> {
         .any(|a| a.name == name)
     {
         let home = format!("/home/{name}");
-        run(&mut base::add_system_person(name, default_shell(), &home))?;
+        run(&mut base::add_system_person(
+            name,
+            places::LIVE_UID,
+            default_shell(),
+            &home,
+        ))?;
         unlock(name)?;
     }
     let greeter = accounts(&fs::read_to_string("/etc/passwd")?)
@@ -1113,7 +1118,7 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
             }
         }
         Change::Unlock(name) => unlock(name)?,
-        Change::AdminGroup => run(&mut base::add_group(ADMIN_GROUP))?,
+        Change::AdminGroup => run(&mut base::add_group(ADMIN_GROUP, edel::users::ADMIN_GID))?,
         Change::Admin { name, on: true } => run(&mut base::add_to_group(name, ADMIN_GROUP))?,
         Change::Admin { name, on: false } => run(&mut base::remove_from_group(name, ADMIN_GROUP))?,
         Change::Keys { name, keys } => write_keys(&find_account(name)?, &keys_text(keys))?,
