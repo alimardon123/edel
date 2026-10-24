@@ -30,7 +30,7 @@ One line when it fits; the cause chain after it, most specific last, only when i
 
 ## Where to find things
 
-- **The command line:** results on standard output, problems on standard error; the exit status says which (`0` done, `1` failed, `2` wrong use, `3` waiting for a yes, as `edel install` does).
+- **The command line:** results on standard output, problems on standard error; the exit status says which (`0` done, `1` failed, `2` wrong use, `3` waiting for a yes, as `edel install` does, and two failures Settings tells apart in any language, a refusal of rights and a download that failed, whose numbers `edel::exit` owns).
 - **The boot:** the console and the system log; each service prints one line saying what it did.
 - **The desktop:** the compositor, shell-ui and every app they start write to the person's session log, `~/.local/state/edel/session.log`, which the compositor opens at the start of each session (M5.28a); the session before's is `session.old.log` beside it, so the log stays small. A session that closed as it should ends with `edel-compositor: the session ended`; when one did not, the next one says so and `edel status` names its log.
 - **One report:** `edel report` gathers what a person sends with a bug: the release, the hardware, and the last lines of the system log and of each session log (M3.3b, M5.28a).

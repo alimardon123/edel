@@ -378,13 +378,13 @@ impl Lock {
 /// ordinary user needs to read (docs/MESSAGES.md).
 pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
     if err.kind() == std::io::ErrorKind::PermissionDenied {
-        anyhow::anyhow!(
-            "{}",
+        anyhow::Error::new(edel::exit::Coded::new(
+            edel::exit::REFUSED,
             trf(
                 "{doing}: permission denied; this changes the system, so run it with doas: doas edel ...",
-                &[("doing", doing)]
-            )
-        )
+                &[("doing", doing)],
+            ),
+        ))
     } else {
         anyhow::Error::new(err).context(doing.to_string())
     }

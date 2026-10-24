@@ -31,6 +31,7 @@ pub mod battery_care;
 pub mod bluetooth;
 #[cfg(feature = "pictures")]
 pub mod draw;
+pub mod exit;
 pub mod features;
 #[cfg(feature = "os")]
 pub mod firmware;

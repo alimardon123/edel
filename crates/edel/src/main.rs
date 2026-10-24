@@ -631,13 +631,13 @@ fn main() -> std::process::ExitCode {
     // Who may change the machine, and their password, before anything runs (M6.5).
     if let Err(err) = privilege::gate(&cli.command, cli.password_stdin) {
         eprintln!("{}", failure_line(name, &err));
-        return std::process::ExitCode::FAILURE;
+        return std::process::ExitCode::from(edel::exit::code_of(&err));
     }
     match run(cli.command) {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("{}", failure_line(name, &err));
-            std::process::ExitCode::FAILURE
+            std::process::ExitCode::from(edel::exit::code_of(&err))
         }
     }
 }

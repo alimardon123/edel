@@ -238,7 +238,9 @@ fn enforce(need: Need, note: Option<&str>) -> Result<()> {
     };
     match decide(euid, doas.as_deref(), is_admin, need) {
         Decision::Allow => Ok(()),
-        Decision::Refuse(message) => bail!("{message}"),
+        Decision::Refuse(message) => {
+            Err(edel::exit::Coded::new(edel::exit::REFUSED, message).into())
+        }
         Decision::AskPassword => {
             let user = doas.unwrap_or_default();
             if let Some(what) = note {
