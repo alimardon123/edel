@@ -3712,7 +3712,7 @@ mod tests {
         // is a folder. Nothing is left beside it.
         let dir = std::env::temp_dir().join(format!("edel-write-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        let path = dir.join("settings.toml");
+        let path = dir.join(crate::places::SETTINGS);
         fs::create_dir_all(&path).unwrap();
         assert!(write_text(&path, "hostname = \"lab\"\n").is_err());
         assert!(!path.with_extension("toml.edel-new").exists());
