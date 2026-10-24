@@ -287,6 +287,58 @@ pub const NO_FILES: &[&str] = &[
 /// stays as it was. None when the text is already right, so nothing is
 /// written.
 pub fn override_text(text: &str, ask: bool) -> Option<String> {
+    with_filesystems(text, |old| {
+        let mut new: Vec<String> = old
+            .iter()
+            .filter(|e| !NO_FILES.contains(&e.as_str()))
+            .cloned()
+            .collect();
+        if ask {
+            new.extend(NO_FILES.iter().map(|e| e.to_string()));
+        }
+        new
+    })
+}
+
+/// The Flatpak permission that lets an app read the person's GTK 4
+/// stylesheet's folder (`places::person_gtk_css`), read-only (M6.18).
+pub const GTK_CSS_FILESYSTEM: &str = "xdg-config/gtk-4.0:ro";
+
+/// The name of the override file Flatpak lays over every app of the
+/// person's, beside the per-app ones (`places::person_flatpak_overrides_dir`).
+pub const GLOBAL_OVERRIDE: &str = "global";
+
+/// The text of the person's global override file with
+/// [`GTK_CSS_FILESYSTEM`] in `[Context]`'s `filesystems` line (M6.18),
+/// unless that line already names the folder in any form (with or without
+/// a final `/` or a `:` mode), such as the person's own
+/// `!xdg-config/gtk-4.0`, which is left as it is. Every other
+/// line stays. None when nothing changes, so nothing is written.
+pub fn gtk_css_readable(text: &str) -> Option<String> {
+    let folder = GTK_CSS_FILESYSTEM.split(':').next().unwrap_or_default();
+    with_filesystems(text, |old| {
+        let named = old.iter().any(|e| {
+            e.trim_start_matches('!')
+                .split(':')
+                .next()
+                .map(|p| p.trim_end_matches('/'))
+                == Some(folder)
+        });
+        let mut new = old.to_vec();
+        if !named {
+            new.push(GTK_CSS_FILESYSTEM.to_string());
+        }
+        new
+    })
+}
+
+/// `text`, an override file, with `change` laid on the entries of
+/// `[Context]`'s `filesystems` line (none when it has no such line): the
+/// line is rewritten, added under `[Context]` (made when absent) or taken
+/// out when left empty, and a `[Context]` left empty goes too. Every other
+/// line, group and entry stays as it was. None when `change` gives the
+/// entries it was handed.
+fn with_filesystems(text: &str, change: impl FnOnce(&[String]) -> Vec<String>) -> Option<String> {
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
     let mut group = String::new();
     let mut found = None;
@@ -315,14 +367,7 @@ pub fn override_text(text: &str, ask: bool) -> Option<String> {
                 .collect()
         })
         .unwrap_or_default();
-    let mut new: Vec<String> = old
-        .iter()
-        .filter(|e| !NO_FILES.contains(&e.as_str()))
-        .cloned()
-        .collect();
-    if ask {
-        new.extend(NO_FILES.iter().map(|e| e.to_string()));
-    }
+    let new = change(&old);
     if new == old {
         return None;
     }
@@ -558,5 +603,27 @@ mod tests {
         assert!(asked.contains("shared=network;"));
         let allowed = override_text(&asked, false).unwrap();
         assert_eq!(allowed, text);
+    }
+
+    #[test]
+    fn the_global_override_lets_apps_read_gtk_css_once() {
+        let made = gtk_css_readable("").unwrap();
+        assert_eq!(made, "[Context]\nfilesystems=xdg-config/gtk-4.0:ro;\n");
+        assert_eq!(gtk_css_readable(&made), None);
+        let theirs = "[Context]\nfilesystems=~/Games;\n\n[Environment]\nA=1\n";
+        let added = gtk_css_readable(theirs).unwrap();
+        assert!(added.contains("filesystems=~/Games;xdg-config/gtk-4.0:ro;\n"));
+        assert!(added.contains("[Environment]\nA=1"));
+    }
+
+    #[test]
+    fn a_person_who_took_gtk_css_away_keeps_it_away() {
+        let theirs = "[Context]\nfilesystems=!xdg-config/gtk-4.0;\n";
+        assert_eq!(gtk_css_readable(theirs), None);
+        let slash = "[Context]\nfilesystems=xdg-config/gtk-4.0/:ro;\n";
+        assert_eq!(gtk_css_readable(slash), None);
+        // The files choice on a per-app file keeps the permission.
+        let asked = override_text("[Context]\nfilesystems=xdg-config/gtk-4.0:ro;\n", true).unwrap();
+        assert_eq!(gtk_css_readable(&asked), None);
     }
 }

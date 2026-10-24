@@ -143,6 +143,14 @@ pub fn apps_colours_not_written(why: impl Display) -> String {
     )
 }
 
+/// The person's global Flatpak override, which lets Flatpak apps read
+/// gtk.css, cannot be written (M6.18).
+pub fn apps_colours_not_shared(why: impl Display) -> String {
+    format!(
+        "could not let Flatpak apps read gtk.css: {why}; Flatpak apps keep their own colours, and shell-ui tries again at the next login or change of the look"
+    )
+}
+
 /// The tray cannot be served.
 pub fn tray_not_served(why: impl Display) -> String {
     format!(
@@ -491,6 +499,14 @@ mod tests {
         assert_eq!(
             apps_colours_not_written("Permission denied (os error 13)"),
             "could not write the apps' colours to gtk.css: Permission denied (os error 13); apps keep the colours they had until it can be written"
+        );
+    }
+
+    #[test]
+    fn an_apps_colours_not_shared_says_what_still_works() {
+        assert_eq!(
+            apps_colours_not_shared("Permission denied (os error 13)"),
+            "could not let Flatpak apps read gtk.css: Permission denied (os error 13); Flatpak apps keep their own colours, and shell-ui tries again at the next login or change of the look"
         );
     }
 
