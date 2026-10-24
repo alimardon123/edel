@@ -37,7 +37,11 @@
 //! see whether a window the desktop hides still gets frames (M7.7c). With
 //! `--smooth N` it also asks for presentation feedback on each frame and
 //! prints one line once N intervals between presented frames are measured
-//! (`smooth.rs`, M7.7e).
+//! (`smooth.rs`, M7.7e). `--flash N` opens N windows one after another,
+//! each closed before the compositor draws a frame of it, every other one
+//! before its first configure, as a splash screen or a dialog that closes
+//! at once does (M8.21, the other projects' bugs review), and prints
+//! `flashed N`.
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -53,6 +57,7 @@
 //!     edel-testclient --location
 //!     edel-testclient --location SECONDS
 //!     edel-testclient --clipboard
+//!     edel-testclient --flash 40
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData};
@@ -102,6 +107,8 @@ struct Args {
     /// How many intervals between presented frames to measure, then exit
     /// after printing them (M7.7e). Needs `busy`.
     smooth: Option<usize>,
+    /// How many windows to open and close at once (M8.21).
+    flash: Option<u32>,
 }
 
 /// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
@@ -125,6 +132,7 @@ fn args() -> Result<Args> {
     let mut clipboard = false;
     let mut busy = false;
     let mut smooth = None;
+    let mut flash = None;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -165,6 +173,12 @@ fn args() -> Result<Args> {
                     _ => bail!("--smooth takes a number of frames, not {value}"),
                 }
             }
+            "--flash" => {
+                flash = match value.parse::<u32>() {
+                    Ok(times) if times > 0 => Some(times),
+                    _ => bail!("--flash takes a number of windows, not {value}"),
+                }
+            }
             "--layer" => {
                 layer = Some(match value.as_str() {
                     "top" => Anchor::TOP,
@@ -199,6 +213,7 @@ fn args() -> Result<Args> {
         clipboard,
         busy,
         smooth,
+        flash,
     })
 }
 
@@ -316,8 +331,8 @@ fn main() -> Result<()> {
         None => {
             let shell = XdgShell::bind(&globals, &qh).context("no xdg_wm_base")?;
             let window = shell.create_window(surface, WindowDecorations::ServerDefault, &qh);
-            window.set_title(args.title);
-            window.set_app_id(args.app_id);
+            window.set_title(args.title.clone());
+            window.set_app_id(args.app_id.clone());
             if args.fullscreen {
                 window.set_fullscreen(None);
             }
@@ -361,6 +376,35 @@ fn main() -> Result<()> {
         waiting: false,
         smooth,
     };
+    if let Some(times) = args.flash {
+        let shell = XdgShell::bind(&globals, &qh).context("no xdg_wm_base")?;
+        for round in 0..times {
+            // Every other window gets its configure, so it draws and
+            // maps; the next window's commit and this one's end follow
+            // at once, within the compositor's frame.
+            if round % 2 == 0 {
+                queue
+                    .roundtrip(&mut client)
+                    .context("waiting for the configure")?;
+            }
+            if round + 1 < times {
+                let window = shell.create_window(
+                    compositor.create_surface(&qh),
+                    WindowDecorations::ServerDefault,
+                    &qh,
+                );
+                window.set_title(args.title.clone());
+                window.set_app_id(args.app_id.clone());
+                window.commit();
+                client.shown = Shown::Window(window);
+                connection.flush().context("closing the window")?;
+            }
+        }
+        drop(client);
+        connection.flush().context("closing the last window")?;
+        println!("flashed {times}");
+        return Ok(());
+    }
     let mut recolour = args.recolour;
     if let Some((_, file)) = &recolour {
         let (display, wake) = (connection.display(), qh.clone());
