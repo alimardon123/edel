@@ -85,18 +85,28 @@ pub fn add_person(name: &str, shell: &str) -> Command {
     command
 }
 
-/// Adds the system account `name` (a stick's live person) with the login
-/// shell `shell`, the home `home` and no password.
-pub fn add_system_person(name: &str, shell: &str, home: &str) -> Command {
+/// Adds the system account `name` (a stick's live person) with the id
+/// `uid`, the login shell `shell`, the home `home` and no password.
+pub fn add_system_person(name: &str, uid: u32, shell: &str, home: &str) -> Command {
     let mut command = Command::new("adduser");
-    command.args(["-S", "-D", "-s", shell, "-h", home, name]);
+    command.args([
+        "-S",
+        "-D",
+        "-u",
+        &uid.to_string(),
+        "-s",
+        shell,
+        "-h",
+        home,
+        name,
+    ]);
     command
 }
 
-/// Adds the system group `group`.
-pub fn add_group(group: &str) -> Command {
+/// Adds the system group `group` with the id `gid`.
+pub fn add_group(group: &str, gid: u32) -> Command {
     let mut command = Command::new("addgroup");
-    command.args(["-S", group]);
+    command.args(["-S", "-g", &gid.to_string(), group]);
     command
 }
 
@@ -204,11 +214,13 @@ mod tests {
             ["adduser", "-D", "-s", "/bin/bash", "ali"]
         );
         assert_eq!(
-            line(&add_system_person("live", "/bin/bash", "/home/live")),
+            line(&add_system_person("live", 990, "/bin/bash", "/home/live")),
             [
                 "adduser",
                 "-S",
                 "-D",
+                "-u",
+                "990",
                 "-s",
                 "/bin/bash",
                 "-h",
@@ -216,7 +228,10 @@ mod tests {
                 "live"
             ]
         );
-        assert_eq!(line(&add_group("wheel")), ["addgroup", "-S", "wheel"]);
+        assert_eq!(
+            line(&add_group("wheel", 990)),
+            ["addgroup", "-S", "-g", "990", "wheel"]
+        );
         assert_eq!(
             line(&add_to_group("ali", "wheel")),
             ["addgroup", "ali", "wheel"]

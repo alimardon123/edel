@@ -6,7 +6,7 @@
 # runs this too, from its copy of the slot, and only reports its ssh host
 # key, which must differ from the live image's. With a third disk /dev/vdc
 # and a second serial port, `edel install` with no arguments installs on it
-# from the answers typed there (M6.6b).
+# from the answers typed there (M6.6b), its data encrypted (M8.2).
 
 say() {
 	echo "INSTALL-TEST: $*" >/dev/console
@@ -79,13 +79,19 @@ sync
 # ci/serial.py answers from the host. Then the new disk's data partition
 # shows what the answers wrote.
 if [ -b /dev/vdc ] && [ -c /dev/ttyS1 ]; then
-	setsid -c edel install </dev/ttyS1 >/dev/ttyS1 2>&1
+	setsid -c edel install --encrypt </dev/ttyS1 >/dev/ttyS1 2>&1
 	say "tty exit $?"
 	mkdir -p /run/tty-target
-	if mount /dev/vdc4 /run/tty-target; then
+	# M8.2: vdc's data is encrypted with ali's password, and its header
+	# names the console map of the keyboard answered.
+	modprobe dm_crypt
+	say "tty header $(cryptsetup luksDump /dev/vdc4 | sed -n 's/^Subsystem:[[:space:]]*//p')"
+	if printf %s edel-ci-tty | DM_DISABLE_UDEV=1 cryptsetup open --key-file - /dev/vdc4 tty-data &&
+		mount /dev/mapper/tty-data /run/tty-target; then
 		say "tty settings $(tr '\n' ';' <"/run/tty-target${data_dir#/data}/$settings_name")"
 		say "tty passwords $(stat -c %a "/run/tty-target${first_passwords#/data}") $(cut -c1-7 "/run/tty-target${first_passwords#/data}")"
 		umount /run/tty-target
+		DM_DISABLE_UDEV=1 cryptsetup close tty-data
 	fi
 fi
 say "installed"

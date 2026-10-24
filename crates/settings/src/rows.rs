@@ -864,6 +864,14 @@ mod tests {
             "the shell a terminal starts, for people who use one; set in the file or with edel settings set",
         ),
         (
+            "updates.automatic",
+            "a key of the machine's file, which Settings does not write yet; the Updates page's row comes with M7.5b",
+        ),
+        (
+            "updates.restart_window",
+            "a key of the machine's file, which Settings does not write yet; the Updates page's row comes with M7.5b",
+        ),
+        (
             "network.hostname",
             "the machine's key, and Settings writes only the person's file; About shows the name",
         ),

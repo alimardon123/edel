@@ -984,9 +984,9 @@ pub const HELP: &[Help] = &[
     Help {
         key: "updates.automatic",
         help: n_(
-            "Whether updates are checked, installed, or installed and restarted by themselves, or off; this release does not act on it yet.",
+            "Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due.",
         ),
-        default: "not set yet",
+        default: "off",
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,
@@ -994,9 +994,9 @@ pub const HELP: &[Help] = &[
     Help {
         key: "updates.restart_window",
         help: n_(
-            "The hours when a restart may happen by itself, such as 02:00-04:00; this release does not act on it yet.",
+            "The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour.",
         ),
-        default: "none",
+        default: "any hour",
         from: DecidedBy::Release,
         belongs: Belongs::Device,
         retired: None,

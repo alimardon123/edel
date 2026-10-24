@@ -96,7 +96,7 @@ fi
 	echo
 	echo "| What | Size on disk |"
 	echo "|---|---|"
-	for f in out/*.tar.gz out/*.ext4 out/*.img out/*.ext4.gz out/*.img.gz; do
+	for f in out/*.tar.gz out/*.ext4 out/*.img out/*.ext4.gz out/*.img.gz out/*.qcow2; do
 		[ -e "$f" ] && echo "| $(basename "$f") | $(du -h "$f" | cut -f1) |"
 	done
 	for d in out/work/*/rootfs; do

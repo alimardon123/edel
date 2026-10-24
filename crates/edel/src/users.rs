@@ -14,6 +14,11 @@ use std::fs;
 /// removes members.
 pub const ADMIN_GROUP: &str = "admin";
 
+/// Its id, the same on every machine, so no package account a newer slot
+/// or an add-on brings can have been given it (`features/base.toml`'s
+/// `[alpine.groups]` keeps the ids of those).
+pub const ADMIN_GID: u32 = 990;
+
 /// The account database, as the C library reads it.
 pub const PASSWD: &str = "/etc/passwd";
 pub const GROUP: &str = "/etc/group";

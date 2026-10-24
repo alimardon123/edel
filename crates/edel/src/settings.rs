@@ -324,6 +324,9 @@ pub enum Kind {
     Hosts,
     /// A release channel's name, such as `"stable"` ([`is_channel`], M5.8c)
     Channel,
+    /// Hours of the day in local time, such as `"02:00-04:00"`, which may
+    /// pass midnight ([`hours`], M7.5)
+    Hours,
     /// An xcursor theme's folder name, one this machine has under
     /// [`crate::places::ICON_THEME_DIRS`] (M5.12b5, [`cursor_themes`])
     CursorTheme,
@@ -630,11 +633,11 @@ pub const KEYS: &[Key] = &[
     // The release lists `edel update` takes (M3.8); absent, the image's.
     now("updates.channel", Kind::Channel),
     later("updates.version", Kind::Text),
-    later(
+    now(
         "updates.automatic",
         Kind::OneOf(&["off", "check", "install", "install-and-restart"]),
     ),
-    later("updates.restart_window", Kind::Text),
+    now("updates.restart_window", Kind::Hours),
     now("apps.installed", Kind::AppIds),
     // What each app may use (M6.14a), the person's, laid onto Flatpak's
     // own state by shell-ui.
@@ -2086,6 +2089,13 @@ pub fn in_use(file: &SettingsFile) -> SettingsFile {
     crate::themes::themed(&crate::presets::applied(&crate::profiles::applied(file)))
 }
 
+/// The value the machine's own settings file chooses for `key`, read now;
+/// None when the file or the key is not there.
+pub fn on_machine(key: &str) -> Option<String> {
+    let path = crate::places::found(&crate::places::machine_settings());
+    chosen(key, std::fs::read_to_string(path).ok().as_deref(), None)
+}
+
 /// `key`'s value as the files say it now: the person's file over the
 /// machine's, as a string; none when neither sets it.
 pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
@@ -2815,8 +2825,8 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
         bail!(
             "{}",
             trf(
-                "{key}: {name} is not a user name",
-                &[("key", key), ("name", &format!("{:?}", path[1]))]
+                "{key}: {why}",
+                &[("key", key), ("why", &not_a_username(path[1]))]
             )
         );
     }
@@ -3030,7 +3040,7 @@ fn clean(
         } else if at == ["users"] && !is_user_name(name) {
             problems.push(Problem {
                 key: shown,
-                message: tr("not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _").into(),
+                message: not_a_username(name),
             });
         } else if at == ["appearance", "colours"] && matches!(name.as_str(), "light" | "dark") {
             // A scheme's own table of colours, read as its own keys (M5.12b1).
@@ -3416,6 +3426,12 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             &[("value", &format!("{s:?}"))],
         )),
         (Kind::Channel, _) => fail(tr("a channel name in quotes, such as \"stable\"")),
+        (Kind::Hours, Value::String(s)) if hours(s).is_some() => Ok(value.clone()),
+        (Kind::Hours, Value::String(s)) => Err(trf(
+            "{value} is not a span of hours; write the start and the end in 24-hour time, such as \"02:00-04:00\"",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Hours, _) => fail(tr("a span of hours in quotes, such as \"02:00-04:00\"")),
         (Kind::CursorTheme, Value::String(s)) => match cursor_theme_problem(s) {
             None => Ok(value.clone()),
             Some(problem) => Err(problem),
@@ -3589,6 +3605,34 @@ pub fn is_hostname(name: &str) -> bool {
 /// The longest channel name.
 pub const MOST_CHANNEL: usize = 32;
 
+/// The span `text` names, `"HH:MM-HH:MM"` in 24-hour time, as minutes
+/// after midnight, start and end; None when it is not one. An end before
+/// the start passes midnight; start and end the same is no span.
+pub fn hours(text: &str) -> Option<(u16, u16)> {
+    let clock = |t: &str| -> Option<u16> {
+        let (h, m) = t.split_once(':')?;
+        if h.len() != 2 || m.len() != 2 {
+            return None;
+        }
+        let (h, m): (u16, u16) = (h.parse().ok()?, m.parse().ok()?);
+        (h < 24 && m < 60).then_some(h * 60 + m)
+    };
+    let (start, end) = text.split_once('-')?;
+    let (start, end) = (clock(start)?, clock(end)?);
+    (start != end).then_some((start, end))
+}
+
+/// Whether `minute`, minutes after midnight, is inside the span `hours`
+/// gives: from its start up to, not including, its end.
+pub fn in_hours(span: (u16, u16), minute: u16) -> bool {
+    let (start, end) = span;
+    if start < end {
+        (start..end).contains(&minute)
+    } else {
+        minute >= start || minute < end
+    }
+}
+
 /// A release channel's name (M5.8c): it is written into the address of the
 /// channel's release list, so only lowercase letters, digits and hyphens,
 /// not starting or ending with a hyphen, up to [`MOST_CHANNEL`].
@@ -3648,6 +3692,20 @@ fn is_resolution(text: &str) -> bool {
     })
 }
 
+/// Why `name` is not a username, the one text for that mistake in the
+/// settings file, `edel install`, Settings and the first boot.
+pub fn not_a_username(name: &str) -> String {
+    let rule = tr("use up to 32 lowercase letters, digits, - and _, starting with a letter or _");
+    if name.is_empty() {
+        trf("choose a username: {rule}", &[("rule", rule)])
+    } else {
+        trf(
+            "{name} is not a username: {rule}",
+            &[("name", &format!("{name:?}")), ("rule", rule)],
+        )
+    }
+}
+
 /// A name busybox `adduser` accepts and every tool handles.
 pub fn is_user_name(name: &str) -> bool {
     let mut bytes = name.bytes();
@@ -3701,6 +3759,26 @@ pub fn write_slot_copy(root: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_span_of_hours_may_pass_midnight() {
+        assert_eq!(hours("02:00-04:00"), Some((120, 240)));
+        assert_eq!(hours("23:30-01:15"), Some((1410, 75)));
+        for bad in [
+            "2:00-4:00",
+            "02:00",
+            "24:00-01:00",
+            "02:60-03:00",
+            "02:00-02:00",
+            "x",
+        ] {
+            assert_eq!(hours(bad), None, "{bad}");
+        }
+        assert!(in_hours((120, 240), 120) && in_hours((120, 240), 239));
+        assert!(!in_hours((120, 240), 240) && !in_hours((120, 240), 60));
+        assert!(in_hours((1410, 75), 1420) && in_hours((1410, 75), 10));
+        assert!(!in_hours((1410, 75), 75) && !in_hours((1410, 75), 600));
+    }
 
     #[test]
     fn a_change_to_the_add_ons_starts_from_the_slots_default() {
@@ -3796,6 +3874,7 @@ mod tests {
             Kind::Profiles => value_from_arg(r#"["gaming"]"#),
             Kind::Without => value_from_arg(r#"["com.valvesoftware.Steam"]"#),
             Kind::Channel => Value::String("stable".into()),
+            Kind::Hours => Value::String("02:00-04:00".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::IconTheme => Value::String(ICON_THEME_DEFAULT.into()),
             Kind::Wallpaper => Value::String("hills".into()),
@@ -4481,7 +4560,9 @@ version = "1.2"
             error("updates.version", "\"1.2\""),
             "updates.version: not supported yet; this release does not act on it, so it cannot be set"
         );
-        assert!(error("users.Ali.admin", "true").contains("not a user name"));
+        assert!(
+            error("users.Ali.admin", "true").contains("\"Ali\" is not a username: use up to 32")
+        );
     }
 
     #[test]

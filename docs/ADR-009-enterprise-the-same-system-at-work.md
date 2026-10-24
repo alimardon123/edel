@@ -87,7 +87,7 @@ Not built, and defended: an enterprise edition, an enterprise-only security tier
 1. [ ] The fix-first round, before M5.6: M3.6, M5.19 to M5.24, M1.10 to M1.13, M3.7 to M3.9.
 2. [ ] One narrow review of the updater, the guard and the signing path before the first preview is published (M3.4; Alimardon, 2026-10-06).
 3. [ ] A plain settings file from a cloud's user data (M7.4).
-4. [ ] Encrypted data by default on laptop and desktop installs (M8.2).
+4. [x] Encrypted data by default on laptop and desktop installs (M8.2).
 5. [x] A bill of materials and an advisory check for every image (M8.12); the firewall and a security status everyone can read (M8.14, done 2026-10-18: the firewall is on where there is a screen, and `edel status` and Settings' System page say whether the machine is up to date, encrypted and behind it).
 6. [ ] A "coming from Ubuntu or RHEL" page in the docs (M7.6).
 7. [ ] Enterprise appliances and the long channel (M11).

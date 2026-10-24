@@ -521,6 +521,7 @@ impl ImageDef {
                 );
             }
         }
+        crate::account_ids::check(&self.alpine.users, &self.alpine.groups)?;
         if self.packages.is_empty() {
             bail!("the features install no package; list the base feature");
         }

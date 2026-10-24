@@ -431,12 +431,26 @@ impl Drop for Lock {
 }
 
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
-    let status = cmd
-        .stdin(Stdio::null())
-        .status()
-        .with_context(|| format!("could not start {:?}", cmd.get_program()))?;
+    let status = cmd.stdin(Stdio::null()).status().with_context(|| {
+        trf(
+            "could not start {program}",
+            &[("program", &cmd.get_program().to_string_lossy())],
+        )
+    })?;
     if !status.success() {
-        bail!("{:?} failed with {status}", cmd.get_program());
+        bail!(
+            "{}",
+            trf(
+                "{program} stopped with code {code}",
+                &[
+                    ("program", &cmd.get_program().to_string_lossy()),
+                    (
+                        "code",
+                        &status.code().map_or("none".into(), |c| c.to_string())
+                    ),
+                ]
+            )
+        );
     }
     Ok(())
 }
@@ -852,9 +866,163 @@ pub fn rollback() -> Result<()> {
     Ok(())
 }
 
+/// What `updates.automatic` asks for (M7.5); absent, or a value this
+/// release does not know, is off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Automatic {
+    Off,
+    Check,
+    Install,
+    InstallAndRestart,
+}
+
+impl Automatic {
+    fn from_value(value: Option<&str>) -> Automatic {
+        match value {
+            Some("check") => Automatic::Check,
+            Some("install") => Automatic::Install,
+            Some("install-and-restart") => Automatic::InstallAndRestart,
+            _ => Automatic::Off,
+        }
+    }
+}
+
+/// What an automatic run does about restarting once an update waits in
+/// the other slot: a machine with a screen only says so, as a person may
+/// be at it; one without restarts inside `updates.restart_window`, or at
+/// any hour without one.
+#[derive(Debug, PartialEq, Eq)]
+enum Restart {
+    Now,
+    Wait,
+    Screen,
+}
+
+fn restart_now(screen: bool, window: Option<(u16, u16)>, minute: u16) -> Restart {
+    if screen {
+        return Restart::Screen;
+    }
+    match window {
+        Some(span) if !edel::settings::in_hours(span, minute) => Restart::Wait,
+        _ => Restart::Now,
+    }
+}
+
+/// `edel update --automatic` (M7.5), which the `updates` feature's timer
+/// runs once an hour: as `updates.automatic` says, nothing, a check, an
+/// install from `location`, or an install and then a restart. Each thing
+/// it does is one line on its output and in the system log.
+pub fn automatic(location: Option<String>, accept: &crate::release::Accept) -> Result<()> {
+    let chosen = edel::settings::on_machine;
+    let mode = Automatic::from_value(chosen("updates.automatic").as_deref());
+    if mode == Automatic::Off {
+        return Ok(());
+    }
+    let pending = Path::new(edel::places::RESTART_PENDING).exists();
+    if !pending {
+        let location = match location {
+            Some(location) => location,
+            None => crate::release::default_location(accept)?,
+        };
+        let manifest = crate::release::verified(&location, accept)?;
+        let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+        let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+        if crate::release::compare_versions(&manifest.version, &running)
+            != std::cmp::Ordering::Greater
+        {
+            return Ok(());
+        }
+        if mode == Automatic::Check {
+            say(&trf(
+                "{version} is available; edel update installs it",
+                &[("version", &manifest.version)],
+            ));
+            return Ok(());
+        }
+        // An update that fell back stays in the other slot, switched off;
+        // installing it again every hour would fall back every time.
+        if fell_back(&manifest.version)? {
+            say(&trf(
+                "{version} did not start here before, so it is not installed again; a newer release will be",
+                &[("version", &manifest.version)],
+            ));
+            return Ok(());
+        }
+        install(&location, accept, false)?;
+        if let Err(err) = crate::default_apps::follow() {
+            eprintln!("warning: {err:#}");
+        }
+    }
+    if mode != Automatic::InstallAndRestart {
+        return Ok(());
+    }
+    let window = chosen("updates.restart_window").and_then(|w| edel::settings::hours(&w));
+    match restart_now(edel::services::screen_now(), window, local_minute()?) {
+        Restart::Now => {
+            say(tr("restarting to start the update"));
+            crate::system_power::run(crate::system_power::Action::Restart)
+        }
+        Restart::Wait => Ok(()),
+        Restart::Screen => {
+            say(tr("the update starts at the next restart"));
+            Ok(())
+        }
+    }
+}
+
+/// Whether the other slot holds `version` and did not start, so the guard
+/// went back from it.
+fn fell_back(version: &str) -> Result<bool> {
+    let disk = Disk::find()?;
+    let env = Esp::mount(&disk)?.load()?;
+    let other = disk.running.other();
+    if env.ok(other) || env.tries(other) > 0 {
+        return Ok(false);
+    }
+    let device = disk.device(other.partition())?;
+    Ok(slot_os_release(&device)
+        .and_then(|text| os_release_value(&text, "VERSION_ID"))
+        .is_some_and(|v| v == version))
+}
+
+/// The local time now, in minutes after midnight.
+fn local_minute() -> Result<u16> {
+    let out = Command::new("date")
+        .arg("+%H:%M")
+        .output()
+        .context("could not start date")?;
+    let now = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    now.split_once(':')
+        .and_then(|(h, m)| Some(h.parse::<u16>().ok()? * 60 + m.parse::<u16>().ok()?))
+        .with_context(|| format!("date printed {now:?}"))
+}
+
+/// One line on the output and in the system log.
+fn say(line: &str) {
+    println!("edel update: {line}");
+    let _ = Command::new("logger")
+        .args(["-t", "edel", &format!("edel update: {line}")])
+        .status();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_automatic_restart_waits_for_its_window_and_never_comes_with_a_screen() {
+        assert_eq!(Automatic::from_value(None), Automatic::Off);
+        assert_eq!(Automatic::from_value(Some("later")), Automatic::Off);
+        assert_eq!(
+            Automatic::from_value(Some("install-and-restart")),
+            Automatic::InstallAndRestart
+        );
+        let window = Some((120, 240));
+        assert_eq!(restart_now(false, None, 900), Restart::Now);
+        assert_eq!(restart_now(false, window, 150), Restart::Now);
+        assert_eq!(restart_now(false, window, 900), Restart::Wait);
+        assert_eq!(restart_now(true, None, 150), Restart::Screen);
+    }
 
     #[test]
     fn an_add_on_that_did_not_start_is_recorded_with_a_date() {

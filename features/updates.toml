@@ -1,0 +1,12 @@
+# Updates by themselves (roadmap M7.5): busybox's crond runs
+# /etc/periodic/hourly/edel-update once an hour, which runs
+# `edel update --automatic`; crond runs only while updates.automatic asks
+# for something (`while_set`).
+format = 1
+summary = "Updates by themselves: checked, installed or installed and restarted once an hour"
+why = "A server or a fleet nobody watches still has to take its security updates, and a desktop person wants to hear one is ready. busybox's crond, already in the base, is the timer; it runs only while updates.automatic is set to something but off, so a machine that leaves updates to its person runs nothing for them."
+switchable = true
+while_set = "updates.automatic"
+
+[services]
+default = ["crond"]

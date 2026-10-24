@@ -170,6 +170,9 @@ pub const CONFIRMED: &str = run!("/confirmed");
 /// guard keeps the machine running rather than restarting it for ever;
 /// `edel status` shows it (M6.17).
 pub const NO_HEALTHY_SLOT: &str = run!("/no-healthy-slot");
+/// There while `edel boot mount-data` waits for the data's passphrase to
+/// be typed, so the guard's clock waits for the person (M8.2).
+pub const UNLOCK_WAITING: &str = run!("/unlock-waiting");
 /// Whether this boot has a screen, `yes` or `no`, decided once by the
 /// boot's `edel settings apply` (M8.17), so the guard, the login screen's
 /// live session and the console all follow the one answer the services did.
@@ -189,6 +192,8 @@ pub const UPDATE_LOCK: &str = run!("/update.lock");
 /// The account a stick logs in by itself (M3.6), which may also run
 /// `edel install` there (M6.6a); never a person's login name.
 pub const LIVE_USER: &str = "live";
+/// Its id, the same on every stick, as `edel::users::ADMIN_GID` is.
+pub const LIVE_UID: u32 = 990;
 /// greetd's config with the live session (M3.6).
 pub const GREETD_LIVE: &str = run!("/greetd.toml");
 /// Where a seed stick or partition is mounted while it is read (M2.2).
@@ -438,6 +443,12 @@ pub fn slot_settings() -> PathBuf {
 /// The link to the machine's settings file in `/etc/edel/`.
 pub fn etc_settings() -> PathBuf {
     Path::new(ETC_DIR).join(SETTINGS)
+}
+
+/// The settings file of the person whose home is `home`, as their own
+/// session finds it without `XDG_CONFIG_HOME`.
+pub fn person_settings_in(home: &Path) -> PathBuf {
+    home.join(CONFIG_IN_HOME).join("edel").join(SETTINGS)
 }
 
 /// A person's own directory for Edel OS: `$XDG_CONFIG_HOME/edel`, else
