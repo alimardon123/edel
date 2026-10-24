@@ -22,6 +22,7 @@ mod guard;
 mod hardware_table;
 mod image;
 mod installer;
+mod leave;
 mod live;
 mod loader;
 mod machine;
@@ -490,6 +491,9 @@ enum BootCommands {
     /// On a cloud, with no settings file yet, keep the instance's user data
     /// as the settings file and restart to start with it
     Cloud,
+    /// At shutdown, end what people's sessions left running and unmount
+    /// their FUSE file systems, so the data partition unmounts
+    Leave,
 }
 
 #[derive(Subcommand)]
@@ -880,6 +884,7 @@ fn run(command: Commands) -> Result<()> {
             BootCommands::Guard => guard::guard(),
             BootCommands::MarkGood => update::mark_good(),
             BootCommands::Live => live::live(),
+            BootCommands::Leave => leave::leave(),
             BootCommands::Speakers => speaker_boot::speakers(),
             BootCommands::BatteryCare => system_power::battery_care(),
             BootCommands::Cloud => cloud::boot(),

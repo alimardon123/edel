@@ -9017,6 +9017,39 @@ case_ai_agents() {
 	echo "PASS: the AI agents add-on brought nothing until addons.installed named it; then edel settings apply installed the stand-ins for Alpaca and Newelle from ci's Flathub (this host) with the diff then empty, the launcher started Newelle with flatpak run and its window mapped (ai-agents.png), flatpak ps listed it while it ran, a stand-in agent's doas edel settings set as ci showed in the diff and its reset undid it, and dropping the add-on left the diff empty, no file of it in /etc or /usr/lib/edel and none of its apps running (flatpak ps)"
 }
 
+case_poweroff() {
+	# A desktop powers off (2026-10-24), last in its part: with ci's session
+	# open and Test A running in Flatpak's sandbox, `poweroff` must end the
+	# VM within 60 s. Its portals and sandboxes outlive the login screen,
+	# in mount namespaces fuser cannot see, and OpenRC's killprocs hung on
+	# one waiting for the stopped document portal; edel-leave ends them
+	# first, so the console must show its line and /data must unmount
+	# without "in use".
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	opened=$(count 'edel-compositor: mapped window test-a')
+	python3 ci/qmp.py type test
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: mapped window test-a' "$opened" 60 || fail "Test A did not map a window to power off with"
+	guest 'power off'
+	i=0
+	while kill -0 "$qemu" 2>/dev/null; do
+		i=$((i + 1))
+		if [ "$i" -ge 60 ]; then
+			tr -d '\r' <"$log" | tail -n 40
+			fail "the desktop did not power off within 60 s of poweroff; the console's last lines are above"
+		fi
+		sleep 1
+	done
+	said=$(tr -d '\r' <"$log" | grep -a 'edel boot leave: ' | tail -n 1)
+	[ -n "$said" ] || fail "the machine powered off without edel-leave ending the sessions (no 'edel boot leave:' line)"
+	if tr -d '\r' <"$log" | grep -a -A1 'Unmounting /data' | grep -q 'in use'; then
+		fail "/data was still in use at shutdown after edel-leave ($said)"
+	fi
+	echo "PASS: with ci's session open and Test A running, poweroff ended the VM in $i s, edel-leave ended the sessions first ($said) and /data unmounted"
+}
+
 [ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).

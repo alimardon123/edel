@@ -1328,6 +1328,8 @@ commands() {
 		# logs in through it with a password only this image sets.
 		# The lock screen (M5.10): ci's password, which the lock checks.
 		'lock password') echo 'ci:edel-desktop-test' | chpasswd ;;
+		# A plain power off with ci's session still open (the poweroff case).
+		'power off') poweroff ;;
 		# The lock screen's widgets (M5.10c5): the time top left and a message
 		# at the bottom, read when the screen locks; reset after the check.
 		'lock parts') edel settings set 'lock_screen.widgets=[{ widget = "person", at = "centre", y = 0.21 }, { widget = "clock", at = "top_left" }, { widget = "message", at = "bottom", text = "If found, call 555 0100" }, { widget = "player", at = "bottom_left" }]' ;;
