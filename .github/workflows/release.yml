@@ -30,3 +30,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: sh ci/channel.sh publish "$TAG"
+
+  # The container image on the registry (M8.9), so developers can write
+  # FROM ghcr.io/OWNER/edel:VERSION: after the channel moved, and only while
+  # Alimardon has set the repository variable EDEL_REGISTRY to yes.
+  registry:
+    name: Push the container image to the registry
+    needs: channel
+    if: vars.EDEL_REGISTRY == 'yes'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Take the container image and the version from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          name=$(sed -n 's/^name = "\(.*\)"$/\1/p' images/container.toml)
+          gh release download "$TAG" --dir out/release --pattern release.toml --pattern "$name-*.tar.gz"
+      - name: Push it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/registry.sh push

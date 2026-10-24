@@ -246,6 +246,10 @@ jobs:
       - name: Test the container image
         run: sh ci/container-test.sh
 
+      - name: Tag the container image for the registry, as a dry run
+        # M8.9: ghcr.io/OWNER/edel:VERSION; the push is the Release workflow's.
+        run: sh ci/registry.sh dry-run
+
       - name: The container image builds the same twice
         run: sh ci/repro-check.sh
 

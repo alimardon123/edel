@@ -39,6 +39,8 @@ To stop publishing, delete the variable; nothing already published changes.
 
 **The docs site (M8.10a)** is a third, separate switch: add the repository variable `EDEL_SITE` with the value `yes`, and turn on GitHub Pages from the `gh-pages` branch (Settings, Pages, Deploy from a branch, `gh-pages`, `/ (root)`). From the next merge to `main` on, CI publishes the site to <https://alimardon123.github.io/edel/> next to the update channels, which it never touches. GitHub Pages is free for a public repository. To stop, delete the variable.
 
+**The container image on a registry (M8.9)** is a fourth switch: add the repository variable `EDEL_REGISTRY` with the value `yes`. From then on, each published `v*` release whose checklist is ticked also pushes the container image to `ghcr.io/alimardon123/edel:VERSION` (the Release workflow's job "Push the container image to the registry", `ci/registry.sh push`), so developers can write `FROM ghcr.io/alimardon123/edel:VERSION`. Every CI build already tags it the same way as a dry run. The package is private at first; make it public under the repository's Packages. The GitHub Container Registry is free for public images. To stop, delete the variable.
+
 ## Principles check
 
 - **Reliable:** only tested files are published, every manifest is signed and checked before upload, a throwaway signature can never be published, and old releases stay downloadable for every machine still on them.
