@@ -3,9 +3,9 @@
 # data partition is unmounted, ends what people's sessions left running and
 # unmounts their FUSE file systems (`edel boot leave`). A person's portals,
 # Flatpak sandboxes and rootless containers outlive greetd and sshd, in
-# mount namespaces fuser cannot see, so /data stayed "in use", and
-# killprocs, which stops every process before it signals them, hung on a
-# process waiting for the stopped document portal (2026-10-24). Starting
+# mount namespaces fuser cannot see, and killprocs, which stops every
+# process before it signals them, hung on a process waiting for the
+# stopped document portal (2026-10-24). Starting
 # does nothing and nothing stays running.
 
 description="End people's sessions at shutdown"

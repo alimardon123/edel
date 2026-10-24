@@ -5,13 +5,12 @@
 //! A session's processes outlive the service that started them: greetd and
 //! sshd stop, but a person's portals, Flatpak sandboxes and rootless
 //! containers go on, in mount namespaces of their own where `fuser` cannot
-//! see them, so the data partition stayed "in use" at unmount. Worse,
-//! OpenRC's killprocs stops every process at once before it signals them,
+//! see them. OpenRC's killprocs then stops every process at once before it signals them,
 //! the document portal's FUSE server too, and a process waiting on that
 //! file system then never returns: the desktop's poweroff hung at
 //! "Terminating remaining processes". Ending people's processes first,
 //! each with time to finish, then lazily unmounting FUSE, leaves killprocs
-//! and the unmount nothing to wait for.
+//! nothing to wait for.
 
 use std::path::Path;
 use std::thread::sleep;
