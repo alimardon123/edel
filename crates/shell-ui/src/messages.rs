@@ -343,6 +343,15 @@ pub fn dark_style_not_kept(why: impl Display) -> String {
 /// There is no home folder to keep the colour scheme in.
 pub const DARK_STYLE_NO_HOME: &str = "no home folder to keep the colour scheme in; run edel settings set appearance.mode=dark instead";
 
+/// The battery saver cannot be written down (M8.31).
+pub fn saver_not_kept(why: impl Display) -> String {
+    format!("could not keep the battery saver in your settings file: {why}; it stays as it was")
+}
+
+/// There is no home folder to keep the battery saver in (M8.31).
+pub const SAVER_NO_HOME: &str =
+    "no home folder to keep the battery saver in; run edel settings set power.saver=on instead";
+
 /// The clock's timer cannot start.
 pub fn clock_not_started(why: impl Display) -> String {
     format!("the clock's timer did not start: {why}; the clock may stop updating")
@@ -425,6 +434,12 @@ pub fn profile_not_set(why: impl Display) -> String {
 /// (M7.7b), as in a VM: nothing is asked, and the game runs as it is.
 pub fn no_profile_for_game() -> String {
     "a game is playing on the charger, but this computer has no power profiles, so the power profile is not changed".into()
+}
+
+/// The battery saver is on, but the kernel offers no power profiles (M8.31),
+/// as in a VM: nothing is asked, and the saver's other effects still hold.
+pub fn no_profile_for_saver() -> String {
+    "the battery saver is on, but this computer has no power profiles, so the power profile is not changed".into()
 }
 
 /// A screenshot an app asked for could not be made (M8.21 part 21f): the app
@@ -717,6 +732,9 @@ mod tests {
             quick_not_done("a", "x"),
             dark_style_not_kept("x"),
             DARK_STYLE_NO_HOME.to_string(),
+            saver_not_kept("x"),
+            SAVER_NO_HOME.to_string(),
+            no_profile_for_saver(),
             pins_not_kept("x"),
             PINS_NO_HOME.to_string(),
             lock_screen_not_kept("x"),

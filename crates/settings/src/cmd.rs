@@ -145,7 +145,7 @@ fn with_password(program: &str, args: &[&str], mut password: String) -> Outcome 
                 code: None,
                 out: String::new(),
                 err: trf(
-                    "could not run {program}: {why}; its rule for edel comes with the machine feature",
+                    "Settings could not ask for administrator rights, as {program} did not start: {why}. This release is damaged: run edel rollback, or send a report.",
                     &[("program", program), ("why", &why.to_string())],
                 ),
             };
@@ -192,7 +192,7 @@ fn run(program: &str, args: &[&str]) -> Outcome {
             code: None,
             out: String::new(),
             err: trf(
-                "could not run edel: {why}; the edel tool should be in /usr/bin",
+                "Settings could not run edel, which does this: {why}. This release is damaged: restart, and if it repeats, send a report.",
                 &[("why", &why.to_string())],
             ),
         },
@@ -258,7 +258,12 @@ mod tests {
     fn a_program_that_does_not_start_says_so() {
         let gone = run("edel-no-such-program", &["status"]);
         assert!(!gone.ok && gone.code.is_none() && gone.out.is_empty());
-        assert!(gone.err.starts_with("could not run edel: "), "{}", gone.err);
+        assert!(
+            gone.err
+                .starts_with("Settings could not run edel, which does this: "),
+            "{}",
+            gone.err
+        );
         let status = run("sh", &["-c", "echo hello; echo trouble >&2; exit 3"]);
         assert_eq!(
             (
@@ -283,7 +288,7 @@ mod tests {
             (false, Some(3), "got open")
         );
         let missing = with_password("edel-no-such-doas", &[], "open".into());
-        assert!(!missing.ok && missing.err.starts_with("could not run edel-no-such-doas"));
+        assert!(!missing.ok && missing.err.starts_with("Settings could not ask for administrator rights, as edel-no-such-doas did not start"));
     }
 
     #[test]

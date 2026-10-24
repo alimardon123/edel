@@ -356,7 +356,7 @@ impl Edel {
     /// stays (Lite already only fades, so reduced motion changes nothing
     /// there).
     pub fn restyle(&mut self) {
-        let tier = self.deadline.tier();
+        let tier = self.tier();
         let motion = self.settings.motion;
         let speed = self
             .settings

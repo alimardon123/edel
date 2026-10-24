@@ -279,7 +279,7 @@ impl Shell {
     /// What every screen shows now.
     fn lock_view(&self) -> Option<View> {
         let card = self.lock.as_ref()?;
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let (time, date) = lock::time_and_date(&now);
         let (field, dots) = match card.checking {
             Some(dots) => (Field::Checking, dots),

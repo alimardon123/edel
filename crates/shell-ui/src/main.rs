@@ -314,6 +314,16 @@ struct Shell {
     /// Whether a game plays on some screen, as the compositor says
     /// (M7.7b): on the charger the power profile is then Performance.
     game: bool,
+    /// Whether the battery saver is on, as `power_rules::saver` last decided
+    /// (M8.31): the compositor draws at most the Lite tier while it is, and
+    /// the panels draw without fillets.
+    saver: bool,
+    /// Whether `auto` turned the saver on, which keeps it on until the
+    /// charger (M8.31); an `on` in the file does not.
+    saver_latched: bool,
+    /// Whether the compositor has been told the saver's state once, so a
+    /// shell-ui started again tells it even when nothing changed (M8.31).
+    saver_told: bool,
     /// Whether the minute came due while a game played, so its work waits
     /// for the end (M7.7c).
     missed_minute: bool,
@@ -686,6 +696,9 @@ fn run() -> Result<()> {
         status_tx,
         playing: false,
         game: false,
+        saver: false,
+        saver_latched: false,
+        saver_told: false,
         missed_minute: false,
         battery_told: None,
         in_use: Vec::new(),
@@ -1096,11 +1109,16 @@ fn check_updates(handle: &LoopHandle<'static, Shell>) {
     let checked = handle.insert_source(timer, move |_, _, shell: &mut Shell| {
         // The check needs the network, so while a game plays it waits for
         // the next round (M7.7c).
+        // The battery saver waits for the network too (M8.31).
         if !shell.playing {
-            let answers = answers.clone();
-            std::thread::spawn(move || {
-                let _ = answers.send(run_update_check());
-            });
+            if shell.saver {
+                eprintln!("edel-shell-ui: the update check waits while the battery saver is on");
+            } else {
+                let answers = answers.clone();
+                std::thread::spawn(move || {
+                    let _ = answers.send(run_update_check());
+                });
+            }
         }
         TimeoutAction::ToDuration(Duration::from_secs(telling::CHECK_EVERY_SECS))
     });
@@ -1134,7 +1152,7 @@ fn on_path(name: &str) -> bool {
 /// collects the apps the launcher started that ended, then sleeps until
 /// the next one.
 fn tick(handle: &LoopHandle<'static, Shell>) {
-    let next = || widgets::clock::until_next_minute(&jiff::Zoned::now());
+    let next = || widgets::clock::until_next_minute(&edel::timezones::now());
     let result = handle.insert_source(
         Timer::from_duration(next()),
         move |_, _, shell: &mut Shell| {
@@ -1233,7 +1251,7 @@ impl Shell {
             style: panel.style,
             size: panel.size,
             floating: panel.floating,
-            fillets: self.fillets,
+            fillets: self.fillets_drawn(),
             shown,
             editing: self.editor.is_some(),
             lifted,
@@ -1454,6 +1472,12 @@ impl Shell {
         for i in 0..self.panels.len() {
             self.draw(i);
         }
+    }
+
+    /// Whether the fillets are drawn now: at start they are (`fillets`), but
+    /// not while the battery saver is on, as Lite keeps surfaces flat (M8.31).
+    fn fillets_drawn(&self) -> bool {
+        self.fillets && !self.saver
     }
 
     /// The panels `panels.list` asks for now (M5.31b). When they keep
@@ -1887,7 +1911,7 @@ impl Shell {
             .first()
             .map_or((Edge::Bottom, 1), |p| (p.edge, p.scale));
         let size = launcher::size(&self.tokens);
-        let room = paint::shadow_room(&self.tokens, !fillets());
+        let room = paint::shadow_room(&self.tokens, !self.fillets_drawn());
         let Some(popup) = Popup::new(self, LAUNCHER, size, size, scale, room) else {
             return;
         };
@@ -2087,7 +2111,7 @@ impl Shell {
         };
         let (edge, scale, panel_width) = (panel.edge, panel.scale, panel.width);
         let size = styles::size(&self.tokens);
-        let room = paint::shadow_room(&self.tokens, !fillets());
+        let room = paint::shadow_room(&self.tokens, !self.fillets_drawn());
         let Some(popup) = Popup::new(self, STYLES, size, size, scale, room) else {
             return;
         };
@@ -2242,7 +2266,7 @@ impl Shell {
             None => {
                 let scale = self.panels.first().map_or(1, |p| p.scale);
                 let most = switcher::size(switcher::MOST, &self.tokens);
-                let room = paint::shadow_room(&self.tokens, !fillets());
+                let room = paint::shadow_room(&self.tokens, !self.fillets_drawn());
                 let Some(flip) = Popup::new(self, SWITCHER, size, most, scale, room) else {
                     return;
                 };

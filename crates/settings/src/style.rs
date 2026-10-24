@@ -293,6 +293,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-action.edel-danger {{ color: {error}; font-weight: 550; }}
 .edel-action.edel-danger:hover {{ background-color: alpha({error}, 0.12); }}
 .edel-prompt-title {{ font-size: {big}px; font-weight: 650; }}
+.edel-code {{ font-size: {hero}px; font-weight: 650; letter-spacing: 6px; font-feature-settings: "tnum"; margin: 10px 0 6px; }}
 .edel-prompt-detail {{ color: {secondary}; }}
 .edel-output, .edel-output.edel-error {{ font-size: {tiny}px; margin-top: 0; }}
 .edel-choice {{ background: none; box-shadow: none; padding: 0; }}

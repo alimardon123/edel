@@ -210,7 +210,7 @@ pub fn change_words(change: Change, now: i64) -> String {
     let Ok(stamp) = jiff::Timestamp::from_second(change.at) else {
         return String::new();
     };
-    let local = stamp.to_zoned(jiff::tz::TimeZone::system());
+    let local = stamp.to_zoned(crate::timezones::system());
     let time = local.strftime("%H:%M").to_string();
     let soon = change.at - now < DAY;
     match (change.to, soon) {

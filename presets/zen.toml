@@ -21,15 +21,6 @@ count = 4
 [launcher]
 style = "menu"
 
-# The tiles of quick settings, which the status area's click opens
-# (M5.9a), in two columns in this order: wifi, bluetooth, airplane
-# (every radio off), do_not_disturb (notifications.do_not_disturb,
-# M5.9b), location (location.enabled, M6.14c, where the location feature is) and dark_style (appearance.mode). A tile whose feature or
-# hardware this machine lacks is left out. Left out, the table shows
-# these six.
-[quick]
-tiles = ["wifi", "bluetooth", "airplane", "do_not_disturb", "location", "dark_style"]
-
 # A slim bar, as the size key's small height (M5.31c), with nothing in
 # its centre.
 [[panels]]

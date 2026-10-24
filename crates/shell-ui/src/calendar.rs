@@ -103,7 +103,7 @@ pub fn grid(month: Month, today: Option<Ymd>) -> [[Day; 7]; WEEKS] {
 
 /// Today, by the machine's clock and zone.
 pub fn today() -> Ymd {
-    let now = jiff::Zoned::now();
+    let now = edel::timezones::now();
     (now.year(), now.month(), now.day())
 }
 

@@ -54,16 +54,7 @@ pub fn ask(
         .first()
         .map(|p| p.name.clone())
         .unwrap_or_default();
-    let window = gtk::Window::builder()
-        .title(tr(what.title))
-        .modal(true)
-        .resizable(false)
-        .default_width(380)
-        .css_classes(["edel"])
-        .build();
-    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
-        window.set_transient_for(Some(&parent));
-    }
+    let window = widgets::modal(near, tr(what.title), 380, |b| b.css_classes(["edel"]));
     let prompt = gtk::Label::builder()
         .label(tr(what.prompt))
         .xalign(0.0)
@@ -84,20 +75,8 @@ pub fn ask(
         .build();
     let cancel = widgets::action(tr("Cancel"), false);
     let run = widgets::action(tr(what.button), true);
-    let buttons = gtk::Box::builder()
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&run);
-    let body = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .margin_top(20)
-        .margin_bottom(20)
-        .margin_start(20)
-        .margin_end(20)
-        .build();
+    let buttons = widgets::dialog_buttons(&[&cancel, &run]);
+    let body = widgets::dialog_body(12);
     body.append(&prompt);
     body.append(&who);
     body.append(&entry);

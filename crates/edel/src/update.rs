@@ -245,7 +245,7 @@ impl Esp {
             .arg(&dir))
         .with_context(|| {
             trf(
-                "cannot mount the EFI system partition {device}",
+                "could not open the start-up partition {device}, which says which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes",
                 &[("device", &dev.display().to_string())],
             )
         })?;
@@ -272,7 +272,7 @@ impl Esp {
     fn load(&self) -> Result<Env> {
         Env::parse(
             &fs::read_to_string(self.env_path())
-                .context(tr("could not read the GRUB environment"))?,
+                .context(tr("could not read which version starts next from the start-up partition; nothing was changed; if this repeats, run edel report and send the file it writes"))?,
         )
     }
 
@@ -282,7 +282,7 @@ impl Esp {
         let file = OpenOptions::new()
             .write(true)
             .open(self.env_path())
-            .context(tr("could not open the GRUB environment"))?;
+            .context(tr("could not open the start-up partition's record of which version starts next; nothing was changed; if this repeats, run edel report and send the file it writes"))?;
         file.write_all_at(env.render()?.as_bytes(), 0)?;
         file.sync_all()?;
         Ok(())
@@ -378,16 +378,28 @@ impl Lock {
 /// ordinary user needs to read (docs/MESSAGES.md).
 pub(crate) fn io_failure(err: std::io::Error, doing: &str) -> anyhow::Error {
     if err.kind() == std::io::ErrorKind::PermissionDenied {
-        anyhow::anyhow!(
-            "{}",
-            trf(
-                "{doing}: permission denied; this changes the system, so run it with doas: doas edel ...",
-                &[("doing", doing)]
-            )
-        )
+        anyhow::Error::new(edel::exit::Coded::new(
+            edel::exit::REFUSED,
+            refused(doing, &typed()),
+        ))
     } else {
         anyhow::Error::new(err).context(doing.to_string())
     }
+}
+
+/// The refusal of `command` for what failed (`doing`), naming the command
+/// to run instead (the messages audit's row 33).
+fn refused(doing: &str, command: &str) -> String {
+    trf(
+        "{doing}: permission denied; {command} changes the system, so it needs an administrator: doas {command}",
+        &[("doing", doing), ("command", command)],
+    )
+}
+
+/// The command the person ran, `edel update --check`, as they typed it.
+fn typed() -> String {
+    let words: Vec<String> = std::env::args().skip(1).collect();
+    format!("edel {}", words.join(" "))
 }
 
 /// Who holds a lock, from the lock file's `PID COMMAND`.
@@ -511,6 +523,16 @@ pub fn status() -> Result<()> {
     for line in edel::security::now().lines() {
         println!("{line}");
     }
+    // The versions installed need the start-up partition, which only root
+    // reads; a person sees the facts above and how to see the rest (the
+    // messages audit's row 39), and Settings' Updates page shows them.
+    if edel::users::current() != Some(0) {
+        eprintln!(
+            "warning: {}",
+            tr("the versions installed are shown to administrators only: doas edel status")
+        );
+        return Ok(());
+    }
     let disk = Disk::find()?;
     let env = Esp::mount(&disk)?.load()?;
     println!("running: {}", disk.running);
@@ -599,7 +621,12 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         let path = Path::new(location);
         (Box::new(File::open(path)?), None, size_of(path)?)
     } else {
-        let release = crate::release::open_checked(location, accept)?;
+        let release = crate::release::open_checked(location, accept).inspect_err(|err| {
+            // Up to date is a check that worked: the security status says so.
+            if let Some(up) = err.downcast_ref::<crate::release::UpToDate>() {
+                crate::release::record_check(&up.version);
+            }
+        })?;
         crate::release::record_check(&release.manifest.version);
         manifest = Some(release.manifest);
         (release.reader, Some(release.sha256), release.size)
@@ -681,7 +708,7 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     println!(
         "edel update: {}",
         trf(
-            "slot {slot} written and checked; restart to use it; if it fails to start, Edel OS goes back to slot {running} on its own",
+            "slot {slot} written and checked; restart to use it (edel restart); if it fails to start, Edel OS goes back to slot {running} on its own",
             &[
                 ("slot", &slot.to_string()),
                 ("running", &disk.running.to_string())
@@ -698,7 +725,16 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
 fn mark_restart_pending(slot: &str) {
     let path = Path::new(edel::places::RESTART_PENDING);
     if let Err(e) = fs::write(path, format!("{slot}\n")) {
-        eprintln!("warning: could not write {}: {e}", path.display());
+        eprintln!(
+            "warning: {}",
+            trf(
+                "could not write {path} ({why}), so the power menu does not mark Restart; the update still starts at the next restart",
+                &[
+                    ("path", &path.display().to_string()),
+                    ("why", &e.to_string())
+                ]
+            )
+        );
     }
 }
 
@@ -772,15 +808,22 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
     if let Some(failed) = confirm(&mut env, disk.running) {
-        let msg = format!(
-            "slot {failed} did not start, so slot {} is running instead; switching slot {failed} off",
-            disk.running
+        let msg = trf(
+            "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again",
+            &[
+                ("failed", &failed.to_string()),
+                ("running", &disk.running.to_string()),
+            ],
         );
         lines.push(format!("edel update: {msg}"));
         let _ = Command::new("logger").args(["-t", "edel", &msg]).status();
         if let Err(err) = record_fallback(failed, disk.running) {
             eprintln!(
-                "warning: the fallback happened but could not be recorded: {err:#}; Settings will not mention it"
+                "warning: {}",
+                trf(
+                    "the fallback happened but could not be recorded ({why}), so Settings will not mention it",
+                    &[("why", &format!("{err:#}"))]
+                )
             );
         }
     }
@@ -795,7 +838,11 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
         Ok(Some(line)) => lines.push(line),
         Ok(None) => {}
         Err(err) => lines.push(format!(
-            "warning: the boot loader was not updated: {err:#}; the slot is confirmed and the boot loader before it stays"
+            "warning: {}",
+            trf(
+                "the boot loader was not updated ({why}); the slot is confirmed and the boot loader before it stays",
+                &[("why", &format!("{err:#}"))]
+            )
         )),
     }
     Ok(lines)
@@ -846,7 +893,7 @@ fn write_record(text: impl Fn(&str) -> String) -> Result<()> {
 
 /// Makes the other slot start at the next boot.
 pub fn rollback() -> Result<()> {
-    let _lock = Lock::take("update", "edel update")?;
+    let _lock = Lock::take("update", "edel rollback")?;
     let disk = Disk::find()?;
     let esp = Esp::mount(&disk)?;
     let mut env = esp.load()?;
@@ -856,7 +903,7 @@ pub fn rollback() -> Result<()> {
     println!(
         "edel rollback: {}",
         trf(
-            "slot {slot} starts after the next restart; slot {running} stays installed",
+            "slot {slot} starts after the next restart (edel restart); slot {running} stays installed, so edel rollback again undoes this",
             &[
                 ("slot", &target.to_string()),
                 ("running", &disk.running.to_string())
@@ -1200,11 +1247,13 @@ mod tests {
     /// `Permission denied (os error 13)`.
     #[test]
     fn a_refused_write_says_to_run_it_with_doas() {
-        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
         assert_eq!(
-            io_failure(denied, "could not write /run/edel").to_string(),
-            "could not write /run/edel: permission denied; this changes the system, so run it with doas: doas edel ..."
+            refused("could not write /run/edel", "edel update --check"),
+            "could not write /run/edel: permission denied; edel update --check changes the system, so it needs an administrator: doas edel update --check"
         );
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        let text = io_failure(denied, "could not write /run/edel").to_string();
+        assert!(text.contains("needs an administrator: doas edel"), "{text}");
         let full = std::io::Error::from(std::io::ErrorKind::StorageFull);
         let text = format!("{:#}", io_failure(full, "could not write /run/edel"));
         assert!(text.starts_with("could not write /run/edel: "), "{text}");

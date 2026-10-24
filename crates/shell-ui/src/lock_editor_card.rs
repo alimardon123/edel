@@ -690,7 +690,7 @@ impl Shell {
     /// person, the field ready and empty, two unread notifications with no
     /// apps (so the count is a tile), and the battery the status area reads.
     fn lock_editor_look(&self, parts: &[Placed], warned: &RefCell<Vec<String>>) -> lock::View {
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let (time, date) = lock::time_and_date(&now);
         let mut view = lock::View::new(time, date, lock::user());
         // The clocks of the parts being edited show their own zones' time (M5.10c7f).
@@ -971,7 +971,7 @@ impl Shell {
     /// those words and kept.
     fn strip_preview(&mut self, le: &mut LockEditor, name: &str) -> Option<Picture> {
         let part = lock_editor::part_named(name)?;
-        let when = lock::When::of(&jiff::Zoned::now());
+        let when = lock::When::of(&edel::timezones::now());
         let charge = self.battery_view().map(|(percent, _)| percent);
         let words = lock_editor::preview_words(part, &when, charge);
         let key = format!("preview:{name}:{words}");

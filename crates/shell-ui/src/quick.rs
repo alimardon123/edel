@@ -34,6 +34,7 @@ use crate::a11y::Item;
 use crate::paint::{self, Face, Text, fill, lit, mix, outline};
 use crate::player::{self, PlayerView};
 use crate::popup::{self, Card, Rect, dim, focus_ring, icon_in, knob, raised, veil};
+use crate::power_rules;
 use crate::status::{Link, Status};
 
 /// The card's width on a screen of any size from Compact up, logical
@@ -77,19 +78,23 @@ pub enum Tile {
     /// Settings' Location page; shown only where the location feature is.
     Location,
     DarkStyle,
+    /// A plain toggle of `power.saver` in the person's file (M8.31), shown
+    /// only where a battery is; its right click opens Settings' Power page.
+    Saver,
 }
 
 /// The Settings page a Location tile's right click opens (M6.14c).
 pub const LOCATION_PAGE: &str = "location";
 
 /// Every tile, in the order `edel::presets::TILES` lists them.
-pub const ALL: [Tile; 6] = [
+pub const ALL: [Tile; 7] = [
     Tile::Wifi,
     Tile::Bluetooth,
     Tile::Airplane,
     Tile::DoNotDisturb,
     Tile::Location,
     Tile::DarkStyle,
+    Tile::Saver,
 ];
 
 impl Tile {
@@ -101,6 +106,7 @@ impl Tile {
             Tile::DoNotDisturb => "do_not_disturb",
             Tile::Location => "location",
             Tile::DarkStyle => "dark_style",
+            Tile::Saver => "battery_saver",
         }
     }
 
@@ -116,6 +122,7 @@ impl Tile {
             Tile::DoNotDisturb => tr("Do not disturb"),
             Tile::Location => tr("Location"),
             Tile::DarkStyle => tr("Dark style"),
+            Tile::Saver => tr("Battery saver"),
         }
     }
 
@@ -128,6 +135,7 @@ impl Tile {
             Tile::DoNotDisturb => tr("Do not disturb"),
             Tile::Location => tr("Location"),
             Tile::DarkStyle => tr("Dark"),
+            Tile::Saver => tr("Saver"),
         }
     }
 
@@ -146,6 +154,7 @@ impl Tile {
             Tile::DoNotDisturb => "do-not-disturb",
             Tile::Location => "location",
             Tile::DarkStyle => "moon",
+            Tile::Saver => "battery",
         }
     }
 
@@ -158,6 +167,7 @@ impl Tile {
             Tile::Airplane | Tile::DoNotDisturb => None,
             Tile::Location => Some(LOCATION_PAGE),
             Tile::DarkStyle => Some(DARK_PAGE),
+            Tile::Saver => Some(POWER_PAGE),
         }
     }
 }
@@ -385,6 +395,13 @@ pub fn tiles(
                 state: switch(switches.dark),
                 on: switches.dark,
             },
+            // Only where a battery is (M8.31).
+            Tile::Saver if status.battery.is_none() => continue,
+            Tile::Saver => TileView {
+                tile,
+                state: switch(switches.saver),
+                on: switches.saver,
+            },
         };
         shown.push(view);
     }
@@ -419,6 +436,9 @@ pub struct Switches {
     pub dnd: bool,
     pub location: bool,
     pub location_there: bool,
+    /// Whether the battery saver is on (M8.31); its tile shows only where
+    /// the status has a battery.
+    pub saver: bool,
 }
 
 /// What the open card keeps besides what the machine says: its width, the
@@ -435,6 +455,8 @@ pub struct State {
     /// installed (M6.14c).
     pub location: bool,
     pub location_there: bool,
+    /// Whether the battery saver is on (M8.31).
+    pub saver: bool,
     pub list: bool,
     pub focus: Option<Focus>,
     pub hover: Option<Focus>,
@@ -460,6 +482,7 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
                 dnd: state.dnd,
                 location: state.location,
                 location_there: state.location_there,
+                saver: state.saver,
             },
             &state.pending,
         ),
@@ -484,6 +507,27 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
 
 /// The key of the settings file Dark style writes (`edel::sun` owns it).
 pub const MODE: &str = edel::sun::MODE;
+
+/// What to write in the person's file to turn the battery saver `on` or
+/// off (M8.31): none when what applies without their file (the machine's
+/// `power.saver`, else `auto`, with the battery as it is now and `latched`
+/// when `auto` turned the saver on) already gives that, as writers never
+/// write a default (ADR-008); else `on` or `off`.
+pub fn saver_to_write(
+    machine: Option<&str>,
+    on: bool,
+    on_battery: Option<bool>,
+    percent: Option<u32>,
+    latched: bool,
+) -> Option<&'static str> {
+    let now = power_rules::saver(
+        &power_rules::Rules::read(machine, None),
+        on_battery,
+        percent,
+        latched,
+    );
+    (now != on).then_some(if on { "on" } else { "off" })
+}
 
 /// Whether the colour scheme is dark: the person's file over the machine's,
 /// `auto` and no key being the release's choice, light, or the sun's at the
@@ -1800,6 +1844,7 @@ mod tests {
                 ("airplane", "Off", false),
                 ("do_not_disturb", "Off", false),
                 ("dark_style", "Off", false),
+                ("battery_saver", "Off", false),
             ]
         );
         let dark = tiles(
@@ -1869,6 +1914,64 @@ mod tests {
         // A name twice or unknown shows nothing extra.
         let odd = names(&["dark_style", "dark_style", "night_light"]);
         assert_eq!(tiles(&odd, &laptop(), Switches::default(), &[]).len(), 1);
+    }
+
+    #[test]
+    fn the_saver_tile_shows_only_with_a_battery_and_says_what_is_on() {
+        let list = names(edel::presets::DEFAULT_TILES);
+        let mut desktop = laptop();
+        desktop.battery = None;
+        let without = tiles(&list, &desktop, Switches::default(), &[]);
+        assert!(without.iter().all(|t| t.tile != Tile::Saver));
+        let with = tiles(
+            &list,
+            &laptop(),
+            Switches {
+                saver: true,
+                ..Switches::default()
+            },
+            &[],
+        );
+        let saver = with.iter().find(|t| t.tile == Tile::Saver).unwrap();
+        assert_eq!((saver.state.as_str(), saver.on), ("On", true));
+        assert_eq!(Tile::from_name("battery_saver"), Some(Tile::Saver));
+    }
+
+    #[test]
+    fn saver_to_write_writes_only_what_differs_from_what_applies_without_the_file() {
+        // On battery at 50 percent auto is off: on is written, off is the absence.
+        assert_eq!(
+            saver_to_write(None, true, Some(true), Some(50), false),
+            Some("on")
+        );
+        assert_eq!(
+            saver_to_write(None, false, Some(true), Some(50), false),
+            None
+        );
+        // At 10 percent on battery auto is on: off is written, on is the absence.
+        assert_eq!(
+            saver_to_write(None, false, Some(true), Some(10), false),
+            Some("off")
+        );
+        assert_eq!(
+            saver_to_write(None, true, Some(true), Some(10), false),
+            None
+        );
+        // At 25 percent with auto's saver still on since 20, off is written.
+        assert_eq!(
+            saver_to_write(None, false, Some(true), Some(25), true),
+            Some("off")
+        );
+        // The machine says on, on the charger: off is written, on is the absence.
+        let machine = "[power]\nsaver = \"on\"\n";
+        assert_eq!(
+            saver_to_write(Some(machine), false, Some(false), Some(90), false),
+            Some("off")
+        );
+        assert_eq!(
+            saver_to_write(Some(machine), true, Some(false), Some(90), false),
+            None
+        );
     }
 
     #[test]
@@ -2015,7 +2118,8 @@ mod tests {
     }
 
     /// The Location tile lies after Do not disturb and moves Dark style along
-    /// (M6.14c); the test machine without the feature shows five tiles.
+    /// (M6.14c); the test machine without the feature shows six tiles, the
+    /// battery saver's last.
     #[test]
     fn location_lies_after_do_not_disturb_when_its_feature_is_there() {
         let list = names(edel::presets::DEFAULT_TILES);
@@ -2026,7 +2130,7 @@ mod tests {
             ..State::default()
         };
         let view = view(&state, &laptop(), &list, false);
-        assert_eq!(view.tiles.len(), 6);
+        assert_eq!(view.tiles.len(), 7);
         let l = layout(&view);
         let line = places(&view, &l);
         assert!(
@@ -2036,7 +2140,7 @@ mod tests {
             "{line}"
         );
         let plain = view_of(&laptop(), false, 1280);
-        assert_eq!(plain.tiles.len(), 5, "no feature, no tile");
+        assert_eq!(plain.tiles.len(), 6, "no feature, no tile");
     }
 
     #[test]
@@ -2052,7 +2156,9 @@ mod tests {
             "{line}"
         );
         assert!(
-            line.contains(", do_not_disturb 102+86+64x64, dark_style 186+86+64x64, track 18+"),
+            line.contains(
+                ", do_not_disturb 102+86+64x64, dark_style 186+86+64x64, battery_saver 270+86+64x64, track 18+"
+            ),
             "{line}"
         );
         assert!(

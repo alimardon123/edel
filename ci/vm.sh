@@ -99,3 +99,23 @@ stop_vm() {
 		rm -f "$serial"
 	fi
 }
+
+# partition_out DISK N FILE: partition N of the disk image DISK, copied
+# into the sparse file FILE (for debugfs); returns 1 when DISK has no
+# partition N. Copied in 4 MiB blocks: 512 bytes at a time, a data
+# partition's 6.6 GB took 50 s a copy, 4 MiB blocks take 4.
+partition_out() {
+	part_place=$(sfdisk -d "$1" 2>/dev/null | sed -n "s/^[^ ]*[^0-9]$2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
+	[ -n "$part_place" ] || return 1
+	dd if="$1" of="$3" bs=4M iflag=skip_bytes,count_bytes skip=$((${part_place% *} * 512)) \
+		count=$((${part_place#* } * 512)) conv=sparse status=none
+}
+
+# partition_in FILE DISK N: FILE written back over partition N of DISK, in
+# place and whole (no block skipped, as the partition's old bytes may not
+# be zero where FILE's are); returns 1 when DISK has no partition N.
+partition_in() {
+	part_place=$(sfdisk -d "$2" 2>/dev/null | sed -n "s/^[^ ]*[^0-9]$3 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
+	[ -n "$part_place" ] || return 1
+	dd if="$1" of="$2" bs=4M oflag=seek_bytes seek=$((${part_place% *} * 512)) conv=notrunc status=none
+}

@@ -55,6 +55,16 @@ pub fn refresh_interval(output: &Output) -> Duration {
 }
 
 impl Edel {
+    /// The tier drawing uses (M8.31): the deadline's own, unless the battery
+    /// saver holds it at Lite while it is on.
+    pub fn tier(&self) -> Tier {
+        if self.saver {
+            Tier::Lite
+        } else {
+            self.deadline.tier()
+        }
+    }
+
     /// Sets the starting tier from the renderer, the battery or
     /// `EDEL_EFFECTS`, and says which.
     pub fn start_effects(&mut self, renderer: &str) {
@@ -85,5 +95,25 @@ impl Edel {
             self.state_changed();
             self.restyle();
         }
+    }
+
+    /// shell-ui says whether the battery saver is on (M8.31): while it is,
+    /// drawing holds at Lite, and the deadline's own tier comes back when it
+    /// goes off.
+    pub fn saver_changed(&mut self, on: bool) {
+        if self.saver == on {
+            return;
+        }
+        self.saver = on;
+        if on {
+            eprintln!(
+                "edel-compositor: battery saver on: tier lite (own tier {})",
+                self.deadline.tier()
+            );
+        } else {
+            eprintln!("edel-compositor: battery saver off: tier {}", self.tier());
+        }
+        self.state_changed();
+        self.restyle();
     }
 }

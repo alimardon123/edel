@@ -352,6 +352,12 @@
 #               window maps in the session (flatpak-mpv.png); `edel settings
 #               diff` then says nothing, no polkitd runs, and the key taken
 #               out again leaves the app installed (M6.1)
+#   descriptors twenty windows opened and closed leave the compositor and
+#               shell-ui fewer than window_descriptors_left more open files (M8.11)
+#   another-base last: the power is pulled after a sync, every partition but the
+#               data partition is written again from the image, and the new
+#               system lists mpv for ci, maps it with the title ci's setting
+#               gives and has nothing to apply (M8.13a)
 #   web-app     `edel web-app add https://example.org` makes it an app of
 #               ci's: the launcher lists one more app, typing example.com
 #               shows the Install row first (web-app-row.png); the desktop
@@ -1021,7 +1027,7 @@ case_respawn() {
 	wait_for 'DESKTOP-TEST: startup_login_off' ||
 		fail "the service did not take startup.apps back after the login"
 	case "$(value greeter_said)" in
-	*"greeter: wrong user name or password|"*"greeter: session started for ci|"*"greeter: desktop ci-other|"*) ;;
+	*"greeter: wrong username or password|"*"greeter: session started for ci|"*"greeter: desktop ci-other|"*) ;;
 	*) fail "the greeter did not refuse the wrong password and then start ci's CI other session: $(value greeter_said)" ;;
 	esac
 	# The session the chip chose (M5.10c3b): CI other's own session left
@@ -3015,7 +3021,7 @@ case_updates() {
 	asked=$(count 'DESKTOP-TEST: channel_update ')
 	guest 'channel update'
 	wait_more 'DESKTOP-TEST: channel_update ' "$asked" 40 || fail "edel update --check did not finish in 30 s"
-	value channel_update | grep -q 'no release named; taking https://[^ ]*/preview/release.toml' ||
+	value channel_update | grep -q 'checking https://[^ ]*/preview/release.toml' ||
 		fail "edel update --check with no release does not take the preview channel's list: $(value channel_update)"
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'updates window'
@@ -3078,7 +3084,7 @@ case_updates() {
 	asked=$(count 'DESKTOP-TEST: channel_update ')
 	guest 'channel update'
 	wait_more 'DESKTOP-TEST: channel_update ' "$asked" 40 || fail "edel update --check did not finish in 30 s after the reset"
-	value channel_update | grep -q 'no release named; taking https://[^ ]*/release.toml' ||
+	value channel_update | grep -q 'checking https://[^ ]*/release.toml' ||
 		fail "edel update --check with no release names no channel's list after the reset: $(value channel_update)"
 	value channel_update | grep -q '/preview/' &&
 		fail "edel update --check still takes the preview channel after the reset: $(value channel_update)"
@@ -5754,6 +5760,30 @@ case_screen_off() {
 	guest 'screen off reset'
 	wait_for 'DESKTOP-TEST: ran screen off reset: 0' 20 || fail "the service did not reset power.screen_off_minutes"
 	echo "PASS: the screens went off after a minute without input (the CRTCs inactive, the state file's screens_off true), a key press turned them on again (a CRTC active), and the frames for 5 s after waking had p99 $p99 ms, within the budget of $limit ms"
+}
+
+case_saver() {
+	# The battery saver (M8.31): with power.saver at on, shell-ui decides the
+	# saver is on and tells the compositor, which holds drawing at the Lite
+	# tier (its log and the state file say so). The VM has no power profile,
+	# so shell-ui says so and asks for none. With the key back at its
+	# default, auto, and no battery in the VM, the saver goes off and the
+	# compositor draws at its own tier again.
+	guest 'saver on'
+	wait_for 'DESKTOP-TEST: ran saver on: 0' 20 || fail "the service did not set power.saver to on"
+	wait_for 'edel-shell-ui: battery saver on' || fail "shell-ui did not turn the battery saver on for power.saver=on"
+	wait_for 'edel-compositor: battery saver on: tier lite' || fail "the compositor did not hold drawing at the Lite tier for the battery saver"
+	wait_for 'edel-shell-ui: the battery saver is on, but this computer has no power profiles' || fail "shell-ui did not say the VM has no power profile for the battery saver"
+	state_now && grep -q '^saver = true' "$dir/state-now.toml" && grep -q '^tier = "lite"' "$dir/state-now.toml" ||
+		fail "the state file does not say saver = true and tier = \"lite\""
+	n=$(count 'edel-shell-ui: battery saver off')
+	m=$(count 'edel-compositor: battery saver off: tier')
+	guest 'saver default'
+	wait_for 'DESKTOP-TEST: ran saver default: 0' 20 || fail "the service did not reset power.saver"
+	wait_more 'edel-shell-ui: battery saver off' "$n" || fail "shell-ui did not turn the battery saver off after power.saver was reset"
+	wait_more 'edel-compositor: battery saver off: tier' "$m" || fail "the compositor did not give drawing its own tier back"
+	state_now && grep -q '^saver = false' "$dir/state-now.toml" || fail "the state file does not say saver = false"
+	echo "PASS: power.saver on turned the battery saver on in shell-ui and held the compositor at the Lite tier (the state file's saver = true, tier = \"lite\"), and shell-ui said the VM has no power profile for it; the default turned it off again (saver = false) and the compositor drew at its own tier"
 }
 
 case_clipboard() {
@@ -9050,13 +9080,154 @@ case_poweroff() {
 	echo "PASS: with ci's session open and Test A running, poweroff ended the VM in $i s, edel-leave ended the sessions first ($said) and /data unmounted"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
+
+case_descriptors() {
+	# Files held open (M8.11, Sway #6310's "too many open files"): ten
+	# windows open and close once to warm what the first ones make, then
+	# the compositor's and shell-ui's open files are counted, twenty more
+	# windows open and close, and they are counted again. A file kept per
+	# window would add twenty; the budget allows fewer.
+	limit=$(budget window_descriptors_left)
+	ten() {
+		windows=$(value windows)
+		runs=$(count 'DESKTOP-TEST: open_ten_tier ')
+		guest 'open ten'
+		wait_more 'DESKTOP-TEST: open_ten_tier ' "$runs" 90 || fail "no word from the test service on the ten windows"
+		i=0
+		while [ "$(value windows)" != "$windows" ]; do
+			i=$((i + 1))
+			[ "$i" -lt 100 ] || fail "the ten windows did not all close: $(value windows)"
+			sleep 0.2
+		done
+	}
+	held() {
+		asked=$(count 'DESKTOP-TEST: descriptors ')
+		guest 'descriptors'
+		wait_more 'DESKTOP-TEST: descriptors ' "$asked" || fail "the service did not count the open files"
+		value descriptors
+	}
+	ten
+	sleep 2
+	before=$(held)
+	ten
+	ten
+	sleep 2
+	after=$(held)
+	compositor=$((${after% *} - ${before% *}))
+	shell=$((${after#* } - ${before#* }))
+	echo "open files: the compositor ${before% *} then ${after% *}, shell-ui ${before#* } then ${after#* }, over twenty windows"
+	[ "$compositor" -lt "$limit" ] ||
+		fail "the compositor kept $compositor more files open after twenty windows closed (window_descriptors_left is $limit): a file kept per window"
+	[ "$shell" -lt "$limit" ] ||
+		fail "shell-ui kept $shell more files open after twenty windows closed (window_descriptors_left is $limit): a file kept per window"
+	echo "PASS: twenty windows opened and closed left the compositor $compositor and shell-ui $shell more open files, under $limit"
+}
+
+case_flash() {
+	# Windows that close at once (M8.21, the other projects' bugs review:
+	# Cinnamon #340, Sway #7303's crash on close): forty windows open and
+	# close one after another, each before the compositor draws a frame of
+	# it, every other one before its first configure. The compositor and
+	# shell-ui must run on as the same processes, every window that
+	# mapped must unmap, and the windows line must be as it was.
+	windows=$(value windows)
+	pids() {
+		asked=$(count 'DESKTOP-TEST: pids ')
+		guest 'pids'
+		wait_more 'DESKTOP-TEST: pids ' "$asked" || fail "the service did not say the desktop's processes"
+		value pids
+	}
+	before=$(pids)
+	mapped=$(count 'edel-compositor: mapped window flash at')
+	unmapped=$(count 'edel-compositor: unmapped window flash')
+	asked=$(count 'DESKTOP-TEST: flash ')
+	guest 'flash'
+	wait_more 'DESKTOP-TEST: flash ' "$asked" 60 || fail "no word from the test service on the forty windows"
+	[ "$(value flash)" = "flashed 40 exit 0" ] || fail "edel-testclient --flash 40 did not end well: $(value flash)"
+	sleep 2
+	after=$(pids)
+	[ "$after" = "$before" ] ||
+		fail "the desktop's processes changed while forty windows opened and closed at once: compositor and shell-ui $before before, $after after"
+	maps=$(($(count 'edel-compositor: mapped window flash at') - mapped))
+	unmaps=$(($(count 'edel-compositor: unmapped window flash') - unmapped))
+	[ "$maps" -ge 1 ] && [ "$maps" = "$unmaps" ] ||
+		fail "of the forty windows that closed at once, $maps mapped and $unmaps unmapped"
+	[ "$(value windows)" = "$windows" ] || fail "the windows line changed: \"$windows\" before, \"$(value windows)\" after"
+	echo "PASS: forty windows closed before a frame of theirs was drawn, every other one before its first configure; the compositor and shell-ui ran on as the same processes ($after), $maps mapped and $unmaps unmapped, and the windows line was as before"
+}
+
+case_another_base() {
+	# Your apps survive another base (M8.13a), last in its part, after
+	# flatpak: ci leaves a setting of mpv's in ~/.var/app/io.mpv.Mpv, the
+	# guest syncs, and the power is pulled (QEMU stopped), as a poweroff of
+	# this desktop image hung at OpenRC's "Terminating remaining
+	# processes" twice on 2026-10-24, which is its own finding, not this
+	# case's. The disk then gets a new system: every
+	# partition but the data partition is written again from the image,
+	# so the root, both slots and the boot's state are ones no system has
+	# started, and only the data partition is the first system's. The
+	# stand-in base is the same image's root, never started (the default
+	# taken, docs/ROADMAP.md); the seam is the data partition, whose
+	# layout, user ids and Flatpak installations edel::places owns. The
+	# new system must list mpv for ci, map mpv's window with the title the
+	# setting gives, and have nothing to apply in edel settings diff.
+	asked=$(count 'DESKTOP-TEST: another_base_left ')
+	guest 'another base leave'
+	wait_more 'DESKTOP-TEST: another_base_left ' "$asked" || fail "the service did not leave mpv's setting"
+	value another_base_left | grep -q 'title=edel-another-base' ||
+		fail "ci's mpv setting was not written: $(value another_base_left)"
+	stop_vm
+	image="$dir/edel-desktop-x86_64.img"
+	parts=$(sfdisk -d "$image" 2>/dev/null | sed -n 's/^\([^ ]*[0-9]\) : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2 \3/p' | sed "s|^$image||")
+	echo "$parts" | grep -q '^4 ' || fail "the image's partition table has no data partition: $parts"
+	echo "$parts" | while read -r n start size; do
+		[ "$n" != 4 ] || continue
+		sfdisk -d "$grown" 2>/dev/null | grep -q "^$grown$n : start= *$start, size= *$size," ||
+			{ echo "partition $n is not where the image has it"; exit 1; }
+		dd if="$image" of="$grown" bs=4M iflag=skip_bytes,count_bytes oflag=seek_bytes skip=$((start * 512)) \
+			seek=$((start * 512)) count=$((size * 512)) conv=notrunc status=none
+	done || fail "the new system could not be written over the first one's partitions"
+	rm -f "$QMP" "$commands"
+	keep_vm=1 run_vm out/desktop-another-base.log 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+		-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
+		-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \
+		-qmp unix:"$QMP",server=on,wait=off \
+		-serial unix:"$commands",server=on,wait=off \
+		-drive if=none,id=disk0,format=raw,file="$grown" \
+		-device virtio-blk-pci,drive=disk0,bootindex=0
+	if [ "$found" = 0 ] || grep -q 'DESKTOP-TEST: FAIL' "$log"; then
+		tail -n 100 "$log"
+		fail "the new system on the first one's data partition gave no results (out/desktop-another-base.log)"
+	fi
+	tr -d '\r' <"$log" | grep -qa 'edel update: slot A confirmed' || fail "the new system did not confirm its own slot A"
+	asked=$(count 'DESKTOP-TEST: another_base_apps ')
+	guest 'another base apps'
+	wait_more 'DESKTOP-TEST: another_base_apps ' "$asked" 60 || fail "the service did not list ci's apps"
+	case " $(value another_base_apps) " in
+	*' io.mpv.Mpv '*) ;;
+	*) fail "the new system does not list mpv for ci: $(value another_base_apps)" ;;
+	esac
+	asked=$(count 'edel-compositor: mapped window edel-another-base ')
+	guest 'flatpak run'
+	wait_more 'edel-compositor: mapped window edel-another-base ' "$asked" 120 ||
+		fail "mpv did not map with the title its setting gives within 120 s; the log is $(tr -d '\r' <"$log" | grep -a 'edel-compositor: mapped window' | tail -n 3 | tr '\n' '|')"
+	python3 ci/qmp.py screendump "$dir/another-base-mpv.png"
+	asked=$(count 'DESKTOP-TEST: flatpak_diff ')
+	guest 'flatpak diff'
+	wait_more 'DESKTOP-TEST: flatpak_diff ' "$asked" || fail "the service did not run edel settings diff"
+	[ -z "$(value flatpak_diff)" ] ||
+		fail "edel settings diff has changes on the new system: $(value flatpak_diff)"
+	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
+}
+
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
 for c in "$@"; do
 	case "$c" in
 	rollback) [ "$#" = 1 ] || { echo "rollback runs alone: it restarts the VM"; exit 1; } ;;
+	another-base) [ "$c" = "$(eval echo \"\${$#}\")" ] || { echo "another-base runs last: it stops the VM"; exit 1; } ;;
 	live) [ "$#" = 1 ] || { echo "live runs alone: it boots the released image"; exit 1; } ;;
 	fresh) [ "$#" = 1 ] || { echo "fresh runs alone: it boots the released image"; exit 1; } ;;
 	*)
@@ -9088,8 +9259,7 @@ if [ "$*" = live ]; then
 	# stick's data partition (partition 4), which /home and /var live on.
 	stick_logs() {
 		stop_vm
-		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" status=none
+		partition_out "$stick" 4 "$dir/data.img"
 		# The VM was stopped with /data mounted, so the copy's journal is
 		# not written back; debugfs cannot read it until e2fsck replays it.
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
@@ -9109,17 +9279,14 @@ if [ "$*" = live ]; then
 	# target_data: the installed disk's data partition (partition 4),
 	# copied to $dir/target-data.img for debugfs; false while there is none.
 	target_data() {
-		part=$(sfdisk -d "$target" 2>/dev/null | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		[ -n "$part" ] || return 1
-		dd if="$target" of="$dir/target-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		partition_out "$target" 4 "$dir/target-data.img" || return 1
 		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
 	}
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
 	stick_session() {
-		part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		dd if="$stick" of="$dir/data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		partition_out "$stick" 4 "$dir/data.img"
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
 		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
 	}
@@ -9138,7 +9305,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
-	started=$(tr -d '\r' <"$log" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	started=$(walk_boot_seconds "$log")
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
@@ -9290,8 +9457,7 @@ if [ "$*" = live ]; then
 	# which GTK apps showing app icons read (shell-ui reads the files). Partition 4
 	# is copied and checked as stick_logs does, so the running stick is
 	# left alone.
-	part=$(sfdisk -d "$stick" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-	dd if="$stick" of="$dir/apps-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+	partition_out "$stick" 4 "$dir/apps-data.img"
 	e2fsck -fy "$dir/apps-data.img" >/dev/null 2>&1 || true
 	icon_cache=$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/apps-data.img" 2>&1)
 	case $icon_cache in
@@ -9479,8 +9645,7 @@ if [ "$*" = fresh ]; then
 	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
 	# for debugfs, its journal replayed on the copy.
 	fresh_data() {
-		part=$(sfdisk -d "$fresh" | sed -n 's/^[^ ]*4 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p')
-		dd if="$fresh" of="$dir/fresh-data.img" bs=512 skip="${part% *}" count="${part#* }" conv=sparse status=none
+		partition_out "$fresh" 4 "$dir/fresh-data.img"
 		e2fsck -fy "$dir/fresh-data.img" >/dev/null 2>&1 || true
 	}
 	# fresh_wait WORDS SECONDS: waits for WORDS in live's session log there.
@@ -9563,21 +9728,23 @@ if [ "$*" = fresh ]; then
 	*"File not found"*) ;;
 	*) fail "first-passwords is still on the data partition: apply did not give cleo the password" ;;
 	esac
-	keep_vm=1 run_vm "$fresh_log.2" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+	# The restart into the greeter, kept with the lane's logs (out/*.log).
+	fresh_again=out/desktop-fresh-greeter.log
+	keep_vm=1 run_vm "$fresh_again" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-drive if=none,id=fresh,format=raw,file="$fresh" \
 		-device virtio-blk-pci,drive=fresh,bootindex=0
-	[ "$found" = 1 ] || { cat "$fresh_log.2"; fail "the disk the Welcome set up did not start again"; }
+	[ "$found" = 1 ] || { cat "$fresh_again"; fail "the disk the Welcome set up did not start again"; }
 	i=0
-	until tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
+	until tr -d '\r' <"$fresh_again" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
 		i=$((i + 1))
 		sleep 1
 	done
 	stop_vm
-	tr -d '\r' <"$fresh_log.2" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
+	tr -d '\r' <"$fresh_again" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$fresh" "$dir/fresh-data.img"
-	greeter=$(tr -d '\r' <"$fresh_log.2" | sed -n 's/.*Started in \([0-9.]*\) s.*/\1/p' | head -n 1)
+	greeter=$(walk_boot_seconds "$fresh_again")
 	walk first-setup "seconds=$greeter" "steps=$walk_steps" || fail "the first setup on a new computer is over its budget (walk first-setup, docs/REVIEW-experience.md)"
 	echo "PASS: the image on a computer's own disk with nobody on it opened the Welcome, which made cleo an administrator in America/New_York and restarted into the greeter (welcome-account.png, welcome-fresh-done.png)"
 	exit 0
@@ -9628,7 +9795,11 @@ fw_net=
 case " $* " in
 *' firewall '*) fw_net=",hostfwd=tcp:127.0.0.1:2290-:8080,hostfwd=tcp:127.0.0.1:2292-:22" ;;
 esac
-vm_net=$fw_net keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart -snapshot \
+# another-base (M8.13a) starts a second system on what the first wrote,
+# so its run writes to the copy itself.
+snapshot=-snapshot
+case " $* " in *' another-base '*) snapshot='' ;; esac
+vm_net=$fw_net keep_vm=1 run_vm "$log" 'DESKTOP-TEST: (done|FAIL)' "${DESKTOP_TEST_TIMEOUT:-300}" $restart $snapshot \
 	-m 2048 -smp 4 -vga none -device virtio-vga,max_outputs=2 \
 	-global ICH9-LPC.disable_s3=0 \
 	-device virtio-keyboard-pci -device virtio-tablet-pci -device virtio-mouse-pci \

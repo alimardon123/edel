@@ -377,6 +377,7 @@ This page has no key in the file.
 | `power.sleep_after_minutes` | Minutes without use on battery before the computer sleeps. 0 never sleeps on its own. | `15` | release |
 | `power.power_button` | What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing. | suspend | release |
 | `power.on_battery` | How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here. | balanced | release |
+| `power.saver` | Battery saver: auto turns it on at 20 percent or less on battery, on keeps it on, off never; it lightens effects and runs power-saver. | auto | release |
 | `power.game_mode` | When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out. | plugged-in | release |
 | `power.battery_care` | Stop charging at 80 percent where the laptop offers a limit, so the battery keeps more of its health over the years. | `false` | release |
 

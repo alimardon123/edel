@@ -39,6 +39,8 @@ jobs:
       images: ${{ steps.changes.outputs.images }}
       desktop: ${{ steps.changes.outputs.desktop }}
       lanes: ${{ steps.changes.outputs.lanes }}
+      reuse: ${{ steps.changes.outputs.reuse }}
+      number: ${{ steps.changes.outputs.number }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -49,6 +51,9 @@ jobs:
           EVENT: ${{ github.event_name }}
           DRAFT: ${{ github.event.pull_request.draft }}
           FULL_CI: ${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           BASE_REF: ${{ github.base_ref }}
           ACTION: ${{ github.event.action }}
           BEFORE: ${{ github.event.before }}
@@ -177,7 +182,8 @@ jobs:
   build:
     name: Build images
     needs: changes
-    if: needs.changes.outputs.images == 'yes'
+    # Not when a draft's lane run takes an earlier run's images (reuse).
+    if: needs.changes.outputs.images == 'yes' && needs.changes.outputs.reuse == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -245,6 +251,10 @@ jobs:
 
       - name: Test the container image
         run: sh ci/container-test.sh
+
+      - name: Tag the container image for the registry, as a dry run
+        # M8.9: ghcr.io/OWNER/edel:VERSION; the push is the Release workflow's.
+        run: sh ci/registry.sh dry-run
 
       - name: The container image builds the same twice
         run: sh ci/repro-check.sh
@@ -386,7 +396,14 @@ jobs:
   vm:
     name: VM tests ${{ matrix.lane }}
     needs: [changes, build]
+    # After this run's build, or, for a draft's lane run, on the images an
+    # earlier run of the pull request built (ci/changes.sh's reuse).
+    if: ${{ !cancelled() && needs.changes.outputs.images == 'yes' && (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.changes.outputs.reuse != '')) }}
     runs-on: ubuntu-latest
+    # actions: read takes the earlier run's archive.
+    permissions:
+      contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -395,18 +412,29 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Number this build
-        # As the build job numbered it: boot-test wants the version.
-        run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+        # As the build job numbered it: boot-test wants the version, which
+        # a reused build's run numbered.
+        run: echo "EDEL_VERSION=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).${{ needs.changes.outputs.number || github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Name this lane's archive
         id: archive
         run: echo "name=$(sh ci/vm-tests.sh archive ${{ matrix.lane }})" >> "$GITHUB_OUTPUT"
 
       - name: Take this lane's images
+        if: needs.changes.outputs.reuse == ''
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: edel-vm-images-${{ steps.archive.outputs.name }}
           path: out
+
+      - name: Take this lane's images from the run that built them
+        if: needs.changes.outputs.reuse != ''
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: edel-vm-images-${{ steps.archive.outputs.name }}
+          path: out
+          run-id: ${{ needs.changes.outputs.reuse }}
+          github-token: ${{ github.token }}
 
       - name: Unpack this lane's images
         run: sh ci/vm-tests.sh unpack ${{ steps.archive.outputs.name }}
@@ -449,6 +477,13 @@ jobs:
             echo "Nothing to build: ci/changes.sh found nothing the images could test (build $build, VM tests $vm)." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          if [ -n "${{ needs.changes.outputs.reuse }}" ]; then
+            # A draft's lane run (ci/changes.sh): the lanes it asked for, on
+            # the images run ${{ needs.changes.outputs.reuse }} built.
+            [ "$vm" = success ] || { echo "FAIL: VM tests $vm, on the images run ${{ needs.changes.outputs.reuse }} built"; exit 1; }
+            echo "The lanes ${{ needs.changes.outputs.lanes }} passed on the images run ${{ needs.changes.outputs.reuse }} built; a draft, so marking it ready runs everything." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           [ "$build" = success ] && [ "$vm" = success ] || { echo "FAIL: build $build, VM tests $vm"; exit 1; }
 
   # The desktop tests on runners of their own, beside the VM tests, in four
@@ -469,7 +504,7 @@ jobs:
           - part: A
             cases: >-
               background floating titlebar tiling shape depth text cursor console pointer dmabuf outputs compositor
-              panel xwayland layers animations shortcuts workspaces windows launcher quick notify osd player
+              panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick notify osd player
               fallback switcher presets own-presets buttons styles scroll sandbox everyday scale
           - part: B
             cases: >-
@@ -481,9 +516,9 @@ jobs:
             cases: >-
               one-screen scheme sun terminal accent contrast wallpaper glass desktop-widgets completion lock lock-edit lock-looks
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
-              default-apps app-permissions in-use location profiles flatpak suspend lid
+              default-apps app-permissions in-use location profiles flatpak suspend lid another-base
           - part: D
-            cases: one-screen release-pictures wakeups device-power screen-off memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents poweroff
+            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents poweroff
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -532,6 +567,7 @@ jobs:
           path: |
             out/desktop-test.log
             out/desktop-test-first.log
+            out/desktop-another-base.log
             out/desktop-test/*.png
             out/desktop-test/first/
             out/desktop-test/passed

@@ -97,6 +97,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `cr
 | `power.sleep_after_minutes` | `15` | release |
 | `power.power_button` | suspend | release |
 | `power.on_battery` | balanced | release |
+| `power.saver` | auto | release |
 | `power.game_mode` | plugged-in | release |
 | `power.battery_care` | `false` | release |
 | `services.*` | the image's | image |

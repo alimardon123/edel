@@ -444,15 +444,9 @@ fn capture(near: &gtk::Button, ui: Weak<Ui>, index: usize) {
     let Some(ui_now) = ui.upgrade() else { return };
     let action = ui_now.lines[index].action;
     let key = ui_now.lines[index].key;
-    let window = gtk::Window::builder()
-        .title(tr("Change shortcut"))
-        .modal(true)
-        .resizable(false)
-        .default_width(380)
-        .build();
-    if let Some(parent) = near.root().and_downcast::<gtk::Window>() {
-        window.set_transient_for(Some(&parent));
-    }
+    let window = widgets::modal(near.upcast_ref(), tr("Change shortcut"), 380, |b| {
+        b.css_classes(["edel"])
+    });
     let prompt = gtk::Label::builder()
         .label(trf(
             "Press the new keys for {action}",
@@ -480,20 +474,8 @@ fn capture(near: &gtk::Button, ui: Weak<Ui>, index: usize) {
     let cancel = widgets::action(tr("Cancel"), false);
     let use_anyway = widgets::action(tr("Use anyway"), true);
     use_anyway.set_visible(false);
-    let buttons = gtk::Box::builder()
-        .spacing(8)
-        .halign(gtk::Align::End)
-        .build();
-    buttons.append(&cancel);
-    buttons.append(&use_anyway);
-    let body = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(12)
-        .margin_top(20)
-        .margin_bottom(20)
-        .margin_start(20)
-        .margin_end(20)
-        .build();
+    let buttons = widgets::dialog_buttons(&[&cancel, &use_anyway]);
+    let body = widgets::dialog_body(12);
     body.append(&prompt);
     body.append(&preview);
     body.append(&hint);

@@ -181,7 +181,7 @@ impl Group {
         } else if sources.iter().any(|s| matches!(s, Source::Machine(_))) {
             tr("Set by this machine").to_string()
         } else {
-            trf("Automatic ({current})", &[("current", tr("the release"))])
+            rows::release_choice()
         }
     }
 
