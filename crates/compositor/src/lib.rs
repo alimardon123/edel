@@ -11,6 +11,7 @@ pub mod cursor;
 pub mod desks;
 pub mod effects;
 pub mod frame;
+pub mod frame_times;
 pub mod game;
 pub mod layout;
 pub mod messages;
