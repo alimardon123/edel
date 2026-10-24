@@ -1193,7 +1193,12 @@ fn wire(ui: &Rc<Ui>) {
         glib::spawn_future_local(async move {
             let asked = gio::spawn_blocking(|| panels::ask_editor(EDIT_LOCK_SCREEN))
                 .await
-                .unwrap_or_else(|_| Err(tr("the call to the desktop stopped").to_string()));
+                .unwrap_or_else(|_| {
+                    Err(
+                        tr("The desktop did not answer. Log out and in again, then try once more.")
+                            .to_string(),
+                    )
+                });
             let Some(ui) = weak.upgrade() else {
                 return;
             };

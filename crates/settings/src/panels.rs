@@ -168,7 +168,7 @@ impl Card {
             glib::spawn_future_local(async move {
                 let asked = gio::spawn_blocking(|| ask_editor(EDIT_PANELS))
                     .await
-                    .unwrap_or_else(|_| Err(tr("the call to the desktop stopped").to_string()));
+                    .unwrap_or_else(|_| Err(tr("The desktop did not answer. Log out and in again, then try once more.").to_string()));
                 match asked {
                     Ok(()) => {
                         eprintln!("edel-settings: asked the panels to be edited");

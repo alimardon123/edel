@@ -218,16 +218,16 @@ msgstr ""
 msgid "Checking"
 msgstr ""
 
-msgid "Wrong password, try again"
+msgid "Wrong password. Type it again."
 msgstr ""
 
-msgid "This system cannot check passwords"
+msgid "Passwords cannot be checked here. Log in with Ctrl+Alt+F2."
 msgstr ""
 
-msgid "Wrong user name or password"
+msgid "Wrong username or password. Type them again."
 msgstr ""
 
-msgid "Could not log in, try again"
+msgid "Could not start your session. Try again, or log in with Ctrl+Alt+F2."
 msgstr ""
 
 msgid "1 notification"
@@ -644,7 +644,7 @@ msgstr ""
 msgid "The last update did not start"
 msgstr ""
 
-msgid "Edel OS went back to the version before it, so everything works as it did and nothing was lost."
+msgid "Edel OS went back to the version before it, so everything works as it did and nothing was lost. The next update tries again; open Updates to send a report if it keeps happening."
 msgstr ""
 
 msgid "Edel OS {version} is ready"
