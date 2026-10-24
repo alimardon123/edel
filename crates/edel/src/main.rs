@@ -133,6 +133,11 @@ enum Commands {
         /// Install a slot image without a signed release.toml (for testing)
         #[arg(long, requires = "location")]
         unsigned: bool,
+        /// Do what updates.automatic says: nothing, check, install, or
+        /// install and restart inside updates.restart_window, as the
+        /// hourly timer does
+        #[arg(long, conflicts_with_all = ["check", "unsigned", "allow_downgrade"])]
+        automatic: bool,
     },
     /// Go back to the version in the other slot, the one before the last
     /// update; it starts at the next restart
@@ -898,12 +903,16 @@ fn run(command: Commands) -> Result<()> {
             channel,
             allow_http,
             unsigned,
+            automatic,
         } => {
             let accept = release::Accept {
                 allow_downgrade,
                 channel,
                 allow_http,
             };
+            if automatic {
+                return update::automatic(location, &accept);
+            }
             let location = match location {
                 Some(location) => location,
                 None => {

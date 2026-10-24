@@ -2792,6 +2792,18 @@ msgstr ""
 msgid "slot {slot} starts after the next restart; slot {running} stays installed"
 msgstr ""
 
+msgid "{version} is available; edel update installs it"
+msgstr ""
+
+msgid "{version} did not start here before, so it is not installed again; a newer release will be"
+msgstr ""
+
+msgid "restarting to start the update"
+msgstr ""
+
+msgid "the update starts at the next restart"
+msgstr ""
+
 msgid "a web app named {name} is already there ({id}); remove it first with edel web-app remove {name}"
 msgstr ""
 
@@ -2904,6 +2916,9 @@ msgid "Read RELEASE over plain http (for a local test server)"
 msgstr ""
 
 msgid "Install a slot image without a signed release.toml (for testing)"
+msgstr ""
+
+msgid "Do what updates.automatic says: nothing, check, install, or install and restart inside updates.restart_window, as the hourly timer does"
 msgstr ""
 
 msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"

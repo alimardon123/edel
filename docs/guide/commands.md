@@ -37,6 +37,7 @@ Install a newer Edel OS into the other slot from RELEASE, or from this machine's
 | `--channel CHANNEL` | Take a release list for this channel once, rather than the one this machine follows (updates.channel) |
 | `--allow-http` | Read RELEASE over plain http (for a local test server) |
 | `--unsigned` | Install a slot image without a signed release.toml (for testing) |
+| `--automatic` | Do what updates.automatic says: nothing, check, install, or install and restart inside updates.restart_window, as the hourly timer does |
 
 ## `edel rollback`
 
