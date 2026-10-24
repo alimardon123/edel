@@ -2825,8 +2825,8 @@ fn known_key(key: &str, path: &[&str]) -> Result<&'static Key> {
         bail!(
             "{}",
             trf(
-                "{key}: {name} is not a user name",
-                &[("key", key), ("name", &format!("{:?}", path[1]))]
+                "{key}: {why}",
+                &[("key", key), ("why", &not_a_username(path[1]))]
             )
         );
     }
@@ -3040,7 +3040,7 @@ fn clean(
         } else if at == ["users"] && !is_user_name(name) {
             problems.push(Problem {
                 key: shown,
-                message: tr("not a user name; use up to 32 lowercase letters, digits, - and _, starting with a letter or _").into(),
+                message: not_a_username(name),
             });
         } else if at == ["appearance", "colours"] && matches!(name.as_str(), "light" | "dark") {
             // A scheme's own table of colours, read as its own keys (M5.12b1).
@@ -3690,6 +3690,20 @@ fn is_resolution(text: &str) -> bool {
                 && !n.starts_with('0')
         })
     })
+}
+
+/// Why `name` is not a username, the one text for that mistake in the
+/// settings file, `edel install`, Settings and the first boot.
+pub fn not_a_username(name: &str) -> String {
+    let rule = tr("use up to 32 lowercase letters, digits, - and _, starting with a letter or _");
+    if name.is_empty() {
+        trf("choose a username: {rule}", &[("rule", rule)])
+    } else {
+        trf(
+            "{name} is not a username: {rule}",
+            &[("name", &format!("{name:?}")), ("rule", rule)],
+        )
+    }
 }
 
 /// A name busybox `adduser` accepts and every tool handles.
@@ -4546,7 +4560,9 @@ version = "1.2"
             error("updates.version", "\"1.2\""),
             "updates.version: not supported yet; this release does not act on it, so it cannot be set"
         );
-        assert!(error("users.Ali.admin", "true").contains("not a user name"));
+        assert!(
+            error("users.Ali.admin", "true").contains("\"Ali\" is not a username: use up to 32")
+        );
     }
 
     #[test]

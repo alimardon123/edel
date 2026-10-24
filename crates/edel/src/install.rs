@@ -175,30 +175,36 @@ impl fmt::Display for Plan {
             f,
             "{}",
             trf(
-                "  1: EFI system partition, {mib} MiB",
-                &[("mib", &ESP_MIB.to_string())]
+                "  1: start-up files, {size}",
+                &[("size", &size(ESP_MIB * MIB))]
             )
         )?;
         writeln!(
             f,
             "{}",
             trf(
-                "  2: slot A, {mib} MiB, a copy of the running system",
-                &[("mib", &self.slot_mib.to_string())]
+                "  2: Edel OS, {size}, a copy of this system",
+                &[("size", &size(self.slot_mib * MIB))]
             )
         )?;
         writeln!(
             f,
             "{}",
             trf(
-                "  3: slot B, {mib} MiB, empty until the first update",
-                &[("mib", &self.slot_mib.to_string())]
+                "  3: room for the next update, {size}, empty until then",
+                &[("size", &size(self.slot_mib * MIB))]
             )
         )?;
-        let data = if self.encrypted {
-            n_("  4: data, {mib} MiB, encrypted, starting from the settings file {file}")
-        } else {
-            n_("  4: data, {mib} MiB, starting from the settings file {file}")
+        // The answers' file is ours, so only a file the person named is
+        // shown.
+        let answers = self.system_file == crate::places::INSTALL_ANSWERS;
+        let data = match (self.encrypted, answers) {
+            (true, true) => {
+                n_("  4: your files and settings, {size}, encrypted, with your answers")
+            }
+            (false, true) => n_("  4: your files and settings, {size}, with your answers"),
+            (true, false) => n_("  4: your files and settings, {size}, encrypted, from {file}"),
+            (false, false) => n_("  4: your files and settings, {size}, from {file}"),
         };
         writeln!(
             f,
@@ -206,7 +212,7 @@ impl fmt::Display for Plan {
             trf(
                 data,
                 &[
-                    ("mib", &self.data_mib().to_string()),
+                    ("size", &size(self.data_mib() * MIB)),
                     ("file", &self.system_file)
                 ]
             )
@@ -337,13 +343,7 @@ impl Answers {
         let mut text = String::from("format = 1\n");
         if let Some(user) = &self.user {
             if !settings::is_user_name(user) {
-                bail!(
-                    "{}",
-                    trf(
-                        "{name:?} is not a username; use lowercase letters, digits, - and _, starting with a letter",
-                        &[("name", user)]
-                    )
-                );
+                bail!("{}", settings::not_a_username(user));
             }
             text.push_str(&format!("\n[users.{user}]\nadmin = true\n"));
             if let Some(key) = &self.ssh_key {
@@ -549,13 +549,15 @@ pub fn language_answer(value: &str) -> Result<String, String> {
 /// The login name answer: a login name, never root or the stick's own
 /// account (`places::LIVE_USER`).
 pub fn user_answer(value: &str) -> Result<String, String> {
-    if settings::is_user_name(value) && value != "root" && value != crate::places::LIVE_USER {
-        Ok(value.to_string())
-    } else {
+    if !settings::is_user_name(value) {
+        Err(settings::not_a_username(value))
+    } else if value == "root" || value == crate::places::LIVE_USER {
         Err(trf(
-            "lowercase letters, digits, - and _, starting with a letter, and not root or {live}",
-            &[("live", crate::places::LIVE_USER)],
+            "{name} is the system's own account; choose another username",
+            &[("name", &format!("{value:?}"))],
         ))
+    } else {
+        Ok(value.to_string())
     }
 }
 
@@ -799,15 +801,14 @@ mod tests {
         ));
         assert!(shown.contains("  sda1: no name (FAT, 105 MB)\n"));
         assert!(shown.contains("  sda3: Windows (NTFS, 420 GB)\n"));
-        assert!(shown.contains(", starting from the settings file"));
+        assert!(shown.contains(", from "), "{shown}");
         let mut encrypted = plan(Vec::new());
         encrypted.encrypted = true;
+        assert!(encrypted.to_string().contains(", encrypted, from "));
         assert!(
-            encrypted
-                .to_string()
-                .contains("MiB, encrypted, starting from")
+            shown.contains("  2: Edel OS, 4.3 GB, a copy of this system\n"),
+            "{shown}"
         );
-        assert!(shown.contains("  2: slot A, 4096 MiB, a copy of the running system\n"));
     }
 
     #[test]
@@ -1103,7 +1104,11 @@ mod tests {
         }
         assert_eq!(
             user_answer("root").unwrap_err(),
-            "lowercase letters, digits, - and _, starting with a letter, and not root or live"
+            "\"root\" is the system's own account; choose another username"
+        );
+        assert_eq!(
+            user_answer("Ali").unwrap_err(),
+            settings::not_a_username("Ali")
         );
         assert_eq!(hostname_answer("ali-laptop").as_deref(), Ok("ali-laptop"));
         assert!(hostname_answer("ali laptop").is_err());

@@ -160,6 +160,14 @@ fn could_not_read(path: &Path) -> String {
     )
 }
 
+/// `could not write PATH`, the start of a failure to write a file.
+fn could_not_write(path: &Path) -> String {
+    trf(
+        "could not write {path}",
+        &[("path", &path.display().to_string())],
+    )
+}
+
 /// The target disk as sysfs and blkid see it.
 fn describe(name: &str) -> Result<Disk> {
     let sys = Path::new("/sys/block").join(name);
@@ -198,7 +206,7 @@ fn describe(name: &str) -> Result<Disk> {
         // not the same as an empty one (a dry run needs no root).
         if line.trim().is_empty() && File::open(Path::new("/dev").join(&part)).is_err() {
             label = Some(tr("unknown").into());
-            fs = Some(tr("run as root to see").into());
+            fs = Some(tr("doas edel install --list shows it").into());
         }
         partitions.push(Partition {
             name: part,
@@ -397,7 +405,7 @@ pub(crate) fn hash(password: &Password) -> Result<String> {
         bail!(
             "{}",
             trf(
-                "{tool} could not hash the password; nothing was changed",
+                "the password could not be prepared for the new disk ({tool} failed), so nothing was changed; this stick may be damaged: write it again from the download",
                 &tool
             )
         );
@@ -520,7 +528,7 @@ pub fn install(
         bail!(
             "{}",
             tr(
-                "edel install asks its questions on a terminal; run it in one, or name the disk and give --settings FILE"
+                "edel install asks its questions on a terminal; run it in one, use Install Edel OS in Settings, or name the disk and give --settings FILE"
             )
         );
     }
@@ -535,8 +543,9 @@ pub fn install(
             let (answers, password) = ask_questions()?;
             let text = answers.settings_text()?;
             let file = PathBuf::from(edel::places::INSTALL_ANSWERS);
-            fs::create_dir_all(edel::places::RUN_DIR)?;
-            fs::write(&file, text)?;
+            fs::create_dir_all(edel::places::RUN_DIR)
+                .with_context(|| could_not_write(Path::new(&edel::places::RUN_DIR)))?;
+            fs::write(&file, text).with_context(|| could_not_write(Path::new(&file)))?;
             (
                 file,
                 password.map(|p| (answers.user.unwrap_or_default(), p)),
@@ -625,7 +634,7 @@ fn install_on(
         bail!(
             "{}",
             trf(
-                "/dev/{name} has a mounted file system; unmount it first",
+                "/dev/{name} is in use, as one of its parts is open (in Files, say); eject it there, or choose another disk; nothing was changed",
                 &[("name", name)]
             )
         );
@@ -710,7 +719,7 @@ fn install_on(
         bail!(
             "{}",
             trf(
-                "this system lacks {tools}, so nothing was changed; install them (apk add) and run edel install again",
+                "this system lacks {tools}, which installing needs, so nothing was changed; this stick is damaged or not an Edel OS stick: write it again from the download",
                 &[("tools", &missing.join(", "))]
             )
         );
@@ -751,6 +760,7 @@ fn install_on(
         }
     };
     let _lock = Lock::take("install", "edel install")?;
+    // Every failure once the disk is touched ends with what to do.
     let written = write(
         &plan,
         &slot,
@@ -758,7 +768,18 @@ fn install_on(
         system_file,
         password,
         passphrase.as_ref(),
-    );
+    )
+    .map_err(|err| {
+        let line = format!("{err:#}");
+        if line.contains("edel install again") {
+            err
+        } else {
+            anyhow::anyhow!(
+                "{line}; {}",
+                tr("the disk is only partly installed, so run edel install again")
+            )
+        }
+    });
     // Settings shows the failure on its page; the system log keeps it,
     // where `edel report` and a later look find it.
     if let Err(err) = &written {
@@ -798,8 +819,13 @@ struct Mounted(PathBuf);
 
 impl Mounted {
     fn new(device: &Path, dir: &Path, args: &[&str]) -> Result<Mounted> {
-        fs::create_dir_all(dir)?;
-        run(Command::new("mount").args(args).arg(device).arg(dir))?;
+        fs::create_dir_all(dir).with_context(|| could_not_write(Path::new(&dir)))?;
+        run(Command::new("mount").args(args).arg(device).arg(dir)).with_context(|| {
+            trf(
+                "could not open {device} to copy files onto it",
+                &[("device", &device.display().to_string())],
+            )
+        })?;
         Ok(Mounted(dir.to_path_buf()))
     }
 }
@@ -841,17 +867,23 @@ fn write(
         .arg(&disk)
         .stdin(std::process::Stdio::piped())
         .spawn()
-        .context(tr("could not start sfdisk"))?;
+        .context(trf(
+            "could not partition {disk}: the partitioning tool did not start; this stick may be damaged: write it again from the download",
+            &[("disk", &disk.display().to_string())],
+        ))?;
     sfdisk
         .stdin
         .take()
-        .context(tr("sfdisk has no input"))?
+        .context(trf(
+            "could not partition {disk}: the partitioning tool did not start; this stick may be damaged: write it again from the download",
+            &[("disk", &disk.display().to_string())],
+        ))?
         .write_all(layout.sfdisk_script().as_bytes())?;
     if !sfdisk.wait()?.success() {
         bail!(
             "{}",
             trf(
-                "sfdisk could not partition {disk}; the disk may be in use or write-protected, and it may be half written, so run edel install again once that is fixed",
+                "could not partition {disk}: it may be in use or locked against writing (some SD cards have a switch); it may be half written, so run edel install again once that is fixed",
                 &[("disk", &disk.display().to_string())]
             )
         );
@@ -890,7 +922,12 @@ fn write(
     drop(to);
     // Byte for byte as the running slot, read back from the disk (M1.12).
     let length = running_mib * MIB;
-    run(Command::new("blockdev").arg("--flushbufs").arg(part(2)))?;
+    run(Command::new("blockdev").arg("--flushbufs").arg(part(2))).with_context(|| {
+        trf(
+            "could not finish writing {part}",
+            &[("part", &part(2).display().to_string())],
+        )
+    })?;
     if update::hash_prefix(&part(2), length)? != update::hash_prefix(slot, length)? {
         bail!(
             "{}",
@@ -911,8 +948,14 @@ fn write(
         bail!(
             "{}",
             trf(
-                "e2fsck found errors in the copied slot ({status}), so the copy is damaged and the disk cannot start yet; run edel install again",
-                &[("status", &status.to_string())]
+                "the copy of Edel OS on {disk} is damaged and cannot start yet (the file system check stopped with code {code}); run edel install again, and if it fails again the disk may be failing",
+                &[
+                    ("disk", &disk.display().to_string()),
+                    (
+                        "code",
+                        &status.code().map_or("none".into(), |c| c.to_string())
+                    ),
+                ]
             )
         );
     }
@@ -921,7 +964,13 @@ fn write(
     println!("edel install: {}", tr("writing the boot loader"));
     run(Command::new("mkfs.vfat")
         .args(["-F", "32", "-n", ESP_LABEL])
-        .arg(part(1)))?;
+        .arg(part(1)))
+    .with_context(|| {
+        trf(
+            "could not format the start-up partition {part}",
+            &[("part", &part(1).display().to_string())],
+        )
+    })?;
     {
         let esp = Mounted::new(
             &part(1),
@@ -931,14 +980,17 @@ fn write(
         let (_, efi_name) = boot::efi_target(std::env::consts::ARCH)?;
         let boot_dir = esp.0.join("EFI/BOOT");
         let edel_dir = esp.0.join(GRUB_PREFIX.trim_start_matches('/'));
-        fs::create_dir_all(&boot_dir)?;
-        fs::create_dir_all(&edel_dir)?;
+        fs::create_dir_all(&boot_dir).with_context(|| could_not_write(Path::new(&boot_dir)))?;
+        fs::create_dir_all(&edel_dir).with_context(|| could_not_write(Path::new(&edel_dir)))?;
         let slot_dir = Path::new(SLOT_DIR);
-        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))?;
+        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))
+            .with_context(|| could_not_write(Path::new(&boot_dir.join(efi_name))))?;
         for file in ["grub.cfg", "loader.toml"] {
-            fs::copy(slot_dir.join(file), edel_dir.join(file))?;
+            fs::copy(slot_dir.join(file), edel_dir.join(file))
+                .with_context(|| could_not_write(Path::new(&edel_dir.join(file))))?;
         }
-        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())?;
+        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())
+            .with_context(|| could_not_write(Path::new(&edel_dir.join("grubenv"))))?;
     }
 
     println!("edel install: {}", tr("creating the data partition"));
@@ -972,7 +1024,13 @@ fn write(
     };
     run(Command::new("mkfs.ext4")
         .args(["-q", "-L", DATA_LABEL])
-        .arg(&data_device))?;
+        .arg(&data_device))
+    .with_context(|| {
+        trf(
+            "could not format the data partition {part}",
+            &[("part", &part(4).display().to_string())],
+        )
+    })?;
     {
         let data = Mounted::new(
             &data_device,
@@ -988,7 +1046,7 @@ fn write(
                 .unwrap_or(&machine),
         );
         fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
-        fs::copy(system_file, target)?;
+        fs::copy(system_file, &target).with_context(|| could_not_write(Path::new(&target)))?;
         // The mark that this disk was installed, so a USB disk holding it
         // is no stick: no live login, no install without a password
         // (M6.17).
@@ -1013,7 +1071,8 @@ fn write(
                 .write(true)
                 .create_new(true)
                 .mode(0o600)
-                .open(&first)?;
+                .open(&first)
+                .with_context(|| could_not_write(&first))?;
             file.write_all(format!("{user}:{hash}\n").as_bytes())?;
             file.sync_all()?;
         }
@@ -1026,11 +1085,16 @@ fn write(
         );
         copy_default_apps(&data.0)?;
     }
-    run(&mut Command::new("sync"))?;
+    run(&mut Command::new("sync")).with_context(|| {
+        trf(
+            "could not finish writing {part}",
+            &[("part", &disk.display().to_string())],
+        )
+    })?;
     println!(
         "edel install: {}",
         trf(
-            "done; restart from {disk} to use it",
+            "Edel OS is installed on {disk}; restart, and take the stick out when the screen goes dark",
             &[("disk", &disk.display().to_string())]
         )
     );
@@ -1053,15 +1117,15 @@ fn copy_default_apps(data: &Path) -> Result<()> {
             .strip_prefix("/")
             .unwrap_or(apps),
     );
-    fs::create_dir_all(&target)?;
+    fs::create_dir_all(&target).with_context(|| could_not_write(Path::new(&target)))?;
     let mut pack = Command::new("tar")
         .arg("-C")
         .arg(apps)
         .args(["-cf", "-", "."])
         .stdout(std::process::Stdio::piped())
         .spawn()
-        .context("could not start tar to copy the default apps")?;
-    let stream = pack.stdout.take().context("tar gave no output to copy")?;
+        .context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
+    let stream = pack.stdout.take().context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
     run(Command::new("tar")
         .arg("-C")
         .arg(&target)
@@ -1118,8 +1182,11 @@ impl Drop for HalfCopy {
             let _ = part.sync_all();
         }
         eprintln!(
-            "edel install: stopped; cleared the start of {} so it cannot be started",
-            self.partition.display()
+            "edel install: {}",
+            trf(
+                "stopped before the copy was checked, so {partition} was made unable to start on purpose; run edel install again",
+                &[("partition", &self.partition.display().to_string())]
+            )
         );
     }
 }
@@ -1195,7 +1262,8 @@ pub fn unattended() -> Result<()> {
         )
     );
     let target = PathBuf::from(edel::places::INSTALL_UNATTENDED);
-    fs::create_dir_all(edel::places::RUN_DIR)?;
+    fs::create_dir_all(edel::places::RUN_DIR)
+        .with_context(|| could_not_write(Path::new(&edel::places::RUN_DIR)))?;
     fs::write(&target, fleet::without_install(&text)?)?;
     // Nobody is there to type a passphrase at its starts.
     let data = Data {

@@ -431,12 +431,26 @@ impl Drop for Lock {
 }
 
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
-    let status = cmd
-        .stdin(Stdio::null())
-        .status()
-        .with_context(|| format!("could not start {:?}", cmd.get_program()))?;
+    let status = cmd.stdin(Stdio::null()).status().with_context(|| {
+        trf(
+            "could not start {program}",
+            &[("program", &cmd.get_program().to_string_lossy())],
+        )
+    })?;
     if !status.success() {
-        bail!("{:?} failed with {status}", cmd.get_program());
+        bail!(
+            "{}",
+            trf(
+                "{program} stopped with code {code}",
+                &[
+                    ("program", &cmd.get_program().to_string_lossy()),
+                    (
+                        "code",
+                        &status.code().map_or("none".into(), |c| c.to_string())
+                    ),
+                ]
+            )
+        );
     }
     Ok(())
 }
