@@ -518,7 +518,7 @@ jobs:
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid another-base
           - part: D
-            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents
+            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents game-session
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 

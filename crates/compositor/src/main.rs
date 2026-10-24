@@ -8,6 +8,11 @@
 //!                                      telemetry
 //!     edel-compositor -- PROGRAM ARG   run PROGRAM once the desktop is on
 //!                                      screen, until it exits (M4.7b)
+//!     edel-compositor --game -- PROGRAM ARG
+//!                                      a game session (M8.26): a person's
+//!                                      session without shell-ui, PROGRAM
+//!                                      until it exits, every window
+//!                                      fullscreen, game mode on
 
 mod animate;
 mod backdrop;
@@ -64,10 +69,15 @@ fn main() -> ExitCode {
         [] => (false, None),
         [arg] if arg == "--bench" => (true, None),
         [dashes, argv @ ..] if dashes == "--" && !argv.is_empty() => {
-            (false, Some(program::Program::new(argv.to_vec())))
+            (false, Some(program::Program::new(argv.to_vec(), false)))
+        }
+        [game, dashes, argv @ ..] if game == "--game" && dashes == "--" && !argv.is_empty() => {
+            (false, Some(program::Program::new(argv.to_vec(), true)))
         }
         _ => {
-            eprintln!("usage: edel-compositor [--bench | -- PROGRAM [ARG...]]");
+            eprintln!(
+                "usage: edel-compositor [--bench | -- PROGRAM [ARG...] | --game -- PROGRAM [ARG...]]"
+            );
             return ExitCode::from(2);
         }
     };
@@ -82,9 +92,10 @@ fn main() -> ExitCode {
             messages::NO_DEVELOPMENT_WINDOW
         );
     }
-    // A person's session on the screen, not the greeter's or one
-    // started inside another desktop, writes to the person's log (M5.28a).
-    let session = !inside && !bench && program.is_none();
+    // A person's session on the screen, a game session too, not the
+    // greeter's or one started inside another desktop, writes to the
+    // person's log (M5.28a).
+    let session = !inside && !bench && program.as_ref().is_none_or(|p| p.game);
     if session {
         session_log();
     }

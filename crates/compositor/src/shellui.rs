@@ -49,7 +49,8 @@ pub struct ShellUi {
 }
 
 /// Starts shell-ui the first time the desktop is on screen, unless the
-/// session runs one program instead (the greeter).
+/// session runs one program instead (the greeter, or a game session's
+/// game, M8.26).
 pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str) {
     if state.shell_ui.started || state.program.is_some() {
         return;

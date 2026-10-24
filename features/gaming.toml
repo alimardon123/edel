@@ -1,9 +1,10 @@
 # Game controllers (M7.6b): Steam's device rules and the uinput module, as
 # an add-on the gaming profile names, since controllers are a basic for
 # people who play. features/gaming/ holds the rule that gives group seat
-# what steam-devices marks for uaccess, and the file that loads uinput.
+# what steam-devices marks for uaccess, the file that loads uinput and the
+# game session the login screen offers (M8.26).
 format = 1
 summary = "Game controllers: Steam's device rules, for the people at the machine"
-why = "Controllers are a basic for people who play (M7.6b). steam-devices is Valve's list of the controllers and VR headsets Steam Input talks to directly, through their hidraw and USB devices, and of /dev/uinput, where Steam Input makes the pad games see. Its rules mark them for uaccess, which only logind acts on, and Edel OS has no logind, so 90-edel-gaming gives them to group seat, the people at the machine, as the sound and scanner rules do, with a controller's own joystick device too, never a keyboard's. modules-load.d/edel-gaming.conf loads uinput at boot, as nothing else asks for it. No service: nothing runs until a game opens a controller."
+why = "Controllers are a basic for people who play (M7.6b). steam-devices is Valve's list of the controllers and VR headsets Steam Input talks to directly, through their hidraw and USB devices, and of /dev/uinput, where Steam Input makes the pad games see. Its rules mark them for uaccess, which only logind acts on, and Edel OS has no logind, so 90-edel-gaming gives them to group seat, the people at the machine, as the sound and scanner rules do, with a controller's own joystick device too, never a keyboard's. modules-load.d/edel-gaming.conf loads uinput at boot, as nothing else asks for it. No service: nothing runs until a game opens a controller. wayland-sessions/edel-game.desktop is the game session (M8.26), Edel OS Game on the login screen: Steam's Big Picture alone in our compositor, fullscreen and in game mode, with no shell-ui and no second compositor inside ours, for people who start the machine to play; it comes and goes with the add-on."
 packages = ["steam-devices"]
 addon = true
