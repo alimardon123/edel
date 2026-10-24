@@ -8,8 +8,8 @@
 use crate::i18n::n_;
 use crate::settings::{
     GAME_MODE_DEFAULT, LID_CLOSE_DEFAULT, LOCK_AFTER_MINUTES_DEFAULT_TEXT, ON_BATTERY_DEFAULT,
-    PAGES, POWER_BUTTON_DEFAULT, SCREEN_OFF_MINUTES_DEFAULT_TEXT, SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
-    page_of,
+    PAGES, POWER_BUTTON_DEFAULT, SAVER_DEFAULT, SCREEN_OFF_MINUTES_DEFAULT_TEXT,
+    SLEEP_AFTER_MINUTES_DEFAULT_TEXT, page_of,
 };
 
 /// Who decides a key's value while the settings file does not set it.
@@ -934,6 +934,16 @@ pub const HELP: &[Help] = &[
         retired: None,
     },
     Help {
+        key: "power.saver",
+        help: n_(
+            "Battery saver: auto turns it on at 20 percent or less on battery, on keeps it on, off never; it lightens effects and runs power-saver.",
+        ),
+        default: SAVER_DEFAULT,
+        from: DecidedBy::Release,
+        belongs: Belongs::Person,
+        retired: None,
+    },
+    Help {
         key: "power.game_mode",
         help: n_(
             "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out.",
@@ -1375,6 +1385,16 @@ mod tests {
         assert_eq!(
             find("power.on_battery").map(|h| h.default),
             Some("balanced")
+        );
+    }
+
+    #[test]
+    fn the_saver_s_help_names_its_percent() {
+        // The words say the number the constant holds, so they cannot drift.
+        let help = find("power.saver").map(|h| h.help).unwrap_or("");
+        assert!(
+            help.contains(&format!("{} percent", crate::settings::SAVER_AT_PERCENT)),
+            "{help}"
         );
     }
 

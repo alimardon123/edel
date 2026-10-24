@@ -2165,6 +2165,7 @@ fn desktop_follows(key: &str) -> bool {
             "region.keyboard",
             "region.input_method",
             "location.enabled",
+            "power.saver",
         ]
         .contains(&key)
         || [
@@ -3948,6 +3949,10 @@ mod tests {
         // The clock's zone and servers are the machine's, which apply sets.
         assert!(!desktop_follows("region.timezone"));
         assert!(desktop_follows("location.enabled"));
+        // The battery saver is the person's, which the quick settings tile
+        // writes without a password; the battery's own setting is not.
+        assert!(desktop_follows("power.saver"));
+        assert!(!desktop_follows("power.on_battery"));
         assert!(!desktop_follows("location.place"));
         assert!(!desktop_follows("location.online"));
         assert!(!desktop_follows("region.time_servers"));

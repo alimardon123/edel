@@ -157,6 +157,9 @@ pub struct Edel {
     pub screens_off: bool,
     /// The effect tier and its frame-deadline monitor (`tiers.rs`).
     pub deadline: edel_compositor::effects::Deadline,
+    /// Whether shell-ui says the battery saver is on (M8.31): drawing stays
+    /// at the Lite tier while it is. Starts false.
+    pub saver: bool,
     /// Game mode (M7.7, `games.rs`).
     pub game: crate::games::Game,
     /// The timer for the sun's next change of scheme (M7.14, `sun.rs`).
@@ -384,6 +387,7 @@ impl Edel {
             screens_changed: false,
             screens_off: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
+            saver: false,
             game: Default::default(),
             sun: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
@@ -1010,10 +1014,9 @@ impl Edel {
                 Some(Value::Table(t))
             })
             .collect();
-        table.insert(
-            "tier".into(),
-            Value::String(self.deadline.tier().name().into()),
-        );
+        table.insert("tier".into(), Value::String(self.tier().name().into()));
+        // Whether the battery saver holds the tier at Lite (M8.31).
+        table.insert("saver".into(), Value::Boolean(self.saver));
         // Whether the lock screen is up (M5.10).
         table.insert("locked".into(), Value::Boolean(self.is_locked()));
         // How many surfaces keep the screen on (M5.23).

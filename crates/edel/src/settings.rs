@@ -625,6 +625,7 @@ pub const KEYS: &[Key] = &[
         ON_BATTERY,
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
     ),
+    now(SAVER, Kind::OneOf(&["auto", "on", "off"])),
     now(GAME_MODE, Kind::OneOf(&["plugged-in", "always", "off"])),
     now(BATTERY_CARE, Kind::Flag),
     now("services.*", Kind::Flag),
@@ -1506,6 +1507,9 @@ pub struct Power {
     pub power_button: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub on_battery: Option<String>,
+    /// The battery saver (M8.31): auto, on or off
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub saver: Option<String>,
     /// When a fullscreen game gets variable refresh (M7.7)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub game_mode: Option<String>,
@@ -2263,6 +2267,19 @@ pub const SLEEP_AFTER_MINUTES_DEFAULT_TEXT: &str = "15";
 /// How hard the machine works on battery when the file does not say (M7.8):
 /// balanced.
 pub const ON_BATTERY_DEFAULT: &str = "balanced";
+
+/// The key the battery saver is kept under (M8.31): `auto`, `on` or `off`;
+/// on, the shell draws Lite effects, the machine runs at the power-saver
+/// profile and the update check waits; its values are [`choices`]'.
+pub const SAVER: &str = "power.saver";
+
+/// When the file does not say (M8.31): on by itself on battery at
+/// [`SAVER_AT_PERCENT`] or less.
+pub const SAVER_DEFAULT: &str = "auto";
+
+/// The battery's charge, in percent, at or under which `auto` turns the
+/// saver on (M8.31); no key, as one more choice would only crowd the page.
+pub const SAVER_AT_PERCENT: u32 = 20;
 
 /// The key when game mode is on is kept under (M7.7): `plugged-in`,
 /// `always` or `off`; its values are [`choices`]'. In game mode a fullscreen

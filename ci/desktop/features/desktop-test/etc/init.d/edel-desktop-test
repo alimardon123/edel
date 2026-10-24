@@ -690,6 +690,9 @@ commands() {
 		# release's own.
 		'dnd on') edel settings set notifications.do_not_disturb=true ;;
 		'dnd default') edel settings reset notifications.do_not_disturb ;;
+		# The battery saver (M8.31) in the machine's file, and back to the release's auto.
+		'saver on') edel settings set power.saver=on ;;
+		'saver default') edel settings reset power.saver ;;
 		# Where banners appear (M5.9j), in the machine's file, and back.
 		'banners top-right' | 'banners top-left') edel settings set "notifications.position=${command#banners }" ;;
 		'banners default') edel settings reset notifications.position ;;

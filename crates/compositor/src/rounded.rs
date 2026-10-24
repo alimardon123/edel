@@ -310,10 +310,11 @@ pub fn ring_once(
 
 impl Edel {
     /// Compiles the rounded corners' programs, once the renderer exists,
-    /// except on the Lite tier, whose corners are square and which never
-    /// rises again. On failure the corners stay square and the log says why.
+    /// except on the Lite tier, whose corners are square and which the
+    /// deadline never raises again (the battery saver's Lite comes and goes,
+    /// M8.31). On failure the corners stay square and the log says why.
     pub fn start_rounded(&mut self, renderer: &mut GlesRenderer) {
-        if self.deadline.tier() == Tier::Lite {
+        if self.tier() == Tier::Lite {
             return;
         }
         match Rounded::compile(renderer) {
@@ -333,7 +334,7 @@ impl Edel {
             return 0;
         }
         corners::window_radius(
-            self.deadline.tier(),
+            self.tier(),
             self.is_maximized(window),
             self.is_fullscreen(window),
             self.desks.layout_of(window).rearranges(),

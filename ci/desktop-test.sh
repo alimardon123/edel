@@ -5756,6 +5756,30 @@ case_screen_off() {
 	echo "PASS: the screens went off after a minute without input (the CRTCs inactive, the state file's screens_off true), a key press turned them on again (a CRTC active), and the frames for 5 s after waking had p99 $p99 ms, within the budget of $limit ms"
 }
 
+case_saver() {
+	# The battery saver (M8.31): with power.saver at on, shell-ui decides the
+	# saver is on and tells the compositor, which holds drawing at the Lite
+	# tier (its log and the state file say so). The VM has no power profile,
+	# so shell-ui says so and asks for none. With the key back at its
+	# default, auto, and no battery in the VM, the saver goes off and the
+	# compositor draws at its own tier again.
+	guest 'saver on'
+	wait_for 'DESKTOP-TEST: ran saver on: 0' 20 || fail "the service did not set power.saver to on"
+	wait_for 'edel-shell-ui: battery saver on' || fail "shell-ui did not turn the battery saver on for power.saver=on"
+	wait_for 'edel-compositor: battery saver on: tier lite' || fail "the compositor did not hold drawing at the Lite tier for the battery saver"
+	wait_for 'edel-shell-ui: the battery saver is on, but this computer has no power profiles' || fail "shell-ui did not say the VM has no power profile for the battery saver"
+	state_now && grep -q '^saver = true' "$dir/state-now.toml" && grep -q '^tier = "lite"' "$dir/state-now.toml" ||
+		fail "the state file does not say saver = true and tier = \"lite\""
+	n=$(count 'edel-shell-ui: battery saver off')
+	m=$(count 'edel-compositor: battery saver off: tier')
+	guest 'saver default'
+	wait_for 'DESKTOP-TEST: ran saver default: 0' 20 || fail "the service did not reset power.saver"
+	wait_more 'edel-shell-ui: battery saver off' "$n" || fail "shell-ui did not turn the battery saver off after power.saver was reset"
+	wait_more 'edel-compositor: battery saver off: tier' "$m" || fail "the compositor did not give drawing its own tier back"
+	state_now && grep -q '^saver = false' "$dir/state-now.toml" || fail "the state file does not say saver = false"
+	echo "PASS: power.saver on turned the battery saver on in shell-ui and held the compositor at the Lite tier (the state file's saver = true, tier = \"lite\"), and shell-ui said the VM has no power profile for it; the default turned it off again (saver = false) and the compositor drew at its own tier"
+}
+
 case_clipboard() {
 	# Clipboard history (M7.13): the test client clip copies a text on the
 	# key 1 and another on 2, which shell-ui keeps in memory; Super+V opens
@@ -9017,7 +9041,7 @@ case_ai_agents() {
 	echo "PASS: the AI agents add-on brought nothing until addons.installed named it; then edel settings apply installed the stand-ins for Alpaca and Newelle from ci's Flathub (this host) with the diff then empty, the launcher started Newelle with flatpak run and its window mapped (ai-agents.png), flatpak ps listed it while it ran, a stand-in agent's doas edel settings set as ci showed in the diff and its reset undid it, and dropping the add-on left the diff empty, no file of it in /etc or /usr/lib/edel and none of its apps running (flatpak ps)"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

@@ -47,7 +47,7 @@ pub struct QuickCard {
     popup: Popup<quick::View>,
     keyboard: Option<wl_keyboard::WlKeyboard>,
     reader: a11y::Reader,
-    state: quick::State,
+    pub(crate) state: quick::State,
     /// Which slider a drag is moving.
     drag: Drag,
     /// The last percent sent to the sound system, and whether a command
@@ -172,6 +172,7 @@ impl Shell {
         // The charger may have changed the profile the machine should use (M7.8).
         self.follow_profile();
         self.tell_on_battery();
+        self.follow_saver();
         if let Some(card) = &mut self.quick {
             // What a person chose has been confirmed or refused by now: the
             // machine's word shows again, unless a drag is still going.
@@ -310,13 +311,14 @@ impl Shell {
             dnd: crate::notify::do_not_disturb(machine.as_deref(), person.as_deref()),
             location: crate::location::enabled(machine.as_deref(), person.as_deref()),
             location_there: crate::location::feature_there(&features),
+            saver: self.saver,
             ..quick::State::default()
         };
         let view = self.card_view(&state);
         let size = quick::layout(&view).size;
         // Room for the list of outputs to open without a bigger pool.
         let most = quick::most_size(size);
-        let room = paint::shadow_room(&self.tokens, !crate::fillets());
+        let room = paint::shadow_room(&self.tokens, !self.fillets_drawn());
         let Some(popup) = Popup::new(self, QUICK, size, most, scale, room) else {
             return;
         };
@@ -869,6 +871,7 @@ impl Shell {
             Tile::DarkStyle => return self.toggle_dark(on),
             Tile::DoNotDisturb => return self.set_dnd(on),
             Tile::Location => return self.set_location(on),
+            Tile::Saver => return self.toggle_saver(on),
             _ => {}
         }
         let status = &self.live.status;
@@ -901,7 +904,7 @@ impl Shell {
                     bluetooth,
                 }
             }
-            Tile::DarkStyle | Tile::DoNotDisturb | Tile::Location => return,
+            Tile::DarkStyle | Tile::DoNotDisturb | Tile::Location | Tile::Saver => return,
         };
         self.run_and_read(Some(cmd), true);
         self.draw_quick();
@@ -931,6 +934,42 @@ impl Shell {
                 ),
             },
             None => eprintln!("edel-shell-ui: {}", messages::DARK_STYLE_NO_HOME),
+        }
+        self.draw_quick();
+    }
+
+    /// The battery saver tile (M8.31): `power.saver` in the person's
+    /// settings file, written as the Dark style tile writes its key (the key
+    /// is taken out when what applies without it already gives what was
+    /// asked). The settings watch then runs `power_changed`, which decides
+    /// the saver again, so the compositor and the card follow the file.
+    fn toggle_saver(&mut self, on: bool) {
+        let (machine, _) = settings_texts();
+        let battery = self.live.status.battery.as_ref();
+        let value = quick::saver_to_write(
+            machine.as_deref(),
+            on,
+            self.live.status.on_battery,
+            battery.map(|b| b.percent),
+            self.saver_latched,
+        );
+        match places::person_settings().map(|p| places::found(&p)) {
+            Some(path) => match settings::write(&path, settings::SAVER, value) {
+                Ok(()) => {
+                    eprintln!(
+                        "edel-shell-ui: battery saver tile {}",
+                        if on { "on" } else { "off" }
+                    );
+                    if let Some(card) = &mut self.quick {
+                        card.state.saver = on;
+                    }
+                }
+                Err(e) => eprintln!(
+                    "edel-shell-ui: {}",
+                    messages::saver_not_kept(format!("{e:#}"))
+                ),
+            },
+            None => eprintln!("edel-shell-ui: {}", messages::SAVER_NO_HOME),
         }
         self.draw_quick();
     }

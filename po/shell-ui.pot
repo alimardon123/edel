@@ -569,10 +569,16 @@ msgstr ""
 msgid "Dark style"
 msgstr ""
 
+msgid "Battery saver"
+msgstr ""
+
 msgid "Airplane"
 msgstr ""
 
 msgid "Dark"
+msgstr ""
+
+msgid "Saver"
 msgstr ""
 
 msgid "On"
