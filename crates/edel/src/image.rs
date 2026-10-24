@@ -970,6 +970,7 @@ impl Build<'_> {
         self.gzip(&update)?;
         if self.compress {
             self.gzip(&disk)?;
+            self.qcow2(&disk)?;
         }
         println!("vm disk: {}", disk.display());
         println!("update image: {}", update.display());
@@ -1062,6 +1063,17 @@ impl Build<'_> {
     fn gzip(&self, file: &Path) -> Result<()> {
         self.runner
             .run(Command::new("pigz").args(["-k", "-f", "-n"]).arg(file))
+    }
+
+    /// Writes `<stem>.qcow2` next to the disk `disk`, compressed, the form
+    /// clouds and virtual machine hosts import (M7.4).
+    fn qcow2(&self, disk: &Path) -> Result<()> {
+        self.runner.run(
+            Command::new("qemu-img")
+                .args(["convert", "-q", "-c", "-f", "raw", "-O", "qcow2"])
+                .arg(disk)
+                .arg(disk.with_extension("qcow2")),
+        )
     }
 
     /// Makes the file system `image` of `root`'s files, labelled `label`:
