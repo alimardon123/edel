@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::i18n::tr;
+use crate::i18n::{tr, trf};
 use crate::languages;
 use crate::lock_screen;
 use crate::places;
@@ -140,8 +140,13 @@ pub fn answer(value: &str) -> Result<String, String> {
     let value = value.trim();
     if known_in(Path::new(places::ZONEINFO_DIR), value) {
         Ok(value.to_string())
+    } else if value.is_empty() {
+        Err(tr("choose a time zone, such as Europe/Berlin or Asia/Tashkent").to_string())
     } else {
-        Err(tr("a time zone such as Europe/Berlin or Asia/Tashkent").to_string())
+        Err(trf(
+            "{value} is not a time zone this computer knows; choose one such as Europe/Berlin or Asia/Tashkent",
+            &[("value", &format!("{value:?}"))],
+        ))
     }
 }
 

@@ -527,7 +527,7 @@ msgstr ""
 msgid "A screen that is off stays dark"
 msgstr ""
 
-msgid "no disk to install on"
+msgid "choose a disk to install on; plug one in if none is listed"
 msgstr ""
 
 msgid "Who logs in"
@@ -572,6 +572,9 @@ msgstr ""
 msgid "Disk"
 msgstr ""
 
+msgid "Encrypt your files"
+msgstr ""
+
 msgid "How windows and panels are laid out. Change it any time in Settings."
 msgstr ""
 
@@ -582,6 +585,9 @@ msgid "Review and install"
 msgstr ""
 
 msgid "Install on"
+msgstr ""
+
+msgid "Your files"
 msgstr ""
 
 msgid "Show the plan"
@@ -621,6 +627,18 @@ msgid "From the settings file"
 msgstr ""
 
 msgid "Not given yet"
+msgstr ""
+
+msgid "Encrypted with your password"
+msgstr ""
+
+msgid "Not encrypted"
+msgstr ""
+
+msgid "Only your password opens them. This computer asks for it at each start."
+msgstr ""
+
+msgid "Anyone who has this disk can read them."
 msgstr ""
 
 msgid "On {device}, answering {what}. Use it, and only the rest is asked."

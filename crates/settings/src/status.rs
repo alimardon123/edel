@@ -459,7 +459,7 @@ pub fn plain_failure(doing: Doing, message: &str, root: bool) -> String {
 /// `message` without the `edel update: ` that `edel` starts a failure's line
 /// with, which a person reading a sentence does not need
 /// (`docs/MESSAGES.md`).
-fn unprefixed(message: &str) -> &str {
+pub(crate) fn unprefixed(message: &str) -> &str {
     let message = message.trim();
     message
         .strip_prefix("edel ")

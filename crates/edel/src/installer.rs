@@ -56,10 +56,8 @@ pub enum Encrypt {
 }
 
 /// Whether the data is encrypted, and why not when the default would
-/// have: laptops and computers with a screen are, as they are the ones
-/// lost or left, when the install gives a password to encrypt with; a
-/// virtual machine or a computer without a screen starts unattended and
-/// stays plain unless `--encrypt`.
+/// have (`edel::install::encrypts_by_default`), which needs the password
+/// the install gives to encrypt with.
 fn encrypt_data(
     asked: Encrypt,
     form: &str,
@@ -69,7 +67,7 @@ fn encrypt_data(
     match asked {
         Encrypt::Off => (false, None),
         Encrypt::On => (true, None),
-        Encrypt::Default if form == "laptop" || (form == "pc" && screen) => {
+        Encrypt::Default if edel::install::encrypts_by_default(form, screen) => {
             if given {
                 (true, None)
             } else {

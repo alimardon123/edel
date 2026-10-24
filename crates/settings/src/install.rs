@@ -15,7 +15,10 @@
 //! word; Erase and install, pressed twice, stands for typing the disk's
 //! name, and only then runs `doas edel install DISK --settings FILE --yes
 //! --new-password-stdin`, the password on standard input, never on a
-//! command line or in the file (ADR-006, ADR-008).
+//! command line or in the file (ADR-006, ADR-008). Encrypt your files
+//! starts as `edel::install::encrypts_by_default` says for this computer,
+//! and adds `--encrypt` or `--no-encrypt` only when turned the other way
+//! (M8.2b).
 //!
 //! Return moves to the next question, and on the last one shows the plan
 //! and gives the keyboard to Erase and install, so the whole page works
@@ -111,10 +114,9 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
     } else {
         Ok(String::new())
     };
-    let disk = form
-        .disk
-        .clone()
-        .ok_or_else(|| tr("no disk to install on").to_string());
+    let disk = form.disk.clone().ok_or_else(|| {
+        tr("choose a disk to install on; plug one in if none is listed").to_string()
+    });
     let answers = [
         (
             Field::Language,
@@ -175,8 +177,15 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
 
 /// `edel install`'s arguments for the plan of `disk` with `file`, or for
 /// the install itself, given the password on standard input when
-/// `password` says one was asked.
-pub fn install_args(disk: &str, file: &Path, plan: bool, password: bool) -> Vec<String> {
+/// `password` says one was asked, and `--encrypt` or `--no-encrypt` when
+/// `encrypt` asks other than this computer's default (M8.2b).
+pub fn install_args(
+    disk: &str,
+    file: &Path,
+    plan: bool,
+    password: bool,
+    encrypt: Option<bool>,
+) -> Vec<String> {
     let mut args: Vec<String> = actions::INSTALL
         .args
         .iter()
@@ -188,11 +197,34 @@ pub fn install_args(disk: &str, file: &Path, plan: bool, password: bool) -> Vec<
         file.display().to_string(),
     ]);
     args.push(if plan { "--plan" } else { "--yes" }.into());
+    match encrypt {
+        Some(true) => args.push("--encrypt".into()),
+        Some(false) => args.push("--no-encrypt".into()),
+        None => {}
+    }
     // The plan reads no password; it says the data is encrypted with it.
     if password {
         args.push("--new-password-stdin".into());
     }
     args
+}
+
+/// What `edel install` said, for the page: its plan as it prints it, or a
+/// failure's last line as a sentence, without the command's name, under
+/// what it printed before it (`docs/MESSAGES.md`).
+pub fn said(run: &cmd::Outcome) -> String {
+    let text = run.shown();
+    if run.ok {
+        return text;
+    }
+    let text = text.trim_end();
+    let (before, last) = text.rsplit_once('\n').unwrap_or(("", text));
+    let last = crate::status::sentence(crate::status::unprefixed(last));
+    if before.trim().is_empty() {
+        last
+    } else {
+        format!("{last}\n\n{}", before.trim_end())
+    }
 }
 
 /// The part of `edel install --list`'s text about the disk `name`: its line
@@ -330,6 +362,10 @@ struct Ui {
     profile_line: gtk::Label,
     disks: Vec<DiskChoice>,
     disk: Option<Rc<widgets::Choice>>,
+    /// The Encrypt your files switch, on when this computer's default is
+    encrypt: gtk::Switch,
+    encrypt_default: bool,
+    encrypt_line: gtk::Label,
     /// The line under each row: its problem, else its own words
     lines: Vec<(Field, gtk::Label)>,
     /// The problems the last check found, by field
@@ -341,6 +377,7 @@ struct Ui {
     review_language: gtk::Label,
     review_keyboard: gtk::Label,
     review_zone: gtk::Label,
+    review_encrypt: gtk::Label,
     /// What `edel install --list` says of the chosen disk
     list: gtk::Label,
     /// The run of `edel install --list`, once it is read
@@ -648,6 +685,22 @@ pub fn page() -> gtk::Widget {
         Some(choice)
     };
     let list = widgets::output_row(&disk_group);
+    // The data is encrypted with the password, the default on laptops and
+    // computers with a screen (M8.2), as `edel install` decides it.
+    let encrypt_default =
+        install::encrypts_by_default(install::form_factor(Path::new("/sys")), true);
+    let encrypt = gtk::Switch::builder()
+        .valign(gtk::Align::Center)
+        .active(encrypt_default)
+        .build();
+    let row = widgets::row(
+        &disk_group,
+        tr("Encrypt your files"),
+        &encrypt.clone().upcast(),
+    );
+    row.reset.set_visible(false);
+    row.copy.set_visible(false);
+    let encrypt_line = row.subtitle;
 
     let more = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
@@ -695,6 +748,7 @@ pub fn page() -> gtk::Widget {
     let review_language = review_row(&review, 2, tr("Language"));
     let review_keyboard = review_row(&review, 3, tr("Keyboard"));
     let review_zone = review_row(&review, 4, tr("Time zone"));
+    let review_encrypt = review_row(&review, 5, tr("Your files"));
     install_group.append(&review);
     let plan = widgets::output_row(&install_group);
     // The buttons sit centred under the plan, then a line says what the
@@ -762,6 +816,9 @@ pub fn page() -> gtk::Widget {
         profile_line: profile_line_label,
         disks,
         disk,
+        encrypt,
+        encrypt_default,
+        encrypt_line,
         lines,
         problems: RefCell::new(Vec::new()),
         review_disk,
@@ -769,6 +826,7 @@ pub fn page() -> gtk::Widget {
         review_language,
         review_keyboard,
         review_zone,
+        review_encrypt,
         list,
         listed: RefCell::new(None),
         plan,
@@ -868,6 +926,8 @@ impl Ui {
             let stale = changed(self);
             entry.connect_changed(move |_| stale());
         }
+        let stale = changed(self);
+        self.encrypt.connect_active_notify(move |_| stale());
         let stale = changed(self);
         self.zone.connect_changed(stale);
         let stale = changed(self);
@@ -1044,7 +1104,8 @@ impl Ui {
             .map(|(_, words)| words.clone());
         match problem {
             Some(words) => {
-                line.set_label(&words);
+                // The terminal's words, as a sentence under a row.
+                line.set_label(&crate::status::sentence(&words));
                 line.add_css_class("edel-error");
                 line.remove_css_class("edel-warn");
             }
@@ -1086,6 +1147,30 @@ impl Ui {
         self.review_language.set_label(&self.language.chosen_text());
         self.review_keyboard.set_label(&self.keyboard.chosen_text());
         self.review_zone.set_label(&self.zone.chosen_text());
+        let encrypted = self.encrypted();
+        self.review_encrypt.set_label(if encrypted {
+            tr("Encrypted with your password")
+        } else {
+            tr("Not encrypted")
+        });
+        self.encrypt_line.set_label(if encrypted {
+            tr("Only your password opens them. This computer asks for it at each start.")
+        } else {
+            tr("Anyone who has this disk can read them.")
+        });
+    }
+
+    /// Whether the data will be encrypted: as the switch says, while the
+    /// install gives a password to encrypt with.
+    fn encrypted(&self) -> bool {
+        self.password_needed() && self.encrypt.is_active()
+    }
+
+    /// `--encrypt` or `--no-encrypt` when the switch says other than this
+    /// computer's default; without a password the install leaves it plain.
+    fn encrypt_asked(&self) -> Option<bool> {
+        let on = self.encrypt.is_active();
+        (self.password_needed() && on != self.encrypt_default).then_some(on)
     }
 
     /// The keyboard's line says what a second layout is for, as the
@@ -1214,13 +1299,15 @@ impl Ui {
         self.using.set(using);
         let skip = self.skipped();
         let password = self.password_needed();
-        let rows: [(&str, gtk::Widget); 9] = [
+        let rows: [(&str, gtk::Widget); 10] = [
             ("region.language", self.language.widget()),
             ("region.keyboard", self.keyboard.widget()),
             ("region.timezone", self.zone.widget()),
             ("user", self.user.clone().upcast()),
             ("password", self.password.clone().upcast()),
             ("password", self.again.clone().upcast()),
+            // The data is encrypted with the password, so only asked with it.
+            ("password", self.encrypt.clone().upcast()),
             ("network.hostname", self.hostname.clone().upcast()),
             ("layout.preset", self.preset_widget.clone()),
             ("system.profiles", self.profile_widget.clone()),
@@ -1367,7 +1454,7 @@ impl Ui {
         widgets::say(&self.plan, tr("Working..."), false);
         let ui = self.clone();
         glib::spawn_future_local(async move {
-            let args = install_args(&disk, &file, true, ui.password_needed());
+            let args = install_args(&disk, &file, true, ui.password_needed(), ui.encrypt_asked());
             let done = gio::spawn_blocking(move || {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 cmd::edel_as_root(&args, None)
@@ -1375,7 +1462,7 @@ impl Ui {
             .await;
             ui.show_plan.set_sensitive(true);
             let Ok(run) = done else { return };
-            widgets::say(&ui.plan, &run.shown(), !run.ok);
+            widgets::say(&ui.plan, &said(&run), !run.ok);
             eprintln!(
                 "edel-settings: install plan for {disk}, exit {:?}",
                 run.code
@@ -1446,8 +1533,9 @@ impl Ui {
         let file = answers_file();
         let ui = self.clone();
         let asked = self.password_needed();
+        let encrypt = self.encrypt_asked();
         glib::spawn_future_local(async move {
-            let args = install_args(&disk, &file, false, asked);
+            let args = install_args(&disk, &file, false, asked, encrypt);
             let done = gio::spawn_blocking(move || {
                 let args: Vec<&str> = args.iter().map(String::as_str).collect();
                 cmd::edel_as_root(&args, asked.then_some(password))
@@ -1481,7 +1569,7 @@ impl Ui {
                 ui.restart.set_visible(true);
                 ui.restart.grab_focus();
             } else {
-                widgets::say(&ui.plan, &run.shown(), true);
+                widgets::say(&ui.plan, &said(&run), true);
                 ui.show_plan.set_sensitive(true);
                 *ui.planned.borrow_mut() = None;
                 ui.failed();
@@ -1666,24 +1754,54 @@ mod tests {
     }
 
     #[test]
+    fn a_failed_install_reads_as_a_sentence_over_what_came_before() {
+        let run = |ok, err: &str| cmd::Outcome {
+            ok,
+            code: Some(if ok { 0 } else { 1 }),
+            out: "the plan".into(),
+            err: err.into(),
+        };
+        assert_eq!(said(&run(true, "")), "the plan");
+        assert_eq!(
+            said(&run(
+                false,
+                "edel install: could not format the data partition /dev/sda4; the disk is only partly installed, so run edel install again"
+            )),
+            "Could not format the data partition /dev/sda4; the disk is only partly installed, so run edel install again."
+        );
+        assert_eq!(
+            said(&run(false, "warning: x\nedel install: no room")),
+            "No room.\n\nwarning: x"
+        );
+    }
+
+    #[test]
     fn the_plan_and_the_install_are_the_commands_people_type() {
         let file = Path::new("/run/user/100/edel-install.toml");
         assert_eq!(
-            install_args("sda", file, true, false).join(" "),
+            install_args("sda", file, true, false, None).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --plan"
         );
         assert_eq!(
-            install_args("sda", file, true, true).join(" "),
+            install_args("sda", file, true, true, None).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --plan --new-password-stdin"
         );
         assert_eq!(
-            install_args("sda", file, false, true).join(" "),
+            install_args("sda", file, false, true, None).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --yes --new-password-stdin"
         );
         assert_eq!(
-            install_args("sda", file, false, false).join(" "),
+            install_args("sda", file, false, false, None).join(" "),
             "install /dev/sda --settings /run/user/100/edel-install.toml --yes",
             "a file of several people gives no password"
+        );
+        assert_eq!(
+            install_args("sda", file, true, true, Some(false)).join(" "),
+            "install /dev/sda --settings /run/user/100/edel-install.toml --plan --no-encrypt --new-password-stdin"
+        );
+        assert_eq!(
+            install_args("sda", file, false, true, Some(true)).join(" "),
+            "install /dev/sda --settings /run/user/100/edel-install.toml --yes --encrypt --new-password-stdin"
         );
     }
 }
