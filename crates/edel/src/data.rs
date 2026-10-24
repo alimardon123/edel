@@ -520,6 +520,28 @@ fn hardware_packs(probe: bool) {
     }
 }
 
+/// The keyboard of the machine's settings file, else of its first
+/// person's own file, for the encrypted data's prompt (M8.2b).
+fn follow_keyboard(device: &Path) {
+    let layout = |text: &str| {
+        edel::settings::read(text)
+            .ok()
+            .and_then(|read| read.file.region.keyboard)
+    };
+    let machine = fs::read_to_string(places::found(&places::machine_settings()))
+        .ok()
+        .and_then(|text| layout(&text));
+    let person = || {
+        let passwd = fs::read_to_string("/etc/passwd").ok()?;
+        let first = crate::machine::first_person(&passwd)?;
+        let file = places::person_settings_in(Path::new(&first.home));
+        layout(&fs::read_to_string(file).ok()?)
+    };
+    // No keyboard anywhere is the default, the kernel's US map.
+    let keyboard = machine.or_else(person).unwrap_or_else(|| "us".into());
+    crate::crypt::follow_keyboard(device, &keyboard);
+}
+
 /// Grows the data partition if the disk has room, mounts it at `/data` and
 /// grows its file system to fill it.
 pub fn mount_data() -> Result<()> {
@@ -543,6 +565,7 @@ pub fn mount_data() -> Result<()> {
     // An encrypted data partition (M8.2) is unlocked first; it grew above
     // while still closed, so the opened device is already its full size.
     let encrypted = crate::crypt::is_luks(&dev).unwrap_or(false);
+    let part_device = dev.clone();
     let dev = if encrypted {
         crate::crypt::unlock(&dev)?
     } else {
@@ -590,6 +613,9 @@ pub fn mount_data() -> Result<()> {
             eprintln!("edel-data: {step}: {err:#}");
             first_error.get_or_insert(err);
         }
+    }
+    if encrypted {
+        follow_keyboard(&part_device);
     }
     // After /etc, so the rules' groups are known (M8.17c).
     crate::addons::take_device_rules();

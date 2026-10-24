@@ -433,6 +433,12 @@ pub fn etc_settings() -> PathBuf {
     Path::new(ETC_DIR).join(SETTINGS)
 }
 
+/// The settings file of the person whose home is `home`, as their own
+/// session finds it without `XDG_CONFIG_HOME`.
+pub fn person_settings_in(home: &Path) -> PathBuf {
+    home.join(CONFIG_IN_HOME).join("edel").join(SETTINGS)
+}
+
 /// A person's own directory for Edel OS: `$XDG_CONFIG_HOME/edel`, else
 /// `~/.config/edel`; none without either variable.
 pub fn person_dir() -> Option<PathBuf> {

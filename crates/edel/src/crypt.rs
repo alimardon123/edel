@@ -242,6 +242,36 @@ fn load_keymap(map: &str) {
     }
 }
 
+/// Names the console map of `keyboard` in the header of the encrypted
+/// `device` when it names another, so the next start's prompt types in
+/// the layout the machine's file, or else its first person, now uses
+/// (M8.2b). Run by `edel boot mount-data` once `/data` and `/etc` are
+/// there; a failure is only said.
+pub fn follow_keyboard(device: &Path, keyboard: &str) {
+    let wanted = keymap_for(keyboard, |path| Path::new(path).exists());
+    let Ok(head) = head_of(device) else { return };
+    if keymap_in(&head) == wanted {
+        return;
+    }
+    let field = wanted
+        .as_deref()
+        .map_or(String::new(), |map| format!("{KEYMAP_PREFIX}{map}"));
+    let done = cryptsetup()
+        .args(["config", "--subsystem", &field])
+        .arg(device)
+        .status();
+    match done {
+        Ok(status) if status.success() => println!(
+            "edel-data: the passphrase prompt now types in the {} layout",
+            wanted.as_deref().unwrap_or("us")
+        ),
+        _ => eprintln!(
+            "warning: edel-data: could not name the {} keyboard map in the data's header; the prompt keeps its layout",
+            wanted.as_deref().unwrap_or("us")
+        ),
+    }
+}
+
 /// The consoles the kernel writes to (`/proc/consoles`' first field).
 fn consoles(text: &str) -> Vec<String> {
     let mut names: Vec<String> = text

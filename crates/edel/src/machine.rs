@@ -115,6 +115,15 @@ pub(crate) fn accounts(passwd: &str) -> Vec<Account> {
 
 /// A person's account, not a system one: root, or a uid from 1000 below
 /// `nobody`'s.
+/// The person with the lowest id, the one the install made: the data's
+/// passphrase follows their keyboard (M8.2b).
+pub(crate) fn first_person(passwd: &str) -> Option<Account> {
+    accounts(passwd)
+        .into_iter()
+        .filter(|a| a.uid != 0 && is_person(a))
+        .min_by_key(|a| a.uid)
+}
+
 pub(crate) fn is_person(account: &Account) -> bool {
     account.uid == 0 || (1000..65534).contains(&account.uid)
 }
@@ -2988,6 +2997,16 @@ mod tests {
             err.to_string(),
             "\"network.hostname\": write KEY=VALUE, such as network.hostname=lab-1"
         );
+    }
+
+    #[test]
+    fn the_first_person_is_the_lowest_id_above_root() {
+        let passwd = "root:x:0:0::/root:/bin/sh\nbo:x:1001:1001::/home/bo:/bin/sh\nali:x:1000:1000::/home/ali:/bin/sh\nnobody:x:65534:65534::/:/sbin/nologin\n";
+        assert_eq!(
+            first_person(passwd).map(|a| a.home).as_deref(),
+            Some("/home/ali")
+        );
+        assert!(first_person("root:x:0:0::/root:/bin/sh\n").is_none());
     }
 
     #[test]
