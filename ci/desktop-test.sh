@@ -1751,8 +1751,8 @@ case_firewall() {
 	# so, and Settings' System page shows them and logs the same words.
 	security_status
 	case "$status_now" in
-	*'firewall: on;'*'data: not encrypted;'*'updates: not checked yet;'*) ;;
-	*) fail "edel status should say the firewall is on, the data not encrypted and no update checked: $status_now" ;;
+	*'updates: not checked yet;'*'data: not encrypted;'*'firewall: on;'*) ;;
+	*) fail "edel status should say no update checked, the data not encrypted and the firewall on, in that order: $status_now" ;;
 	esac
 	opened=$(count 'edel-compositor: mapped window Settings')
 	guest 'security window'
