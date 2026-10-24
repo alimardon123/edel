@@ -32,7 +32,7 @@ pub const WIDGET: Widget = Widget {
 /// them while the notification centre is open, which the clock then lights
 /// as the status area lights while quick settings are open (M5.9b).
 fn shows(live: &Live) -> String {
-    let now = text(&Zoned::now());
+    let now = text(&edel::timezones::now());
     if live.centre {
         format!("{OPEN}{now}")
     } else {

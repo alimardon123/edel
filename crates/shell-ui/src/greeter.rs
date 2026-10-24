@@ -267,7 +267,7 @@ pub fn run(cmd: String) -> Result<()> {
 
 /// Draws the clock again on the minute.
 fn minute(handle: &LoopHandle<'static, Greeter>) {
-    let next = || crate::widgets::clock::until_next_minute(&jiff::Zoned::now());
+    let next = || crate::widgets::clock::until_next_minute(&edel::timezones::now());
     let _ = handle.insert_source(
         Timer::from_duration(next()),
         move |_, _, g: &mut Greeter| {
@@ -310,7 +310,7 @@ impl Greeter {
     }
 
     fn view(&self) -> View {
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let (time, date) = lock::time_and_date(&now);
         let (field, dots) = match self.busy {
             Some(dots) => (Field::Checking, dots),

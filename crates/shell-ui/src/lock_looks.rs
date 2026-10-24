@@ -444,7 +444,7 @@ pub fn look_picture(
     // count part is left out, as `lock_screen.notifications = "none"` leaves it.
     lock.parts
         .retain(|placed| placed.part != lock_screen::Part::Count);
-    let now = jiff::Zoned::now();
+    let now = edel::timezones::now();
     let mut view = view.clone();
     // Each clock shows the time in its own zone, as the lock does (M5.10c7f).
     view.zoned = lock::zoned_of_parts(&lock.parts, &now, &std::cell::RefCell::new(Vec::new()));
@@ -828,7 +828,7 @@ mod tests {
         let mut pictures = lock::Pictures::default();
         let mut backdrops = lock::Backdrops::default();
         let wallpaper = lock::wallpaper_of(None, None, true);
-        let now = jiff::Zoned::now();
+        let now = edel::timezones::now();
         let (time, date) = lock::time_and_date(&now);
         let mut lock_view = lock::View::new(time, date, "Ali".to_string());
         lock_view.when = Some(lock::When::of(&now));
