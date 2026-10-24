@@ -521,6 +521,9 @@ commands() {
 		'title colours') edel settings set 'appearance.colours.light.title_bar=#f0b8cc' 'appearance.colours.dark.title_bar=#4a2a6a' ;;
 		# The Flatpak permission every person has, so apps read gtk.css (M6.18).
 		'flatpak override') say "flatpak_override $(as_ci 'flatpak override --user --show' </dev/null 2>&1 | tr '\n' ' ')" ;;
+		# The person's global override taken away, as an account made before
+		# M6.18 or without /etc/skel has none; shell-ui's next pass writes it.
+		'flatpak override drop') as_ci 'flatpak override --user --reset' </dev/null >/dev/null 2>&1 ;;
 		'icon theme') say "icon theme $(ls /usr/share/icons/Edel/scalable/ui 2>&1 | tr '\n' ' ')" ;;
 		# What the portal tells apps when a setting changes (M5.5c), kept
 		# in a file, as dbus-monitor writes each signal as it comes.

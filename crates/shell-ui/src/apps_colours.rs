@@ -6,6 +6,8 @@
 //! live. The file is written only when its text differs, through a `.new`
 //! file renamed over it, as `terminal.rs` writes foot's theme. A file the
 //! person wrote themselves is left alone, and so is one that is not UTF-8.
+//! Flatpak apps may read the file through the person's global Flatpak
+//! override, which `share_with_flatpak_apps` keeps holding the permission.
 //! `follow` runs at start (`main.rs`) and at each change of the look
 //! (`follow.rs`).
 
@@ -78,6 +80,7 @@ pub fn follow() {
     if !Path::new(places::SHARE_DIR).is_dir() {
         return;
     }
+    share_with_flatpak_apps();
     let Some(path) = places::person_gtk_css() else {
         return;
     };
@@ -89,6 +92,27 @@ pub fn follow() {
         }
         Ok(Written::Same) => {}
         Err(e) => eprintln!("edel-shell-ui: {}", messages::apps_colours_not_written(e)),
+    }
+}
+
+/// Lets every Flatpak app of this person read gtk.css's folder, read-only
+/// (M6.18): the person's global override file gets
+/// `edel::app_permissions::GTK_CSS_FILESYSTEM` unless it names the folder
+/// already. Flatpak reads a person's override files for every app, theirs
+/// and the default apps alike, but its system ones only for apps of a
+/// system installation, and people install theirs `--user` (M6.1); written
+/// at each login, it reaches accounts made before M6.18 or without
+/// /etc/skel. Logs `edel-shell-ui: Flatpak apps may read gtk.css` when it
+/// wrote; a failure logs `messages::apps_colours_not_shared`.
+fn share_with_flatpak_apps() {
+    let Some(dir) = places::person_flatpak_overrides_dir() else {
+        return;
+    };
+    let path = dir.join(edel::app_permissions::GLOBAL_OVERRIDE);
+    match crate::app_permissions::write_changed(&path, edel::app_permissions::gtk_css_readable) {
+        Ok(true) => eprintln!("edel-shell-ui: Flatpak apps may read gtk.css"),
+        Ok(false) => {}
+        Err(e) => eprintln!("edel-shell-ui: {}", messages::apps_colours_not_shared(e)),
     }
 }
 
