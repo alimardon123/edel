@@ -239,9 +239,30 @@ pub fn app_id(window: &Window) -> String {
 /// each window's app found once by its app id, each icon drawn once at a
 /// size and kept.
 pub struct AppIcons {
-    apps: Option<Vec<edel::apps::App>>,
+    apps: Option<Apps>,
     by_app_id: std::collections::HashMap<String, Option<String>>,
     drawn: edel::app_icons::Icons,
+}
+
+/// The apps read, with the change times of the folders they were read from
+/// and when those were last looked at, so an app installed during the
+/// session is found (the whole-system review of 2026-10-25).
+struct Apps {
+    list: Vec<edel::apps::App>,
+    stamps: Vec<Option<std::time::SystemTime>>,
+    looked: std::time::Instant,
+}
+
+/// How often a window whose app was not found looks again at whether the
+/// app folders changed: a few `stat`s, at most this often.
+const LOOK_AGAIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// The change times of the folders apps are read from.
+fn stamps() -> Vec<Option<std::time::SystemTime>> {
+    edel::apps::dirs()
+        .iter()
+        .map(|dir| std::fs::metadata(dir).and_then(|m| m.modified()).ok())
+        .collect()
 }
 
 impl AppIcons {
@@ -266,17 +287,44 @@ impl AppIcons {
         self.drawn = edel::app_icons::Icons::new(edel::apps::data_dirs(), theme);
     }
 
+    /// The apps, read the first time they are asked for, and read again
+    /// when `missed` (an app was not found) and an app folder changed since.
+    fn apps(&mut self, missed: bool) -> &[edel::apps::App] {
+        let stale = match &mut self.apps {
+            None => true,
+            Some(apps) if missed && apps.looked.elapsed() >= LOOK_AGAIN => {
+                apps.looked = std::time::Instant::now();
+                stamps() != apps.stamps
+            }
+            Some(_) => false,
+        };
+        if stale {
+            let stamps = stamps();
+            self.apps = Some(Apps {
+                list: edel::apps::read_all(&edel::apps::dirs()),
+                stamps,
+                looked: std::time::Instant::now(),
+            });
+            // Apps not found before may be there now.
+            self.by_app_id.retain(|_, icon| icon.is_some());
+        }
+        self.apps.as_ref().map_or(&[], |apps| &apps.list)
+    }
+
     /// The icon's name for windows with `app_id`; the apps are read the
-    /// first time one is asked for.
+    /// first time one is asked for, and again when one is not found and an
+    /// app folder changed.
     pub fn name(&mut self, app_id: &str) -> Option<String> {
         if app_id.is_empty() {
             return None;
         }
+        let missed = matches!(self.by_app_id.get(app_id), Some(None));
+        if missed {
+            // Looks again only when the folders changed.
+            self.apps(true);
+        }
         if !self.by_app_id.contains_key(app_id) {
-            let apps = self
-                .apps
-                .get_or_insert_with(|| edel::apps::read_all(&edel::apps::dirs()));
-            let icon = edel::apps::of_window(apps, app_id).and_then(|a| a.icon.clone());
+            let icon = edel::apps::of_window(self.apps(false), app_id).and_then(|a| a.icon.clone());
             self.by_app_id.insert(app_id.to_string(), icon);
         }
         self.by_app_id.get(app_id).cloned().flatten()
@@ -285,10 +333,8 @@ impl AppIcons {
     /// The app's own name for windows with `app_id`, as its launcher
     /// file gives it, if it has one.
     pub fn app_name(&mut self, app_id: &str) -> Option<String> {
-        let apps = self
-            .apps
-            .get_or_insert_with(|| edel::apps::read_all(&edel::apps::dirs()));
-        edel::apps::of_window(apps, app_id).map(|a| a.name.clone())
+        let found = edel::apps::of_window(self.apps(false), app_id).map(|a| a.name.clone());
+        found.or_else(|| edel::apps::of_window(self.apps(true), app_id).map(|a| a.name.clone()))
     }
 
     /// The icon `name` drawn `px` pixels square.
