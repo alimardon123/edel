@@ -4,6 +4,7 @@
 
 # Use Edel OS
 
+- [Download](download.md)
 - [Try it](TRY-IT.md)
 - [Hardware reports](hardware.md)
 - [Install](INSTALL.md)
@@ -25,6 +26,7 @@
 - [Platform levels](platform-levels.md)
 - [Releases](RELEASE.md)
 - [Security fixes](SECURITY.md)
+- [Backports](backports.md)
 - [Messages and logs](MESSAGES.md)
 - [Layout guide for apps](layout-guide.md)
 - [The look](mockups/README.md)

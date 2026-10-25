@@ -20,7 +20,14 @@ name = "edel-x86_64"        # matches EDEL_IMAGE in the image's os-release
 file = "edel-x86_64.ext4.gz"  # beside release.toml; .gz is decompressed on the way
 sha256 = "..."                     # of the image as it lands in the slot
 size = 187695104
+
+[[downloads]]                      # every other file of the release (M8.10b)
+file = "edel-x86_64.img.gz"        # beside release.toml
+sha256 = "..."                     # of the file as downloaded
+size = 402653184
 ```
+
+- **Downloads:** `[[downloads]]`, from `edel release make --download FILE`, gives the sum of each file of the release that is not an update image or an add-on (the disks, the container image, the package lists), so the one signature covers every file people download ([download.md](download.md)). Machines never read it; a reader that does not know it skips it.
 
 - **Signature:** `release.toml.sig` holds an ed25519 signature over the exact bytes of `release.toml`, as hex. Public keys are 32 bytes as hex in `*.pub` files; every image carries two of them in `/usr/share/edel/keys/`, so one key can replace the other without stranding a machine. `edel release keygen`, `make`, `sign` and `verify` handle them.
 - **Where from:** `edel update` and `edel update --check` take a path, a `file://` URL or an http(s) URL; the signature makes plain http as safe as https. The image streams into the slot and is hashed on the way (M1.7).

@@ -276,6 +276,18 @@ jobs:
         shell: bash
         run: docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'sh ci/bom.sh --self-test && sh ci/bom.sh advisories' | tee -a "$GITHUB_STEP_SUMMARY"
 
+      - name: The backports list is the build's (M8.10b)
+        # docs/backports.md, every base package from Alpine community
+        # (ADR-003), made again by edel image deps in the build container,
+        # where apk uses the images' branch.
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'apk update -q >/dev/null && target/release/edel image deps out/*.packages' >out/backports.md
+          if ! diff -u docs/backports.md out/backports.md; then
+            { echo "### Backports (M8.10b)"; echo; echo "docs/backports.md differs from the build; replace it with:"; echo; echo '```markdown'; cat out/backports.md; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+            echo "FAIL: docs/backports.md differs from what this build's packages give; the run's summary holds the new file"
+            exit 1
+          fi
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
