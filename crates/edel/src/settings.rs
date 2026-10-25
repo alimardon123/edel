@@ -3850,12 +3850,14 @@ pub const CHANNELS: &[&str] = &["stable", "preview"];
 pub const DEFAULT_CHANNEL: &str = "stable";
 
 /// The channel a machine follows (M5.8c): `updates.channel` in the
-/// person's file over the machine's, else `image`, the one its image was
-/// built for (os-release's `EDEL_CHANNEL`), else [`DEFAULT_CHANNEL`]. A
-/// name [`is_channel`] refuses is skipped, as every reader on a machine
+/// machine's file, else `image`, the one its image was built for
+/// (os-release's `EDEL_CHANNEL`), else [`DEFAULT_CHANNEL`]. It is a key of
+/// the machine's, never a person's: the updater runs as root, and a line
+/// in one person's file would show a channel the machine does not follow.
+/// A name [`is_channel`] refuses is skipped, as every reader on a machine
 /// skips what it cannot use.
-pub fn channel(machine: Option<&str>, person: Option<&str>, image: Option<&str>) -> String {
-    chosen("updates.channel", machine, person)
+pub fn channel(machine: Option<&str>, image: Option<&str>) -> String {
+    chosen("updates.channel", machine, None)
         .filter(|c| is_channel(c))
         .or_else(|| image.filter(|c| !c.is_empty()).map(String::from))
         .unwrap_or_else(|| DEFAULT_CHANNEL.into())
@@ -4946,17 +4948,16 @@ version = "1.2"
     }
 
     #[test]
-    fn the_channel_is_the_persons_then_the_machines_then_the_images() {
+    fn the_channel_is_the_machines_then_the_images() {
         let file = |channel: &str| format!("format = 1\n[updates]\nchannel = \"{channel}\"\n");
-        assert_eq!(channel(None, None, None), "stable");
-        assert_eq!(channel(None, None, Some("ci")), "ci");
-        assert_eq!(channel(None, None, Some("")), "stable");
-        let (machine, person) = (file("preview"), file("beta"));
-        assert_eq!(channel(Some(&machine), None, Some("ci")), "preview");
-        assert_eq!(channel(Some(&machine), Some(&person), Some("ci")), "beta");
+        assert_eq!(channel(None, None), "stable");
+        assert_eq!(channel(None, Some("ci")), "ci");
+        assert_eq!(channel(None, Some("")), "stable");
+        let machine = file("preview");
+        assert_eq!(channel(Some(&machine), Some("ci")), "preview");
         let bad = file("A/B");
         assert_eq!(
-            channel(Some(&bad), None, Some("ci")),
+            channel(Some(&bad), Some("ci")),
             "ci",
             "a name the address cannot hold is skipped"
         );
