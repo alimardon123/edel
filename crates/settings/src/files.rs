@@ -324,7 +324,7 @@ impl Files {
                 "appearance.mode",
                 person_look.mode.as_ref().or(machine_look.mode.as_ref()),
             )
-            .unwrap_or_else(|| "auto".to_string()),
+            .unwrap_or_else(|| release_value("appearance.mode")),
         }
     }
 
@@ -772,6 +772,15 @@ pub fn title(name: &str) -> String {
     }
 }
 
+/// The release's value of `key`: the key table's default (`edel::key_help`,
+/// its owner) as text, a TOML string's quotes taken off; empty for a key the
+/// table does not hold.
+pub fn release_value(key: &str) -> String {
+    edel::key_help::find(key)
+        .map_or("", |help| help.default)
+        .trim_matches('"')
+        .to_string()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
