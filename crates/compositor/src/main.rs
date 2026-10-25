@@ -10,9 +10,10 @@
 //!                                      screen, until it exits (M4.7b)
 //!     edel-compositor --game -- PROGRAM ARG
 //!                                      a game session (M8.26): a person's
-//!                                      session without shell-ui, PROGRAM
-//!                                      until it exits, every window
-//!                                      fullscreen, game mode on
+//!                                      session whose shell-ui has no
+//!                                      panels, PROGRAM until it exits,
+//!                                      every window fullscreen, game
+//!                                      mode on
 
 mod animate;
 mod backdrop;
