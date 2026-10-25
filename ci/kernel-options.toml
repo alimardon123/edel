@@ -57,6 +57,9 @@ kernels = ["lts"]
 [USB_STORAGE]
 reason = "the desktop image boots from a USB stick (M3.6)"
 
+[DRM_SIMPLEDRM]
+reason = "the initramfs carries no graphics driver, so the firmware's picture lights the screen until the root loads the card's own (M8.17e); it must be built in"
+
 [DRM_VIRTIO_GPU]
 reason = "the virtual GPU the desktop tests draw on (M4.1)"
 kernels = ["lts"]

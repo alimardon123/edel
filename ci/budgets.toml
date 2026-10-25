@@ -12,6 +12,12 @@ container_mib = 7.8
 # in MiB (M5.10c4c): 583.0 measured in CI on 2026-10-11, plus 20 percent.
 update_image_mib = 700
 
+# The one image's initramfs (`/boot/initramfs-lts`), in MiB, checked by
+# ci/initramfs-check.sh (M8.17e): it only finds and checks the root slot.
+# 19.3 MiB measured with Alpine 3.24's linux-lts and the image's mkinitfs
+# features on 2026-10-25, without kms, plus 10 percent; `du -m` rounds up.
+initramfs_mib = 22
+
 # The one image (images/edel.toml, M8.17) booted with no screen: CI's first
 # measurement on 2026-10-17 (1099 MiB, 4.34 s, 85 MiB) plus 20 percent. The
 # VM image it replaced measured 91 MiB, 6.42 s and 63 MiB on 2026-10-02.
