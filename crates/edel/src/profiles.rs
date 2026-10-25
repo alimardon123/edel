@@ -16,22 +16,60 @@ use toml::{Table, Value};
 use crate::i18n::{n_, tr};
 use crate::settings::{self, SettingsFile};
 
-/// The profiles this release has, by name, in the order the installer and
-/// Settings offer them. A new one is a file under `profiles/`, a line here,
-/// its name in [`NAMES`] and its words in [`title`] and [`about`].
-pub const BUILT_IN: &[(&str, &str)] = &[
-    ("office", include_str!("../../../profiles/office.toml")),
-    (
-        "developer",
-        include_str!("../../../profiles/developer.toml"),
-    ),
-    ("creative", include_str!("../../../profiles/creative.toml")),
-    ("gaming", include_str!("../../../profiles/gaming.toml")),
+/// One profile: its name, its lines and its words, in one entry.
+pub struct Profile {
+    /// What `system.profiles` names it by.
+    pub name: &'static str,
+    /// Its lines of the settings file, `profiles/NAME.toml`.
+    pub text: &'static str,
+    /// Its name as people read it, marked for translation.
+    pub title: &'static str,
+    /// What it brings, in a few words, marked for translation.
+    pub about: &'static str,
+}
+
+/// The profiles this release has, in the order the installer and Settings
+/// offer them. A new one is a file under `profiles/` and one entry here; a
+/// test holds the two equal.
+pub const BUILT_IN: &[Profile] = &[
+    Profile {
+        name: "office",
+        text: include_str!("../../../profiles/office.toml"),
+        title: n_("Office"),
+        about: n_("LibreOffice, printing and scanning"),
+    },
+    Profile {
+        name: "developer",
+        text: include_str!("../../../profiles/developer.toml"),
+        title: n_("Developer"),
+        about: n_("Podman containers and the VSCodium editor"),
+    },
+    Profile {
+        name: "creative",
+        text: include_str!("../../../profiles/creative.toml"),
+        title: n_("Creative"),
+        about: n_("Krita for drawing, GIMP for photos and low-latency sound"),
+    },
+    Profile {
+        name: "gaming",
+        text: include_str!("../../../profiles/gaming.toml"),
+        title: n_("Gaming"),
+        about: n_("Steam, and game mode for every fullscreen game"),
+    },
 ];
 
-/// The names in [`BUILT_IN`]: what `system.profiles` may list on this
-/// release, so `edel settings check` and `set` refuse any other.
-pub const NAMES: &[&str] = &["office", "developer", "creative", "gaming"];
+/// The names in [`BUILT_IN`], taken from it when the code is compiled:
+/// what `system.profiles` may list on this release, so `edel settings
+/// check` and `set` refuse any other.
+pub static NAMES: [&str; BUILT_IN.len()] = {
+    let mut names = [""; BUILT_IN.len()];
+    let mut i = 0;
+    while i < names.len() {
+        names[i] = BUILT_IN[i].name;
+        i += 1;
+    }
+    names
+};
 
 /// The sections a profile may not set: who logs in, the machine's own
 /// kind and profiles, what an install does, and a person's own presets
@@ -40,33 +78,24 @@ const NOT_IN_A_PROFILE: &[&str] = &["system", "users", "install", "presets", "th
 
 /// A profile's name as people read it, in their language.
 pub fn title(name: &str) -> String {
-    match name {
-        "office" => tr(n_("Office")).to_string(),
-        "developer" => tr(n_("Developer")).to_string(),
-        "creative" => tr(n_("Creative")).to_string(),
-        "gaming" => tr(n_("Gaming")).to_string(),
-        _ => name.to_string(),
+    match BUILT_IN.iter().find(|p| p.name == name) {
+        Some(entry) => tr(entry.title).to_string(),
+        None => name.to_string(),
     }
 }
 
 /// What a profile brings, in a few words, as the installer and Settings
 /// say it.
 pub fn about(name: &str) -> String {
-    match name {
-        "office" => tr(n_("LibreOffice, printing and scanning")).to_string(),
-        "developer" => tr(n_("Podman containers and the VSCodium editor")).to_string(),
-        "creative" => tr(n_(
-            "Krita for drawing, GIMP for photos and low-latency sound",
-        ))
-        .to_string(),
-        "gaming" => tr(n_("Steam, and game mode for every fullscreen game")).to_string(),
-        _ => String::new(),
+    match BUILT_IN.iter().find(|p| p.name == name) {
+        Some(entry) => tr(entry.about).to_string(),
+        None => String::new(),
     }
 }
 
 /// Whether `name` is a profile this release has.
 pub fn is_built_in(name: &str) -> bool {
-    NAMES.contains(&name)
+    BUILT_IN.iter().any(|p| p.name == name)
 }
 
 /// Problems with the file's `system.profiles`, one line each, as `edel
@@ -83,7 +112,7 @@ pub fn problems(file: &SettingsFile) -> Vec<String> {
                 "system.profiles: {}",
                 crate::i18n::trf(
                     "there is no profile {name}; the profiles are {all}",
-                    &[("name", &format!("{name:?}")), ("all", &NAMES.join(", "))]
+                    &[("name", &format!("{name:?}")), ("all", &NAMES.join(", ")),]
                 )
             )
         })
@@ -93,9 +122,10 @@ pub fn problems(file: &SettingsFile) -> Vec<String> {
 /// The lines of profile `name` as a table, without `format`; none for a
 /// name this release lacks.
 fn lines(name: &str) -> Option<Table> {
-    let (_, text) = BUILT_IN.iter().find(|(n, _)| *n == name)?;
+    let entry = BUILT_IN.iter().find(|p| p.name == name)?;
     // Every built-in profile is checked by the tests.
-    let mut table: Table = toml::from_str(text).expect("the profiles are checked by the tests");
+    let mut table: Table =
+        toml::from_str(entry.text).expect("the profiles are checked by the tests");
     table.remove("format");
     Some(table)
 }
@@ -266,12 +296,58 @@ mod tests {
 
     #[test]
     fn every_profile_reads_strictly_and_is_named_once() {
-        assert_eq!(BUILT_IN.len(), NAMES.len());
-        for ((name, text), listed) in BUILT_IN.iter().zip(NAMES) {
-            assert_eq!(name, listed);
-            check(text).unwrap_or_else(|e| panic!("profiles/{name}.toml: {e}"));
-            assert_ne!(title(name), *name, "{name} has no title");
-            assert!(!about(name).is_empty(), "{name} has no words");
+        let mut seen = std::collections::BTreeSet::new();
+        for p in BUILT_IN {
+            assert!(seen.insert(p.name), "{} is named twice in BUILT_IN", p.name);
+            check(p.text).unwrap_or_else(|e| panic!("profiles/{}.toml: {e}", p.name));
+        }
+    }
+
+    #[test]
+    fn every_profile_file_has_one_entry() {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../profiles");
+        let mut files: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "toml"))
+            .map(|path| path.file_stem().unwrap().to_string_lossy().into_owned())
+            .collect();
+        files.sort();
+        let mut names: Vec<&str> = NAMES.to_vec();
+        names.sort();
+        for name in &files {
+            assert!(
+                names.contains(&name.as_str()),
+                "profiles/{name}.toml has no entry in BUILT_IN"
+            );
+        }
+        for name in &names {
+            assert!(
+                files.iter().any(|file| file == name),
+                "BUILT_IN names {name}, which has no file under profiles/"
+            );
+        }
+        for p in BUILT_IN {
+            let text = std::fs::read_to_string(format!("{dir}/{}.toml", p.name)).unwrap();
+            assert_eq!(
+                p.text, text,
+                "BUILT_IN's text for {} is not its file",
+                p.name
+            );
+        }
+    }
+
+    #[test]
+    fn every_profile_has_its_words() {
+        for p in BUILT_IN {
+            assert!(!p.title.is_empty(), "{} has no title", p.name);
+            assert!(!p.about.is_empty(), "{} has no words", p.name);
+            assert!(
+                !p.about.ends_with('.'),
+                "{} ends its words with a full stop",
+                p.name
+            );
+            assert_ne!(title(p.name), p.name, "{} has no title", p.name);
         }
     }
 
