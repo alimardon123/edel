@@ -14,14 +14,17 @@
 # virtio balloon device, through which the guest's own kernel reports its
 # memory; nothing is installed or changed inside any guest. Memory in use
 # is MemTotal less MemAvailable, the number Edel OS's own memory budgets
-# use. For each size the VM runs 300 s with nobody touching it (the
-# desktop's idle number is the median of the last minute), then Super,
-# "firefox" and Return open the browser on a page that plays a video
-# served from this host, and 90 s later the median of the last 30 s is
-# the number with Firefox. Screenshots of both moments show whether the
-# desktop and the video really came; a number without its picture is not
-# a result. Results in out/desktop-memory/: SYSTEM-SIZE.png (idle),
-# SYSTEM-SIZE-firefox.png, SYSTEM-SIZE.samples and a table line each in
+# use. For each size the VM runs 420 s with nobody touching it (the
+# desktop's idle number is the median of the last minute), then Escape
+# (which leaves GNOME's overview), Super, "firefox" and, 20 s later, Return
+# open the browser the way a person would; 120 s later Return accepts
+# Firefox's first-run notice and the address bar opens a page that plays a
+# video served from this host, and the median of the last minute of 120 s
+# more is the number with Firefox. Screenshots of each moment show whether
+# the desktop, the browser and the video really came; a number without its
+# picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
+# (idle), SYSTEM-SIZE-opened.png, SYSTEM-SIZE-firefox.png,
+# SYSTEM-SIZE.samples and a table line each in
 # results.md.
 set -eu
 . ci/vm.sh
@@ -120,24 +123,29 @@ measure() {
 			echo "$(($(date +%s) - start)) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
 		done
 	}
-	sample 300
+	sample 420
 	python3 ci/qmp.py screendump "$run.png" || true
+	python3 ci/qmp.py key esc || true
+	sleep 2
 	python3 ci/qmp.py key meta_l || true
 	sleep 3
 	python3 ci/qmp.py type firefox || true
-	sleep 3
+	sleep 20
 	python3 ci/qmp.py key ret || true
-	sample 360
+	sample 540
+	python3 ci/qmp.py screendump "$run-opened.png" || true
+	python3 ci/qmp.py key ret || true
+	sleep 5
 	python3 ci/qmp.py key ctrl-l || true
 	sleep 2
 	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
-	sample 450
+	sample 660
 	python3 ci/qmp.py screendump "$run-firefox.png" || true
 	state=$(python3 ci/qmp.py status 2>/dev/null || echo stopped)
 	kill "$qemu" 2>/dev/null || true
 	wait "$qemu" 2>/dev/null || true
-	idle=$(median "$run.samples" 240 305)
-	firefox=$(median "$run.samples" 420 460)
+	idle=$(median "$run.samples" 360 425)
+	firefox=$(median "$run.samples" 600 665)
 	peak=$(awk '$2 != "none" { print $2 }' "$run.samples" | sort -n | tail -n 1)
 	echo "| $label | $size MiB | $idle | $firefox | ${peak:-none} | $state |" | tee -a "$dir/results.md"
 }
