@@ -14,8 +14,8 @@ use edel::panel_edit::{self, Group, PANELS, Spot};
 use edel::places;
 use edel::presets::{self, Edge, Size, Style};
 use edel::settings;
-use smithay_client_toolkit::reexports::calloop::RegistrationToken;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay_client_toolkit::reexports::calloop::{RegistrationToken, channel};
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_surface};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
@@ -105,6 +105,17 @@ pub struct LockBefore {
     pub dim: Option<String>,
 }
 
+/// The keys that press the Undo bar's Undo, as its pill shows them, from
+/// the settings files; none when a person unbound them.
+fn undo_keys() -> Option<String> {
+    let (machine, person) = settings_texts();
+    edel::shortcuts::keys_in(
+        edel::shortcuts::UNDO_DESKTOP_EDIT,
+        [machine.as_deref(), person.as_deref()],
+    )
+    .map(|keys| keys.to_string())
+}
+
 /// The words the Undo bar says for what it undoes (M5.10c6).
 fn undo_words(undo: &Undo) -> &'static str {
     match undo {
@@ -124,6 +135,8 @@ pub struct UndoBar {
     pub timer: Option<RegistrationToken>,
     pub logged: String,
     pub reader: a11y::Reader,
+    /// A reader's presses of Undo, on the event loop.
+    pub presses: Option<RegistrationToken>,
 }
 
 /// Marks each tile placed when a panel in `now` holds its widget.
@@ -245,7 +258,8 @@ impl Shell {
     pub fn open_editor(&mut self) {
         // The panels stay clickable around the desktop's editor (M8.21 part
         // 21j2), so the panel editor does not open over it.
-        if self.editor.is_some() || self.lock_editor.is_some() {
+        // Never over the lock screen: its keyboard would take the keys.
+        if self.editor.is_some() || self.lock_editor.is_some() || self.lock.is_some() {
             return;
         }
         self.close_popups();
@@ -518,6 +532,8 @@ impl Shell {
             Step::Act(Act::Undo) => self.undo_editor(),
             Step::Act(Act::Done) => self.close_editor(true),
             Step::Act(Act::Close) => self.close_editor(false),
+            Step::Act(Act::Add(tile)) => self.add_tile(tile),
+            Step::Act(Act::Remove(tile)) => self.remove_tile(tile),
             // The panels' drawer has no tabs (M5.10c6c3).
             Step::Tab(_) | Step::Nothing => {}
         }
@@ -881,9 +897,59 @@ impl Shell {
             }
             (None, _) => return,
         };
+        self.take_edit(&now, drag.name, done);
+    }
+
+    /// Return on drawer tile `tile`, whose widget no panel holds: the widget
+    /// goes at the end of the first panel, as a drop there puts it.
+    fn add_tile(&mut self, tile: usize) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let Some(name) = editor.view.tiles.get(tile).map(|t| t.name.clone()) else {
+            return;
+        };
+        let now = editor.now.clone();
+        let Some(first) = now.first() else {
+            return;
+        };
+        let to = Spot {
+            panel: 0,
+            group: Group::End,
+            index: first.end.len(),
+        };
+        let done = panel_edit::add_widget(&now, &name, to).map(|new| (new, "added"));
+        self.take_edit(&now, &name, done);
+    }
+
+    /// Return or Delete on drawer tile `tile`, whose widget a panel holds:
+    /// the widget is taken off, as a drag back to the drawer does.
+    fn remove_tile(&mut self, tile: usize) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let Some(name) = editor.view.tiles.get(tile).map(|t| t.name.clone()) else {
+            return;
+        };
+        let now = editor.now.clone();
+        let Some(at) = panel_edit::find(&now, &name) else {
+            return;
+        };
+        let done = panel_edit::remove_widget(&now, at).map(|new| (new, "took out"));
+        self.take_edit(&now, &name, done);
+    }
+
+    /// Shows the panels an edit of `name` made from `now`, logged, or says why
+    /// it was refused and leaves the panels as they are.
+    fn take_edit(
+        &mut self,
+        now: &[presets::Panel],
+        name: &str,
+        done: anyhow::Result<(Vec<presets::Panel>, &str)>,
+    ) {
         match done {
             Ok((new, what)) => {
-                eprintln!("edel-shell-ui: panel editor {what} {}", drag.name);
+                eprintln!("edel-shell-ui: panel editor {what} {name}");
                 if new != now {
                     self.take_panels(new);
                 }
@@ -934,6 +1000,7 @@ impl Shell {
             hover: false,
             width: self.screen_width(),
             text: words.to_string(),
+            keys: undo_keys(),
             style: editor::style(match undo {
                 Undo::Panels(_) => Kind::Panels,
                 Undo::LockScreen(_) | Undo::Desktop(_) => Kind::LockScreen,
@@ -946,6 +1013,18 @@ impl Shell {
         };
         popup.set_cards(undo_bar::cards(&layout, &self.tokens), &self.compositor);
         anchor_above(&popup.surface, edge, above);
+        // A screen reader presses Undo as a pointer does (the whole-system
+        // review of 2026-10-25); the bar's second item is its Undo button.
+        let (pressed, presses) = channel::channel::<usize>();
+        let presses = self
+            .handle
+            .insert_source(presses, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(undo_bar::UNDO_ITEM) = event {
+                    shell.undo_bar_undo();
+                }
+            })
+            .inspect_err(|e| eprintln!("edel-shell-ui: no reader presses for the undo bar: {e}"))
+            .ok();
         // The bar never takes the keyboard from what a person is typing in.
         popup
             .surface
@@ -957,7 +1036,8 @@ impl Shell {
             undo,
             timer: None,
             logged: String::new(),
-            reader: a11y::Reader::new(words),
+            reader: a11y::Reader::pressing(words, pressed),
+            presses,
         });
         let timer = self.undo_timer();
         if let Some(bar) = &mut self.undo_bar {
@@ -988,7 +1068,7 @@ impl Shell {
         let Some(bar) = self.undo_bar.take() else {
             return;
         };
-        if let Some(token) = bar.timer {
+        for token in [bar.timer, bar.presses].into_iter().flatten() {
             self.handle.remove(token);
         }
         drop(bar);
@@ -1029,14 +1109,21 @@ impl Shell {
             bar.logged = places;
         }
         let size = (f64::from(layout.size.0), f64::from(layout.size.1));
-        bar.reader
-            .update(size, undo_bar::nodes(&layout, &view.text));
+        bar.reader.update(size, undo_bar::nodes(&layout, &view));
     }
 
     /// Undo on the bar (M5.31b, M5.10c6): what the bar holds is written back
     /// through the writer of its editor, and the panels show it when they are
     /// the ones undone; then the bar closes. Nothing changes when the line
     /// cannot be written.
+    /// The Undo bar's key (`shortcuts.undo_desktop_edit`): Undo, as the
+    /// pill does, while the bar shows, and nothing otherwise.
+    pub fn undo_key_pressed(&mut self) {
+        if self.undo_bar.is_some() {
+            self.undo_bar_undo();
+        }
+    }
+
     fn undo_bar_undo(&mut self) {
         let Some(undo) = self.undo_bar.as_ref().map(|b| b.undo.clone()) else {
             return;

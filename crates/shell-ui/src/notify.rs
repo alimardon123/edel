@@ -21,10 +21,11 @@
 //! emit `NotificationClosed`.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
 
 use smithay_client_toolkit::reexports::calloop::channel::Sender;
+use zbus::message::Header;
 use zbus::object_server::SignalEmitter;
 use zbus::zvariant::Value;
 
@@ -275,6 +276,43 @@ pub fn assign(next: &AtomicU32, replaces: u32) -> u32 {
     }
 }
 
+/// How many senders' ids `Owners` remembers; older ones are forgotten, and
+/// a call to replace one then makes a new notification.
+const OWNERS_KEPT: u32 = 512;
+
+/// Who sent each notification, so only the app that made one may replace
+/// or close it: ids count up and are easy to guess (the whole-system
+/// review of 2026-10-25).
+#[derive(Default)]
+pub struct Owners(HashMap<u32, String>);
+
+impl Owners {
+    /// The id a call from `sender` gets: the one it asks to replace when it
+    /// made that one, else a new one.
+    pub fn assign(&mut self, next: &AtomicU32, replaces: u32, sender: &str) -> u32 {
+        let replaces = if self.owns(replaces, sender) {
+            replaces
+        } else {
+            0
+        };
+        let id = assign(next, replaces);
+        self.0
+            .retain(|kept, _| id.wrapping_sub(*kept) < OWNERS_KEPT);
+        self.0.insert(id, sender.to_string());
+        id
+    }
+
+    /// Whether `sender` made notification `id`.
+    pub fn owns(&self, id: u32, sender: &str) -> bool {
+        self.0.get(&id).is_some_and(|owner| owner == sender)
+    }
+
+    /// Forgets `id` once its sender closed it.
+    pub fn forget(&mut self, id: u32) {
+        self.0.remove(&id);
+    }
+}
+
 /// The notification a call makes, with `id`.
 pub fn received(id: u32, call: &Call) -> Notification {
     Notification {
@@ -394,6 +432,7 @@ pub fn to_write(machine: Option<&str>, on: bool) -> Option<&'static str> {
 struct Server {
     events: Sender<Msg>,
     next: Arc<AtomicU32>,
+    owners: Mutex<Owners>,
 }
 
 #[zbus::interface(name = "org.freedesktop.Notifications")]
@@ -413,8 +452,14 @@ impl Server {
         actions: Vec<&str>,
         hints: HashMap<&str, Value<'_>>,
         expire_timeout: i32,
+        #[zbus(header)] header: Header<'_>,
     ) -> u32 {
-        let id = assign(&self.next, replaces_id);
+        let sender = header.sender().map_or("", |s| s.as_str());
+        let id = self
+            .owners
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .assign(&self.next, replaces_id, sender);
         let call = Call {
             app: app_name,
             icon: app_icon,
@@ -428,8 +473,14 @@ impl Server {
         id
     }
 
-    fn close_notification(&self, id: u32) {
-        let _ = self.events.send(Msg::Close(id));
+    /// Closes `id` when the caller made it; another app's is left alone.
+    fn close_notification(&self, id: u32, #[zbus(header)] header: Header<'_>) {
+        let sender = header.sender().map_or("", |s| s.as_str());
+        let mut owners = self.owners.lock().unwrap_or_else(|e| e.into_inner());
+        if owners.owns(id, sender) {
+            owners.forget(id);
+            let _ = self.events.send(Msg::Close(id));
+        }
     }
 
     fn get_server_information(&self) -> (String, String, String, String) {
@@ -459,6 +510,7 @@ pub fn serve(connection: &zbus::blocking::Connection, events: Sender<Msg>) -> bo
     let server = Server {
         events,
         next: Arc::new(AtomicU32::new(1)),
+        owners: Mutex::new(Owners::default()),
     };
     let served = connection
         .object_server()
@@ -662,6 +714,22 @@ mod tests {
         let wrapped = AtomicU32::new(u32::MAX);
         assert_eq!(assign(&wrapped, 0), u32::MAX);
         assert_eq!(assign(&wrapped, 0), 1);
+    }
+
+    #[test]
+    fn only_the_app_that_made_a_notification_replaces_or_closes_it() {
+        let next = AtomicU32::new(1);
+        let mut owners = Owners::default();
+        let update = owners.assign(&next, 0, ":1.10");
+        assert_eq!(owners.assign(&next, update, ":1.10"), update, "its own");
+        let other = owners.assign(&next, update, ":1.99");
+        assert_ne!(other, update, "another app's call makes a new one");
+        assert!(owners.owns(update, ":1.10"));
+        assert!(!owners.owns(update, ":1.99"));
+        assert!(owners.owns(other, ":1.99"));
+        assert_ne!(owners.assign(&next, 77, ":1.10"), 77, "an id nobody made");
+        owners.forget(update);
+        assert!(!owners.owns(update, ":1.10"));
     }
 
     #[test]

@@ -42,8 +42,6 @@ const ORDER: [DatePart; 4] = [
     DatePart::Month,
     DatePart::Year,
 ];
-/// The date's parts when the file says nothing: weekday, day and month.
-const DEFAULT_SHOW: [DatePart; 3] = [DatePart::Weekday, DatePart::Day, DatePart::Month];
 const FACES: [Face; 4] = [Face::Digital, Face::Stacked, Face::Analog, Face::Minimal];
 const HOURS: [u8; 2] = [24, 12];
 const SIZES: [Size; 3] = [Size::Small, Size::Medium, Size::Large];
@@ -311,7 +309,9 @@ pub fn disclose(view: &mut View, line: Line) {
 fn value_of(view: &View, line: Line) -> String {
     match line {
         Line::Size => size_word(view.placed.size.unwrap_or(Size::Large)).to_string(),
-        Line::Style => style_word(view.placed.style.unwrap_or(DateStyle::Long)).to_string(),
+        Line::Style => {
+            style_word(view.placed.style.unwrap_or(lock_screen::DEFAULT_STYLE)).to_string()
+        }
         Line::Zone => view
             .placed
             .zone
@@ -353,11 +353,13 @@ fn row_label(line: Line, docked: bool) -> &'static str {
 
 /// The hours a press or Return on the 24-hour switch chooses: the other one.
 fn hours_toggled(view: &View) -> Choice {
-    Choice::Hours(if view.placed.hours.unwrap_or(24) == 24 {
-        12
-    } else {
-        24
-    })
+    Choice::Hours(
+        if view.placed.hours.unwrap_or(lock_screen::DEFAULT_HOURS) == 24 {
+            12
+        } else {
+            24
+        },
+    )
 }
 
 /// The lines a part's card has, in the order the keyboard goes round them.
@@ -517,7 +519,10 @@ fn key_of(choice: &Choice) -> String {
 
 /// The date's parts that show, in their order.
 fn shown(placed: &Placed) -> Vec<DatePart> {
-    let list = placed.show.clone().unwrap_or_else(|| DEFAULT_SHOW.to_vec());
+    let list = placed
+        .show
+        .clone()
+        .unwrap_or_else(|| lock_screen::DEFAULT_SHOW.to_vec());
     ORDER.into_iter().filter(|p| list.contains(p)).collect()
 }
 
@@ -600,10 +605,10 @@ pub fn most_letters() -> usize {
 /// segments; None for the other lines.
 fn chosen(placed: &Placed, line: Line) -> Option<usize> {
     let now = match line {
-        Line::Face => Choice::Face(placed.face.unwrap_or(Face::Digital)),
-        Line::Hours => Choice::Hours(placed.hours.unwrap_or(24)),
+        Line::Face => Choice::Face(placed.face.unwrap_or(lock_screen::DEFAULT_FACE)),
+        Line::Hours => Choice::Hours(placed.hours.unwrap_or(lock_screen::DEFAULT_HOURS)),
         Line::Size => Choice::Size(placed.size.unwrap_or(Size::Large)),
-        Line::Style => Choice::Style(placed.style.unwrap_or(DateStyle::Long)),
+        Line::Style => Choice::Style(placed.style.unwrap_or(lock_screen::DEFAULT_STYLE)),
         Line::Colour => Choice::Colour(placed.colour.clone()),
         _ => return None,
     };
@@ -618,10 +623,14 @@ fn chosen(placed: &Placed, line: Line) -> Option<usize> {
 pub fn apply(placed: &Placed, choice: &Choice) -> Placed {
     let mut next = placed.clone();
     match (placed.part, choice) {
-        (Part::Clock, Choice::Face(f)) => next.face = (*f != Face::Digital).then_some(*f),
+        (Part::Clock, Choice::Face(f)) => {
+            next.face = (*f != lock_screen::DEFAULT_FACE).then_some(*f)
+        }
         (Part::Clock, Choice::Hours(h)) => next.hours = (*h != 24).then_some(*h),
         (Part::Clock, Choice::Size(s)) => next.size = (*s != Size::Large).then_some(*s),
-        (Part::Date, Choice::Style(s)) => next.style = (*s != DateStyle::Long).then_some(*s),
+        (Part::Date, Choice::Style(s)) => {
+            next.style = (*s != lock_screen::DEFAULT_STYLE).then_some(*s)
+        }
         (Part::Date, Choice::Show(part)) => {
             let mut list = shown(placed);
             if let Some(i) = list.iter().position(|p| p == part) {
@@ -633,7 +642,7 @@ pub fn apply(placed: &Placed, choice: &Choice) -> Placed {
                 list.push(*part);
             }
             let list: Vec<DatePart> = ORDER.into_iter().filter(|p| list.contains(p)).collect();
-            next.show = if list == DEFAULT_SHOW {
+            next.show = if list == lock_screen::DEFAULT_SHOW {
                 None
             } else {
                 Some(list)
@@ -1400,7 +1409,7 @@ fn draw_faces(
     s: f32,
 ) {
     let now = chosen(&view.placed, Line::Face);
-    let hours = view.placed.hours.unwrap_or(24);
+    let hours = view.placed.hours.unwrap_or(lock_screen::DEFAULT_HOURS);
     for (j, (_, choice)) in segments(Line::Face).into_iter().enumerate() {
         let (Some(cell), Choice::Face(face)) = (row.segments.get(j), choice) else {
             continue;
@@ -1589,7 +1598,7 @@ pub fn paint(
             Line::Face if l.docked => draw_faces(pixmap, view, row, &ink, text, s),
             Line::Hours if l.docked => {
                 if let Some(switch) = row.control {
-                    let on = view.placed.hours.unwrap_or(24) == 24;
+                    let on = view.placed.hours.unwrap_or(lock_screen::DEFAULT_HOURS) == 24;
                     draw_switch(pixmap, switch, on, &ink, s);
                 }
                 draw_label(
@@ -1795,7 +1804,7 @@ pub fn nodes(view: &View, l: &Layout) -> Vec<Item> {
                     Role::CheckBox,
                     row_label(row.line, true).into(),
                     bounds,
-                    Some(view.placed.hours.unwrap_or(24) == 24),
+                    Some(view.placed.hours.unwrap_or(lock_screen::DEFAULT_HOURS) == 24),
                     Vec::new(),
                 )),
                 Line::Face | Line::Hours | Line::Size | Line::Style | Line::Colour => {

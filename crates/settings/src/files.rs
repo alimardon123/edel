@@ -324,7 +324,7 @@ impl Files {
                 "appearance.mode",
                 person_look.mode.as_ref().or(machine_look.mode.as_ref()),
             )
-            .unwrap_or_else(|| "auto".to_string()),
+            .unwrap_or_else(|| release_value("appearance.mode")),
         }
     }
 
@@ -360,7 +360,8 @@ impl Files {
     /// Saves the layout in use as the person's own preset `name`
     /// (`presets::save_text`, Save as preset, M5.17), one write.
     pub fn save_preset(&self, name: &str) -> Result<(), String> {
-        self.edit_person(|text| presets::save_text(text, name))
+        let machine = std::fs::read_to_string(&self.machine).ok();
+        self.edit_person(|text| presets::save_text(text, machine.as_deref(), name))
     }
 
     /// Deletes the person's own preset `name` (M5.17), one write; refused
@@ -491,7 +492,11 @@ impl Files {
             return self.choose_preset(value);
         }
         let machine = Self::file_of(Some(&self.machine));
-        let mut person = Self::file_of(self.person.as_ref());
+        // Whether the person has the line is read from the file as written,
+        // and what applies without it from that file with its own preset and
+        // theme applied, so a value an own preset holds counts as applying
+        // anyway (the whole-system review of 2026-10-25).
+        let mut person = Self::raw_file_of(self.person.as_ref());
         let had = match key {
             "layout.tiling" => person.layout.tiling.take().is_some(),
             "layout.title_bars" => person.layout.title_bars.take().is_some(),
@@ -513,7 +518,7 @@ impl Files {
             "appearance.mode" => person.appearance.mode.take().is_some(),
             _ => return Err(format!("{key} is not a key these pages choose")),
         };
-        let without = Self::layout_from(&machine, &person);
+        let without = Self::layout_from(&machine, &edel::settings::in_use(&person));
         match (without.value(key).as_deref() != Some(value), had) {
             (true, _) => self.set(key, Some(value)),
             (false, true) => self.set(key, None),
@@ -690,7 +695,9 @@ impl Files {
     /// `edel settings set` writes it, none where their file has none: what
     /// Undo puts back (M5.6a).
     pub fn own_keys(&self, section: &str) -> Vec<(&'static str, Option<String>)> {
-        let person = Self::file_of(self.person.as_ref());
+        // The file as written: an own preset's or a theme's values are not
+        // the person's lines, so Undo never writes them as such.
+        let person = Self::raw_file_of(self.person.as_ref());
         crate::rows::on_page(section)
             .map(|row| (row.key, own(&person, row.key)))
             .collect()
@@ -772,6 +779,15 @@ pub fn title(name: &str) -> String {
     }
 }
 
+/// The release's value of `key`: the key table's default (`edel::key_help`,
+/// its owner) as text, a TOML string's quotes taken off; empty for a key the
+/// table does not hold.
+pub fn release_value(key: &str) -> String {
+    edel::key_help::find(key)
+        .map_or("", |help| help.default)
+        .trim_matches('"')
+        .to_string()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -897,6 +913,39 @@ mod tests {
             settings::Source::Machine(_)
         ));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_row_set_back_against_an_own_preset_writes_its_value() {
+        // Classic with Tile windows on, saved as mine: turning the row off
+        // must write tiling = false, as mine tiles without the line, and
+        // Undo must not copy mine's lines into [layout] (the whole-system
+        // review of 2026-10-25).
+        let dir = scratch("own-preset");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let mine = format!(
+            "format = {}\n[layout]\npreset = \"mine\"\n\n[presets.mine]\npreset = \"classic\"\ntiling = true\n",
+            settings::FORMAT
+        );
+        std::fs::write(&person, &mine).unwrap();
+        assert_eq!(
+            files
+                .own_keys("layout")
+                .iter()
+                .find(|(k, _)| *k == "layout.tiling")
+                .unwrap()
+                .1,
+            None
+        );
+        files.choose("layout.tiling", "false").unwrap();
+        let read = || std::fs::read_to_string(&person).unwrap();
+        assert!(read().contains("tiling = false"), "{}", read());
+        files.choose("layout.tiling", "true").unwrap();
+        assert_eq!(read(), mine);
     }
 
     #[test]

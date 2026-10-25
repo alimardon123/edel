@@ -166,6 +166,19 @@ pub fn screen_dark(name: &str, why: impl Display) -> String {
 pub const SCREEN_LIST: &str =
     "could not read the screens from the graphics card; the screens in use stay as they are";
 
+/// The graphics card the desktop draws on went away (the whole-system
+/// review of 2026-10-25).
+pub const GPU_GONE: &str = "the graphics card the desktop drew on went away; the session ends, and the login screen starts again on the card that is there now";
+
+/// The card's own driver took over from the firmware's framebuffer the
+/// session started on.
+pub fn gpu_taken_over(path: &Path) -> String {
+    format!(
+        "the graphics card's own driver started ({}) after the desktop began on the firmware's picture; the session ends, and the login screen starts again on the card's driver",
+        path.display()
+    )
+}
+
 /// Input devices do not come back after a terminal switch.
 pub const INPUT_LOST: &str =
     "the input devices did not come back; unplug and plug in the keyboard, or log in again";
@@ -316,6 +329,14 @@ pub fn low_latency_not_linked(link: &Path, why: impl Display) -> String {
     )
 }
 
+/// An app asked to bring `title` forward with a token it may not use: a
+/// sandboxed app's own, without the keyboard, or one kept too long. The
+/// window stays where it is (the whole-system review of 2026-10-25).
+pub fn activation_refused(title: &str) -> String {
+    format!(
+        "{title} asked to come forward without a click or a key in the app with the keyboard; it stays where it is, so the keys keep going where the person types"
+    )
+}
 #[cfg(test)]
 mod tests {
     use super::*;

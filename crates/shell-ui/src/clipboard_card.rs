@@ -126,6 +126,12 @@ fn history_on() -> bool {
 impl Shell {
     /// A text or picture was read from a new selection.
     fn clipboard_copied(&mut self, item: Item) {
+        // A copy still being read when the screen locked arrives after the
+        // history was cleared: nothing copied stays past the lock (M7.13,
+        // the whole-system review of 2026-10-25).
+        if self.lock.is_some() {
+            return;
+        }
         let what = match &item {
             Item::Text(text) => format!("a text of {} bytes", text.len()),
             Item::Picture { png, .. } => format!("a picture of {} bytes", png.len()),

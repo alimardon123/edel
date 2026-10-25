@@ -143,21 +143,21 @@ impl<W: Clone + PartialEq> Node<W> {
             Node::Window(w) => out.push((w.clone(), space)),
             Node::Halves(a, b) => {
                 let (first, second) = if space.size.w >= space.size.h {
-                    let w = (space.size.w - gap) / 2;
+                    let w = ((space.size.w - gap) / 2).max(1);
                     (
                         Rectangle::new(space.loc, (w, space.size.h).into()),
                         Rectangle::new(
                             (space.loc.x + w + gap, space.loc.y).into(),
-                            (space.size.w - w - gap, space.size.h).into(),
+                            ((space.size.w - w - gap).max(1), space.size.h).into(),
                         ),
                     )
                 } else {
-                    let h = (space.size.h - gap) / 2;
+                    let h = ((space.size.h - gap) / 2).max(1);
                     (
                         Rectangle::new(space.loc, (space.size.w, h).into()),
                         Rectangle::new(
                             (space.loc.x, space.loc.y + h + gap).into(),
-                            (space.size.w, space.size.h - h - gap).into(),
+                            (space.size.w, (space.size.h - h - gap).max(1)).into(),
                         ),
                     )
                 };
@@ -242,6 +242,15 @@ mod tests {
     /// Each window of six closed in turn: the window or windows that
     /// shared its space take it, covering where it was, and the older
     /// windows outside that space stay where they were.
+    #[test]
+    fn deep_splits_never_give_a_window_a_size_below_one() {
+        let places = opened(30).places(screen(), Gaps::uniform(8));
+        assert_eq!(places.len(), 30);
+        for (w, a) in places {
+            assert!(a.size.w >= 1 && a.size.h >= 1, "{w}: {a:?}");
+        }
+    }
+
     #[test]
     fn a_closed_window_gives_its_space_to_its_neighbour() {
         for gone in 1..=6 {

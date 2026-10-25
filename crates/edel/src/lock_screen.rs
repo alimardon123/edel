@@ -223,6 +223,15 @@ impl DateStyle {
     }
 }
 
+/// A clock's face when the file says nothing
+pub const DEFAULT_FACE: Face = Face::Digital;
+/// A clock's hours when the file says nothing
+pub const DEFAULT_HOURS: u8 = 24;
+/// The date's parts when the file says nothing
+pub const DEFAULT_SHOW: [DatePart; 3] = [DatePart::Weekday, DatePart::Day, DatePart::Month];
+/// The date's style when the file says nothing
+pub const DEFAULT_STYLE: DateStyle = DateStyle::Long;
+
 /// One part in its place: its anchor and an offset from it, each a share of the
 /// screen's width (`x`) and height (`y`), from -1 to 1; a message's words, a
 /// picture's path and the options of a clock or a date.
@@ -246,10 +255,10 @@ pub struct Placed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
     /// A clock's face: `digital`, `stacked`, `analog` or `minimal`; absent is
-    /// `digital`
+    /// [`DEFAULT_FACE`], `digital`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub face: Option<Face>,
-    /// A clock's hours, 12 or 24; absent is 24
+    /// A clock's hours, 12 or 24; absent is [`DEFAULT_HOURS`], 24
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hours: Option<u8>,
     /// A clock's size: `small`, `medium` or `large`; absent is `large`
@@ -260,10 +269,12 @@ pub struct Placed {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub weight: Option<u16>,
     /// The date's parts, each once; they show in the order weekday, day, month,
-    /// year whatever order is written. Absent is weekday, day and month.
+    /// year whatever order is written. Absent is [`DEFAULT_SHOW`], weekday, day and
+    /// month.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show: Option<Vec<DatePart>>,
-    /// The date's style: `long`, `short` or `numeric`; absent is `long`
+    /// The date's style: `long`, `short` or `numeric`; absent is [`DEFAULT_STYLE`],
+    /// `long`
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<DateStyle>,
     /// A clock's time zone, an IANA name such as `Asia/Tokyo`; absent is this

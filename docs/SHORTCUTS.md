@@ -71,3 +71,4 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `toggle_frame_rate` | `Super+Shift+G` | Show or hide the frame rate over a fullscreen game until the next login |  |
 | `show_tray` | `Super+Shift+B` | Open or close the tray's apps behind its arrow, with the keyboard on them |  |
 | `clipboard_history` | `Super+V` | Open the clipboard history: the last texts and pictures you copied |  |
+| `undo_desktop_edit` | `Super+Z` | Undo the change an editor's Done just made, while its Undo bar shows |  |

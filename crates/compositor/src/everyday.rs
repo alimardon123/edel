@@ -44,7 +44,8 @@ use smithay::wayland::xdg_activation::{
     XdgActivationHandler, XdgActivationState, XdgActivationToken, XdgActivationTokenData,
 };
 
-use crate::state::Edel;
+use crate::messages;
+use crate::state::{ClientState, Edel};
 
 /// How a window holds the pointer, if it does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,6 +215,45 @@ impl KeyboardShortcutsInhibitHandler for Edel {
     }
 }
 
+impl Edel {
+    /// Whether the token `data` describes may bring a window forward, by
+    /// `sandbox::may_activate`: who asked for it, how old it is, and whether
+    /// its asker holds the keyboard with an input since it got it.
+    fn token_allowed(&self, data: &XdgActivationTokenData) -> bool {
+        let asker = data.client_id.clone();
+        // A client inserted without our state (XWayland's own) is the
+        // compositor's, as `sandbox::shell_may` holds; one that is gone is
+        // judged as a sandboxed one.
+        let sandboxed = asker
+            .clone()
+            .and_then(|id| self.display.backend_handle().get_client_data(id).ok())
+            .is_none_or(|state| {
+                state
+                    .downcast_ref::<ClientState>()
+                    .is_some_and(|state| state.security_context.is_some())
+            });
+        let keyboard = self.seat.get_keyboard();
+        let holds_keyboard = asker.is_some()
+            && keyboard
+                .as_ref()
+                .and_then(|k| k.current_focus())
+                .and_then(|surface| surface.client())
+                .map(|focused| focused.id())
+                == asker;
+        let input_since = data
+            .serial
+            .as_ref()
+            .zip(keyboard.and_then(|k| k.last_enter()))
+            .is_some_and(|((serial, _), entered)| serial.is_no_older_than(&entered));
+        crate::sandbox::may_activate(
+            sandboxed,
+            data.timestamp.elapsed(),
+            holds_keyboard,
+            input_since,
+        )
+    }
+}
+
 impl XdgActivationHandler for Edel {
     fn activation_state(&mut self) -> &mut XdgActivationState {
         &mut self.activation
@@ -222,15 +262,25 @@ impl XdgActivationHandler for Edel {
     /// A window asks to come forward with a token another app made, as
     /// a browser does when a link is clicked: to its workspace, then
     /// forward, a minimized one back.
+    /// Only a token `may_activate` allows does this; any other is logged and
+    /// dropped, and the window stays where it is.
     fn request_activation(
         &mut self,
-        _: XdgActivationToken,
-        _: XdgActivationTokenData,
+        token: XdgActivationToken,
+        data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
         let Some(window) = self.window_of(&surface) else {
             return;
         };
+        if !self.token_allowed(&data) {
+            self.activation.remove_token(&token);
+            eprintln!(
+                "edel-compositor: {}",
+                messages::activation_refused(&crate::decoration::title(&window))
+            );
+            return;
+        }
         self.bring_forward(&window);
     }
 }

@@ -285,6 +285,12 @@ pub enum Act {
     Undo,
     Done,
     Close,
+    /// Puts the widget of tile `i` on the panels (Return on a tile no panel
+    /// holds), as a drop from the drawer does.
+    Add(usize),
+    /// Takes the widget of tile `i` off the panels (Return or Delete on a
+    /// tile a panel holds), as a drag back to the drawer does.
+    Remove(usize),
 }
 
 /// What a key does: move the focus, act, or nothing.
@@ -515,14 +521,19 @@ pub fn ring(view: &View) -> Vec<Part> {
 /// What a key does with `focus` as the focused part: arrows move between
 /// tiles (Up and Down by a row), Undo and Done sit below the last row, Tab
 /// cycles the ring, Return acts on Undo or Done, and Escape closes. Return
-/// on a tile does nothing yet: dragging a widget comes with the editor's
-/// drag (M5.31b).
+/// on a tile puts its widget on the panels, or takes it off when a panel
+/// holds it, as Delete does, so the keyboard and a screen reader's keys do
+/// what a drag does (the whole-system review of 2026-10-25).
 pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
     if key == Key::Escape {
         return Step::Act(Act::Close);
     }
+    let placed = |i: usize| view.tiles.get(i).is_some_and(|t| t.placed);
     if key == Key::Delete {
-        return Step::Nothing;
+        return match focus {
+            Some(Part::Tile(i)) if placed(i) => Step::Act(Act::Remove(i)),
+            _ => Step::Nothing,
+        };
     }
     let ring = ring(view);
     if key == Key::Tab {
@@ -538,6 +549,8 @@ pub fn key(view: &View, focus: Option<Part>, key: Key) -> Step {
     match (key, focus) {
         (Key::Activate, Some(Part::Undo)) => Step::Act(Act::Undo),
         (Key::Activate, Some(Part::Done)) => Step::Act(Act::Done),
+        (Key::Activate, Some(Part::Tile(i))) if placed(i) => Step::Act(Act::Remove(i)),
+        (Key::Activate, Some(Part::Tile(i))) if i < n => Step::Act(Act::Add(i)),
         (_, None) => ring.first().map_or(Step::Nothing, |p| Step::Focus(*p)),
         (Key::Left, Some(Part::Tab(i))) => Step::Tab(i.saturating_sub(1)),
         (Key::Right, Some(Part::Tab(i))) => Step::Tab((i + 1).min(tabs.saturating_sub(1))),
@@ -1182,7 +1195,21 @@ mod tests {
             key(&v, Some(Part::Done), Key::Activate),
             Step::Act(Act::Done)
         );
-        assert_eq!(key(&v, Some(Part::Tile(0)), Key::Activate), Step::Nothing);
+        assert_eq!(
+            key(&v, Some(Part::Tile(0)), Key::Activate),
+            Step::Act(Act::Remove(0)),
+            "Return takes a placed widget off"
+        );
+        assert_eq!(
+            key(&v, Some(Part::Tile(1)), Key::Activate),
+            Step::Act(Act::Add(1)),
+            "Return puts an unplaced widget on"
+        );
+        assert_eq!(
+            key(&v, Some(Part::Tile(0)), Key::Delete),
+            Step::Act(Act::Remove(0))
+        );
+        assert_eq!(key(&v, Some(Part::Tile(1)), Key::Delete), Step::Nothing);
         assert_eq!(key(&v, None, Key::Left), Step::Focus(Part::Tile(0)));
         assert_eq!(
             key(&v, Some(Part::Tile(2)), Key::Escape),

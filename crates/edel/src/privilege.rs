@@ -308,13 +308,14 @@ fn ask(user: &str) -> Result<()> {
     };
     match password::check(&helper, user, password) {
         Checked::Right => Ok(()),
-        Checked::Wrong => bail!(
-            "{}",
+        Checked::Wrong => Err(edel::exit::Coded::new(
+            edel::exit::WRONG_PASSWORD,
             trf(
                 "wrong password for {user}; nothing was changed",
-                &[("user", user)]
-            )
-        ),
+                &[("user", user)],
+            ),
+        )
+        .into()),
         Checked::NoChecker(why) => bail!(
             "{}",
             trf(

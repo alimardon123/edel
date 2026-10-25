@@ -79,15 +79,6 @@ struct Screen {
     ready: bool,
 }
 
-/// A screen's bytes as `finish` reads them from its pool.
-struct Source<'a> {
-    place: (i32, i32, i32, i32),
-    width: u32,
-    height: u32,
-    stride: u32,
-    bytes: &'a mut [u8],
-}
-
 /// The frame's user data: which screenshot and which of its screens.
 #[derive(Clone, Copy)]
 pub struct Part {
@@ -357,40 +348,66 @@ fn finish(shell: &mut Shell, id: u64) {
         shell.handle.remove(token);
     }
     let answer = shot.answer.take();
-    let outcome = {
-        let mut sources: Vec<Source> = Vec::new();
-        for screen in &mut shot.screens {
+    // Each screen's pixels are copied out of the shared memory, so the
+    // Wayland objects go at once, and the picture is put together, encoded
+    // and written on a thread of its own: on large screens that takes long
+    // enough to stall the panels and the lock screen (the whole-system
+    // review of 2026-10-25).
+    let copies: Vec<Copied> = shot
+        .screens
+        .iter_mut()
+        .filter_map(|screen| {
             let place = screen.place;
-            if let (Some((pool, _)), Some((width, height, stride))) =
-                (&mut screen.buffer, screen.size)
-            {
-                let bytes: &mut [u8] = pool.mmap();
-                sources.push(Source {
-                    place,
-                    width,
-                    height,
-                    stride,
-                    bytes,
-                });
-            }
-        }
-        let pictures: Vec<Picture> = sources
-            .iter()
-            .map(|source| Picture {
-                place: source.place,
-                width: source.width,
-                height: source.height,
-                stride: source.stride,
-                bytes: &source.bytes[..],
+            let (pool, _) = screen.buffer.as_mut()?;
+            let (width, height, stride) = screen.size?;
+            Some(Copied {
+                place,
+                width,
+                height,
+                stride,
+                bytes: pool.mmap().to_vec(),
             })
-            .collect();
-        let count = pictures.len();
-        match compose(&pictures) {
-            None => Err("no screen could be copied".to_string()),
-            Some(pixmap) => save(&shot.path, &pixmap)
-                .map(|()| (pixmap.width(), pixmap.height(), count))
-                .map_err(|e| e.to_string()),
-        }
+        })
+        .collect();
+    release(shot.screens);
+    let path = shot.path;
+    let spawned = std::thread::Builder::new()
+        .name("screenshot".into())
+        .spawn(move || write_picture(&path, &copies, answer));
+    if let Err(e) = spawned {
+        eprintln!("edel-shell-ui: {}", messages::screenshot_not_saved(e));
+    }
+}
+
+/// One screen's pixels copied out of its shared memory, as [`Picture`]
+/// borrows them.
+struct Copied {
+    place: (i32, i32, i32, i32),
+    width: u32,
+    height: u32,
+    stride: u32,
+    bytes: Vec<u8>,
+}
+
+/// Puts `copies` together, writes the picture to `path` and answers the
+/// call: allowed once the file is written, else cancelled, with the reason
+/// logged.
+fn write_picture(path: &Path, copies: &[Copied], answer: Option<Answer>) {
+    let pictures: Vec<Picture> = copies
+        .iter()
+        .map(|copy| Picture {
+            place: copy.place,
+            width: copy.width,
+            height: copy.height,
+            stride: copy.stride,
+            bytes: &copy.bytes,
+        })
+        .collect();
+    let outcome = match compose(&pictures) {
+        None => Err("no screen could be copied".to_string()),
+        Some(pixmap) => save(path, &pixmap)
+            .map(|()| (pixmap.width(), pixmap.height(), pictures.len()))
+            .map_err(|e| e.to_string()),
     };
     match outcome {
         Ok((width, height, count)) => {
@@ -406,7 +423,6 @@ fn finish(shell: &mut Shell, id: u64) {
             drop(answer);
         }
     }
-    release(shot.screens);
 }
 
 /// One screen's pixels for [`compose`]: its logical place, its size in

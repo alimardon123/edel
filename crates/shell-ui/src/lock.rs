@@ -486,8 +486,8 @@ fn clock_of(part: &Placed, w: f32, tokens: &Tokens, text: &mut Text) -> ClockAt 
         } else {
             size
         },
-        face: part.face.unwrap_or(ClockFace::Digital),
-        hours: part.hours.unwrap_or(24),
+        face: part.face.unwrap_or(lock_screen::DEFAULT_FACE),
+        hours: part.hours.unwrap_or(lock_screen::DEFAULT_HOURS),
         weight,
         zone: part.zone.clone(),
         label: lock_screen::clock_label(part),
@@ -513,8 +513,10 @@ fn place_all(
     let date_part = parts.iter().find(|p| p.part == Part::Date);
     let date_show = date_part
         .and_then(|p| p.show.clone())
-        .unwrap_or_else(|| vec![DatePart::Weekday, DatePart::Day, DatePart::Month]);
-    let date_style = date_part.and_then(|p| p.style).unwrap_or(DateStyle::Long);
+        .unwrap_or_else(|| lock_screen::DEFAULT_SHOW.to_vec());
+    let date_style = date_part
+        .and_then(|p| p.style)
+        .unwrap_or(lock_screen::DEFAULT_STYLE);
     let date_colour = date_part.and_then(|p| p.colour.clone());
     let battery_colour = parts
         .iter()

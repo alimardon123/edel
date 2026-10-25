@@ -226,6 +226,10 @@ impl Shell {
                     restart_waiting: false,
                     corner_hover: None,
                 });
+                // Nothing else takes the keys while locked: an Access
+                // question left up is cancelled, and new ones wait for the
+                // unlock (the whole-system review of 2026-10-25).
+                self.cancel_access();
             }
             Err(e) => {
                 eprintln!("edel-shell-ui: {}", messages::lock_not_offered(e));
@@ -630,6 +634,7 @@ impl Shell {
         self.live.players.clear();
         eprintln!("edel-shell-ui: screen unlocked");
         self.draw_all();
+        self.show_next_access();
         // Asked for from the lock with a right press or Super+L, the looks
         // side by side open now that the person is in (M5.10c7h; they used to
         // open the lock editor, M5.10c6c3).
@@ -641,6 +646,15 @@ impl Shell {
 }
 
 impl Shell {
+    /// Whether a key from `keyboard` must be dropped: while the screen is
+    /// locked only the lock's own keyboard is heard, so no other surface's
+    /// keyboard takes the password, nor doubles its letters.
+    pub fn not_the_locks(&self, keyboard: &wl_keyboard::WlKeyboard) -> bool {
+        self.lock
+            .as_ref()
+            .is_some_and(|card| card.keyboard.as_ref() != Some(keyboard))
+    }
+
     /// Caps Lock went on or off: the field says so.
     pub fn lock_caps(&mut self, on: bool) {
         if let Some(card) = &mut self.lock
@@ -1152,6 +1166,7 @@ impl SessionLockHandler for Shell {
                 eprintln!("edel-shell-ui: {}", messages::LOCK_REFUSED);
             }
             self.live.players.clear();
+            self.show_next_access();
         }
         // A suspend that waited for a lock the compositor refused suspends
         // without it (M7.8).

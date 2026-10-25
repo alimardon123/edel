@@ -42,25 +42,6 @@ sources() {
 	fi
 }
 
-# main_disk FILE: the newest desktop image a push to main kept, into
-# FILE; false when GH_TOKEN is unset or none is kept.
-main_disk() {
-	[ -n "${GH_TOKEN:-}" ] || return 1
-	api="https://api.github.com/repos/$repo/actions/artifacts"
-	id=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "$api?name=edel-try-x86_64&per_page=20" | python3 -c '
-import json, sys
-kept = [a for a in json.load(sys.stdin)["artifacts"]
-        if not a["expired"] and a["workflow_run"]["head_branch"] == "main"]
-kept.sort(key=lambda a: a["created_at"], reverse=True)
-print(kept[0]["id"] if kept else "")') || return 1
-	[ -n "$id" ] || return 1
-	curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o "$dir/main.zip" "$api/$id/zip"
-	python3 -c 'import sys, zipfile, shutil
-with zipfile.ZipFile(sys.argv[1]) as z, z.open(sys.argv[2]) as src, open(sys.argv[3], "wb") as out:
-    shutil.copyfileobj(src, out, 4 << 20)' "$dir/main.zip" "$image" "$1"
-	rm -f "$dir/main.zip"
-}
-
 # os_value SLOT KEY: KEY's value in the slot's os-release.
 os_value() {
 	debugfs -R "cat /usr/lib/os-release" "$1" 2>/dev/null | sed -n "s/^$2=\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" | head -n 1
@@ -130,7 +111,7 @@ upgrade() {
 mkdir -p "$dir"
 list=$(sources)
 if [ -z "$list" ]; then
-	if main_disk "$dir/main.img.gz"; then
+	if main_image "$dir/main.img.gz"; then
 		list="main-build $dir/main.img.gz"
 	else
 		echo "SKIP: no release is kept and no preview is published (M3.4), and no desktop image of main could be read (GH_TOKEN), so there is nothing to upgrade from"
