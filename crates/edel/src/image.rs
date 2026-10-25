@@ -757,11 +757,7 @@ impl Build<'_> {
             return Ok(None);
         }
         let data = work.join("data");
-        let below = edel::places::DEFAULT_APPS
-            .strip_prefix(edel::places::DATA_MOUNT)
-            .unwrap_or(edel::places::DEFAULT_APPS)
-            .trim_start_matches('/');
-        let apps = data.join(below);
+        let apps = edel::places::on_data(&data, Path::new(edel::places::DEFAULT_APPS));
         let config = work.join("flatpak-config");
         self.runner.step(&format!(
             "install the default apps {} from {} into {}",
@@ -1017,11 +1013,7 @@ impl Build<'_> {
         };
         let version =
             crate::release::os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
-        let dir = tree.join(
-            crate::addons::version_dir(&version)
-                .strip_prefix(edel::places::DATA_MOUNT)
-                .unwrap_or(Path::new("")),
-        );
+        let dir = edel::places::on_data(&tree, &crate::addons::version_dir(&version));
         for name in carried {
             let file = self.out.join(format!("{}.{name}.ext4", self.def.stem()));
             self.runner.step(&format!(

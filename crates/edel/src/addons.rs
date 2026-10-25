@@ -1363,10 +1363,10 @@ pub fn mount_all() -> Result<()> {
     let dir = version_dir(&version);
     let pending = dir.join(places::ADDONS_PENDING);
     let mark = pending.join(places::ADDONS_TRY);
+    // With the settings file unreadable, the default and the fetched ones
+    // still to try; an add-on the person took out never comes back by it.
     let waiting = names_in(&pending);
-    // With the settings file unreadable, every add-on on the disk is kept.
-    let here: Vec<String> = names_in(&dir).into_iter().chain(waiting.clone()).collect();
-    let wanted = edel::addon_state::installed_on_machine_or(&here);
+    let wanted = edel::addon_state::installed_on_machine_or(&waiting);
     let plan = boot_plan(&waiting, &wanted, mark.exists());
     if mark.exists() {
         fs::remove_file(&mark)?;

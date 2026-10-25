@@ -111,8 +111,8 @@ pub fn installed_on_machine() -> Vec<String> {
 
 /// As [`installed_on_machine`], but when the file is there and cannot be
 /// read (a typo made by hand, a newer format with no older file beside
-/// it), the running slot's default and `kept`, the add-ons already on the
-/// disk: a mistake in the file never takes the desktop away or throws a
+/// it), the running slot's default and `kept`, the fetched add-ons still
+/// to try: a mistake in the file never takes the desktop away or throws a
 /// downloaded add-on out, and the warning names the file.
 pub fn installed_on_machine_or(kept: &[String]) -> Vec<String> {
     let path = places::found(&places::machine_settings());
@@ -125,7 +125,7 @@ pub fn installed_on_machine_or(kept: &[String]) -> Vec<String> {
             eprintln!(
                 "warning: {}",
                 trf(
-                    "could not read {path} ({why}), so the default add-ons and those already here are used until it is fixed",
+                    "could not read {path} ({why}), so only the default add-ons start until it is fixed",
                     &[
                         ("path", &path.display().to_string()),
                         ("why", &format!("{err:#}"))

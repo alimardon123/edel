@@ -503,15 +503,20 @@ fn restart_now() -> ! {
 /// download or a game holds it, and no longer once the holder is gone.
 fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
     let lock = Path::new(places::UPDATE_LOCK);
+    // A holder that ends between the refusal and the look at the lock
+    // leaves it free: one more try then, before an error stands.
+    let mut tried_free = false;
     loop {
         match update::confirm_running() {
             Ok(lines) => return Ok(lines),
             Err(_) if lock.exists() && !update::is_stale(lock) => {
+                tried_free = false;
                 if let Some(dog) = watchdog.as_mut() {
                     let _ = dog.write_all(b".");
                 }
                 sleep(Duration::from_secs(1));
             }
+            Err(_) if !tried_free => tried_free = true,
             Err(err) => return Err(err),
         }
     }

@@ -427,7 +427,10 @@ fn holder(held: &str) -> String {
 /// Whether a process with this pid runs, from `/proc` (the lock files and
 /// the compositor's state file, M7.7c).
 pub(crate) fn alive(pid: u32) -> bool {
-    Path::new("/proc").join(pid.to_string()).exists()
+    // Only edel takes these locks, so a process of another name has the
+    // pid of a killed updater, not its lock.
+    fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("comm"))
+        .is_ok_and(|comm| comm.trim_end() == "edel")
 }
 
 /// A lock whose pid no longer runs. A lock with no pid yet is only stale
@@ -836,7 +839,7 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     let mut env = esp.load()?;
     if let Some(failed) = confirm(&mut env, disk.running) {
         let msg = trf(
-            "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again",
+            "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the automatic updates pass that release over until a newer one comes (edel update installs it again by hand)",
             &[
                 ("failed", &failed.to_string()),
                 ("running", &disk.running.to_string()),

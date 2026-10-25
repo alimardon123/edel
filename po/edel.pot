@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
-msgid "could not read {path} ({why}), so the default add-ons and those already here are used until it is fixed"
+msgid "could not read {path} ({why}), so only the default add-ons start until it is fixed"
 msgstr ""
 
 msgid "Installed"
@@ -3080,7 +3080,7 @@ msgstr ""
 msgid "could not write the slot"
 msgstr ""
 
-msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again"
+msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the automatic updates pass that release over until a newer one comes (edel update installs it again by hand)"
 msgstr ""
 
 msgid "the fallback happened but could not be recorded ({why}), so Settings will not mention it"
