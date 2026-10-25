@@ -10,6 +10,10 @@ Every Edel OS release is a GitHub release of this repository. [Try it](TRY-IT.md
 
 Until the first preview is published (roadmap M3.4), these pages are empty, and the newest images come from CI, as [Try it](TRY-IT.md#get-the-images) says.
 
+## NVIDIA graphics
+
+NVIDIA cards run on the open driver every Edel OS image carries (the kernel's nouveau and Mesa's NVK), not on NVIDIA's own driver, which is built for another C library than ours. Cards from the GeForce GTX 16 and RTX 20 series on run at full speed with it. Older cards (GTX 10 series and before) start and show the desktop, but the open driver cannot raise their clock, so games run slowly on them. Intel and AMD graphics need nothing extra.
+
 ## Check what you downloaded
 
 Each release's `release.toml` lists every file of the release with its sha256 sum: the update images under `[[images]]`, and the disks, the container image and the package lists under `[[downloads]]`, each by its bytes as downloaded. `release.toml.sig` is the list's signature, made with the release key in CI ([Releases](RELEASE.md)), so one signature covers every file.
