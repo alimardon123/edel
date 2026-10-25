@@ -57,7 +57,7 @@ pub fn parse(value: &str) -> Result<Vec<Layout>, String> {
                 )
             });
         }
-        if let Some(variant) = variant.filter(|v| !is_xkb_name(v)) {
+        if let Some(variant) = variant.filter(|v| !is_xkb_variant(v)) {
             return Err(format!(
                 "{variant:?} is not a variant name; variants are names such as \"nodeadkeys\""
             ));
@@ -76,11 +76,17 @@ pub fn parse(value: &str) -> Result<Vec<Layout>, String> {
     Ok(layouts)
 }
 
-/// Lower case letters, digits, `_` and `-`, as xkb names are.
+/// Lower case letters, digits, `_` and `-`, as xkb's layout names are.
 fn is_xkb_name(s: &str) -> bool {
     !s.is_empty()
         && s.chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+/// A layout name's letters, and capitals too, which some of xkb's
+/// variants have (`jp(OADG109A)`, `de(T3)`, `ua(macOS)`).
+fn is_xkb_variant(s: &str) -> bool {
+    is_xkb_name(&s.to_ascii_lowercase())
 }
 
 /// The layouts and the variants (`layout(variant)`) xkeyboard-config's
@@ -253,6 +259,8 @@ mod tests {
     fn reads_one_layout_several_and_variants() {
         assert_eq!(normalize("de", None).unwrap(), "de");
         assert_eq!(normalize(" us , ru ", None).unwrap(), "us,ru");
+        assert_eq!(normalize("jp(OADG109A)", None).unwrap(), "jp(OADG109A)");
+        assert!(parse("DE").is_err(), "layout names stay lower case");
         let layouts = parse("de(nodeadkeys),us").unwrap();
         assert_eq!(layouts[0].variant.as_deref(), Some("nodeadkeys"));
         assert_eq!(
