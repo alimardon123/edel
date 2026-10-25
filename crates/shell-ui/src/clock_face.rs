@@ -528,12 +528,17 @@ mod tests {
     }
 
     #[test]
-    fn each_face_draws_inside_its_rect_and_nowhere_else() {
+    fn each_face_draws_inside_the_size_it_asks_for_and_nowhere_else() {
+        // The box is the face's own `size`, as the layout gives it, so the
+        // test holds with whatever font the machine has; a glyph's edge may
+        // reach `SLACK` pixels past it (its overhang and anti-aliasing).
+        const SLACK: f32 = 2.0;
         let colour = Tokens::built_in().backdrop_text;
         for face in [Face::Digital, Face::Stacked, Face::Analog, Face::Minimal] {
-            let mut pixmap = Pixmap::new(600, 300).unwrap();
-            let rect = Rect::new(100.0, 50.0, 400.0, 200.0);
+            let mut pixmap = Pixmap::new(800, 400).unwrap();
             let mut text = text();
+            let (w, h) = size(face, 90.0, &mut text, 250);
+            let rect = Rect::new(400.0 - w / 2.0, 200.0 - h / 2.0, w, h);
             draw(
                 &mut pixmap,
                 rect,
@@ -547,14 +552,15 @@ mod tests {
                 1.0,
             );
             let mut inside = 0;
-            for y in 0..300 {
-                for x in 0..600 {
-                    let within = (x as f32) >= rect.x
-                        && (x as f32) < rect.x + rect.w
-                        && (y as f32) >= rect.y
-                        && (y as f32) < rect.y + rect.h;
+            for y in 0..400 {
+                for x in 0..800 {
+                    let (x_f, y_f) = (x as f32, y as f32);
+                    let within = x_f >= rect.x - SLACK
+                        && x_f < rect.x + rect.w + SLACK
+                        && y_f >= rect.y - SLACK
+                        && y_f < rect.y + rect.h + SLACK;
                     if inked(&pixmap, x, y) {
-                        assert!(within, "{face:?} inks {x},{y} outside its rect");
+                        assert!(within, "{face:?} inks {x},{y} outside its {w}x{h} size");
                         inside += 1;
                     }
                 }
