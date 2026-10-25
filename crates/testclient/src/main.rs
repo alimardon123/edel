@@ -41,7 +41,9 @@
 //! each closed before the compositor draws a frame of it, every other one
 //! before its first configure, as a splash screen or a dialog that closes
 //! at once does (M8.21, the other projects' bugs review), and prints
-//! `flashed N`.
+//! `flashed N`. `--sandboxed` connects through a security context, as a
+//! Flatpak app does, and `--activate FILE` asks to come forward once FILE
+//! exists (`activate.rs`).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -109,6 +111,10 @@ struct Args {
     smooth: Option<usize>,
     /// How many windows to open and close at once (M8.21).
     flash: Option<u32>,
+    /// Connected through a security context, as a Flatpak app is.
+    sandboxed: bool,
+    /// The file whose making asks the window forward (`activate.rs`).
+    activate: Option<PathBuf>,
 }
 
 /// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
@@ -133,6 +139,8 @@ fn args() -> Result<Args> {
     let mut busy = false;
     let mut smooth = None;
     let mut flash = None;
+    let mut sandboxed = false;
+    let mut activate = None;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -144,6 +152,7 @@ fn args() -> Result<Args> {
             // starts it with (M8.26), so the stand-in for Steam
             // (ci/apps/make-repo.sh) draws as a game does.
             "--busy" | "-gamepadui" => busy = true,
+            "--sandboxed" => sandboxed = true,
             _ => {}
         }
         if matches!(
@@ -154,6 +163,7 @@ fn args() -> Result<Args> {
                 | "--clipboard"
                 | "--busy"
                 | "-gamepadui"
+                | "--sandboxed"
         ) {
             continue;
         }
@@ -174,6 +184,7 @@ fn args() -> Result<Args> {
                 recolour = Some((pixel_of(colour, "--recolour")?, PathBuf::from(file)));
             }
             "--title" => title = Some(value),
+            "--activate" => activate = Some(PathBuf::from(value)),
             "--app-id" => app_id = value,
             "--smooth" => {
                 smooth = match value.parse::<usize>() {
@@ -195,7 +206,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy, --smooth and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy, --smooth, --sandboxed, --activate and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
             ),
         }
     }
@@ -222,6 +233,8 @@ fn args() -> Result<Args> {
         busy,
         smooth,
         flash,
+        sandboxed,
+        activate,
     })
 }
 
@@ -284,6 +297,7 @@ impl Dispatch<wl_callback::WlCallback, Wake> for Client {
     }
 }
 
+mod activate;
 mod clipboard;
 mod hold;
 mod lid;
@@ -319,7 +333,13 @@ fn main() -> Result<()> {
         _ => {}
     }
     let args = args()?;
-    let connection = Connection::connect_to_env().context("connecting to the compositor")?;
+    let (connection, _sandbox) = if args.sandboxed {
+        let (connection, sandbox) = sandbox::connect()?;
+        (connection, Some(sandbox))
+    } else {
+        let connection = Connection::connect_to_env().context("connecting to the compositor")?;
+        (connection, None)
+    };
     let (globals, mut queue) = registry_queue_init(&connection).context("reading the globals")?;
     let qh = queue.handle();
     let compositor = CompositorState::bind(&globals, &qh).context("no wl_compositor")?;
@@ -413,8 +433,14 @@ fn main() -> Result<()> {
         println!("flashed {times}");
         return Ok(());
     }
+    let activation = args
+        .activate
+        .as_ref()
+        .map(|_| activate::bind(&globals, &qh))
+        .transpose()?;
     let mut recolour = args.recolour;
-    if let Some((_, file)) = &recolour {
+    let mut activate = args.activate;
+    for file in recolour.iter().map(|(_, file)| file).chain(&activate) {
         let (display, wake) = (connection.display(), qh.clone());
         let (connection, file) = (connection.clone(), file.clone());
         std::thread::spawn(move || {
@@ -426,6 +452,13 @@ fn main() -> Result<()> {
         });
     }
     while !client.closed {
+        if let (Some(file), Some(activation)) = (&activate, &activation) {
+            if file.exists() {
+                activate = None;
+                activate::ask(activation, &qh, client.shown.wl_surface());
+                let _ = std::io::stdout().flush();
+            }
+        }
         if let Some((pixel, file)) = &recolour {
             if file.exists() {
                 client.pixel = *pixel;
