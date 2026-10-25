@@ -231,6 +231,12 @@ pub struct Edel {
     /// The frames clients asked to copy the screen into, until their
     /// buffers are filled (`screencopy.rs`, M6.3).
     pub pending_copies: Vec<crate::screencopy::Pending>,
+    /// Each output's offscreen texture for those copies, with its size,
+    /// kept while the size stays (`screencopy.rs`).
+    pub copy_textures: std::collections::HashMap<
+        String,
+        ((i32, i32), smithay::backend::renderer::gles::GlesTexture),
+    >,
     /// The clients whose first copy has been logged, once each.
     pub copy_clients: Vec<smithay::reexports::wayland_server::backend::ClientId>,
     /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
@@ -317,6 +323,7 @@ impl Edel {
                 &display,
             ),
             pending_copies: Vec::new(),
+            copy_textures: std::collections::HashMap::new(),
             copy_clients: Vec::new(),
             keyboard_shortcuts_inhibit:
                 smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState::new::<
