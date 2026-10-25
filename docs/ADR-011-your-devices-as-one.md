@@ -1,7 +1,7 @@
 # ADR-011: Your devices as one
 
 **Status:** Proposed
-**Date:** 2026-10-08, amended 2026-10-08 (sections 7 to 11, what only one system everywhere can do; sections 12 to 18, ideas no other system can match, and the seams kept now)
+**Date:** 2026-10-08, amended 2026-10-08 (sections 7 to 11, what only one system everywhere can do; sections 12 to 18, ideas no other system can match, and the seams kept now), amended 2026-10-25 (section 20, a box with no screen used from a phone)
 **Deciders:** Alimardon
 **Extends:** M7.10 (the phone and the computer together, planned on 2026-10-07, now M7.10a)
 **Related:** ADR-004 (one app adapts to every size), ADR-006 (one settings file), ADR-007 (add-ons), ADR-009 (no telemetry, no account), [review of other systems](REVIEW-apps-and-lessons.md), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
@@ -107,6 +107,10 @@ Sections 12, 16, 17 and 18 wait until the OS is stable (after M8), but what they
 - **Roles are profiles (M7.6)**, so a second life (13) adds files, not code.
 - **Nothing listens on the network until a device is paired**, the rule every section here keeps.
 
+### 20. A box with no screen, used from your phone
+
+**Screenless box (2026-10-25):** Alimardon asked whether a mini PC with no monitor, keyboard or mouse could be carried anywhere, plugged into power, joined to a phone's hotspot, a host's Wi-Fi or a home network, and used fully from the phone, "not just through SSH" but its whole desktop, as part of devices as one; and noted that xAI's Grok Bot and OpenAI's Dots, launched in 2026, give an AI agent a computer of its own that people follow from their phone. Those computers are the vendors', rented monthly, with the person's logins on their servers, as far as we found. Ours is the person's own box: when no monitor is attached the compositor draws a virtual screen, one more backend behind its trait (section 19), sized for the paired device that looks at it and laid out by that device's preset, so a phone sees a desktop made for a phone, not a shrunk one; a reused remote desktop server shows it to paired devices only, over the screen copy and virtual input protocols the compositor serves, touch becoming pointer and the phone's keyboard the box's. The first Wi-Fi comes from the settings file, else from a small hotspot the box opens while it knows no network. Away from home the box joins the phone's hotspot, since hotel networks often keep guests apart; from further away it is reached only through the person's own WireGuard tunnel (section 11), never a port open on the internet. With the AI agents add-on (M7.9), an agent works on the box's desktop while the person watches and approves from the phone, every change still an `edel` command. It is off by default, an add-on, and listens only while a paired device is connected.
+
 ## Options Considered
 
 | Option | Verdict |
@@ -141,6 +145,7 @@ Sections 12, 16, 17 and 18 wait until the OS is stable (after M8), but what they
 14. [ ] Your desktop in your pocket (M9.10), and your phone as your key (M9.11).
 15. [ ] Spikes: apps that travel, and all your devices as one computer (M13.1, M13.2).
 16. [ ] The seams of section 19, each in its own step: who a key belongs to (M6.11), one writer of the settings file (M8.13), a device identity key (M6.12), backends for remote screens (compositor), portals for screen sharing (M6.3), roles as profiles (M7.6).
+17. [ ] A box with no screen, used from your phone (M7.10n).
 
 ## Sources
 
