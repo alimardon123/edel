@@ -29,6 +29,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [platform-levels.md](platform-levels.md) | Platform levels: what apps can count on from every release of a level, how the build keeps it, `edel platform status` | Reference |
 | [FORMATS.md](FORMATS.md) | Every file format edel owns: fields, signatures, leniency, the stepping-stone rule | Reference |
 | [RELEASE.md](RELEASE.md) | What CI publishes, what is kept forever, the release key and the steps that wait for Alimardon | Reference |
+| [PROPOSAL-undo-keys-and-key-table.md](PROPOSAL-undo-keys-and-key-table.md) | The Undo bar from the keyboard (a Super+Z shortcut) and one entry per setting key: options and a recommendation, waiting for Alimardon | Proposal |
 | [SPIKE-app-runtimes.md](SPIKE-app-runtimes.md) | Apps that carry everything but musl and the drivers, a Flatpak runtime built from Alpine, and Flathub, measured on an older and a newer base (M10.9, M10.10) | Spike |
 | [SPIKE-flatpak.md](SPIKE-flatpak.md) | Flatpak's glibc runtimes on the musl base: the verdict and what CI measured | Spike |
 | [SECURITY.md](SECURITY.md) | How Alpine's security fixes reach a release (the monthly rebuild) and how to read the package lists and bills of materials | Reference |

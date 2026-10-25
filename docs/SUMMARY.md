@@ -55,6 +55,7 @@
 - [Review: apps that last, and why new systems take years](REVIEW-apps-and-lessons.md)
 - [Review: everything walked as a newcomer](REVIEW-experience.md)
 - [Review: other projects' bugs, checked against ours](REVIEW-bugs.md)
+- [Proposal: Undo from the keyboard, fewer places per setting](PROPOSAL-undo-keys-and-key-table.md)
 - [Spike: app runtimes](SPIKE-app-runtimes.md)
 - [Spike: Flatpak](SPIKE-flatpak.md)
 
