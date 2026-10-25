@@ -427,8 +427,12 @@ fn holder(held: &str) -> String {
 /// Whether a process with this pid runs, from `/proc` (the lock files and
 /// the compositor's state file, M7.7c).
 pub(crate) fn alive(pid: u32) -> bool {
-    // Only edel takes these locks, so a process of another name has the
-    // pid of a killed updater, not its lock.
+    Path::new("/proc").join(pid.to_string()).exists()
+}
+
+/// Whether `pid` is a running edel: only edel takes these locks, so a
+/// process of another name has the pid of a killed updater, not its lock.
+fn edel_runs(pid: u32) -> bool {
     fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("comm"))
         .is_ok_and(|comm| comm.trim_end() == "edel")
 }
@@ -442,7 +446,7 @@ pub(crate) fn is_stale(path: &Path) -> bool {
             .next()
             .and_then(|p| p.parse::<u32>().ok())
     }) {
-        Some(pid) => !alive(pid),
+        Some(pid) => !edel_runs(pid),
         None => fs::metadata(path)
             .and_then(|m| m.modified())
             .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > 5)),
