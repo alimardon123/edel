@@ -5,7 +5,7 @@
 **Deciders:** Alimardon
 **Related:** the whole-system review of 2026-10-25 (its shell surfaces finding on the Undo bar and its architecture finding on keys), ADR-008 (keys), ADR-010 (one owner), [shortcuts](SHORTCUTS.md)
 
-Two review findings need a design choice before code, so this page gives the options and a recommendation for each. Alimardon took both recommendations on 2026-10-25; A is built, E and B follow in the UI lane.
+Two review findings need a design choice before code, so this page gives the options and a recommendation for each. Alimardon took both recommendations on 2026-10-25; A and E are built, B follows in the UI lane.
 
 ## 1. Undo after Done, from the keyboard
 
@@ -42,7 +42,7 @@ To be fair to the review's numbers (20 and 33 files in two key commits), most of
 | D. A macro that writes the struct's field from the table. | Not now. It would save one line per key, at the cost of macro code few people can read. Revisit if the two ever drift. |
 | E. One test, "a new key is complete". It takes the last line of `keys.txt` and lists in a single message every place that key still lacks (entry, field, row or `NO_ROW`, generated docs). | **Recommended, with A.** It is cheap, and it tells a person or a coding agent everything at once instead of one failure per run. |
 
-**After A and E:** a new key is written in four places (its `KEYS` entry, its field, its Settings row and its `keys.txt` line), and one test names every place that is still missing. The generated files still come from one command.
+**After A and E:** a new key is written in four places (its `KEYS` entry, its field, its Settings row and its `keys.txt` line), and one test, `every_key_is_complete` in `crates/edel/src/settings.rs`, names in one message every place each key still lacks; Settings' own test names a missing row. The generated files still come from one command.
 
 **Cost of A and E:** two PRs in the UI lane, A then E, each checked by the existing key tests, `ci/keys-check.sh` and `ci/one-place.sh`.
 
