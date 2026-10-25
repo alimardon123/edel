@@ -1,11 +1,11 @@
 # Proposal: the Undo bar from the keyboard, and fewer places per setting
 
-**Status:** Proposed
+**Status:** Accepted (Alimardon, 2026-10-25: option B for the Undo bar, A and E for the keys)
 **Date:** 2026-10-25
 **Deciders:** Alimardon
 **Related:** the whole-system review of 2026-10-25 (its shell surfaces finding on the Undo bar and its architecture finding on keys), ADR-008 (keys), ADR-010 (one owner), [shortcuts](SHORTCUTS.md)
 
-Two review findings need a design choice before code, so this page gives the options and a recommendation for each. Nothing here is built yet.
+Two review findings need a design choice before code, so this page gives the options and a recommendation for each. Alimardon took both recommendations on 2026-10-25; A is built, E and B follow in the UI lane.
 
 ## 1. Undo after Done, from the keyboard
 

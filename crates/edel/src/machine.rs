@@ -3049,7 +3049,6 @@ mod tests {
     }
 
     static PRESET_LINE: key_help::Help = key_help::Help {
-        key: "layout.tiling",
         help: "tiling",
         default: "false",
         from: DecidedBy::Preset,
@@ -3058,7 +3057,6 @@ mod tests {
     };
 
     static RELEASE_LINE: key_help::Help = key_help::Help {
-        key: "network.hostname",
         help: "the name",
         default: "\"edel\"",
         from: DecidedBy::Release,
@@ -3067,7 +3065,6 @@ mod tests {
     };
 
     static HARDWARE_LINE: key_help::Help = key_help::Help {
-        key: "displays.main.scale",
         help: "the scale",
         default: "1",
         from: DecidedBy::Hardware,
