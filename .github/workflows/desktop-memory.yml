@@ -1,6 +1,6 @@
 name: Desktop memory
 
-# Edel OS's live desktop beside Ubuntu's and Fedora's (roadmap M8.35, the
+# Edel OS's live desktop beside Ubuntu's and Fedora's (roadmap M8.36, the
 # release readiness audit of 2026-10-25): each booted from its own
 # download in the same QEMU machine, at 1.5 GiB and 1 GiB, its memory in
 # use read through the virtio balloon idle and with Firefox playing a

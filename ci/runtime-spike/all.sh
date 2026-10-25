@@ -3,8 +3,10 @@
 # bundles that carry everything but musl and the graphics drivers (a GTK app, GNOME Calculator; a GPU
 # app, es2gears; and two command-line tools, jq and ripgrep) from this year's Alpine branch (the one
 # features/base.toml names) and from the branch a year older, and runs each on both, standing for an
-# older and a newer Edel OS; then builds a Flatpak runtime from each branch's packages with the
-# calculator on it, and runs both and Flathub's calculator on this year's. Writes every RESULT line to
+# older and a newer Edel OS; then builds a Flatpak runtime from each branch's packages with three
+# apps on it, runs one from three years before and one from a year before, built without a graphics
+# driver, on this year's machine's driver (host-gl.sh), and measures this year's against Flathub's
+# (fair.sh). Writes every RESULT line to
 # out/runtime-spike/results.txt and a table to out/runtime-spike/summary.md (and the run's summary in
 # CI); fails when an app does not draw or run. EDEL_SPIKE_CA: a CA file the containers must trust, and
 # then the proxy in $https_proxy is passed on (a cloud session's network); unset in CI.
@@ -12,6 +14,7 @@ set -eu
 cd "$(dirname "$0")/../.."
 new=$(sed -n 's/^branch = "v\(.*\)"/\1/p' features/base.toml)
 old=${new%.*}.$((${new#*.} - 2))
+older=${new%.*}.$((${new#*.} - 6))
 out=$PWD/out/runtime-spike
 rm -rf "$out"; mkdir -p "$out"
 box() {
@@ -24,13 +27,18 @@ box() {
 	docker run --rm --privileged "$@"
 }
 for b in "$old" "$new"; do
-	box $b 'sh /scripts/bundle.sh calc gnome-calculator && sh /scripts/bundle.sh gpu mesa-demos && sh /scripts/bundle.sh cli jq ripgrep && sh /scripts/runtime.sh'
+	box $b 'sh /scripts/bundle.sh calc gnome-calculator && sh /scripts/bundle.sh gpu mesa-demos && sh /scripts/bundle.sh cli jq ripgrep && APPS="gnome-calculator gnome-text-editor gnome-clocks" sh /scripts/runtime.sh'
 done | tee -a "$out/results.txt"
 for b in "$old" "$new"; do box $b 'sh /scripts/run-bundles.sh'; done | tee -a "$out/results.txt"
-for from in flathub "local $old" "local $new"; do box $new "sh /scripts/run-flatpak.sh $from"; done | tee -a "$out/results.txt"
+for b in "$older" "$old"; do box $b 'sh /scripts/runtime.sh nogl'; done | tee -a "$out/results.txt"
+box $new "sh /scripts/host-gl.sh $older $old" | tee -a "$out/results.txt"
+for from in flathub "local $new"; do box $new "sh /scripts/fair.sh $from"; done | tee -a "$out/results.txt"
 sh ci/runtime-spike/summary.sh "$out/results.txt" >"$out/summary.md"
 cat "$out/summary.md"
 [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat "$out/summary.md" >>"$GITHUB_STEP_SUMMARY"
-# 2 bases x 2 bundle branches x (3 calculator runs, 3 GPU runs, 1 command-line run), and 3 x 3 Flatpak runs
-[ "$(grep -c '^RESULT' "$out/results.txt")" = 37 ] || { echo "FAIL: some run printed no RESULT line"; exit 1; }
+# 2 bases x 2 bundle branches x (3 calculator runs, 3 GPU runs, 1 command-line run), 2 old runtimes x
+# 2 musl x 3 runs on the machine's driver, and 2 x 10 Flatpak runs
+[ "$(grep -c '^RESULT' "$out/results.txt")" = 60 ] || { echo "FAIL: some run printed no RESULT line"; exit 1; }
+# every old runtime drew with the machine's own driver, not with a copy of its own
+! grep '^LOADED' "$out/results.txt" | grep -v '/srv/gl/lib/libgallium' || { echo "FAIL: an old runtime did not load the machine's driver"; exit 1; }
 ! grep '^RESULT.* \(drew\|ran\)=no' "$out/results.txt"

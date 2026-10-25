@@ -1,5 +1,5 @@
 #!/bin/sh
-# Desktop memory beside other systems (roadmap M8.35, the release
+# Desktop memory beside other systems (roadmap M8.36, the release
 # readiness audit of 2026-10-25): the live desktop of one system, booted
 # from its own download in the same QEMU machine as the others, at 1.5 GiB
 # and at 1 GiB of memory, in the manner of Bryan Quigley's 2026 live-stick

@@ -638,6 +638,18 @@ pub fn is_settings_name(name: &str) -> bool {
     name == SETTINGS || FORMER_SETTINGS.contains(&name)
 }
 
+/// `place`, a path on the data partition, where that partition is mounted
+/// at `root` instead of [`DATA_MOUNT`]: a disk being installed, an image
+/// being built. The result is always under `root`, never `place` itself,
+/// which would name the running machine's own file.
+pub fn on_data(root: &Path, place: &Path) -> PathBuf {
+    let below = place
+        .strip_prefix(DATA_MOUNT)
+        .or_else(|_| place.strip_prefix("/"))
+        .unwrap_or(place);
+    root.join(below)
+}
+
 /// `path`, a settings file, as it is found: itself when it exists, else
 /// the first file beside it by a former name that does, else `path`.
 pub fn found(path: &Path) -> PathBuf {
@@ -661,6 +673,19 @@ mod tests {
     use std::fs;
 
     use super::*;
+
+    #[test]
+    fn a_data_place_on_another_mount_stays_under_it() {
+        let root = Path::new("/mnt/new");
+        assert_eq!(
+            on_data(root, Path::new(DEFAULT_APPS)),
+            Path::new("/mnt/new/edel/apps")
+        );
+        assert_eq!(
+            on_data(root, Path::new("/etc/x")),
+            Path::new("/mnt/new/etc/x")
+        );
+    }
 
     #[test]
     fn a_shared_place_is_found_in_the_xdg_data_dirs_elsewhere() {

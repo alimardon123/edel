@@ -430,16 +430,23 @@ pub(crate) fn alive(pid: u32) -> bool {
     Path::new("/proc").join(pid.to_string()).exists()
 }
 
+/// Whether `pid` is a running edel: only edel takes these locks, so a
+/// process of another name has the pid of a killed updater, not its lock.
+fn edel_runs(pid: u32) -> bool {
+    fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("comm"))
+        .is_ok_and(|comm| comm.trim_end() == "edel")
+}
+
 /// A lock whose pid no longer runs. A lock with no pid yet is only stale
 /// once it is a few seconds old, since its holder writes the pid right
 /// after creating it.
-fn is_stale(path: &Path) -> bool {
+pub(crate) fn is_stale(path: &Path) -> bool {
     match fs::read_to_string(path).ok().and_then(|t| {
         t.split_whitespace()
             .next()
             .and_then(|p| p.parse::<u32>().ok())
     }) {
-        Some(pid) => !alive(pid),
+        Some(pid) => !edel_runs(pid),
         None => fs::metadata(path)
             .and_then(|m| m.modified())
             .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > 5)),
@@ -668,6 +675,9 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
         before_install(&mut env, slot);
         esp.save(&env)?;
     }
+    // The slot is off now, so no update waits for a restart until this one
+    // is written; mark_restart_pending says so again once it is.
+    let _ = fs::remove_file(edel::places::RESTART_PENDING);
 
     println!(
         "edel update: {}",
@@ -833,7 +843,7 @@ pub(crate) fn confirm_running() -> Result<Vec<String>> {
     let mut env = esp.load()?;
     if let Some(failed) = confirm(&mut env, disk.running) {
         let msg = trf(
-            "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again",
+            "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the automatic updates pass that release over until a newer one comes (edel update installs it again by hand)",
             &[
                 ("failed", &failed.to_string()),
                 ("running", &disk.running.to_string()),
@@ -1047,13 +1057,20 @@ fn fell_back(version: &str) -> Result<bool> {
     let disk = Disk::find()?;
     let env = Esp::mount(&disk)?.load()?;
     let other = disk.running.other();
-    if env.ok(other) || env.tries(other) > 0 {
+    if !failed_to_start(&env, other) {
         return Ok(false);
     }
     let device = disk.device(other.partition())?;
     Ok(slot_os_release(&device)
         .and_then(|text| os_release_value(&text, "VERSION_ID"))
         .is_some_and(|v| v == version))
+}
+
+/// Whether `slot` failed to start: switched off after GRUB counted a try
+/// on it, as `confirm` leaves a slot it passed over. A slot switched off
+/// with no try is an install that never finished, worth trying again.
+fn failed_to_start(env: &Env, slot: Slot) -> bool {
+    !env.ok(slot) && env.tries(slot) > 0
 }
 
 /// The local time now, in minutes after midnight.
@@ -1187,6 +1204,21 @@ mod tests {
         assert_eq!(env.order(), [Slot::A, Slot::B]);
         assert!(env.ok(Slot::A) && !env.ok(Slot::B));
         assert_eq!((env.tries(Slot::A), env.tries(Slot::B)), (0, 3));
+    }
+
+    #[test]
+    fn a_slot_that_fell_back_failed_and_a_cut_install_did_not() {
+        // After a fallback, confirm keeps the failed slot's tries: it is not
+        // tried again. An install cut off before after_install leaves it off
+        // with no try: the next automatic update writes it again.
+        let mut env = Env::parse("ORDER=B A\nA_OK=1\nA_TRY=1\nB_OK=1\nB_TRY=3\n").unwrap();
+        confirm(&mut env, Slot::A);
+        assert!(failed_to_start(&env, Slot::B));
+        let mut env = Env::initial();
+        before_install(&mut env, Slot::B);
+        assert!(!failed_to_start(&env, Slot::B));
+        after_install(&mut env, Slot::B);
+        assert!(!failed_to_start(&env, Slot::B));
     }
 
     #[test]
