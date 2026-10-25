@@ -1,0 +1,39 @@
+name: App runtime spike
+
+# The app runtime spikes (roadmap M10.9 and M10.10, docs/SPIKE-app-runtimes.md):
+# apps that carry everything but musl and the graphics drivers, a Flatpak
+# runtime built from Alpine's packages, and Flathub's, each measured on an
+# older and a newer base, in Docker. Nothing ships from it. One job, run only
+# when its scripts change or by hand, so the shared limit of 20 jobs at once
+# is left to "CI"; ci/changes.sh counts its files as affecting no heavy job.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ci/runtime-spike/**
+      - .github/workflows/runtime-spike.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runtime-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spike:
+    name: Measure the app runtimes
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Run the spike
+        run: sh ci/runtime-spike/all.sh
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: runtime-spike
+          path: |
+            out/runtime-spike/results.txt
+            out/runtime-spike/summary.md

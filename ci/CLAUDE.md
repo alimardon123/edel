@@ -37,6 +37,3 @@ What each case of `desktop-test.sh CASE...` checks is in [CASES.md](CASES.md), o
 - A measurement belongs on a boot or a case the tests already make, timed by the machine (a `Started in` line, the guest's clock), never by the host's polling (M8.15a): walks are checked by `walk` in `budgets.sh`, which also owns reading `budgets.toml`.
 - A ready pull request's full run took 46 to 54 minutes on 2026-10-17 with three or four full runs queued; when `main` moved during it, merging `main` locally and running `cargo test -p edel` (which covers the generated `po/edel.pot` and `docs/guide/commands.md`) was enough to merge, rather than a third run.
 
-## Coming changes
-
-The roadmap adds `upgrade-test.sh` (M3.5). Make each change only in its step, and take the details from the step itself, not from here.
