@@ -112,15 +112,13 @@ pub fn channel_list(channel: &str) -> String {
 }
 
 /// The channel this machine follows ([`edel::settings::channel`]), from
-/// its settings files and the channel its image was built for.
+/// settings file and the channel its image was built for.
 pub fn machine_channel() -> String {
     let read = |path: PathBuf| fs::read_to_string(edel::places::found(&path)).ok();
     let machine = read(edel::places::machine_settings());
-    let person = edel::places::person_settings().and_then(read);
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     edel::settings::channel(
         machine.as_deref(),
-        person.as_deref(),
         os_release_value(&os_release, "EDEL_CHANNEL").as_deref(),
     )
 }

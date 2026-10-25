@@ -344,11 +344,7 @@ impl Ui {
         let read =
             |path: Option<&std::path::PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
         let image = image_channel();
-        let current = settings::channel(
-            read(Some(&files.machine)).as_deref(),
-            read(files.person.as_ref()).as_deref(),
-            image.as_deref(),
-        );
+        let current = settings::channel(read(Some(&files.machine)).as_deref(), image.as_deref());
         let names = channel_names(&current);
         self.quiet.set(true);
         if *self.names.borrow() != names {
@@ -412,27 +408,52 @@ impl Ui {
         }
     }
 
-    /// A person chose channel `at`: writes `updates.channel` as the choice
-    /// always has (`choose_over`, so the image's own channel is not written).
+    /// A person chose channel `at`: `updates.channel` is the machine's, as
+    /// the updater runs as root and reads only the machine's file, so it is
+    /// set as root (reset when it is the image's own channel, which is then
+    /// not written), as the Region page sets its machine keys.
     fn pick(self: &Rc<Self>, at: usize) {
         if self.quiet.get() {
             return;
         }
         let name = self.names.borrow().get(at).cloned();
         if let Some(name) = name {
-            self.report(
-                Files::here().choose_over(
-                    "updates.channel",
-                    &name,
-                    Some(
-                        image_channel()
-                            .as_deref()
-                            .unwrap_or(settings::DEFAULT_CHANNEL),
-                    ),
-                ),
-            );
+            let own = image_channel().unwrap_or_else(|| settings::DEFAULT_CHANNEL.into());
+            let words = if name == own {
+                vec!["settings".into(), "reset".into(), "updates.channel".into()]
+            } else {
+                vec![
+                    "settings".into(),
+                    "set".into(),
+                    format!("updates.channel={name}"),
+                ]
+            };
+            self.change_channel(words);
         }
-        self.update();
+    }
+
+    /// Runs `words` and then `apply` as root on a thread of its own, then
+    /// shows the row again, with what refused the change in the problem line.
+    fn change_channel(self: &Rc<Self>, words: Vec<String>) {
+        let weak = Rc::downgrade(self);
+        glib::spawn_future_local(async move {
+            let done = gio::spawn_blocking(move || crate::cmd::set_and_apply_as_root(words)).await;
+            let Some(ui) = weak.upgrade() else { return };
+            if let Ok((set, apply)) = done {
+                let refused = if set.ok {
+                    apply.and_then(|run| (!run.ok).then(|| run.shown()))
+                } else {
+                    Some(set.shown())
+                };
+                ui.report(match refused {
+                    Some(why) => {
+                        Err(crate::status::unprefixed(why.lines().last().unwrap_or("")).to_string())
+                    }
+                    None => Ok(()),
+                });
+            }
+            ui.update();
+        });
     }
 
     /// Shows a refusal in the page's problem line, or clears it.
@@ -578,8 +599,11 @@ impl Ui {
         let ui = Rc::downgrade(self);
         self.channel_row.reset.connect_clicked(move |_| {
             if let Some(ui) = ui.upgrade() {
-                ui.report(Files::here().set("updates.channel", None));
-                ui.update();
+                ui.change_channel(vec![
+                    "settings".into(),
+                    "reset".into(),
+                    "updates.channel".into(),
+                ]);
             }
         });
         let ui = Rc::downgrade(self);
