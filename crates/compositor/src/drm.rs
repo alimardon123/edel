@@ -351,6 +351,21 @@ fn draws_whole(driver: &str) -> bool {
     )
 }
 
+/// Whether `driver` is the firmware's framebuffer, which the card's own
+/// driver takes over once it has started.
+fn is_firmware(driver: &str) -> bool {
+    matches!(driver, "simpledrm" | "efidrm" | "vesadrm")
+}
+
+/// Whether `path` is a card's own file (`/dev/dri/card1`), not a render
+/// node or a connector.
+fn is_card(path: &std::path::Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .and_then(|name| name.strip_prefix("card"))
+        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
 pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
     let mut event_loop: EventLoop<Edel> =
         EventLoop::try_new().context("creating the event loop")?;
@@ -521,13 +536,25 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     let device = gpu.borrow().drm.device_id();
     let plugged = Rc::clone(&gpu);
     let udev = UdevBackend::new(&seat).context("watching the GPU for screens")?;
+    let firmware = is_firmware(&driver);
     handle
-        .insert_source(udev, move |event, _, state: &mut Edel| {
-            if let UdevEvent::Changed { device_id } = event {
-                if device_id == device {
-                    plugged.borrow_mut().scan(state);
-                }
+        .insert_source(udev, move |event, _, state: &mut Edel| match event {
+            UdevEvent::Changed { device_id } if device_id == device => {
+                plugged.borrow_mut().scan(state);
             }
+            // The card drawn on went away, or the firmware's framebuffer
+            // the session started on is taken over by the card's own driver
+            // (the whole-system review of 2026-10-25): the session ends with
+            // why, and greetd starts it again on the card that is there now.
+            UdevEvent::Removed { device_id } if device_id == device => {
+                eprintln!("edel-compositor: {}", messages::GPU_GONE);
+                state.signal.stop();
+            }
+            UdevEvent::Added { path, .. } if firmware && is_card(&path) => {
+                eprintln!("edel-compositor: {}", messages::gpu_taken_over(&path));
+                state.signal.stop();
+            }
+            _ => {}
         })
         .map_err(|e| anyhow::anyhow!("watching the GPU for screens: {e}"))?;
     let switch = Rc::clone(&gpu);
@@ -1252,6 +1279,17 @@ fn arm_report(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_card_ends_only_a_session_on_the_firmwares_picture() {
+        use std::path::Path;
+        assert!(is_card(Path::new("/dev/dri/card1")));
+        assert!(!is_card(Path::new("/dev/dri/renderD128")));
+        assert!(!is_card(Path::new("/dev/dri/card")));
+        assert!(!is_card(Path::new("/sys/class/drm/card1-DP-1")));
+        assert!(is_firmware("simpledrm") && is_firmware("efidrm"));
+        assert!(!is_firmware("i915") && !is_firmware("bochs-drm"));
+    }
 
     #[test]
     fn framebuffer_drivers_draw_whole_frames_and_gpus_do_not() {
