@@ -18,6 +18,13 @@ update_image_mib = 700
 # features on 2026-10-25, without kms, plus 10 percent; `du -m` rounds up.
 initramfs_mib = 22
 
+# What a person downloads to write a stick (M8.17f): the one image,
+# `out/edel-x86_64.img.gz`, its slot, the add-ons it carries and the
+# default apps on its data partition, in MiB. 2155 MiB measured on `main`
+# on 2026-10-25 (the `edel-try-x86_64` download); the first value is that,
+# to be lowered to this lane's first measurement plus 5 percent.
+stick_mib = 2155
+
 # The one image (images/edel.toml, M8.17) booted with no screen: CI's first
 # measurement on 2026-10-17 (1099 MiB, 4.34 s, 85 MiB) plus 20 percent. The
 # VM image it replaced measured 91 MiB, 6.42 s and 63 MiB on 2026-10-02.
