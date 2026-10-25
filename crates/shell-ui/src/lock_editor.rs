@@ -11,7 +11,7 @@
 
 use accesskit::Role;
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Anchor, Background, DatePart, DateStyle, Guide, Part, Placed, SNAP};
+use edel::lock_screen::{self, Anchor, Background, DateStyle, Guide, Part, Placed, SNAP};
 use edel::settings::{LockScreen, OwnLook};
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers::Wallpaper;
@@ -1766,7 +1766,7 @@ pub fn preview_words(part: Part, when: &lock::When, charge: Option<u8>) -> Strin
             when.day,
             when.month,
             when.year,
-            &[DatePart::Weekday, DatePart::Day, DatePart::Month],
+            &lock_screen::DEFAULT_SHOW,
             DateStyle::Short,
         ),
         Part::Battery => charge.map_or_else(String::new, |c| format!("{c}%")),
