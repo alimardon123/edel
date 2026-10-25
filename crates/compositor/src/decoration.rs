@@ -242,6 +242,11 @@ pub struct AppIcons {
     apps: Option<Apps>,
     by_app_id: std::collections::HashMap<String, Option<String>>,
     drawn: edel::app_icons::Icons,
+    /// Where a thread reading the apps sends them (`off_loop.rs`); with
+    /// none (a test) they are read in the frame.
+    answers: Option<smithay::reexports::calloop::channel::Sender<crate::off_loop::Answer>>,
+    /// Whether a thread is reading the apps now.
+    reading: bool,
 }
 
 /// The apps read, with the change times of the folders they were read from
@@ -272,7 +277,31 @@ impl AppIcons {
             apps: None,
             by_app_id: std::collections::HashMap::new(),
             drawn: edel::app_icons::Icons::new(edel::apps::data_dirs(), theme),
+            answers: None,
+            reading: false,
         }
+    }
+
+    /// Reads the apps on a thread of their own from now on, its answer sent
+    /// through `answers`, so reading the app folders never holds a frame
+    /// (the whole-system review of 2026-10-25).
+    pub fn answer_on(
+        &mut self,
+        answers: smithay::reexports::calloop::channel::Sender<crate::off_loop::Answer>,
+    ) {
+        self.answers = Some(answers);
+    }
+
+    /// Takes the apps a thread read: windows whose app was not found look
+    /// again.
+    fn read(&mut self, list: Vec<edel::apps::App>, stamps: Vec<Option<std::time::SystemTime>>) {
+        self.apps = Some(Apps {
+            list,
+            stamps,
+            looked: std::time::Instant::now(),
+        });
+        self.reading = false;
+        self.by_app_id.retain(|_, icon| icon.is_some());
     }
 
     /// The icon theme these icons come from.
@@ -288,7 +317,9 @@ impl AppIcons {
     }
 
     /// The apps, read the first time they are asked for, and read again
-    /// when `missed` (an app was not found) and an app folder changed since.
+    /// when `missed` (an app was not found) and an app folder changed since;
+    /// with a thread to read them, the apps read before (none the first
+    /// time) serve until it answers.
     fn apps(&mut self, missed: bool) -> &[edel::apps::App] {
         let stale = match &mut self.apps {
             None => true,
@@ -298,15 +329,30 @@ impl AppIcons {
             }
             Some(_) => false,
         };
-        if stale {
-            let stamps = stamps();
-            self.apps = Some(Apps {
-                list: edel::apps::read_all(&edel::apps::dirs()),
-                stamps,
-                looked: std::time::Instant::now(),
-            });
-            // Apps not found before may be there now.
-            self.by_app_id.retain(|_, icon| icon.is_some());
+        if stale && !self.reading {
+            match self.answers.clone() {
+                Some(answers) => {
+                    self.reading = true;
+                    let started =
+                        std::thread::Builder::new()
+                            .name("apps".into())
+                            .spawn(move || {
+                                let stamps = stamps();
+                                let list = edel::apps::read_all(&edel::apps::dirs());
+                                let _ = answers.send(Box::new(
+                                    move |state: &mut crate::state::Edel| {
+                                        state.app_icons.read(list, stamps);
+                                        state.dirty = true;
+                                    },
+                                ));
+                            });
+                    if let Err(e) = started {
+                        self.reading = false;
+                        eprintln!("edel-compositor: could not start the apps thread: {e}");
+                    }
+                }
+                None => self.read(edel::apps::read_all(&edel::apps::dirs()), stamps()),
+            }
         }
         self.apps.as_ref().map_or(&[], |apps| &apps.list)
     }
