@@ -1772,7 +1772,7 @@ case_network() {
 	esac
 	for ssid in edel-psk edel-sae; do
 		case "$(value "wifi_$ssid")" in
-		*"$ssid: joined on: $ssid 10.42."*) ;;
+		*"$ssid: joined "*" on: $ssid 10.42."*) ;;
 		*) fail "edel::network::join should join $ssid and get an address: $(value "wifi_$ssid"); $(value wifi_left)" ;;
 		esac
 	done
