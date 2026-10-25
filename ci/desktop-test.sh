@@ -353,7 +353,8 @@
 #               installing the stand-in for Steam, the login screen's
 #               Edel OS Game session logs ci in to the compositor alone,
 #               which runs flatpak run com.valvesoftware.Steam -gamepadui
-#               fullscreen in game mode with no shell-ui, and Super+Q
+#               fullscreen in game mode, shell-ui with no panels but the
+#               lock (Super+L, unlocked with ci's password), and Super+Q
 #               ending the game brings the login screen back (M8.26)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
@@ -1078,9 +1079,11 @@ case_game_session() {
 	# the stand-in for Steam (ci/apps/make-repo.sh), which takes Steam's
 	# -gamepadui as a game draws, on every frame. ci's session ends, ci
 	# logs in to Edel OS Game from the login screen's session chip, and
-	# the compositor runs the stand-in alone: fullscreen, game mode on and
-	# no shell-ui. Super+Q ends the game, which ends the session, and the
-	# login screen shows again. Kept as game-session.png.
+	# the compositor runs the stand-in fullscreen, game mode on, with a
+	# shell-ui that draws no panels but keeps the lock screen and the idle
+	# ladder. Super+L locks and ci's password unlocks. Super+Q ends the
+	# game, which ends the session, and the login screen shows again. Kept
+	# as game-session.png and game-session-lock.png.
 	asked=$(count 'DESKTOP-TEST: gaming_standin ')
 	guest 'gaming standin'
 	wait_more 'DESKTOP-TEST: gaming_standin ' "$asked" || fail "the service did not point ci's Flathub at the stand-in"
@@ -1136,12 +1139,24 @@ case_game_session() {
 	guest 'game session'
 	wait_more 'DESKTOP-TEST: game_session ' "$asked" 10 || fail "no word from the test service about the game session's processes"
 	case "$(value game_session)" in
-	'compositor 1 shell-ui 0 greeter '*) ;;
-	*) fail "the game session runs one compositor and no shell-ui for ci, not: $(value game_session)" ;;
+	'compositor 1 shell-ui 1 greeter '*) ;;
+	*) fail "the game session runs one compositor and one shell-ui for ci, not: $(value game_session)" ;;
 	esac
+	wait_for 'edel-shell-ui: a game session: no panels or desktop widgets' 30 ||
+		fail "the game session's shell-ui did not say it draws no panels"
 	shown=$(value game_session | sed 's/.* greeter //')
 	shot game-session 640 400 3333cc >/dev/null ||
 		fail "the middle of the screen is not the stand-in's #3333cc in the game session"
+	# Super+L locks the screen over the game, as on the desktop, and ci's
+	# password unlocks it (game-session-lock.png).
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" || fail "Super+L did not lock the screen in the game session"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/game-session-lock.png"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the game session's screen"
 	python3 ci/qmp.py key meta_l-q
 	# The game's end ends the session: ci runs no compositor, and the
 	# greeter has shown once more.
@@ -1155,7 +1170,7 @@ case_game_session() {
 		[ "$i" -lt 30 ] || fail "ending the game with Super+Q did not end the session and bring the login screen back: $(value game_session)"
 		sleep 1
 	done
-	echo "PASS: with the gaming profile installing the stand-in for Steam, ci logged in to Edel OS Game from the login screen's session chip, the compositor ran flatpak run com.valvesoftware.Steam -gamepadui alone, fullscreen, in game mode and with no shell-ui, and Super+Q ending the game brought the login screen back"
+	echo "PASS: with the gaming profile installing the stand-in for Steam, ci logged in to Edel OS Game from the login screen's session chip, the compositor ran flatpak run com.valvesoftware.Steam -gamepadui fullscreen, in game mode, with a shell-ui of no panels whose lock Super+L showed and ci's password undid, and Super+Q ending the game brought the login screen back"
 }
 
 case_layers() {

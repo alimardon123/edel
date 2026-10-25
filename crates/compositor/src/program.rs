@@ -8,8 +8,10 @@
 //!
 //! A game session (M8.26, `edel-compositor --game -- PROGRAM ARG...`, the
 //! gaming add-on's login choice) is a person's session, its log and its
-//! own programs (PipeWire) included, with no shell-ui, no startup apps and
-//! no welcome: PROGRAM, Steam's Big Picture, runs until it exits, which
+//! own programs (PipeWire) included, with a shell-ui of no panels
+//! (`edel-shell-ui --game`, which keeps the lock screen and the idle
+//! ladder), no startup apps and no welcome: PROGRAM, Steam's Big Picture,
+//! runs until it exits, which
 //! ends the session and brings back the login screen; every window opens
 //! fullscreen and game mode is on (`games.rs`).
 
@@ -43,7 +45,8 @@ impl Program {
 
 impl Edel {
     /// Whether the session runs one program instead of a person's desktop:
-    /// the greeter. A game session (M8.26) is a person's, without shell-ui.
+    /// the greeter. A game session (M8.26) is a person's, with a shell-ui of
+    /// no panels.
     pub fn greeter(&self) -> bool {
         self.program.as_ref().is_some_and(|p| !p.game)
     }
@@ -67,7 +70,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str
     let name = program.argv[0].clone();
     if program.game {
         eprintln!(
-            "edel-compositor: a game session: {} without shell-ui, every window fullscreen, game mode on",
+            "edel-compositor: a game session: {}, every window fullscreen, game mode on, shell-ui with no panels",
             program.argv.join(" ")
         );
     }

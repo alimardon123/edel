@@ -16,8 +16,9 @@ fi
 # Qt apps, in Flatpak's sandbox too, read the colour scheme, fonts and
 # accent from the settings portal (QT_QPA_PLATFORMTHEME, M6.2a).
 # A game session (M8.26), the gaming add-on's edel-game.desktop: --game
-# and the program the compositor runs alone, without shell-ui, every
-# window fullscreen, ending the session when the program ends. A Flatpak
+# and the program the compositor runs with a shell-ui of no panels (the
+# lock screen and the idle ladder kept), every window fullscreen, ending
+# the session when the program ends. A Flatpak
 # app that is not installed starts the desktop instead, and says so.
 if [ "${1:-}" = --game ]; then
 	shift
