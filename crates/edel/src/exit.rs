@@ -11,6 +11,9 @@ pub const REFUSED: u8 = 77;
 /// A download failed, so the network or the server could not be reached
 /// (sysexits.h's EX_UNAVAILABLE).
 pub const OFFLINE: u8 = 69;
+/// The password typed for doas, or the check of the privilege, was wrong, so
+/// nothing changed and Settings asks again (sysexits.h's EX_NOUSER).
+pub const WRONG_PASSWORD: u8 = 67;
 
 /// A failure that ends `edel` with `code`; its words are `message`.
 /// Used as an error or as an error's context, so `main` finds it anywhere
@@ -61,5 +64,8 @@ mod tests {
         let refused = anyhow::Error::new(Coded::new(REFUSED, "no")).context("outer");
         assert_eq!(code_of(&refused), 77);
         assert_eq!(format!("{refused:#}"), "outer: no");
+        let wrong = anyhow::Error::new(Coded::new(WRONG_PASSWORD, "wrong password for ci"));
+        assert_eq!(code_of(&wrong), 67);
+        assert_eq!(format!("{wrong:#}"), "wrong password for ci");
     }
 }
