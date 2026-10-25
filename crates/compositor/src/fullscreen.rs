@@ -32,8 +32,18 @@ impl Edel {
         }
     }
 
-    /// `window` covers `output`, or its own screen.
+    /// `window` covers `output`, or its own screen, and takes the keyboard.
     pub fn fullscreen(&mut self, window: &Window, output: Option<Output>) {
+        self.cover(window, output, true);
+    }
+
+    /// A relayout puts a fullscreen window back over its screen, leaving
+    /// the keyboard where it is.
+    pub fn refit_fullscreen(&mut self, window: &Window) {
+        self.cover(window, None, false);
+    }
+
+    fn cover(&mut self, window: &Window, output: Option<Output>, take_keyboard: bool) {
         let output = output.or_else(|| {
             let (name, _) = self.home(window)?;
             self.space.outputs().find(|o| o.name() == name).cloned()
@@ -67,7 +77,9 @@ impl Edel {
         );
         self.slide(window, screen.loc);
         self.space.map_element(window.clone(), screen.loc, true);
-        self.focus(window);
+        if take_keyboard {
+            self.focus(window);
+        }
         self.dirty = true;
         self.state_changed();
     }

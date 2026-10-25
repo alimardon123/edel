@@ -911,8 +911,8 @@ impl Shell {
     }
 
     /// Dark style: `appearance.mode` in the person's settings file, as
-    /// Settings writes it (the key is taken out when what applies without
-    /// it is already what was asked); the compositor and shell-ui follow the
+    /// Settings writes it (the key is taken out only when the machine's file
+    /// already says the same); the compositor and shell-ui follow the
     /// file, and the card opens again in the new colours (M6.17).
     fn toggle_dark(&mut self, dark: bool) {
         let (machine, _) = settings_texts();
@@ -940,19 +940,12 @@ impl Shell {
 
     /// The battery saver tile (M8.31): `power.saver` in the person's
     /// settings file, written as the Dark style tile writes its key (the key
-    /// is taken out when what applies without it already gives what was
-    /// asked). The settings watch then runs `power_changed`, which decides
+    /// is taken out only when the machine's file already says the same).
+    /// The settings watch then runs `power_changed`, which decides
     /// the saver again, so the compositor and the card follow the file.
     fn toggle_saver(&mut self, on: bool) {
         let (machine, _) = settings_texts();
-        let battery = self.live.status.battery.as_ref();
-        let value = quick::saver_to_write(
-            machine.as_deref(),
-            on,
-            self.live.status.on_battery,
-            battery.map(|b| b.percent),
-            self.saver_latched,
-        );
+        let value = quick::saver_to_write(machine.as_deref(), on);
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, settings::SAVER, value) {
                 Ok(()) => {
