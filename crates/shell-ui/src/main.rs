@@ -15,6 +15,14 @@
 //! `launcher.rs`), and the status area's click opens quick settings
 //! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
+// One write per line, so the session's processes never mix their lines
+// in its log (edel::session_log::line).
+macro_rules! eprintln {
+    ($($arg:tt)*) => {
+        edel::eprintln_whole!($($arg)*)
+    };
+}
+
 mod a11y;
 mod access;
 mod access_card;

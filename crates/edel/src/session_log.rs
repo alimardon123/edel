@@ -177,6 +177,30 @@ pub fn runs_as_owner_of(proc: &Path, name: &str, dir: &Path) -> bool {
     })
 }
 
+/// Writes one line to standard error in a single write. Every process of a
+/// session writes to the log's one file, and the standard `eprintln!`
+/// writes a line in several pieces, so two processes writing at once could
+/// mix their lines ("osd shown, edel-compositor: key game mode off" on
+/// 2026-10-25); one append to a file is never split by another's. Each
+/// crate whose lines reach the log defines `eprintln!` as [`crate::eprintln_whole`].
+pub fn line(args: std::fmt::Arguments) {
+    use std::io::Write;
+    let mut text = args.to_string();
+    text.push('\n');
+    let _ = std::io::stderr().lock().write_all(text.as_bytes());
+}
+
+/// `eprintln!` in one write per line ([`line`]).
+#[macro_export]
+macro_rules! eprintln_whole {
+    () => {
+        $crate::session_log::line(format_args!(""))
+    };
+    ($($arg:tt)*) => {
+        $crate::session_log::line(format_args!($($arg)*))
+    };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

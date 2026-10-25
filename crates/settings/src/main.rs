@@ -10,6 +10,14 @@
 //! Everything people see is drawn from the design tokens and our own
 //! icons (`style.rs`, `icon.rs`), in our own look, not GNOME's.
 
+// One write per line, so the session's processes never mix their lines
+// in its log (edel::session_log::line).
+macro_rules! eprintln {
+    ($($arg:tt)*) => {
+        edel::eprintln_whole!($($arg)*)
+    };
+}
+
 mod about;
 mod actions;
 mod addons;

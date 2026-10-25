@@ -15,6 +15,14 @@
 //!                                      every window fullscreen, game
 //!                                      mode on
 
+// One write per line, so the session's processes never mix their lines
+// in its log (edel::session_log::line).
+macro_rules! eprintln {
+    ($($arg:tt)*) => {
+        edel::eprintln_whole!($($arg)*)
+    };
+}
+
 mod animate;
 mod backdrop;
 mod clipboard;
