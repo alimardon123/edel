@@ -1,8 +1,7 @@
 #!/bin/sh
 # Makes a tiny Flatpak repository for the default apps' tests (roadmap
 # M6.2), with no network: a runtime, org.edel.TestPlatform branch 1, that
-# holds musl, the libraries edel-testclient needs, pw-record (M6.14b) and
-# parecord,
+# holds musl, the libraries edel-testclient needs and pw-record (M6.14b),
 # taken from this
 # Alpine container, and two apps of branch stable, org.edel.TestA and
 # org.edel.TestB, each edel-testclient showing a window, titled test-a in
@@ -46,10 +45,6 @@ for module in protocol-native client-node client-device adapter metadata session
 	pw_files="$pw_files /usr/lib/pipewire-0.3/libpipewire-module-$module.so"
 done
 pw_files="$pw_files /usr/lib/spa-0.2/support/libspa-support.so /usr/lib/spa-0.2/audioconvert/libspa-audioconvert.so"
-# parecord, so Test A can record through the PulseAudio socket given with
-# --socket=pulseaudio as an app built on libpulse does; libpulse needs no
-# module of its own.
-pw_files="$pw_files /usr/bin/parecord"
 for file in $pw_files; do
 	# The runtime is mounted at /usr, so /usr/X is the runtime's usr/X.
 	mkdir -p "$work/runtime/$(dirname "${file#/}")"
