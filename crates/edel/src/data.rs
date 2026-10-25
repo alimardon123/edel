@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 
-use edel::{addon_state, base, hardware, places, services};
+use edel::{addon_state, base, hardware, places};
 
 use crate::boot::DATA_PARTITION;
 use crate::update::{Disk, run};
@@ -495,10 +495,11 @@ fn grow_file_system(dev: &Path) {
 /// empty file when there are none. Never fails the boot.
 fn hardware_packs(probe: bool) {
     let mounted = addon_state::mounted();
+    let offered = addon_state::offered_features_in(Path::new(places::OFFERED_ADDONS_DIR));
     if probe {
-        let patterns: Vec<String> = services::installed()
+        let patterns: Vec<String> = offered
             .iter()
-            .filter(|(name, feature)| feature.addon && mounted.contains(name))
+            .filter(|(name, _)| mounted.contains(name))
             .flat_map(|(_, feature)| feature.hardware.clone())
             .collect();
         for line in hardware::start_again_at(Path::new(hardware::BUS), &patterns) {
@@ -506,7 +507,6 @@ fn hardware_packs(probe: bool) {
         }
     }
     let devices = hardware::devices();
-    let offered = addon_state::offered_features_in(Path::new(places::OFFERED_ADDONS_DIR));
     let facts = addon_state::Facts::read();
     let packs =
         addon_state::unchosen_packs(&offered, &devices, |name| addon_state::state(name, &facts));

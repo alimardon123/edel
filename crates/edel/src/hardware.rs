@@ -30,6 +30,65 @@ pub struct Pack {
     pub summary: String,
 }
 
+/// What a kernel module's `.modinfo` says of itself, as far as a hardware
+/// pack's match needs it: the firmware it may load and the modalias
+/// patterns of the devices it drives.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Module {
+    pub firmware: Vec<String>,
+    pub aliases: Vec<String>,
+}
+
+impl Module {
+    /// Reads the `firmware=` and `alias=` strings of a module's `.modinfo`
+    /// section from its unpacked bytes.
+    pub fn from_modinfo(bytes: &[u8]) -> Module {
+        let mut module = Module::default();
+        for s in bytes.split(|&b| b == 0) {
+            if let Some(name) = s.strip_prefix(b"firmware=") {
+                module
+                    .firmware
+                    .push(String::from_utf8_lossy(name).into_owned());
+            } else if let Some(alias) = s.strip_prefix(b"alias=") {
+                module
+                    .aliases
+                    .push(String::from_utf8_lossy(alias).into_owned());
+            }
+        }
+        module
+    }
+}
+
+/// The modalias patterns of every device a pack's firmware serves: the
+/// aliases of each module that may load one of `firmware` (paths under
+/// the firmware folder, compressed or not), sorted and each once. So a
+/// pack finds a chip the drivers name under another maker's id, as a
+/// Realtek Wi-Fi stick sold under TP-Link's, without a hand list.
+pub fn served_by(firmware: &[String], modules: &[Module]) -> Vec<String> {
+    let files: Vec<&str> = firmware
+        .iter()
+        .map(|f| {
+            f.strip_suffix(".zst")
+                .or_else(|| f.strip_suffix(".xz"))
+                .unwrap_or(f)
+        })
+        .collect();
+    let mut patterns: Vec<String> = modules
+        .iter()
+        .filter(|m| {
+            m.firmware
+                .iter()
+                .any(|wanted| files.iter().any(|f| glob(wanted, f, true)))
+        })
+        .flat_map(|m| m.aliases.iter())
+        .filter(|a| a.contains(':') && !a.chars().any(char::is_whitespace))
+        .cloned()
+        .collect();
+    patterns.sort();
+    patterns.dedup();
+    patterns
+}
+
 /// Whether `name` matches `pattern`: `*` is any run of characters, `?` one
 /// character. With `slash_stops`, neither crosses a `/` (paths, as `keep`
 /// matches them); modalias strings are matched without that, as a DMI
@@ -199,6 +258,32 @@ pub fn start_again_at(bus: &Path, patterns: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pack_serves_every_device_its_firmware_drivers_name() {
+        let modinfo = b"license=GPL\0firmware=rtw88/rtw8822c_fw.bin\0alias=usb:v0BDAp8812d*\0alias=usb:v2357p0115d*\0";
+        let rtw88 = Module::from_modinfo(modinfo);
+        assert_eq!(rtw88.firmware, ["rtw88/rtw8822c_fw.bin"]);
+        let ath9k = Module {
+            firmware: vec![],
+            aliases: vec!["pci:v0000168Cd0000002Esv*".into()],
+        };
+        let iwlwifi = Module {
+            firmware: vec!["iwlwifi-*.ucode".into()],
+            aliases: vec!["pci:v00008086d00002723sv*".into()],
+        };
+        let pack = vec!["rtw88/rtw8822c_fw.bin.zst".to_string()];
+        assert_eq!(
+            served_by(&pack, &[rtw88.clone(), ath9k, iwlwifi.clone()]),
+            ["usb:v0BDAp8812d*", "usb:v2357p0115d*"]
+        );
+        let intel = vec!["iwlwifi-cc-a0-77.ucode".to_string()];
+        assert_eq!(
+            served_by(&intel, &[rtw88, iwlwifi]),
+            ["pci:v00008086d00002723sv*"]
+        );
+        assert!(served_by(&[], &[Module::default()]).is_empty());
+    }
     use std::os::unix::fs::symlink;
     use std::path::PathBuf;
 
