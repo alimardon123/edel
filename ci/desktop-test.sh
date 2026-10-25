@@ -3958,7 +3958,7 @@ case_app_permissions() {
 }
 
 # in_use_failed WHY: fails the in-use case with WHY and what pw-dump sees,
-# with gst-launch-1.0's and pw-record's output.
+# with gst-launch-1.0's and the recording's output.
 in_use_failed() {
 	asked=$(count 'DESKTOP-TEST: in_use_graph ')
 	guest 'in use graph'
@@ -3990,7 +3990,8 @@ case_in_use() {
 	# brings shell-ui's amber sign beside the status area (in-use.png), a
 	# click on it opens the card naming the app (in-use-card.png), and its
 	# Stop cuts the app off: the sign goes and the use is in ci's record.
-	# Test A, recording the microphone from inside its sandbox, is named by
+	# Test A, recording the microphone from inside its sandbox, through
+	# PipeWire (pw-record) and through PulseAudio (parecord), is named by
 	# its Flatpak id; set to Never (apps.microphone), WirePlumber hides the
 	# microphones from it and the sign never shows it again. Settings' page
 	# for Test A then lists its use under Recent use (settings-app-recent.png).
@@ -4051,6 +4052,17 @@ case_in_use() {
 	wait_more 'DESKTOP-TEST: in_use_mic_stopped ' "$asked" || fail "the service did not stop Test A's recording"
 	wait_more 'edel-shell-ui: in use recorded org.edel.TestA microphone' "$recorded" 15 ||
 		in_use_failed "Test A's use of the microphone did not end within 15 s of its recording stopping"
+	# The same through PulseAudio's socket, as an app built on libpulse.
+	shown=$(count 'edel-shell-ui: in use: .*org.edel.TestA microphone')
+	guest 'in use mic pulse'
+	wait_more 'edel-shell-ui: in use: .*org.edel.TestA microphone' "$shown" 60 ||
+		in_use_failed "shell-ui did not show Test A using the microphone within 60 s of parecord in its sandbox"
+	recorded=$(count 'edel-shell-ui: in use recorded org.edel.TestA microphone')
+	asked=$(count 'DESKTOP-TEST: in_use_mic_stopped ')
+	guest 'in use mic stop'
+	wait_more 'DESKTOP-TEST: in_use_mic_stopped ' "$asked" || fail "the service did not stop Test A's PulseAudio recording"
+	wait_more 'edel-shell-ui: in use recorded org.edel.TestA microphone' "$recorded" 15 ||
+		in_use_failed "Test A's use of the microphone through PulseAudio did not end within 15 s of its recording stopping"
 	# Never: WirePlumber hides the microphones from Test A.
 	stored=$(count 'edel-shell-ui: app permission microphone no for org.edel.TestA')
 	asked=$(count 'DESKTOP-TEST: in_use_mic_never ')
@@ -4068,6 +4080,15 @@ case_in_use() {
 	guest 'in use mic stop'
 	wait_more 'DESKTOP-TEST: in_use_mic_stopped ' "$asked" || true
 	refused=$(value in_use_mic_stopped)
+	shown=$(count 'edel-shell-ui: in use: .*org.edel.TestA')
+	guest 'in use mic pulse'
+	sleep 15
+	[ "$(count 'edel-shell-ui: in use: .*org.edel.TestA')" -le "$shown" ] ||
+		in_use_failed "Test A was shown using the microphone through PulseAudio while apps.microphone says never"
+	asked=$(count 'DESKTOP-TEST: in_use_mic_stopped ')
+	guest 'in use mic stop'
+	wait_more 'DESKTOP-TEST: in_use_mic_stopped ' "$asked" || true
+	refused="$refused; through PulseAudio: $(value in_use_mic_stopped)"
 	# The record, and Test A's page in Settings.
 	asked=$(count 'DESKTOP-TEST: in_use_record ')
 	guest 'in use record'
@@ -4096,7 +4117,7 @@ case_in_use() {
 	asked=$(count 'DESKTOP-TEST: in_use_off ')
 	guest 'in use off'
 	wait_more 'DESKTOP-TEST: in_use_off ' "$asked" || fail "the service did not take the fakes away"
-	echo "PASS: gst-launch-1.0 watching a fake camera showed the in-use sign in in_use's amber ($sign at $sx,$sy, in-use.png), its card's Stop cut it off and the use was recorded (in-use-card.png); Test A recording in its sandbox was named by its Flatpak id, and set to never it was not shown again ($refused); ci's record: $record; Settings listed Test A's recent use (settings-app-recent.png)"
+	echo "PASS: gst-launch-1.0 watching a fake camera showed the in-use sign in in_use's amber ($sign at $sx,$sy, in-use.png), its card's Stop cut it off and the use was recorded (in-use-card.png); Test A recording in its sandbox through PipeWire and PulseAudio was named by its Flatpak id, and set to never it was not shown again ($refused); ci's record: $record; Settings listed Test A's recent use (settings-app-recent.png)"
 }
 
 # location_ask: Test A asks the Location portal from its sandbox and holds
