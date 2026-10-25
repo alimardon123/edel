@@ -2505,8 +2505,10 @@ pub fn write_all(path: &Path, edits: &[(&str, Option<&str>)]) -> Result<()> {
 }
 
 /// Writes a settings file's whole text to `path` (its folder made first),
-/// through a file beside it that is renamed over it, so a reader never sees
-/// half a file. The writers above and Settings' theme edits use it.
+/// through a file beside it that is synced and renamed over it, so a reader
+/// never sees half a file and a power cut leaves the old file or the new
+/// one. Every write of a settings file goes through it (ADR-010): the
+/// writers above, Settings' theme edits, `edel settings` and the installer.
 pub fn write_text(path: &Path, edited: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| {
@@ -2516,8 +2518,13 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
             )
         })?;
     }
-    let new = path.with_extension("toml.edel-new");
-    let written = fs::write(&new, edited).and_then(|()| fs::rename(&new, path));
+    let new = PathBuf::from(format!("{}.edel-new", path.display()));
+    let written = fs::File::create(&new)
+        .and_then(|mut file| {
+            std::io::Write::write_all(&mut file, edited.as_bytes())?;
+            file.sync_all()
+        })
+        .and_then(|()| fs::rename(&new, path));
     // A full disk stops the write halfway (M8.11): the file kept as it was,
     // and the half-written one taken out, not left to fill the disk more.
     if written.is_err() {
@@ -2527,6 +2534,46 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
         trf(
             "could not write {path}",
             &[("path", &path.display().to_string())],
+        )
+    })
+}
+
+/// Makes the settings file at `from` the one at `to`, its own copy. A file
+/// in a newer format brings the `.v<N>` this release reads beside it, so
+/// this release reads it at `to` too (ADR-008): what `edel settings apply`
+/// keeps as the machine's file and `edel install` copies onto a new disk.
+pub fn copy_file(from: &Path, to: &Path) -> Result<()> {
+    let text = fs::read_to_string(from).with_context(|| could_not_read(from))?;
+    if format(&text).is_ok_and(|f| f > FORMAT) {
+        let older = versioned(from, FORMAT);
+        let older_text = fs::read_to_string(&older).with_context(|| could_not_read(&older))?;
+        write_text(&versioned(to, FORMAT), &older_text)?;
+    }
+    write_text(to, &text).with_context(|| {
+        trf(
+            "could not save {path}",
+            &[("path", &to.display().to_string())],
+        )
+    })
+}
+
+/// Moves the settings file at `from` to `to`, with every `.v<N>` beside it,
+/// the older formats first, so a file is never left without the format
+/// this release reads.
+pub fn move_file(from: &Path, to: &Path) -> Result<()> {
+    for format in 1..=FORMAT {
+        let old = versioned(from, format);
+        if old.exists() {
+            fs::rename(&old, versioned(to, format))?;
+        }
+    }
+    fs::rename(from, to).with_context(|| {
+        trf(
+            "could not rename {from} to {to}",
+            &[
+                ("from", &from.display().to_string()),
+                ("to", &to.display().to_string()),
+            ],
         )
     })
 }
@@ -3803,12 +3850,14 @@ pub const CHANNELS: &[&str] = &["stable", "preview"];
 pub const DEFAULT_CHANNEL: &str = "stable";
 
 /// The channel a machine follows (M5.8c): `updates.channel` in the
-/// person's file over the machine's, else `image`, the one its image was
-/// built for (os-release's `EDEL_CHANNEL`), else [`DEFAULT_CHANNEL`]. A
-/// name [`is_channel`] refuses is skipped, as every reader on a machine
+/// machine's file, else `image`, the one its image was built for
+/// (os-release's `EDEL_CHANNEL`), else [`DEFAULT_CHANNEL`]. It is a key of
+/// the machine's, never a person's: the updater runs as root, and a line
+/// in one person's file would show a channel the machine does not follow.
+/// A name [`is_channel`] refuses is skipped, as every reader on a machine
 /// skips what it cannot use.
-pub fn channel(machine: Option<&str>, person: Option<&str>, image: Option<&str>) -> String {
-    chosen("updates.channel", machine, person)
+pub fn channel(machine: Option<&str>, image: Option<&str>) -> String {
+    chosen("updates.channel", machine, None)
         .filter(|c| is_channel(c))
         .or_else(|| image.filter(|c| !c.is_empty()).map(String::from))
         .unwrap_or_else(|| DEFAULT_CHANNEL.into())
@@ -3908,6 +3957,25 @@ pub fn write_slot_copy(root: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_moved_file_takes_its_older_formats_along() {
+        let dir = std::env::temp_dir().join(format!("edel-move-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let (from, to) = (dir.join("old.toml"), dir.join(crate::places::SETTINGS));
+        write_text(&from, "format = 99\n").unwrap();
+        write_text(&versioned(&from, FORMAT), &format!("format = {FORMAT}\n")).unwrap();
+        move_file(&from, &to).unwrap();
+        assert!(!from.exists() && !versioned(&from, FORMAT).exists());
+        assert_eq!(fs::read_to_string(&to).unwrap(), "format = 99\n");
+        assert!(versioned(&to, FORMAT).exists());
+        assert!(
+            !dir.join(format!("{}.edel-new", crate::places::SETTINGS))
+                .exists()
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_failed_write_keeps_the_file_and_leaves_no_half_file() {
@@ -4880,17 +4948,16 @@ version = "1.2"
     }
 
     #[test]
-    fn the_channel_is_the_persons_then_the_machines_then_the_images() {
+    fn the_channel_is_the_machines_then_the_images() {
         let file = |channel: &str| format!("format = 1\n[updates]\nchannel = \"{channel}\"\n");
-        assert_eq!(channel(None, None, None), "stable");
-        assert_eq!(channel(None, None, Some("ci")), "ci");
-        assert_eq!(channel(None, None, Some("")), "stable");
-        let (machine, person) = (file("preview"), file("beta"));
-        assert_eq!(channel(Some(&machine), None, Some("ci")), "preview");
-        assert_eq!(channel(Some(&machine), Some(&person), Some("ci")), "beta");
+        assert_eq!(channel(None, None), "stable");
+        assert_eq!(channel(None, Some("ci")), "ci");
+        assert_eq!(channel(None, Some("")), "stable");
+        let machine = file("preview");
+        assert_eq!(channel(Some(&machine), Some("ci")), "preview");
         let bad = file("A/B");
         assert_eq!(
-            channel(Some(&bad), None, Some("ci")),
+            channel(Some(&bad), Some("ci")),
             "ci",
             "a name the address cannot hold is skipped"
         );

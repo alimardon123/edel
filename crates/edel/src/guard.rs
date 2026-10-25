@@ -499,19 +499,24 @@ fn restart_now() -> ! {
 /// Confirms the slot, waiting while another updater holds the lock (an
 /// install started before the health files appeared) and petting the
 /// watchdog meanwhile: the machine is healthy, so it is never reset here.
-/// Gives up after 30 minutes.
+/// It waits as long as the lock's holder runs, however long a slow
+/// download or a game holds it, and no longer once the holder is gone.
 fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
     let lock = Path::new(places::UPDATE_LOCK);
-    let start = Instant::now();
+    // A holder that ends between the refusal and the look at the lock
+    // leaves it free: one more try then, before an error stands.
+    let mut tried_free = false;
     loop {
         match update::confirm_running() {
             Ok(lines) => return Ok(lines),
-            Err(_) if lock.exists() && start.elapsed() < Duration::from_secs(1800) => {
+            Err(_) if lock.exists() && !update::is_stale(lock) => {
+                tried_free = false;
                 if let Some(dog) = watchdog.as_mut() {
                     let _ = dog.write_all(b".");
                 }
                 sleep(Duration::from_secs(1));
             }
+            Err(_) if !tried_free => tried_free = true,
             Err(err) => return Err(err),
         }
     }

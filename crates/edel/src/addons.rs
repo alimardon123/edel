@@ -1198,7 +1198,7 @@ pub fn stage_for_install(settings: &str, data: &Path) {
     let image = os_release_value(&os_release, "EDEL_IMAGE").unwrap_or_default();
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let here = version_dir(&running);
-    let under = |place: &Path| data.join(place.strip_prefix(places::DATA_MOUNT).unwrap_or(place));
+    let under = |place: &Path| places::on_data(data, place);
     let pending = under(&here).join(places::ADDONS_PENDING);
     let built_in = |name: &str| {
         Path::new(edel::features::DIR)
@@ -1318,7 +1318,7 @@ pub fn promote() -> Vec<String> {
     let version = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let dir = version_dir(&version);
     let pending = dir.join(places::ADDONS_PENDING);
-    let (keep, drop) = promote_plan(&tried, &wanted_on_machine());
+    let (keep, drop) = promote_plan(&tried, &edel::addon_state::installed_on_machine_or(&tried));
     let mut said = Vec::new();
     for name in &keep {
         let file = format!("{name}.ext4");
@@ -1363,8 +1363,11 @@ pub fn mount_all() -> Result<()> {
     let dir = version_dir(&version);
     let pending = dir.join(places::ADDONS_PENDING);
     let mark = pending.join(places::ADDONS_TRY);
-    let wanted = wanted_on_machine();
-    let plan = boot_plan(&names_in(&pending), &wanted, mark.exists());
+    // With the settings file unreadable, the default and the fetched ones
+    // still to try; an add-on the person took out never comes back by it.
+    let waiting = names_in(&pending);
+    let wanted = edel::addon_state::installed_on_machine_or(&waiting);
+    let plan = boot_plan(&waiting, &wanted, mark.exists());
     if mark.exists() {
         fs::remove_file(&mark)?;
         // The mark must be gone from the disk before anything new mounts.

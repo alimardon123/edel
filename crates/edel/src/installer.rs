@@ -541,9 +541,7 @@ pub fn install(
             let (answers, password) = ask_questions()?;
             let text = answers.settings_text()?;
             let file = PathBuf::from(edel::places::INSTALL_ANSWERS);
-            fs::create_dir_all(edel::places::RUN_DIR)
-                .with_context(|| could_not_write(Path::new(&edel::places::RUN_DIR)))?;
-            fs::write(&file, text).with_context(|| could_not_write(Path::new(&file)))?;
+            edel::settings::write_text(&file, &text)?;
             (
                 file,
                 password.map(|p| (answers.user.unwrap_or_default(), p)),
@@ -1038,33 +1036,20 @@ fn write(
         // The machine's settings file, where the installed machine finds
         // it once the data partition is mounted at /data.
         let machine = edel::places::machine_settings();
-        let target = data.0.join(
-            machine
-                .strip_prefix(edel::places::DATA_MOUNT)
-                .unwrap_or(&machine),
-        );
-        fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
-        fs::copy(system_file, &target).with_context(|| could_not_write(Path::new(&target)))?;
+        let target = edel::places::on_data(&data.0, &machine);
+        edel::settings::copy_file(system_file, &target)?;
         // The mark that this disk was installed, so a USB disk holding it
         // is no stick: no live login, no install without a password
         // (M6.17).
         let installed = Path::new(edel::places::INSTALLED);
         fs::write(
-            data.0.join(
-                installed
-                    .strip_prefix(edel::places::DATA_MOUNT)
-                    .unwrap_or(installed),
-            ),
+            edel::places::on_data(&data.0, installed),
             "Installed by edel install; this disk is no stick.\n",
         )?;
         // The person's password, hashed, for the first boot's apply to give
         // them; root's only (M6.6b).
         if let Some((user, hash)) = password {
-            let first = data.0.join(
-                Path::new(edel::places::FIRST_PASSWORDS)
-                    .strip_prefix(edel::places::DATA_MOUNT)
-                    .unwrap_or(Path::new(edel::places::FIRST_PASSWORDS)),
-            );
+            let first = edel::places::on_data(&data.0, Path::new(edel::places::FIRST_PASSWORDS));
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -1109,12 +1094,9 @@ fn copy_default_apps(data: &Path) -> Result<()> {
         return Ok(());
     }
     println!("edel install: {}", tr("copying the default apps"));
-    let target = data.join(
-        apps.strip_prefix(edel::places::DATA_MOUNT)
-            .unwrap_or(apps)
-            .strip_prefix("/")
-            .unwrap_or(apps),
-    );
+    // On the new disk's data partition, never the stick's own folder,
+    // which a path left absolute would name (the copy went onto itself).
+    let target = edel::places::on_data(data, apps);
     fs::create_dir_all(&target).with_context(|| could_not_write(Path::new(&target)))?;
     let mut pack = Command::new("tar")
         .arg("-C")
