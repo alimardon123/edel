@@ -233,7 +233,29 @@ pub fn offered_in(dir: &Path) -> Vec<(String, String)> {
 /// The feature files of the add-ons the image was built with, read from
 /// the folder `dir` (`places::OFFERED_ADDONS_DIR`).
 pub fn offered_features_in(dir: &Path) -> Vec<(String, Feature)> {
-    services::installed_in(dir)
+    let mut offered = services::installed_in(dir);
+    for (name, feature) in &mut offered {
+        if feature.hardware.is_empty() {
+            continue;
+        }
+        let served = fs::read_to_string(devices_file(dir, name)).unwrap_or_default();
+        feature.hardware.extend(
+            served
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                .map(str::to_string),
+        );
+    }
+    offered
+}
+
+/// The file beside a hardware pack's offered feature file that lists, one
+/// modalias pattern a line, every device its firmware's drivers name
+/// (`hardware::served_by`), which `edel image build` writes; a pack serves
+/// these as well as its own `hardware` list.
+pub fn devices_file(dir: &Path, name: &str) -> PathBuf {
+    dir.join(format!("{name}.devices"))
 }
 
 /// The hardware packs among `offered` that serve `devices` and that
@@ -336,6 +358,39 @@ mod tests {
 
     fn file(text: &str) -> SettingsFile {
         crate::settings::read(text).unwrap().file
+    }
+
+    #[test]
+    fn a_pack_serves_the_devices_its_image_found_for_it() {
+        let dir = std::env::temp_dir().join(format!("edel-pack-devices-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let pack =
+            "format = 1\nsummary = \"Realtek\"\naddon = true\nhardware = [\"usb:v0BDAp*\"]\n";
+        fs::write(dir.join("wifi-realtek.toml"), pack).unwrap();
+        fs::write(
+            devices_file(&dir, "wifi-realtek"),
+            "# made by edel image build\nusb:v2357p0115d*\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.join("desktop.toml"),
+            "format = 1\nsummary = \"Desktop\"\naddon = true\n",
+        )
+        .unwrap();
+        fs::write(devices_file(&dir, "desktop"), "usb:v2357p0115d*\n").unwrap();
+        let offered = offered_features_in(&dir);
+        assert_eq!(offered[1].1.hardware, ["usb:v0BDAp*", "usb:v2357p0115d*"]);
+        assert!(offered[0].1.hardware.is_empty());
+        let stick = Device {
+            bus: "usb".into(),
+            name: "1-1".into(),
+            modalias: "usb:v2357p0115d0200dc00".into(),
+        };
+        assert_eq!(
+            matching(names(&["wifi-realtek"]), &offered, &[stick]),
+            ["wifi-realtek"]
+        );
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

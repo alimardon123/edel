@@ -30,6 +30,65 @@ pub struct Pack {
     pub summary: String,
 }
 
+/// What a kernel module's `.modinfo` says of itself, as far as a hardware
+/// pack's match needs it: the firmware it may load and the modalias
+/// patterns of the devices it drives.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Module {
+    pub firmware: Vec<String>,
+    pub aliases: Vec<String>,
+}
+
+impl Module {
+    /// Reads the `firmware=` and `alias=` strings of a module's `.modinfo`
+    /// section from its unpacked bytes.
+    pub fn from_modinfo(bytes: &[u8]) -> Module {
+        let mut module = Module::default();
+        for s in bytes.split(|&b| b == 0) {
+            if let Some(name) = s.strip_prefix(b"firmware=") {
+                module
+                    .firmware
+                    .push(String::from_utf8_lossy(name).into_owned());
+            } else if let Some(alias) = s.strip_prefix(b"alias=") {
+                module
+                    .aliases
+                    .push(String::from_utf8_lossy(alias).into_owned());
+            }
+        }
+        module
+    }
+}
+
+/// The modalias patterns of every device a pack's firmware serves: the
+/// aliases of each module that may load one of `firmware` (paths under
+/// the firmware folder, compressed or not), sorted and each once. So a
+/// pack finds a chip the drivers name under another maker's id, as a
+/// Realtek Wi-Fi stick sold under TP-Link's, without a hand list.
+pub fn served_by(firmware: &[String], modules: &[Module]) -> Vec<String> {
+    let files: Vec<&str> = firmware
+        .iter()
+        .map(|f| {
+            f.strip_suffix(".zst")
+                .or_else(|| f.strip_suffix(".xz"))
+                .unwrap_or(f)
+        })
+        .collect();
+    let mut patterns: Vec<String> = modules
+        .iter()
+        .filter(|m| {
+            m.firmware
+                .iter()
+                .any(|wanted| files.iter().any(|f| glob(wanted, f, true)))
+        })
+        .flat_map(|m| m.aliases.iter())
+        .filter(|a| a.contains(':') && !a.chars().any(char::is_whitespace))
+        .cloned()
+        .collect();
+    patterns.sort();
+    patterns.dedup();
+    patterns
+}
+
 /// Whether `name` matches `pattern`: `*` is any run of characters, `?` one
 /// character. With `slash_stops`, neither crosses a `/` (paths, as `keep`
 /// matches them); modalias strings are matched without that, as a DMI
@@ -53,9 +112,12 @@ pub fn glob(pattern: &str, name: &str, slash_stops: bool) -> bool {
 
 /// Whether any device's modalias matches any of the packs' `patterns`.
 pub fn serves(patterns: &[String], devices: &[Device]) -> bool {
-    devices
-        .iter()
-        .any(|d| patterns.iter().any(|p| glob(p, &d.modalias, false)))
+    devices.iter().any(|d| serves_one(patterns, &d.modalias))
+}
+
+/// Whether one of `patterns` matches the modalias `modalias`.
+pub fn serves_one(patterns: &[String], modalias: &str) -> bool {
+    patterns.iter().any(|p| glob(p, modalias, false))
 }
 
 /// Whether the firmware file `file` is under `dir`, as itself or
@@ -124,6 +186,25 @@ pub fn devices_in(bus: &Path, dmi: &Path) -> Vec<Device> {
 /// The machine's devices now, as the kernel names them.
 pub fn devices() -> Vec<Device> {
     devices_in(Path::new(BUS), Path::new(DMI_MODALIAS))
+}
+
+/// The modaliases of the devices under `bus` that have no driver, each
+/// once, for the drivers an add-on brought (M8.17e).
+pub fn without_driver_in(bus: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for bus_name in names(bus) {
+        let devices = bus.join(&bus_name).join("devices");
+        for name in names(&devices) {
+            let folder = devices.join(&name);
+            if let Some(modalias) = read_trimmed(&folder.join("modalias"))
+                && fs::symlink_metadata(folder.join("driver")).is_err()
+                && !found.contains(&modalias)
+            {
+                found.push(modalias);
+            }
+        }
+    }
+    found
 }
 
 /// The packs file's text: one `NAME`, a tab and the summary per pack. A
@@ -199,6 +280,32 @@ pub fn start_again_at(bus: &Path, patterns: &[String]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pack_serves_every_device_its_firmware_drivers_name() {
+        let modinfo = b"license=GPL\0firmware=rtw88/rtw8822c_fw.bin\0alias=usb:v0BDAp8812d*\0alias=usb:v2357p0115d*\0";
+        let rtw88 = Module::from_modinfo(modinfo);
+        assert_eq!(rtw88.firmware, ["rtw88/rtw8822c_fw.bin"]);
+        let ath9k = Module {
+            firmware: vec![],
+            aliases: vec!["pci:v0000168Cd0000002Esv*".into()],
+        };
+        let iwlwifi = Module {
+            firmware: vec!["iwlwifi-*.ucode".into()],
+            aliases: vec!["pci:v00008086d00002723sv*".into()],
+        };
+        let pack = vec!["rtw88/rtw8822c_fw.bin.zst".to_string()];
+        assert_eq!(
+            served_by(&pack, &[rtw88.clone(), ath9k, iwlwifi.clone()]),
+            ["usb:v0BDAp8812d*", "usb:v2357p0115d*"]
+        );
+        let intel = vec!["iwlwifi-cc-a0-77.ucode".to_string()];
+        assert_eq!(
+            served_by(&intel, &[rtw88, iwlwifi]),
+            ["pci:v00008086d00002723sv*"]
+        );
+        assert!(served_by(&[], &[Module::default()]).is_empty());
+    }
     use std::os::unix::fs::symlink;
     use std::path::PathBuf;
 
@@ -354,6 +461,22 @@ mod tests {
         );
         assert_eq!(fs::read_to_string(&probe).unwrap(), "0000:00:03.0");
         assert!(start_again_at(&bus, &[]).is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_the_devices_without_a_driver_are_asked_for_one() {
+        let dir = temp("without-driver");
+        let bus = dir.join("bus");
+        pci(&bus, "0000:00:1b.0", "pci:v00008086d00002668sv00001AF4");
+        pci(&bus, "0000:00:1c.0", "pci:v00008086d00002668sv00001AF4");
+        let bound = pci(&bus, "0000:00:04.0", "pci:v00001AF4d00001041sv00001AF4");
+        symlink("../../../drivers/virtio-pci", bound.join("driver")).unwrap();
+        assert_eq!(
+            without_driver_in(&bus),
+            ["pci:v00008086d00002668sv00001AF4"]
+        );
+        assert!(without_driver_in(&dir.join("none")).is_empty());
         fs::remove_dir_all(&dir).unwrap();
     }
 

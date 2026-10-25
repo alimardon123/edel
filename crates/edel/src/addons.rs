@@ -1501,12 +1501,17 @@ pub fn mount_all() -> Result<()> {
     Ok(())
 }
 
-/// Has udev take the mounted add-ons' device rules: udev read its rules
-/// and announced the devices present at boot before the add-ons were over
-/// `/usr` (edel-data runs after udev-settle), so an add-on's rules
-/// (printing's scanners, gaming's controllers, M7.6b; the desktop's sound
-/// devices, M8.17c) would reach only devices plugged in later, and maybe
-/// not even those. `data::mount_data` calls it once `/etc` has its layer
+/// Has udev take the mounted add-ons' device rules and drivers: udev read
+/// its rules and announced the devices present at boot before the add-ons
+/// were over `/usr` (edel-data runs after udev-settle), so an add-on's
+/// rules (printing's scanners, gaming's controllers, M7.6b; the desktop's
+/// sound devices, M8.17c) would reach only devices plugged in later, and
+/// maybe not even those, and its drivers (the desktop's sound, the Wi-Fi
+/// packs', M8.17e) would load for no device present at boot. Replaying the
+/// devices sets the rules; udev loads drivers only when a device arrives,
+/// so each device that has no driver is asked for its own by its modalias,
+/// as udev would have at its arrival, before the network or any session
+/// starts. `data::mount_data` calls it once `/etc` has its layer
 /// and the add-ons' accounts, so a rule's group (`seat`, which the desktop
 /// add-on brings) is known. Only where udev runs; a failure never stops
 /// the boot.
@@ -1515,7 +1520,31 @@ pub fn take_device_rules() {
         .iter()
         .map(|name| Path::new(places::ADDONS_RUN).join(name))
         .collect();
-    if brings_device_rules(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
+    if brings(&mounts, DRIVERS) {
+        // Only the devices an add-on's driver names are asked for, so the
+        // start pays one call for each of them, not one for every device
+        // without a driver (a bridge, a hub's port).
+        let kernel = fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+        let aliases = driver_aliases(
+            &Path::new("/").join(DRIVERS).join(kernel.trim()),
+            kernel.trim(),
+            &mounts,
+        );
+        let waiting: Vec<String> =
+            edel::hardware::without_driver_in(Path::new(edel::hardware::BUS))
+                .into_iter()
+                .filter(|modalias| edel::hardware::serves_one(&aliases, modalias))
+                .collect();
+        let loaded = waiting
+            .iter()
+            .filter(|modalias| run(&mut edel::base::load_driver(modalias)).is_ok())
+            .count();
+        println!(
+            "edel-data: loaded the add-ons' drivers for {loaded} of the {} devices that wait for one",
+            waiting.len()
+        );
+    }
+    if brings(&mounts, DEVICE_RULES) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
         let taken = run(&mut edel::base::reread_device_rules())
             .and_then(|()| run(&mut edel::base::replay_device_events()));
         match taken {
@@ -1601,14 +1630,53 @@ pub fn has_services() -> bool {
 }
 
 /// Where an add-on's rules for udev are, relative to its mount, as
-/// printing's scanners and gaming's controllers ship them (M7.6b).
+/// printing's scanners and gaming's controllers ship them (M7.6b), and
+/// where its kernel drivers are, as the desktop's sound and the Wi-Fi
+/// packs bring them (M8.17e).
 const DEVICE_RULES: &str = "usr/lib/udev/rules.d";
+const DRIVERS: &str = "usr/lib/modules";
 
-/// Whether one of the add-ons mounted at `mounts` brings rules for udev,
-/// which udev read before the add-ons' layer was over `/usr`.
-pub fn brings_device_rules(mounts: &[PathBuf]) -> bool {
+/// The modalias patterns of the kernel drivers the add-ons mounted at
+/// `mounts` bring (M8.17e): the lines of the kernel's `modules.alias` in
+/// `modules` (`/usr/lib/modules/KERNEL`) whose module `modules.dep` finds
+/// in one of them. The kernel's index is the slot's and stays whole.
+fn driver_aliases(modules: &Path, kernel: &str, mounts: &[PathBuf]) -> Vec<String> {
+    let dep = fs::read_to_string(modules.join("modules.dep")).unwrap_or_default();
+    let brought: BTreeSet<String> = dep
+        .lines()
+        .filter_map(|line| line.split_once(':').map(|(path, _)| path))
+        .filter(|path| {
+            mounts
+                .iter()
+                .any(|m| m.join(DRIVERS).join(kernel).join(path).is_file())
+        })
+        .filter_map(|path| {
+            let file = path.rsplit('/').next()?;
+            let name = file.split(".ko").next()?;
+            Some(name.replace('-', "_"))
+        })
+        .collect();
+    let alias = fs::read_to_string(modules.join("modules.alias")).unwrap_or_default();
+    alias
+        .lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            (words.next() == Some("alias")).then_some(())?;
+            let (pattern, module) = (words.next()?, words.next()?);
+            brought
+                .contains(&module.replace('-', "_"))
+                .then(|| pattern.to_string())
+        })
+        .collect()
+}
+
+/// Whether one of the add-ons mounted at `mounts` brings something in
+/// `dir`, rules for udev (`DEVICE_RULES`) or kernel drivers (`DRIVERS`),
+/// which udev's first pass over the devices at boot ran without, as it
+/// came before the add-ons' layer was over `/usr`.
+fn brings(mounts: &[PathBuf], dir: &str) -> bool {
     mounts.iter().any(|mount| {
-        fs::read_dir(mount.join(DEVICE_RULES)).is_ok_and(|mut entries| entries.next().is_some())
+        fs::read_dir(mount.join(dir)).is_ok_and(|mut entries| entries.next().is_some())
     })
 }
 
@@ -1842,20 +1910,58 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_an_add_on_with_device_rules_has_udev_read_them_again() {
+    fn only_the_aliases_of_the_drivers_an_add_on_brings_are_asked_for() {
+        let root = std::env::temp_dir().join(format!("edel-driver-aliases-{}", process::id()));
+        let kernel = "6.18.57-0-lts";
+        let modules = root.join("slot").join(kernel);
+        fs::create_dir_all(&modules).unwrap();
+        fs::write(
+            modules.join("modules.dep"),
+            "kernel/sound/hda/controllers/snd-hda-intel.ko.gz: kernel/sound/core/snd.ko.gz\nkernel/sound/core/snd.ko.gz:\nkernel/drivers/net/virtio_net.ko.gz:\n",
+        )
+        .unwrap();
+        fs::write(
+            modules.join("modules.alias"),
+            "# Aliases extracted from modules themselves.\nalias pci:v00008086d00002668sv*sd*bc*sc*i* snd_hda_intel\nalias virtio:d00000001v* virtio_net\nalias char-major-116-* snd\n",
+        )
+        .unwrap();
+        let desktop = root.join("desktop");
+        let hda = desktop
+            .join(DRIVERS)
+            .join(kernel)
+            .join("kernel/sound/hda/controllers");
+        fs::create_dir_all(&hda).unwrap();
+        fs::write(hda.join("snd-hda-intel.ko.gz"), "").unwrap();
+        assert_eq!(
+            driver_aliases(&modules, kernel, &[desktop]),
+            ["pci:v00008086d00002668sv*sd*bc*sc*i*"]
+        );
+        assert!(driver_aliases(&modules, kernel, &[]).is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn only_an_add_on_with_device_rules_or_drivers_has_udev_read_them_again() {
         let root = std::env::temp_dir().join(format!("edel-device-rules-{}", process::id()));
-        let (with, without, empty) = (
+        let (with, without, empty, drivers) = (
             root.join("gaming"),
             root.join("orca"),
             root.join("printing"),
+            root.join("sound"),
         );
         fs::create_dir_all(with.join(DEVICE_RULES)).unwrap();
         fs::write(with.join(DEVICE_RULES).join("90-edel-gaming.rules"), "").unwrap();
         fs::create_dir_all(without.join("usr/bin")).unwrap();
         fs::create_dir_all(empty.join(DEVICE_RULES)).unwrap();
-        assert!(brings_device_rules(&[without.clone(), with]));
-        assert!(!brings_device_rules(&[without, empty]));
-        assert!(!brings_device_rules(&[]));
+        let sound = drivers.join(DRIVERS).join("6.12.1-0-lts/kernel/sound/hda");
+        fs::create_dir_all(&sound).unwrap();
+        fs::write(sound.join("snd-hda-intel.ko.gz"), "").unwrap();
+        assert!(brings(&[without.clone(), drivers.clone()], DRIVERS));
+        assert!(!brings(&[without.clone(), drivers], DEVICE_RULES));
+        assert!(brings(&[without.clone(), with.clone()], DEVICE_RULES));
+        assert!(!brings(&[without.clone(), with], DRIVERS));
+        assert!(!brings(&[without, empty], DEVICE_RULES));
+        assert!(!brings(&[], DRIVERS));
         fs::remove_dir_all(&root).unwrap();
     }
 

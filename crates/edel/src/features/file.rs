@@ -30,6 +30,14 @@ pub struct Feature {
     /// mkinitfs features the initramfs is built with.
     #[serde(default)]
     pub initramfs: Vec<String>,
+    /// Folders of the kernel's drivers, under `lib/modules/VERSION/kernel`,
+    /// that travel with this feature when an add-on brings it (M8.17e):
+    /// the image builder takes them out of the slot and puts them in the
+    /// add-on, so a machine without it never carries them, and `edel-data`
+    /// loads them for the devices without a driver once it is mounted.
+    /// The sound feature's `sound/pci`, Intel's pack's Wi-Fi drivers.
+    #[serde(default)]
+    pub kernel_drivers: Vec<String>,
     /// Its services may be turned off (`services.NAME = false`, and `off`
     /// in an image definition).
     #[serde(default)]
@@ -239,6 +247,11 @@ pub fn check(name: &str, text: &str) -> Result<Feature> {
             "feature {name} lists hardware but is no add-on; only an add-on can be a hardware pack, so add addon = true or take hardware out"
         );
     }
+    if let Some(d) = feature.kernel_drivers.iter().find(|d| !is_driver_folder(d)) {
+        bail!(
+            "kernel_drivers entry {d:?} in feature {name} is no folder under the kernel's drivers; write it as lib/modules/VERSION/kernel shows it, such as sound/pci"
+        );
+    }
     if let Some(p) = feature.hardware.iter().find(|p| !is_modalias_pattern(p)) {
         bail!(
             "hardware pattern {p:?} in feature {name} is no modalias pattern; write it as the kernel shows it, such as pci:v000010DEd*bc03*"
@@ -391,6 +404,20 @@ fn is_package(s: &str) -> bool {
         })
 }
 
+/// A folder under `lib/modules/VERSION/kernel`: parts of a-z, 0-9, `_`, `-`
+/// and `.` joined by `/`, none of them empty, `.` or `..`.
+fn is_driver_folder(path: &str) -> bool {
+    !path.is_empty()
+        && path.split('/').all(|part| {
+            !part.is_empty()
+                && part != "."
+                && part != ".."
+                && part
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-.".contains(&b))
+        })
+}
+
 /// A hardware pattern (M7.11): a modalias has a `:` and no `/` or white
 /// space, and a pattern is written as the kernel shows the modalias.
 fn is_modalias_pattern(s: &str) -> bool {
@@ -419,6 +446,24 @@ mod tests {
         [services]
         default = ["sshd"]
     "#;
+
+    #[test]
+    fn a_kernel_driver_folder_is_a_plain_path_below_the_kernel() {
+        for good in ["sound/pci", "drivers/net/wireless/intel", "sound"] {
+            assert!(is_driver_folder(good), "{good}");
+        }
+        for bad in [
+            "",
+            "/sound",
+            "sound/",
+            "../firmware",
+            "sound/./pci",
+            "Sound",
+            "sound pci",
+        ] {
+            assert!(!is_driver_folder(bad), "{bad}");
+        }
+    }
 
     #[test]
     fn only_an_add_on_is_made_of_features_or_built_on_one() {

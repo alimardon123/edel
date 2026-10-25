@@ -930,9 +930,12 @@ impl Build<'_> {
         let slot_mib = self.slot_mib.unwrap_or(vm.slot_mib);
         let loader = work.join("esp");
         self.make_loader(&loader, root, &vm.kernel, &vm.cmdline)?;
+        self.take_kernel_drivers(work, root)?;
+        // The add-ons are built before the slot is made, as the slot
+        // lists the devices each hardware pack serves.
+        self.build_addons(work, root)?;
         self.make_slot(root, &update, slot_mib, "edel")?;
         self.shrink(&update)?;
-        self.build_addons(work, root)?;
         let data_root = self.fill_apps(work)?;
         let data_root = self.carry_addons(work, root, data_root)?;
         let data_mib = match &data_root {
@@ -1345,6 +1348,67 @@ impl Build<'_> {
                 collisions.join("; ")
             );
         }
+        self.write_pack_devices(work, root, &list, &trees)
+    }
+
+    /// Writes beside each hardware pack's offered feature file the devices
+    /// its firmware serves (`addon_state::devices_file`): the aliases of
+    /// every driver, the slot's and the add-ons' own (M8.17e), that may
+    /// load a firmware file the pack ships (`hardware::served_by`). So a
+    /// chip sold under another maker's id gets its pack (M8.17d).
+    fn write_pack_devices(
+        &self,
+        work: &Path,
+        root: &Path,
+        list: &[&Listed],
+        trees: &[(String, Vec<String>)],
+    ) -> Result<()> {
+        let packs: Vec<&&Listed> = list
+            .iter()
+            .filter(|a| !a.feature.hardware.is_empty())
+            .collect();
+        if packs.is_empty() {
+            return Ok(());
+        }
+        self.runner.step(&format!(
+            "list the devices the firmware of {} serves, from the drivers' own aliases",
+            packs
+                .iter()
+                .map(|a| a.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        if self.runner.dry_run {
+            return Ok(());
+        }
+        let mut modules = read_modules(&root.join("usr/lib/modules"))?;
+        for addon in list {
+            let held = drivers_held(work, &addon.name).join("usr/lib/modules");
+            if held.is_dir() {
+                modules.extend(read_modules(&held)?);
+            }
+        }
+        let dir = root.join(edel::places::OFFERED_ADDONS_DIR.trim_start_matches('/'));
+        for pack in packs {
+            let firmware: Vec<String> = trees
+                .iter()
+                .filter(|(name, _)| name == &pack.name)
+                .flat_map(|(_, files)| files)
+                .filter_map(|f| {
+                    f.split_once("lib/firmware/")
+                        .map(|(_, rest)| rest.to_string())
+                })
+                .collect();
+            let served = edel::hardware::served_by(&firmware, &modules);
+            let text: String = served.iter().map(|p| format!("{p}\n")).collect();
+            fs::write(
+                edel::addon_state::devices_file(&dir, &pack.name),
+                format!(
+                    "# The devices add-on {}'s firmware serves, from its drivers' aliases (edel image build).\n{text}",
+                    pack.name
+                ),
+            )?;
+        }
         Ok(())
     }
 
@@ -1416,6 +1480,68 @@ impl Build<'_> {
         fs::remove_dir_all(a_root).with_context(|| format!("removing {}", a_root.display()))
     }
 
+    /// The add-ons' kernel drivers (M8.17e): each folder an add-on's
+    /// features name in `kernel_drivers` moves out of the slot's
+    /// `lib/modules/VERSION/kernel` to the add-on's holding folder, before
+    /// the slot is made, so the slot never carries it and `build_addon`
+    /// puts it in the add-on. A feature the image lists itself keeps its
+    /// drivers in the slot. The kernel's module index stays whole, so
+    /// modprobe finds a driver as soon as its add-on is mounted. A folder
+    /// the kernel lacks fails the build, as a `[[keep]]` pattern does.
+    fn take_kernel_drivers(&self, work: &Path, root: &Path) -> Result<()> {
+        let own: Vec<&str> = self.def.features.iter().map(|f| f.name.as_str()).collect();
+        for addon in self.def.addons.iter().chain(&self.extra_addons) {
+            let folders: Vec<&String> = addon
+                .parts()
+                .filter(|part| !own.contains(&part.name.as_str()))
+                .flat_map(|part| &part.feature.kernel_drivers)
+                .collect();
+            if folders.is_empty() {
+                continue;
+            }
+            let shown: Vec<&str> = folders.iter().map(|f| f.as_str()).collect();
+            self.runner.step(&format!(
+                "move the kernel drivers {} out of the slot into add-on {}",
+                shown.join(", "),
+                addon.name
+            ));
+            if self.runner.dry_run {
+                continue;
+            }
+            let modules = root.join("usr/lib/modules");
+            let kernels: Vec<String> = fs::read_dir(&modules)
+                .with_context(|| format!("reading {}", modules.display()))?
+                .flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect();
+            let [kernel] = kernels.as_slice() else {
+                bail!(
+                    "expected one kernel in /usr/lib/modules to take add-on {}'s drivers from, found {kernels:?}",
+                    addon.name
+                );
+            };
+            let rel = Path::new("usr/lib/modules").join(kernel).join("kernel");
+            let held = drivers_held(work, &addon.name);
+            if held.exists() {
+                fs::remove_dir_all(&held)?;
+            }
+            for folder in folders {
+                let from = root.join(&rel).join(folder);
+                if !from.exists() {
+                    bail!(
+                        "add-on {}: kernel driver folder {folder} is not in kernel {kernel}: the kernel's layout changed, or the folder is wrong; fix kernel_drivers in the feature",
+                        addon.name
+                    );
+                }
+                let to = held.join(&rel).join(folder);
+                fs::create_dir_all(to.parent().unwrap_or(work))?;
+                fs::rename(&from, &to)
+                    .with_context(|| format!("moving {} to {}", from.display(), to.display()))?;
+            }
+        }
+        Ok(())
+    }
+
     /// Builds one add-on (see [`Build::build_addons`]) from a copy of
     /// `start`, the image's root or its base add-on's. Returns the files
     /// its tree ships and its new account lines, for the checks that span
@@ -1480,6 +1606,17 @@ impl Build<'_> {
             }
         }
         self.copy_programs(&programs, &a_root)?;
+        // The kernel's drivers it takes from the slot (M8.17e), new files
+        // of its tree as its packages' are.
+        let drivers = drivers_held(work, name);
+        if !self.runner.dry_run && drivers.is_dir() {
+            self.runner.run(
+                Command::new("cp")
+                    .arg("-a")
+                    .arg(drivers.join("."))
+                    .arg(&a_root),
+            )?;
+        }
         self.runner.step(&format!(
             "write the feature files of {name} to {}",
             features::DIR
@@ -1765,6 +1902,12 @@ fn container_tar_args(epoch: Option<u64>) -> Vec<String> {
     }
     args.push("-czf".into());
     args
+}
+
+/// Where `take_kernel_drivers` holds add-on `name`'s kernel drivers until
+/// its add-on is built, laid out as in a root.
+fn drivers_held(work: &Path, name: &str) -> PathBuf {
+    work.join("addons").join(format!("{name}.drivers"))
 }
 
 /// The folder `under` names in `root`, through the links `merge_usr` made
@@ -2157,16 +2300,8 @@ fn declared_firmware(root: &Path, module: &str) -> Result<Vec<String>> {
             if !wanted.contains(&name) {
                 continue;
             }
-            let raw = fs::read(&path)?;
-            let mut bytes = Vec::new();
-            if name.ends_with(".gz") {
-                flate2::read::GzDecoder::new(raw.as_slice())
-                    .read_to_end(&mut bytes)
-                    .with_context(|| format!("unpacking {}", path.display()))?;
-            } else {
-                bytes = raw;
-            }
-            return Ok(firmware_names(&bytes));
+            let bytes = unpacked(&path)?;
+            return Ok(edel::hardware::Module::from_modinfo(&bytes).firmware);
         }
     }
     bail!(
@@ -2174,13 +2309,42 @@ fn declared_firmware(root: &Path, module: &str) -> Result<Vec<String>> {
     )
 }
 
-/// The `firmware=NAME` strings of a module's `.modinfo` section.
-fn firmware_names(bytes: &[u8]) -> Vec<String> {
-    bytes
-        .split(|&b| b == 0)
-        .filter_map(|s| s.strip_prefix(b"firmware="))
-        .map(|s| String::from_utf8_lossy(s).into_owned())
-        .collect()
+/// A kernel module's bytes, unpacked when it is gzipped.
+fn unpacked(path: &Path) -> Result<Vec<u8>> {
+    let raw = fs::read(path)?;
+    if path.extension().is_none_or(|e| e != "gz") {
+        return Ok(raw);
+    }
+    let mut bytes = Vec::new();
+    flate2::read::GzDecoder::new(raw.as_slice())
+        .read_to_end(&mut bytes)
+        .with_context(|| format!("unpacking {}", path.display()))?;
+    Ok(bytes)
+}
+
+/// What every kernel module under `dir` says of itself
+/// (`hardware::Module`); a module may be gzipped, as Alpine ships them.
+fn read_modules(dir: &Path) -> Result<Vec<edel::hardware::Module>> {
+    let mut found = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(at) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&at) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type()?.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !(name.ends_with(".ko") || name.ends_with(".ko.gz")) {
+                continue;
+            }
+            found.push(edel::hardware::Module::from_modinfo(&unpacked(&path)?));
+        }
+    }
+    Ok(found)
 }
 
 /// Removes the folders below `dir` that hold nothing any more.
@@ -2516,7 +2680,7 @@ mod tests {
     fn a_modules_firmware_names_are_read_from_its_modinfo() {
         let bytes = b"license=GPL\0firmware=iwlwifi-so-a0-gf-a0-89.ucode\0firmware=iwlwifi-cc-a0-77.ucode\0name=iwlwifi\0";
         assert_eq!(
-            firmware_names(bytes),
+            edel::hardware::Module::from_modinfo(bytes).firmware,
             ["iwlwifi-so-a0-gf-a0-89.ucode", "iwlwifi-cc-a0-77.ucode"]
         );
     }

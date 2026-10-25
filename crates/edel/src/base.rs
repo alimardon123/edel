@@ -171,6 +171,16 @@ pub fn replay_device_events() -> Command {
     command
 }
 
+/// Has the kernel load the drivers a device's modalias names, as udev does
+/// when a device arrives (M8.17e): quiet, and failing, when no driver
+/// serves it; the blacklist kept. One device a call, so one without a
+/// driver never stops the others.
+pub fn load_driver(modalias: &str) -> Command {
+    let mut command = Command::new("modprobe");
+    command.args(["-q", "-b", modalias]);
+    command
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

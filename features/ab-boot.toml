@@ -14,8 +14,12 @@ packages = ["cryptsetup", "dosfstools", "e2fsprogs", "e2fsprogs-extra", "kbd-bke
 # to hwdrivers like a laptop's watchdog, so CI proves the guard takes it.
 modules = ["softdog", "virtio_pci", "virtio_blk", "nvme", "ahci", "sd_mod", "usb-storage", "uas", "xhci_pci"]
 # The initramfs finds disks on SATA, NVMe, SCSI, USB and virtio with ext4,
-# and sets the screen mode early so a laptop's screen comes up (M3.3a).
-initramfs = ["ata", "base", "ext4", "kms", "nvme", "scsi", "usb", "virtio"]
+# and nothing more (M8.17e): the screen shows the firmware's picture
+# (simpledrm, built into the kernel) until the graphics driver loads in the
+# root at the start, before a password is asked or the login screen comes.
+# mkinitfs's kms took every graphics driver and its firmware along, 44 of
+# its 63 MiB, on servers too.
+initramfs = ["ata", "base", "ext4", "nvme", "scsi", "usb", "virtio"]
 # The boot guard confirms the slot once the default runlevel is reached.
 health = ["default-runlevel"]
 

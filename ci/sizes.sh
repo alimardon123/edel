@@ -4,8 +4,8 @@
 # in use and root size are the median of three boots of the one image
 # (images/edel.toml, M8.17) with no screen (`-vga none`) and without the
 # add-ons its disk carries (M8.17c), read from the line
-# edel-boot-ok prints; the image sizes are the container's and the update
-# image's. Fails the job when a measurement is
+# edel-boot-ok prints; the image sizes are the container's, the update
+# image's and the stick's (M8.17f). Fails the job when a measurement is
 # over its budget; CI runs it even after a failure, and then it only
 # reports what was built.
 set -eu
@@ -75,6 +75,10 @@ if [ -e "$container" ] && [ -e "$vm" ]; then
 	if [ -e "$update" ]; then
 		check 'Update image (ext4.gz)' "$(awk -v b="$(stat -c %s "$update")" 'BEGIN { printf "%.1f", b / 1048576 }')" update_image_mib MiB
 	fi
+	# What a person downloads to write a stick (M8.17f).
+	if [ -e "$vm.gz" ]; then
+		check 'The stick (img.gz)' "$(awk -v b="$(stat -c %s "$vm.gz")" 'BEGIN { printf "%.1f", b / 1048576 }')" stick_mib MiB
+	fi
 	check 'One image with no screen: root used' "$(cut -d' ' -f3 out/budgets.txt | median)" headless_root_mib MiB
 	check 'One image with no screen: boot to confirmed slot' "$(cut -d' ' -f1 out/budgets.txt | median)" headless_boot_seconds s
 	check 'One image with no screen: memory in use after boot' "$(cut -d' ' -f2 out/budgets.txt | median)" headless_memory_mib MiB
@@ -106,9 +110,14 @@ fi
 		for part in lib/firmware usr/share/fonts; do
 			[ -d "$d/$part" ] && echo "| $image /$part | $(sudo du -sh "$d/$part" | cut -f1) |"
 		done
-		# The default apps (M6.2), on the data partition, not in the slot.
-		apps="$(dirname "$d")/data"
-		[ -d "$apps" ] && echo "| $image default apps, on the data partition | $(sudo du -sh "$apps" | cut -f1) |"
+		# What the data partition carries beside the slot (M8.17f): each
+		# add-on's image and the default apps (M6.2).
+		data="$(dirname "$d")/data"
+		[ -d "$data" ] || continue
+		for addon in "$data"/addons/*/*.ext4; do
+			[ -e "$addon" ] && echo "| $image add-on $(basename "$addon" .ext4), on the data partition | $(sudo du -h "$addon" | cut -f1) |"
+		done
+		echo "| $image default apps, on the data partition | $(sudo du -sh --exclude=addons "$data" | cut -f1) |"
 	done
 } >>"$summary"
 

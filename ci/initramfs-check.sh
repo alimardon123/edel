@@ -1,9 +1,10 @@
 #!/bin/sh
 # Checks the kernel of every bootable image in images/ against
 # ci/kernel-options.toml, and lists the modules in each image's initramfs,
-# failing when an lts image's (the desktop's) lacks a driver it needs to find its disk or
-# light its screen (roadmap M3.3a), or an image with a screen lacks
-# VirtualBox's (M3.6). Reads the built root filesystems in
+# failing when an lts image's lacks a driver it needs to find its disk
+# (roadmap M3.3a), carries a graphics driver (M8.17e: the root loads them)
+# or is over its budget, or an image with a screen lacks VirtualBox's
+# (M3.6). Reads the built root filesystems in
 # out/work/, which are root's, so it uses sudo.
 set -eu
 
@@ -21,19 +22,19 @@ options() {
 # The modules an image's initramfs must hold, by its kernel flavour.
 needed_modules() {
 	case "$1" in
-	lts) echo "nvme usb_storage xhci_pci ahci mmc_block sdhci_pci i915 xe amdgpu virtio_gpu ext4 overlay" ;;
+	lts) echo "nvme usb_storage xhci_pci ahci mmc_block sdhci_pci ext4 overlay" ;;
 	*) echo "virtio_blk ext4 overlay" ;;
 	esac
 }
 
-# The firmware directories an image's initramfs must hold files from, by
-# its kernel flavour: a graphics driver that loads there without its
-# firmware fails and is not retried later (amdgpu and xe need it to start).
-needed_firmware() {
-	case "$1" in
-	lts) echo "amdgpu i915 xe" ;;
-	esac
-}
+# The graphics drivers no initramfs may hold (M8.17e): the root loads them
+# at the start, with their firmware, and the firmware's picture lights the
+# screen until then. A driver here would start without its firmware. The
+# virtual machines' (virtio_gpu, vmwgfx) need none and may stay, as the
+# kernel feature's modules list them.
+graphics="amdgpu i915 xe radeon nouveau"
+
+. ci/budgets.sh
 
 for def in images/*.toml; do
 	flavor=$(sed -n 's/^kernel = "\(.*\)"$/\1/p' "$def")
@@ -58,15 +59,15 @@ for def in images/*.toml; do
 	for module in $(needed_modules "$flavor"); do
 		echo "$modules" | grep -qx "$module" || absent="$absent $module"
 	done
-	for dir in $(needed_firmware "$flavor"); do
-		echo "$files" | grep -qE "(^|/)lib/firmware/$dir/" || absent="$absent firmware/$dir"
+	extra=''
+	for module in $graphics; do
+		echo "$modules" | grep -qx "$module" && extra="$extra $module"
 	done
-	# An image with a screen lights VirtualBox's and VMware's (VMSVGA)
-	# early too, and carries Mesa's driver for it, svga, whose DRI name is
-	# vmwgfx (M3.6).
+	# An image with a screen carries VirtualBox's and VMware's (VMSVGA)
+	# driver and Mesa's for it, svga, whose DRI name is vmwgfx (M3.6).
 	if grep -q '"graphics"' "$def"; then
-		echo "$modules" | grep -qx vmwgfx || absent="$absent vmwgfx"
 		root=out/work/$name-$arch/rootfs
+		sudo find "$root/lib/modules/" -name 'vmwgfx.ko*' | grep -q . || absent="$absent vmwgfx"
 		if sudo sh -c "grep -qa vmwgfx $root/usr/lib/libgallium-*.so $root/usr/lib/xorg/modules/dri/* 2>/dev/null"; then
 			echo "$name: vmwgfx in the initramfs and Mesa's svga driver (vmwgfx) in the slot, for VirtualBox"
 		else
@@ -76,6 +77,19 @@ for def in images/*.toml; do
 	count=$(echo "$modules" | grep -c . || true)
 	size=$(sudo du -h "$boot/initramfs-$flavor" | cut -f1)
 	echo "$name ($flavor): initramfs $size with $count modules and $firmware firmware files, including$(for m in $(needed_modules "$flavor"); do echo "$modules" | grep -qx "$m" && printf ' %s' "$m"; done)"
+	if [ "$flavor" = lts ]; then
+		mib=$(sudo du -m "$boot/initramfs-$flavor" | cut -f1)
+		limit=$(budget initramfs_mib)
+		echo "budget initramfs_mib: $mib MiB, budget $limit MiB"
+		if [ "$mib" -gt "$limit" ]; then
+			echo "FAIL: $name's initramfs is $mib MiB, over its budget of $limit MiB (ci/budgets.toml)"
+			fail=1
+		fi
+		if [ -n "$extra" ]; then
+			echo "FAIL: $name's initramfs holds graphics drivers,$extra, which the root loads with their firmware (M8.17e)"
+			fail=1
+		fi
+	fi
 	if [ -n "$missing" ]; then
 		echo "FAIL: $name's kernel lacks$missing (see ci/kernel-options.toml)"
 		fail=1
