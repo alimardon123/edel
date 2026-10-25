@@ -23,6 +23,40 @@ pub const LAST_LINES: usize = 60;
 /// so a log an app filled with megabytes is never read whole.
 const TAIL_BYTES: u64 = 64 * 1024;
 
+/// How large a session's log may grow while the session runs: an app that
+/// writes without end must not fill the disk (the whole-system review of
+/// 2026-10-25). Past it, [`keep_small`] empties the log but for its end.
+pub const MOST_BYTES: u64 = 16 * 1024 * 1024;
+
+/// How often the compositor looks at the log's size.
+pub const LOOK_EVERY: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Empties `file`, a session's log opened to append, when it has grown past
+/// [`MOST_BYTES`], keeping its last [`TAIL_BYTES`] after a line that says
+/// so, so [`ENDED`] and the latest lines are still found; true when it did.
+/// Every writer appends, the apps the session started too, so their next
+/// lines follow on.
+pub fn keep_small(file: &File) -> io::Result<bool> {
+    use std::os::unix::fs::FileExt;
+    let len = file.metadata()?.len();
+    if len <= MOST_BYTES {
+        return Ok(false);
+    }
+    let mut end = vec![0; TAIL_BYTES as usize];
+    let read = file.read_at(&mut end, len - TAIL_BYTES)?;
+    end.truncate(read);
+    file.set_len(0)?;
+    let mut writer = file;
+    writeln!(
+        writer,
+        "edel-compositor: the log passed {} MiB, so all but its last {} KiB was dropped",
+        MOST_BYTES / (1024 * 1024),
+        TAIL_BYTES / 1024
+    )?;
+    writer.write_all(&end)?;
+    Ok(true)
+}
+
 /// Writes one line to standard error, which in a session is this log, and
 /// drops a failed write: with a full disk the line is lost, never the
 /// session (std's `eprintln!` panics then). The compositor's and shell-ui's
@@ -34,6 +68,7 @@ pub fn write_line(args: fmt::Arguments) {
 /// A new session's log in `dir`, the one before moved to
 /// [`places::SESSION_LOG_BEFORE`]: the log's path, the file to write to,
 /// and whether the session before ended badly (its log lacks [`ENDED`]).
+/// The file is open to read too, for [`keep_small`].
 pub fn start(dir: &Path) -> io::Result<(PathBuf, File, bool)> {
     fs::create_dir_all(dir)?;
     let path = dir.join(places::SESSION_LOG);
@@ -43,7 +78,11 @@ pub fn start(dir: &Path) -> io::Result<(PathBuf, File, bool)> {
         badly = !ended(&text);
         fs::rename(&path, &before)?;
     }
-    let file = OpenOptions::new().create(true).append(true).open(&path)?;
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .append(true)
+        .open(&path)?;
     Ok((path, file, badly))
 }
 
@@ -223,6 +262,26 @@ mod tests {
         // One that lacks the last line ended badly.
         fs::write(&log, b"\xffapp noise\n").unwrap();
         assert!(start(&dir).unwrap().2);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_log_past_its_size_keeps_only_its_end() {
+        let dir = dir("small");
+        fs::create_dir_all(&dir).unwrap();
+        let (path, file, _) = start(&dir).unwrap();
+        assert!(!keep_small(&file).unwrap());
+        let mut writer = &file;
+        writer.write_all(&vec![b'x'; MOST_BYTES as usize]).unwrap();
+        writeln!(writer, "\nthe last line").unwrap();
+        assert!(keep_small(&file).unwrap());
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("edel-compositor: the log passed 16 MiB"));
+        assert!(text.ends_with("the last line\n"));
+        assert!(text.len() as u64 <= TAIL_BYTES + 200);
+        // Writers append after it.
+        writeln!(writer, "{ENDED}").unwrap();
+        assert!(ended(&fs::read_to_string(&path).unwrap()));
         let _ = fs::remove_dir_all(&dir);
     }
 
