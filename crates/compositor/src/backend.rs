@@ -50,6 +50,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>, opens: &[Open]
     let handle = event_loop.handle();
     let name = listen(&handle, &mut state, display)?;
     state.socket = name.clone();
+    crate::off_loop::start(&handle, &mut state);
     crate::xwayland::listen(&handle, &mut state, &name);
     state.program = program;
     state.game.session = state.game_session();

@@ -47,6 +47,7 @@ mod input;
 mod keyboard;
 mod layers;
 mod lock;
+mod off_loop;
 mod outputs;
 mod pointer;
 mod program;
