@@ -509,24 +509,14 @@ pub fn view(state: &State, status: &Status, names: &[String], settings: bool) ->
 pub const MODE: &str = edel::sun::MODE;
 
 /// What to write in the person's file to turn the battery saver `on` or
-/// off (M8.31): none when what applies without their file (the machine's
-/// `power.saver`, else `auto`, with the battery as it is now and `latched`
-/// when `auto` turned the saver on) already gives that, as writers never
-/// write a default (ADR-008); else `on` or `off`.
-pub fn saver_to_write(
-    machine: Option<&str>,
-    on: bool,
-    on_battery: Option<bool>,
-    percent: Option<u32>,
-    latched: bool,
-) -> Option<&'static str> {
-    let now = power_rules::saver(
-        &power_rules::Rules::read(machine, None),
-        on_battery,
-        percent,
-        latched,
-    );
-    (now != on).then_some(if on { "on" } else { "off" })
+/// off (M8.31): none when the machine's `power.saver` already says that
+/// same `on` or `off`, as writers never write a default (ADR-008); else
+/// `on` or `off`, even when `auto` gives that now, as `auto` would undo
+/// the person's choice once the battery or the charger changes.
+pub fn saver_to_write(machine: Option<&str>, on: bool) -> Option<&'static str> {
+    let rules = power_rules::Rules::read(machine, None);
+    let fixed = !rules.saver_auto() && power_rules::saver(&rules, None, None, false) == on;
+    (!fixed).then_some(if on { "on" } else { "off" })
 }
 
 /// Whether the colour scheme is dark: the person's file over the machine's,
@@ -537,11 +527,14 @@ pub fn is_dark(machine: Option<&str>, person: Option<&str>) -> bool {
 }
 
 /// What to write in the person's file to make the colour scheme dark, or
-/// light when `dark` is false: none when what applies without their file
-/// (the machine's, else the release's) is already that, as writers never
-/// write a default (ADR-008).
+/// light when `dark` is false: none when the machine's `appearance.mode`
+/// already says that same value, as writers never write a default
+/// (ADR-008); else `dark` or `light`, even when `auto` gives that now, as
+/// `auto` would undo the person's choice at the next sunset or sunrise.
 pub fn mode_to_write(machine: Option<&str>, dark: bool) -> Option<&'static str> {
-    (is_dark(machine, None) != dark).then_some(if dark { "dark" } else { "light" })
+    let value = if dark { "dark" } else { "light" };
+    let without = edel::settings::chosen(MODE, machine, None);
+    (without.as_deref() != Some(value)).then_some(value)
 }
 
 // ---- Where it lies ----
@@ -1938,40 +1931,14 @@ mod tests {
     }
 
     #[test]
-    fn saver_to_write_writes_only_what_differs_from_what_applies_without_the_file() {
-        // On battery at 50 percent auto is off: on is written, off is the absence.
-        assert_eq!(
-            saver_to_write(None, true, Some(true), Some(50), false),
-            Some("on")
-        );
-        assert_eq!(
-            saver_to_write(None, false, Some(true), Some(50), false),
-            None
-        );
-        // At 10 percent on battery auto is on: off is written, on is the absence.
-        assert_eq!(
-            saver_to_write(None, false, Some(true), Some(10), false),
-            Some("off")
-        );
-        assert_eq!(
-            saver_to_write(None, true, Some(true), Some(10), false),
-            None
-        );
-        // At 25 percent with auto's saver still on since 20, off is written.
-        assert_eq!(
-            saver_to_write(None, false, Some(true), Some(25), true),
-            Some("off")
-        );
-        // The machine says on, on the charger: off is written, on is the absence.
+    fn saver_to_write_writes_each_choice_unless_the_machine_says_it() {
+        // Auto, the default, would undo a choice once the battery changes.
+        assert_eq!(saver_to_write(None, true), Some("on"));
+        assert_eq!(saver_to_write(None, false), Some("off"));
+        // The machine says on: off is written, on is the absence.
         let machine = "[power]\nsaver = \"on\"\n";
-        assert_eq!(
-            saver_to_write(Some(machine), false, Some(false), Some(90), false),
-            Some("off")
-        );
-        assert_eq!(
-            saver_to_write(Some(machine), true, Some(false), Some(90), false),
-            None
-        );
+        assert_eq!(saver_to_write(Some(machine), false), Some("off"));
+        assert_eq!(saver_to_write(Some(machine), true), None);
     }
 
     #[test]
@@ -2182,9 +2149,11 @@ mod tests {
             Some(dark),
             Some("format = 1\n[appearance]\nmode = \"light\"\n")
         ));
-        // No machine setting: dark is written, light is the absence of the key.
+        // No machine setting: auto, which follows the sun with a place, so
+        // each choice is written.
         assert_eq!(mode_to_write(None, true), Some("dark"));
-        assert_eq!(mode_to_write(None, false), None);
+        assert_eq!(mode_to_write(None, false), Some("light"));
+        assert_eq!(mode_to_write(Some(auto), false), Some("light"));
         // A machine that is dark: light must be said, dark is the default.
         assert_eq!(mode_to_write(Some(dark), false), Some("light"));
         assert_eq!(mode_to_write(Some(dark), true), None);

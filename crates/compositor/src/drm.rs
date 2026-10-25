@@ -607,6 +607,9 @@ impl Gpu {
             return;
         };
         let mut wanted = Vec::new();
+        // The first connected screen turned off, lit after all when the
+        // settings turn every screen off, so the machine is never left dark.
+        let mut turned_off = None;
         for &handle in resources.connectors() {
             // Probed, not the kernel's cached answer: while the compositor
             // holds the GPU, nothing else reads a newly plugged screen's
@@ -621,9 +624,20 @@ impl Gpu {
                 .get(&name)
                 .and_then(|o| o.enabled)
                 .unwrap_or(true);
-            if info.state() == connector::State::Connected && !info.modes().is_empty() && on {
-                wanted.push(info);
+            if info.state() == connector::State::Connected && !info.modes().is_empty() {
+                if on {
+                    wanted.push(info);
+                } else if turned_off.is_none() {
+                    turned_off = Some(info);
+                }
             }
+        }
+        if let (true, Some(info)) = (wanted.is_empty(), turned_off) {
+            eprintln!(
+                "edel-compositor: {}",
+                messages::every_screen_off(&connector_name(&info))
+            );
+            wanted.push(info);
         }
         // Screens gone, turned off, or wanting another mode go dark first,
         // which frees their CRTCs.

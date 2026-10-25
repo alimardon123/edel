@@ -157,7 +157,9 @@ impl Shell {
                 self.link.screens_off();
             }
             Stage::Lock => {
-                if self.lock.is_some() {
+                // The USB stick's own account has no password, so being
+                // away locks nothing there; the screens just stay off.
+                if self.lock.is_some() || crate::lock::user() == edel::places::LIVE_USER {
                     return;
                 }
                 eprintln!(

@@ -106,6 +106,7 @@ Sections 12, 16, 17 and 18 wait until the OS is stable (after M8), but what they
 - **Screen sharing (M6.3) uses the standard portals and PipeWire**, so help (14) and a device as a screen (5) reuse it.
 - **Roles are profiles (M7.6)**, so a second life (13) adds files, not code.
 - **Nothing listens on the network until a device is paired**, the rule every section here keeps.
+- **Trust lives in the keys, never in the way bytes travel.** Pairing, `[devices.NAME]`, backups and folders in step name a device by its identity key and encrypt end to end with the devices' own keys, so the local network, the person's own tunnel, or later a sync server is one more way to carry the same bytes, not a change to pairing or the file. Alimardon asked on 2026-10-25 that such a server could come later without pain, for people far from home: one that holds only encrypted bytes, chosen by one address setting, ours or the person's own (their home server running Edel OS), with signing in from a browser, finding a lost device, restoring its data and setting up a new device from it. Option C stays rejected unless they reopen it.
 
 ### 20. A box with no screen, used from your phone
 

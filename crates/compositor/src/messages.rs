@@ -182,6 +182,13 @@ pub fn screens_not_off(screen: &str, why: impl Display) -> String {
     format!("could not turn screen {screen} off: {why}; it stays on and turns on at the next input")
 }
 
+/// The settings turn every connected screen off: one stays on.
+pub fn every_screen_off(screen: &str) -> String {
+    format!(
+        "the settings turn every screen off, so {screen} stays on; turn another screen on in Settings, Displays, before turning this one off"
+    )
+}
+
 /// Switching to another terminal fails.
 pub fn terminal_switch(vt: impl Display, why: impl Display) -> String {
     format!("could not switch to terminal {vt}: {why}")
@@ -453,6 +460,7 @@ mod tests {
             INPUT_LOST.to_string(),
             screens_lost("x"),
             screens_not_off("x", "x"),
+            every_screen_off("x"),
             terminal_switch(2, "x"),
             frame_not_drawn("x"),
             frame_not_shown("x"),
