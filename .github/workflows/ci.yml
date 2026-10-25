@@ -279,9 +279,10 @@ jobs:
       - name: The backports list is the build's (M8.10b)
         # docs/backports.md, every base package from Alpine community
         # (ADR-003), made again by edel image deps in the build container,
-        # where apk uses the images' branch.
+        # where apk uses the images' branch; the tool needs libgcc there,
+        # which the build installed with cargo in its own container.
         run: |
-          docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'apk update -q >/dev/null && target/release/edel image deps out/*.packages' >out/backports.md
+          docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'apk add -q libgcc >/dev/null && target/release/edel image deps out/*.packages' >out/backports.md
           if ! diff -u docs/backports.md out/backports.md; then
             { echo "### Backports (M8.10b)"; echo; echo "docs/backports.md differs from the build; replace it with:"; echo; echo '```markdown'; cat out/backports.md; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
             echo "FAIL: docs/backports.md differs from what this build's packages give; the run's summary holds the new file"
