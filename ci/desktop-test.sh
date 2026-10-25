@@ -5678,10 +5678,14 @@ case_fullscreen() {
 	guest 'update during game'
 	update_log 'a game is playing, so this waits until it ends' || fail "edel update did not wait for the game: $(value update)"
 	game=$(count 'edel-compositor: game mode off \(Super\+G\)')
-	shown=$(count 'edel-shell-ui: osd shown, game mode off')
+	# Only the start of shell-ui's line is matched: the compositor writes
+	# to the same console at that moment, and its words can land inside
+	# shell-ui's line (seen on #473: "osd shown, edel-compositor: key game
+	# mode off").
+	shown=$(count 'edel-shell-ui: osd shown')
 	python3 ci/qmp.py key meta_l-g
 	wait_more 'edel-compositor: game mode off \(Super\+G\)' "$game" || fail "Super+G did not turn game mode off"
-	wait_more 'edel-shell-ui: osd shown, game mode off' "$shown" || fail "shell-ui did not show game mode off"
+	wait_more 'edel-shell-ui: osd shown' "$shown" || fail "shell-ui did not show game mode off"
 	shot game-mode 4 4 33aa66 >/dev/null || fail "full did not stay under the game mode pop-up"
 	state_now && grep -q '^game_mode = false' "$dir/state-now.toml" || fail "the state file does not say game_mode = false"
 	# The game ended (M7.7c): the compositor says so and the update goes on.

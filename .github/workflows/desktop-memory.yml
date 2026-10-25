@@ -9,9 +9,6 @@ name: Desktop memory
 # runners only when someone wants the numbers.
 on:
   workflow_dispatch:
-  # TEMPORARY, for the first proof on the pull request; removed before it lands.
-  pull_request:
-    paths: [ci/desktop-memory.sh, .github/workflows/desktop-memory.yml]
 
 permissions:
   contents: read
