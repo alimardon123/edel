@@ -118,7 +118,7 @@ desktop_behind_game_cpu_percent = 1
 # measurement, on 2026-10-24, was 1.12 (median 8.9 ms, p99 10.0 ms over
 # 1200 frames); the limit is that plus 10 percent, as M7.7e asks.
 # From 2026-10-25 the client keeps the first 0.5 s after its first
-# presented frame apart (settle_frames, settle_slowest_ms): of 55 first
+# presented frame apart (opening_intervals, opening_worst_ms): of 55 first
 # measurements in 45 CI runs from 2026-10-24 to 2026-10-25 the median was
 # 1.15 and most 1.10 to 1.20, yet 7 went over 1.24,
 # 1.73 the worst, on the same code that passed elsewhere, and the window's

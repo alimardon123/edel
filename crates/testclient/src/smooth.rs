@@ -15,8 +15,10 @@
 //! once when a game starts and is not a stutter while it plays, yet on a
 //! runner drawing a frame in 8 ms those are the 12 slowest of 1200, its
 //! whole p99. The line says how many there were and the slowest of them
-//! (`settle_frames=... settle_slowest_ms=...`), so a slow start still
-//! shows. CI's smoothness gate reads this line.
+//! (`opening_intervals=... opening_worst_ms=...`, names that end in none
+//! of the other keys, as CI reads each key as the last match of its
+//! name), so a slow start still shows. CI's smoothness gate reads this
+//! line.
 
 use std::time::Duration;
 
@@ -130,7 +132,7 @@ impl Frames {
             self.direct,
             self.discarded,
         ) + &format!(
-            " settle_frames={} settle_slowest_ms={:.1}",
+            " opening_intervals={} opening_worst_ms={:.1}",
             self.settling.len(),
             settle_slowest.as_secs_f64() * 1000.0
         )
@@ -268,7 +270,7 @@ mod tests {
         assert!(smooth.done());
         assert!(smooth
             .line()
-            .ends_with("median_ms=8.0 p99_ms=440.0 slowest_ms=440.0 direct=0 discarded=0 settle_frames=2 settle_slowest_ms=40.0"));
+            .ends_with("median_ms=8.0 p99_ms=440.0 slowest_ms=440.0 direct=0 discarded=0 opening_intervals=2 opening_worst_ms=40.0"));
     }
 
     #[test]
