@@ -17,6 +17,9 @@ use crate::access::{self, ALLOW, Ask, Button, CANCEL, DENY, View};
 use crate::messages;
 use crate::popup::Popup;
 use crate::shell_bus::Answer;
+
+/// How many questions wait behind the one on screen.
+const MOST_WAITING: usize = 4;
 use crate::{ACCESS, Shell, a11y, paint};
 
 /// The dialog while it shows: its popup, what it shows, the question's
@@ -37,11 +40,23 @@ impl Shell {
     /// A question came in from the Access portal: shown now when no dialog
     /// is up, else queued behind the one showing.
     pub fn access_asked(&mut self, ask: Ask) {
-        if self.access.is_some() {
+        if self.asks.len() >= MOST_WAITING {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::access_too_many(&ask.app, MOST_WAITING)
+            );
+            ask.answer.send(CANCEL);
+        } else if self.access.is_some() || self.lock.is_some() {
             self.asks.push_back(ask);
         } else {
             self.show_access(ask);
         }
+    }
+
+    /// The screen locks: a question on screen is cancelled, so it cannot
+    /// take the keys typed on the lock screen.
+    pub fn cancel_access(&mut self) {
+        self.answer_access(CANCEL);
     }
 
     /// Shows `ask` as the dialog, with Deny focused. A dialog that cannot be
@@ -98,8 +113,12 @@ impl Shell {
         self.draw_access();
     }
 
-    /// Shows the next queued question, if any.
-    fn show_next_access(&mut self) {
+    /// Shows the next queued question, if any, unless one is up or the
+    /// screen is locked.
+    pub fn show_next_access(&mut self) {
+        if self.access.is_some() || self.lock.is_some() {
+            return;
+        }
         if let Some(ask) = self.asks.pop_front() {
             self.show_access(ask);
         }

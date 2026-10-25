@@ -154,6 +154,7 @@ impl Dispatch2<EdelShellV1, Shell> for Events {
             edel_shell_v1::Event::Playing { on } => shell.playing_changed(on != 0),
             edel_shell_v1::Event::Game { on } => shell.game_changed(on != 0),
             edel_shell_v1::Event::Clipboard => shell.clipboard_key_pressed(),
+            edel_shell_v1::Event::Undo => shell.undo_key_pressed(),
         }
     }
 }

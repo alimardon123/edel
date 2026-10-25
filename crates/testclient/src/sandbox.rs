@@ -71,12 +71,18 @@ fn globals(connection: &Connection) -> Result<Vec<String>> {
         .collect())
 }
 
-pub fn run(sandboxed: bool) -> Result<()> {
+/// What keeps a sandboxed connection's security context alive: the
+/// compositor serves the sandbox's socket while the close pair is open.
+pub struct Sandbox {
+    _keep: UnixStream,
+    _close: UnixStream,
+    _context: WpSecurityContextV1,
+}
+
+/// A connection to the compositor made through a security context of its
+/// own, as Flatpak makes one for each app.
+pub fn connect() -> Result<(Connection, Sandbox)> {
     let connection = Connection::connect_to_env().context("connecting to the compositor")?;
-    if !sandboxed {
-        println!("globals {}", globals(&connection)?.join(" "));
-        return Ok(());
-    }
     let (list, mut queue) =
         registry_queue_init::<State>(&connection).context("reading the globals")?;
     let manager: WpSecurityContextManagerV1 = list
@@ -89,7 +95,7 @@ pub fn run(sandboxed: bool) -> Result<()> {
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path).context("making the sandbox's socket")?;
     // The compositor listens while the other end of this pair is open.
-    let (close, _keep) = UnixStream::pair().context("making the close pair")?;
+    let (close, keep) = UnixStream::pair().context("making the close pair")?;
     let context = manager.create_listener(listener.as_fd(), close.as_fd(), &queue.handle(), ());
     context.set_sandbox_engine("org.edel.testclient".into());
     context.set_app_id("edel-testclient".into());
@@ -97,10 +103,29 @@ pub fn run(sandboxed: bool) -> Result<()> {
     queue
         .roundtrip(&mut State)
         .context("creating the security context")?;
-    let stream = UnixStream::connect(&path).context("connecting through the sandbox's socket")?;
-    let inside = Connection::from_socket(stream).context("speaking Wayland in the sandbox")?;
-    let seen = globals(&inside);
+    let stream = UnixStream::connect(&path);
     let _ = std::fs::remove_file(&path);
-    println!("sandboxed globals {}", seen?.join(" "));
+    let stream = stream.context("connecting through the sandbox's socket")?;
+    let inside = Connection::from_socket(stream).context("speaking Wayland in the sandbox")?;
+    // The first connection may close: the context lives in the compositor
+    // until the close pair's other end is closed.
+    Ok((
+        inside,
+        Sandbox {
+            _keep: keep,
+            _close: close,
+            _context: context,
+        },
+    ))
+}
+
+pub fn run(sandboxed: bool) -> Result<()> {
+    if !sandboxed {
+        let connection = Connection::connect_to_env().context("connecting to the compositor")?;
+        println!("globals {}", globals(&connection)?.join(" "));
+        return Ok(());
+    }
+    let (inside, _sandbox) = connect()?;
+    println!("sandboxed globals {}", globals(&inside)?.join(" "));
     Ok(())
 }

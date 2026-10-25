@@ -513,6 +513,7 @@ impl Edel {
             Act::GameMode => self.toggle_game_mode(),
             Act::FrameRate => self.toggle_frame_rate(),
             Act::ClipboardHistory => self.show_clipboard(),
+            Act::UndoChange => self.undo_change(),
             Act::Switcher => self.switcher_step(false),
             Act::SwitcherBack => self.switcher_step(true),
             Act::Overview => self.toggle_overview(),

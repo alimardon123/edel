@@ -623,7 +623,7 @@ msgstr ""
 msgid "Erase and install asks you to press it twice."
 msgstr ""
 
-msgid "English (US) is added, to type your username and password; Super+Space switches"
+msgid "English (US) is added, to type your username and password; {keys} switches"
 msgstr ""
 
 msgid "Lowercase, such as ali. Your home folder takes this name."
@@ -1172,6 +1172,9 @@ msgstr ""
 msgid "The battery, the lid and the power button."
 msgstr ""
 
+msgid "A fullscreen game gets variable refresh; {keys} turns it on or off"
+msgstr ""
+
 msgid "{percent}%"
 msgstr ""
 
@@ -1230,9 +1233,6 @@ msgid "Plugged in, it runs at Balanced, or Performance when chosen here"
 msgstr ""
 
 msgid "Lighter effects and the power-saver profile; Automatic turns it on at 20 percent on battery"
-msgstr ""
-
-msgid "A fullscreen game gets variable refresh; Super+G turns it on or off"
 msgstr ""
 
 msgid "Other batteries"
@@ -1688,6 +1688,9 @@ msgstr ""
 msgid "Clipboard history"
 msgstr ""
 
+msgid "Undo desktop edit"
+msgstr ""
+
 msgid "Keep clipboard history"
 msgstr ""
 
@@ -1793,7 +1796,7 @@ msgstr ""
 msgid "The keys for each action. Change one and press the keys you want."
 msgstr ""
 
-msgid "Keeps the last texts and pictures you copied, in memory only, for Super+V"
+msgid "Keeps the last texts and pictures you copied, in memory only, for {keys}"
 msgstr ""
 
 msgid "All 18 workspace keys"

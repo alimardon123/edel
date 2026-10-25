@@ -565,7 +565,12 @@ impl Shell {
             crate::portal::follow_location(connection, off);
         }
         let wanted = edel::panel_edit::applying(machine.as_deref(), person.as_deref());
-        if wanted != self.panel_specs {
+        // While the panel editor is open its edits are the panels: a change
+        // from elsewhere becomes what Cancel goes back to, rather than
+        // throwing the edits away (the whole-system review of 2026-10-25).
+        if let Some(editor) = &mut self.editor {
+            editor.original = wanted;
+        } else if wanted != self.panel_specs {
             self.panels_changed(wanted);
         }
         // panels.pinned (M5.31d): the apps widget follows the files at once.

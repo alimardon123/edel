@@ -996,8 +996,53 @@ pub(crate) fn player_icon(
         .find_map(|name| icons.get(name, px).cloned())
 }
 
+/// The most a cover file may weigh, and the most pixels its picture may
+/// have: album art is far smaller, and a player cannot make the shell read
+/// or decode without end.
+const COVER_MOST_BYTES: u64 = 8 * 1024 * 1024;
+const COVER_MOST_PIXELS: u64 = 4096 * 4096;
+
+/// The bytes of the PNG a player names as its cover, only when it is a
+/// regular file within [`COVER_MOST_BYTES`] whose picture is within
+/// [`COVER_MOST_PIXELS`]. It is opened without waiting and looked at before
+/// it is read, so a FIFO or a device such as `/dev/zero` gives none instead
+/// of freezing the drawing thread, the lock screen's too (the whole-system
+/// review of 2026-10-25).
+fn cover_bytes(path: &str) -> Option<Vec<u8>> {
+    use rustix::fs::{FileType, Mode, OFlags};
+    use std::io::Read;
+    let flags = OFlags::RDONLY | OFlags::NONBLOCK | OFlags::NOCTTY | OFlags::CLOEXEC;
+    let fd = rustix::fs::open(path, flags, Mode::empty()).ok()?;
+    let stat = rustix::fs::fstat(&fd).ok()?;
+    let size = u64::try_from(stat.st_size).ok()?;
+    if FileType::from_raw_mode(stat.st_mode) != FileType::RegularFile || size > COVER_MOST_BYTES {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::from(fd)
+        .take(COVER_MOST_BYTES)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    (png_pixels(&bytes)? <= COVER_MOST_PIXELS).then_some(bytes)
+}
+
+/// The width times the height a PNG's header gives, None when `bytes` do
+/// not start as a PNG does.
+fn png_pixels(bytes: &[u8]) -> Option<u64> {
+    const SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if !bytes.starts_with(SIGNATURE) || bytes.get(12..16)? != b"IHDR" {
+        return None;
+    }
+    let side = |at: usize| {
+        Some(u64::from(u32::from_be_bytes(
+            bytes.get(at..at + 4)?.try_into().ok()?,
+        )))
+    };
+    Some(side(16)? * side(20)?)
+}
+
 pub(crate) fn load_cover(path: &str) -> Option<Pixmap> {
-    let source = Pixmap::load_png(path).ok()?;
+    let source = Pixmap::decode_png(&cover_bytes(path)?).ok()?;
     let mut square = Pixmap::new(COVER_PX, COVER_PX)?;
     // Cropped from its middle to a square, never stretched, as album art
     // is not always square.
@@ -1013,4 +1058,38 @@ pub(crate) fn load_cover(path: &str) -> Option<Pixmap> {
     };
     square.draw_pixmap(0, 0, source.as_ref(), &smooth, scale, None);
     Some(square)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cover_is_read_only_from_a_small_regular_png() {
+        let dir = std::env::temp_dir().join(format!("edel-cover-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("cover.png");
+        Pixmap::new(4, 4).unwrap().save_png(&png).unwrap();
+        assert!(load_cover(png.to_str().unwrap()).is_some());
+        // A FIFO nobody writes to, and a device without end: none, at once.
+        let fifo = dir.join("fifo.png");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert!(load_cover(fifo.to_str().unwrap()).is_none());
+        assert!(load_cover("/dev/zero").is_none());
+        // A small file whose header claims a picture too big to decode.
+        let mut bomb = std::fs::read(&png).unwrap();
+        bomb[16..24].copy_from_slice(&[0, 1, 0, 0, 0, 1, 0, 0]);
+        let big = dir.join("big.png");
+        std::fs::write(&big, &bomb).unwrap();
+        assert!(cover_bytes(big.to_str().unwrap()).is_none());
+        assert_eq!(png_pixels(&std::fs::read(&png).unwrap()), Some(16));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

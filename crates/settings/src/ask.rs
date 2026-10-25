@@ -136,7 +136,7 @@ pub fn ask(
                 entry.set_sensitive(true);
                 run.set_sensitive(true);
                 cancel.set_sensitive(true);
-                if !outcome.ok && outcome.err.contains("wrong password") {
+                if !outcome.ok && outcome.code == Some(i32::from(edel::exit::WRONG_PASSWORD)) {
                     running(false);
                     status.set_label(tr("Wrong password. Type it again."));
                     status.set_visible(true);

@@ -159,6 +159,9 @@
 #               Super+Left and the window list scroll to them (M5.16c)
 #   sandbox     a client in a security context sees none of the shell's
 #               four protocols, which a plain client sees (M5.22)
+#   activation  a sandboxed window asking to come forward on its own does
+#               not take the keyboard; a plain one still may (the review
+#               of 2026-10-25)
 #   everyday    the five everyday protocols are offered, a locked pointer
 #               gives its window relative motion, and a window keeping the
 #               screen on is counted in the state file (M5.23)
@@ -8310,6 +8313,35 @@ case_sandbox() {
 	echo "PASS: a client in a security context is offered none of the layer shell, the window list, the workspaces and edel-shell-v1, which a plain client is"
 }
 
+case_activation() {
+	# xdg-activation (the whole-system review of 2026-10-25): a window in
+	# a security context, as a Flatpak app, that asks to come forward with
+	# a token of its own, with no click or key behind it, stays behind
+	# the window being typed in, and the compositor says why; the person's
+	# own program asking the same way still comes forward.
+	refused=$(count 'edel-compositor: pull-sandboxed asked to come forward without a click or a key')
+	asked=$(count 'DESKTOP-TEST: activation plain after ')
+	guest activation
+	wait_more 'DESKTOP-TEST: activation plain after ' "$asked" 60 || fail "the service did not report the activations"
+	for kind in sandboxed plain; do
+		case "$(value "activation $kind before")" in
+		*typing-$kind\**) ;;
+		*) fail "the typing window did not take the keyboard before the $kind ask: $(value "activation $kind before")" ;;
+		esac
+	done
+	case "$(value 'activation sandboxed after')" in
+	*typing-sandboxed\**) ;;
+	*) fail "a sandboxed window took the keyboard with a token of its own: $(value 'activation sandboxed after')" ;;
+	esac
+	wait_more 'edel-compositor: pull-sandboxed asked to come forward without a click or a key' "$refused" 5 ||
+		fail "the compositor did not say why it kept pull-sandboxed back"
+	case "$(value 'activation plain after')" in
+	*pull-plain\**) ;;
+	*) fail "a plain window asking to come forward did not get the keyboard: $(value 'activation plain after')" ;;
+	esac
+	echo "PASS: a sandboxed window asking to come forward on its own stayed behind the window being typed in, and the compositor said why; a plain one came forward"
+}
+
 case_dmabuf() {
 	# Apps draw on the GPU (M5.19): the compositor offers
 	# zwp_linux_dmabuf_v1, version 4 with feedback, in the formats its
@@ -9401,7 +9433,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

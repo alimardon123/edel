@@ -6,8 +6,9 @@
 //! [`ENDED`], so one that lacks it ended badly. No daemon of our own:
 //! busybox's syslogd keeps the system's log ([`places::SYSTEM_LOG`]).
 
+use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io;
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use crate::places;
@@ -18,6 +19,18 @@ pub const ENDED: &str = "edel-compositor: the session ended";
 /// How many of a log's last lines `edel report` gathers.
 pub const LAST_LINES: usize = 60;
 
+/// How much of the log before is read to find [`ENDED`]: its last 64 KiB,
+/// so a log an app filled with megabytes is never read whole.
+const TAIL_BYTES: u64 = 64 * 1024;
+
+/// Writes one line to standard error, which in a session is this log, and
+/// drops a failed write: with a full disk the line is lost, never the
+/// session (std's `eprintln!` panics then). The compositor's and shell-ui's
+/// `eprintln!` call this.
+pub fn write_line(args: fmt::Arguments) {
+    let _ = writeln!(io::stderr(), "{args}");
+}
+
 /// A new session's log in `dir`, the one before moved to
 /// [`places::SESSION_LOG_BEFORE`]: the log's path, the file to write to,
 /// and whether the session before ended badly (its log lacks [`ENDED`]).
@@ -26,12 +39,23 @@ pub fn start(dir: &Path) -> io::Result<(PathBuf, File, bool)> {
     let path = dir.join(places::SESSION_LOG);
     let before = dir.join(places::SESSION_LOG_BEFORE);
     let mut badly = false;
-    if let Ok(text) = fs::read_to_string(&path) {
+    if let Ok(text) = last_bytes(&path, TAIL_BYTES) {
         badly = !ended(&text);
         fs::rename(&path, &before)?;
     }
     let file = OpenOptions::new().create(true).append(true).open(&path)?;
     Ok((path, file, badly))
+}
+
+/// The last `n` bytes of the file at `path` as text, any bytes that are not
+/// UTF-8 (an app may write them) replaced.
+fn last_bytes(path: &Path, n: u64) -> io::Result<String> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(n)))?;
+    let mut bytes = Vec::new();
+    file.take(n).read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 /// Whether a log's text shows its session closed as it should.
@@ -180,6 +204,27 @@ pub fn runs_as_owner_of(proc: &Path, name: &str, dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_session_moves_any_log_aside_and_reads_only_its_end() {
+        // An app may write bytes that are not UTF-8, and many megabytes:
+        // the log is still moved aside, and only its end is read.
+        let dir = dir("tail");
+        fs::create_dir_all(&dir).unwrap();
+        let log = dir.join(places::SESSION_LOG);
+        let mut old = vec![0xff_u8; 3 * TAIL_BYTES as usize];
+        old.extend_from_slice(format!("\n{ENDED}\n").as_bytes());
+        fs::write(&log, &old).unwrap();
+        let (path, _, badly) = start(&dir).unwrap();
+        assert_eq!(path, log);
+        assert!(!badly);
+        assert_eq!(fs::read(dir.join(places::SESSION_LOG_BEFORE)).unwrap(), old);
+        assert_eq!(fs::metadata(&log).unwrap().len(), 0);
+        // One that lacks the last line ended badly.
+        fs::write(&log, b"\xffapp noise\n").unwrap();
+        assert!(start(&dir).unwrap().2);
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn a_log_read_as_root_is_never_a_link_nor_anothers_file() {

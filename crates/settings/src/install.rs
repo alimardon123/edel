@@ -38,6 +38,7 @@ use edel::i18n::{tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
+use crate::shortcuts::keys_of;
 use crate::widgets::CONTROL_WIDTH;
 use crate::{actions, cmd, icon, widgets};
 
@@ -1078,17 +1079,22 @@ impl Ui {
     }
 
     /// The words a row's line shows when its answer has no problem.
-    fn default_line(&self, field: Field) -> &'static str {
+    fn default_line(&self, field: Field) -> String {
         match field {
-            Field::Keyboard if self.keyboard_value().contains(',') => tr(
-                "English (US) is added, to type your username and password; Super+Space switches",
+            Field::Keyboard if self.keyboard_value().contains(',') => trf(
+                "English (US) is added, to type your username and password; {keys} switches",
+                &[("keys", &keys_of(&Files::here(), "next_keyboard_layout"))],
             ),
-            Field::User => tr("Lowercase, such as ali. Your home folder takes this name."),
-            Field::Password => tr("You type it to log in and to change the system."),
-            Field::Hostname => tr("How other computers on the network see this one."),
-            Field::Disk => tr("Everything on it is erased. What it holds now is listed below."),
-            Field::TimeZone => tr("The clock shows this zone's time."),
-            Field::Language | Field::Keyboard | Field::Again => "",
+            Field::User => {
+                tr("Lowercase, such as ali. Your home folder takes this name.").to_string()
+            }
+            Field::Password => tr("You type it to log in and to change the system.").to_string(),
+            Field::Hostname => tr("How other computers on the network see this one.").to_string(),
+            Field::Disk => {
+                tr("Everything on it is erased. What it holds now is listed below.").to_string()
+            }
+            Field::TimeZone => tr("The clock shows this zone's time.").to_string(),
+            Field::Language | Field::Keyboard | Field::Again => String::new(),
         }
     }
 
@@ -1108,7 +1114,7 @@ impl Ui {
                 line.remove_css_class("edel-warn");
             }
             None => {
-                line.set_label(self.default_line(field));
+                line.set_label(&self.default_line(field));
                 line.remove_css_class("edel-error");
                 // The disk's line warns: what it holds is erased.
                 if field == Field::Disk {

@@ -70,6 +70,9 @@ pub enum Act {
     FrameRate,
     /// shell-ui's clipboard history, open or closed (M7.13).
     ClipboardHistory,
+    /// shell-ui's Undo bar pressed, when one shows (the key table
+    /// proposal's option B).
+    UndoChange,
 }
 
 impl Act {
@@ -92,6 +95,7 @@ impl Act {
             "toggle_game_mode" => Some(Act::GameMode),
             "toggle_frame_rate" => Some(Act::FrameRate),
             "clipboard_history" => Some(Act::ClipboardHistory),
+            edel::shortcuts::UNDO_DESKTOP_EDIT => Some(Act::UndoChange),
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),
             "next_keyboard_layout" => Some(Act::NextLayout),

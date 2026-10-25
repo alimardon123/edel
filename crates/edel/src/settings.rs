@@ -20,6 +20,7 @@ use toml::{Table, Value};
 use toml_edit::DocumentMut;
 
 use crate::i18n::{n_, tr, trf};
+use crate::key_help::{Belongs, DecidedBy, Help};
 
 /// The settings file format this release reads and writes. Once Edel OS is
 /// released, a key is never removed or renamed within a format:
@@ -398,21 +399,26 @@ pub struct Key {
     /// are parsed now, so adding them is not a format bump; `check` refuses
     /// them with "not supported yet" and the boot apply skips them.
     pub supported: bool,
+    /// What the key means, its default and who decides it (M6.11), which
+    /// `edel settings get` and the generated docs show.
+    pub about: Help,
 }
 
-const fn now(path: &'static str, kind: Kind) -> Key {
+const fn now(path: &'static str, kind: Kind, about: Help) -> Key {
     Key {
         path,
         kind,
         supported: true,
+        about,
     }
 }
 
-const fn later(path: &'static str, kind: Kind) -> Key {
+const fn later(path: &'static str, kind: Kind, about: Help) -> Key {
     Key {
         path,
         kind,
         supported: false,
+        about,
     }
 }
 
@@ -432,47 +438,303 @@ pub const KEYS: &[Key] = &[
     later(
         "system.variant",
         Kind::OneOf(&["container", "server", "desktop", "phone"]),
+        Help {
+            help: n_(
+                "What kind of system this is: a container, a server, a desktop or a phone; this release does not act on it yet.",
+            ),
+            default: "the image's",
+            from: DecidedBy::Image,
+            belongs: Belongs::Device,
+            retired: None,
+        },
     ),
-    now("system.developer_mode", Kind::Flag),
-    now("system.profiles", Kind::Profiles),
-    now("users.*.admin", Kind::Flag),
-    now("users.*.ssh_keys", Kind::Texts),
-    now("users.*.login_shell", Kind::Shell),
-    now("network.hostname", Kind::Hostname),
+    now(
+        "system.developer_mode",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Developer mode, which lets people change the system's own parts, such as its kernel; off unless a person turns it on.",
+            ),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "system.profiles",
+        Kind::Profiles,
+        Help {
+            help: n_(
+                "Ready-made sets of apps and add-ons for one kind of work, such as gaming; a value this file sets wins over a profile's.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "users.*.admin",
+        Kind::Flag,
+        Help {
+            help: n_("Whether this person is an administrator, who may change the whole machine."),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "users.*.ssh_keys",
+        Kind::Texts,
+        Help {
+            help: n_(
+                "The public keys that may log in to this person's account over ssh, one line each.",
+            ),
+            default: "the file as it is",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "users.*.login_shell",
+        Kind::Shell,
+        Help {
+            help: n_(
+                "The program this person's login starts, given as a full path such as /bin/ash.",
+            ),
+            default: r#""/bin/sh""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "network.hostname",
+        Kind::Hostname,
+        Help {
+            help: n_(
+                "The name this computer has on the network: letters, digits and hyphens, up to 63.",
+            ),
+            default: r#""edel""#,
+            from: DecidedBy::Image,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // The language people read the desktop in (M5.24a): a catalogue's
     // name, such as `de` or `pt_BR`; English without it.
-    now("region.language", Kind::Text),
-    now("region.keyboard", Kind::Keyboard),
-    now("region.timezone", Kind::TimeZone),
+    now(
+        "region.language",
+        Kind::Text,
+        Help {
+            help: n_(
+                "The language the desktop's own words and Settings are shown in, such as de or pt_BR.",
+            ),
+            default: "English",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "region.keyboard",
+        Kind::Keyboard,
+        Help {
+            help: n_(
+                "The keyboard layouts, up to four, such as us or us,ru; Super+Space goes to the next one.",
+            ),
+            default: r#""us""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "region.timezone",
+        Kind::TimeZone,
+        Help {
+            help: n_("The time zone the clock shows, such as Europe/London."),
+            default: r#""UTC""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // The servers the clock is set from (M1.13); `pool.ntp.org` without.
-    now("region.time_servers", Kind::Hosts),
-    now("layout.preset", Kind::Preset),
-    now("layout.tiling", Kind::Flag),
+    now(
+        "region.time_servers",
+        Kind::Hosts,
+        Help {
+            help: n_(
+                "The servers the clock is set from, one to four host names, such as pool.ntp.org.",
+            ),
+            default: r#"["pool.ntp.org"]"#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "layout.preset",
+        Kind::Preset,
+        Help {
+            help: n_(
+                "The layout preset that arranges the panel, windows and workspaces, such as classic, mac-like or zen.",
+            ),
+            default: r#""classic""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "layout.tiling",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Whether windows tile across the screen (true) or float freely (false); the preset decides when this is missing.",
+            ),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     now(
         "layout.title_bars",
         Kind::OneOf(&["always", "floating-only", "never"]),
+        Help {
+            help: n_(
+                "Where windows get a title bar: always, only on floating windows, or never (Zen has none).",
+            ),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     later(
         "layout.device_type",
         Kind::OneOf(&["desktop", "tablet", "phone"]),
+        Help {
+            help: n_(
+                "What kind of device this is: a desktop, a tablet or a phone; this release does not act on it yet.",
+            ),
+            default: "detected",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("layout.window_buttons", Kind::OneOf(&["left", "right"])),
+    now(
+        "layout.window_buttons",
+        Kind::OneOf(&["left", "right"]),
+        Help {
+            help: n_(
+                "The side of each title bar where close, minimize and maximize sit: left or right.",
+            ),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // Each title bar button shown or hidden (M5.18a).
-    now("layout.close_button", Kind::Flag),
-    now("layout.minimize_button", Kind::Flag),
-    now("layout.maximize_button", Kind::Flag),
+    now(
+        "layout.close_button",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Whether each title bar shows its close button; Super+Q closes a window whether or not it shows.",
+            ),
+            default: "true",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "layout.minimize_button",
+        Kind::Flag,
+        Help {
+            help: n_("Whether each title bar shows its minimize button."),
+            default: "true",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "layout.maximize_button",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Whether each title bar shows its maximize button; a hidden button's room goes to the title.",
+            ),
+            default: "true",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // How tiling lays windows out (M5.16a, scroll M5.16c).
     now(
         "layout.tiling_style",
         Kind::OneOf(&["stack", "split", "scroll"]),
+        Help {
+            help: n_(
+                "How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles).",
+            ),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     // The Panels page (M5.2q): the panels in place of the preset's
     // (M5.4e), the tray's apps kept in the panel by their item's Id, the
     // rest behind its arrow (M5.9g), and the apps the apps widget pins, in
     // order, by id or role (M5.31d).
-    now("panels.list", Kind::Panels),
-    now("panels.tray", Kind::Texts),
-    now("panels.pinned", Kind::Texts),
+    now(
+        "panels.list",
+        Kind::Panels,
+        Help {
+            help: n_(
+                "The panels along the screen's edges, each with its widgets, in place of the preset's.",
+            ),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "panels.tray",
+        Kind::Texts,
+        Help {
+            help: n_(
+                "The tray apps kept in the panel, by their tray id; the other apps wait behind the tray's arrow.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "panels.pinned",
+        Kind::Texts,
+        Help {
+            help: n_("The apps the apps widget pins, in order, by app id or role such as browser."),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The Workspaces page (M5.2q): their count, whether empty ones come
     // and go (M5.2i), whether each screen shows its own (M5.2k), their
     // names, the first workspace's first, and the apps that always open on
@@ -480,192 +742,1118 @@ pub const KEYS: &[Key] = &[
     now(
         "workspaces.count",
         Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
+        Help {
+            help: n_(
+                "How many workspaces there are, from 1 to 9, one for each of Super+1 to Super+9.",
+            ),
+            default: "the preset's",
+            from: DecidedBy::Preset,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("workspaces.dynamic", Kind::Flag),
-    now("workspaces.per_screen", Kind::Flag),
-    now("workspaces.names", Kind::Texts),
+    now(
+        "workspaces.dynamic",
+        Kind::Flag,
+        Help {
+            help: n_("Whether empty workspaces come and go, so the count follows the windows."),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "workspaces.per_screen",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Whether each screen shows its own workspace, so Super+1 to Super+9 switch only the screen under the pointer.",
+            ),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "workspaces.names",
+        Kind::Texts,
+        Help {
+            help: n_(
+                "The names of the workspaces, the first one's first; an empty text leaves a workspace as its number.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // One wallpaper per workspace (M5.12b5): `""` is Appearance's.
-    now(WORKSPACE_WALLPAPERS, Kind::WallpaperList),
-    now("workspaces.apps", Kind::AppWorkspaces),
+    now(
+        WORKSPACE_WALLPAPERS,
+        Kind::WallpaperList,
+        Help {
+            help: n_(
+                "A wallpaper for each workspace, the first one's first; an empty text uses Appearance's wallpaper.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "workspaces.apps",
+        Kind::AppWorkspaces,
+        Help {
+            help: n_(
+                "The apps that always open on one workspace, by app id and number, such as Firefox on 2.",
+            ),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The side of the screen the overview's strip of workspaces lies on
     // (M5.2j-b); the windows take the rest.
     now(
         "workspaces.overview_strip",
         Kind::OneOf(&["left", "right", "top", "bottom"]),
+        Help {
+            help: n_(
+                "The side of the screen where the workspace overview's strip lies: left, right, top or bottom.",
+            ),
+            default: r#""left""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("displays.*.position", Kind::Pair),
-    now("displays.*.scale", Kind::Number),
-    now("displays.*.resolution", Kind::Resolution),
-    now("displays.*.refresh_rate", Kind::Number),
-    now("displays.*.enabled", Kind::Flag),
-    later("displays.*.rotation", Kind::WholeOf(&[0, 90, 180, 270])),
+    now(
+        "displays.*.position",
+        Kind::Pair,
+        Help {
+            help: n_("Where this screen sits among the others, as [x, y] in whole numbers."),
+            default: "each screen's own",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "displays.*.scale",
+        Kind::Number,
+        Help {
+            help: n_("How big things are on this screen, such as 1.25 for 125 percent."),
+            default: "each screen's own",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "displays.*.resolution",
+        Kind::Resolution,
+        Help {
+            help: n_("The resolution of this screen as WIDTHxHEIGHT, such as 1920x1080."),
+            default: "each screen's own",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "displays.*.refresh_rate",
+        Kind::Number,
+        Help {
+            help: n_("How many times a second this screen redraws, such as 60."),
+            default: "the resolution's best",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "displays.*.enabled",
+        Kind::Flag,
+        Help {
+            help: n_("Whether this screen is on; a screen that is off shows nothing."),
+            default: "true",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    later(
+        "displays.*.rotation",
+        Kind::WholeOf(&[0, 90, 180, 270]),
+        Help {
+            help: n_(
+                "How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet.",
+            ),
+            default: "each screen's own",
+            from: DecidedBy::Hardware,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // The theme in use (M5.12b6a): a built-in theme's name or one of the
     // file's own `[themes]`; the theme's values apply under the ones here.
-    now("appearance.theme", Kind::Theme),
-    now("appearance.wallpaper", Kind::Wallpaper),
+    now(
+        "appearance.theme",
+        Kind::Theme,
+        Help {
+            help: n_(
+                "The theme in use: a built-in one (edel, aurora, earth or ocean) or one of your own.",
+            ),
+            default: r#""edel""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.wallpaper",
+        Kind::Wallpaper,
+        Help {
+            help: n_(
+                "The wallpaper behind the windows: a name such as hills, a picture's path, a colour or none.",
+            ),
+            default: r#""hills""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // What lies behind the windows in dark mode, when it differs from
     // `appearance.wallpaper` (M5.10c4d): a person's own pair is two paths.
-    now("appearance.wallpaper_dark", Kind::Wallpaper),
+    now(
+        "appearance.wallpaper_dark",
+        Kind::Wallpaper,
+        Help {
+            help: n_("The wallpaper for dark mode, when it differs from the light one."),
+            default: "the wallpaper's",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The person's pictures on top of the theme in use (M5.12b6, part c2):
     // references as `appearance.wallpaper` takes them, never copies.
-    now("appearance.pictures", Kind::Pictures),
+    now(
+        "appearance.pictures",
+        Kind::Pictures,
+        Help {
+            help: n_(
+                "The pictures of the theme in use, shown on top of its own; at most 32, none twice.",
+            ),
+            default: "the theme's",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The panel's workspace switcher: its look, how many numbers show at
     // once and what the strip's ends show where more lie (M5.2m, on the
     // Appearance page since M5.2q).
     now(
         "appearance.switcher_look",
         Kind::OneOf(&["numbers", "button"]),
+        Help {
+            help: n_(
+                "How the workspace switcher looks: round numbers, or a button with a line for each workspace.",
+            ),
+            default: r#""numbers""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "appearance.switcher_shown",
         Kind::WholeFromTo(1, crate::presets::MOST_WORKSPACES as i64),
+        Help {
+            help: n_("How many workspace numbers the switcher shows at once, from 1 to 9."),
+            default: "3",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "appearance.switcher_ends",
         Kind::OneOf(&["fade", "arrows", "counts"]),
+        Help {
+            help: n_(
+                "What the switcher's ends show when more workspaces lie beyond them: fade, arrows or counts.",
+            ),
+            default: r#""arrows""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("appearance.mode", Kind::OneOf(&["light", "dark", "auto"])),
+    now(
+        "appearance.mode",
+        Kind::OneOf(&["light", "dark", "auto"]),
+        Help {
+            help: n_(
+                "Light or dark colours for title bars, panels and apps; auto is dark from sunset to sunrise at Location's place, else light.",
+            ),
+            default: r#""auto""#,
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The high-contrast look (M6.9): strong edges and the plainest colours in
     // both schemes, laid over every colour the person chose; absent is normal.
-    now("appearance.contrast", Kind::OneOf(&["normal", "high"])),
-    now("appearance.accent", Kind::Accent),
+    now(
+        "appearance.contrast",
+        Kind::OneOf(&["normal", "high"]),
+        Help {
+            help: n_(
+                "High contrast gives strong edges and plain colours in both schemes; normal is the usual look.",
+            ),
+            default: r#""normal""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.accent",
+        Kind::Accent,
+        Help {
+            help: n_(
+                "The accent colour for the shown workspace, buttons and marks: a named accent, wallpaper, or a colour.",
+            ),
+            default: r#""blue""#,
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // A person's own colours (M5.12b1): any colour token by name, in both
     // schemes, or the light or the dark scheme's alone on top.
-    now("appearance.colours.*", Kind::Colour),
-    now("appearance.colours.light.*", Kind::Colour),
-    now("appearance.colours.dark.*", Kind::Colour),
+    now(
+        "appearance.colours.*",
+        Kind::Colour,
+        Help {
+            help: n_("One colour of the look, by its token name, in both schemes."),
+            default: "the token's",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.colours.light.*",
+        Kind::Colour,
+        Help {
+            help: n_("One colour of the light scheme alone, over the colours both schemes share."),
+            default: "the token's",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.colours.dark.*",
+        Kind::Colour,
+        Help {
+            help: n_("One colour of the dark scheme alone, over the colours both schemes share."),
+            default: "the token's",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The windows' shape (M5.12b2): the corners, the gaps between tiled
     // windows and at the screen's edge (when it differs), the border, the
     // title bar's height and the panels' opacity, each in its range.
-    now("appearance.radius", Kind::WholeFromTo(0, 24)),
-    now("appearance.gaps", Kind::WholeFromTo(0, 64)),
-    now("appearance.gaps_outer", Kind::WholeFromTo(0, 64)),
-    now("appearance.border_width", Kind::WholeFromTo(0, 10)),
-    now("appearance.title_bar_height", Kind::WholeFromTo(24, 48)),
-    now("appearance.panel_opacity", Kind::WholeFromTo(20, 100)),
+    now(
+        "appearance.radius",
+        Kind::WholeFromTo(0, 24),
+        Help {
+            help: n_(
+                "The corner radius of windows, in logical pixels from 0 to 24; 0 makes every corner square.",
+            ),
+            default: "the token size.radius_window",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.gaps",
+        Kind::WholeFromTo(0, 64),
+        Help {
+            help: n_("The gap between tiled windows, in logical pixels from 0 to 64."),
+            default: "the token size.gap",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.gaps_outer",
+        Kind::WholeFromTo(0, 64),
+        Help {
+            help: n_(
+                "The gap between tiled windows and the screen's edge, in logical pixels from 0 to 64.",
+            ),
+            default: "the token size.gap_outer",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.border_width",
+        Kind::WholeFromTo(0, 10),
+        Help {
+            help: n_(
+                "The border round each window with a title bar, in logical pixels from 0 to 10.",
+            ),
+            default: "the token size.border",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.title_bar_height",
+        Kind::WholeFromTo(24, 48),
+        Help {
+            help: n_("The height of each title bar, in logical pixels from 24 to 48."),
+            default: "the token size.title_bar",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.panel_opacity",
+        Kind::WholeFromTo(20, 100),
+        Help {
+            help: n_("How solid the panels are, in percent from 20 to 100."),
+            default: "the token size.panel_opacity",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The windows' depth (M5.12b3): the opacity of the focused window and of
     // the others, and the shadow's blur and darkness, each in its range.
-    now("appearance.window_opacity", Kind::WholeFromTo(20, 100)),
+    now(
+        "appearance.window_opacity",
+        Kind::WholeFromTo(20, 100),
+        Help {
+            help: n_("How solid the focused window is, in percent from 20 to 100."),
+            default: "the token size.window_opacity",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     now(
         "appearance.window_opacity_unfocused",
         Kind::WholeFromTo(20, 100),
+        Help {
+            help: n_("How solid every other window is, in percent from 20 to 100."),
+            default: "the token size.window_opacity_unfocused",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("appearance.shadow_size", Kind::WholeFromTo(0, 64)),
-    now("appearance.shadow_darkness", Kind::WholeFromTo(0, 100)),
+    now(
+        "appearance.shadow_size",
+        Kind::WholeFromTo(0, 64),
+        Help {
+            help: n_(
+                "How far the shadow under each window spreads, in logical pixels from 0 to 64; 0 is none.",
+            ),
+            default: "the token size.shadow_blur",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.shadow_darkness",
+        Kind::WholeFromTo(0, 100),
+        Help {
+            help: n_("How dark the shadow under each window is, in percent from 0 to 100."),
+            default: "the alpha of colour.shadow",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The glass behind see-through panels (M5.12b3): how strongly the
     // wallpaper blurs there, 0 showing it sharp.
-    now("appearance.blur", Kind::WholeFromTo(0, 100)),
+    now(
+        "appearance.blur",
+        Kind::WholeFromTo(0, 100),
+        Help {
+            help: n_(
+                "How strongly the wallpaper blurs behind see-through panels, in percent; 0 shows it sharp.",
+            ),
+            default: "the token size.blur",
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The text (M5.12b5): the interface and monospace fonts by family name,
     // and every text size in percent of the release's.
-    now(FONT, Kind::Text),
-    now(MONOSPACE_FONT, Kind::Text),
-    now(TEXT_SIZE, Kind::WholeFromTo(80, 150)),
+    now(
+        FONT,
+        Kind::Text,
+        Help {
+            help: n_("The font for the interface's text, by its family name."),
+            default: r#""Inter Variable""#,
+            from: DecidedBy::Token,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        MONOSPACE_FONT,
+        Kind::Text,
+        Help {
+            help: n_("The font apps use for code and terminals, by its family name."),
+            default: r#""Noto Sans Mono""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        TEXT_SIZE,
+        Kind::WholeFromTo(80, 150),
+        Help {
+            help: n_("How big every text is, in percent of the release's size, from 80 to 150."),
+            default: "100",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The pointer and the icons (M5.12b5 part A, M8.21 part g): the
     // cursor's size in logical pixels, its theme, the apps' icon theme, and
     // the icons' size in percent.
-    now(CURSOR_SIZE, Kind::WholeFromTo(16, 96)),
-    now(CURSOR_THEME, Kind::CursorTheme),
-    now(ICON_THEME, Kind::IconTheme),
-    now(ICON_SIZE, Kind::WholeFromTo(75, 150)),
+    now(
+        CURSOR_SIZE,
+        Kind::WholeFromTo(16, 96),
+        Help {
+            help: n_("The pointer's height in logical pixels, from 16 to 96."),
+            default: "24",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        CURSOR_THEME,
+        Kind::CursorTheme,
+        Help {
+            help: n_(
+                "The pointer's theme, by the folder name of an installed cursor theme; default is the drawn arrow.",
+            ),
+            default: r#""default""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        ICON_THEME,
+        Kind::IconTheme,
+        Help {
+            help: n_(
+                "The apps' icon theme, by the folder name of an installed icon theme; the panel and apps draw app icons from it, and the shell's own icons stay Edel's.",
+            ),
+            default: r#""Edel""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        ICON_SIZE,
+        Kind::WholeFromTo(75, 150),
+        Help {
+            help: n_(
+                "How big the icons in the panel and the bar are, in percent of the release's, from 75 to 150.",
+            ),
+            default: "100",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     now(
         "appearance.animations",
         Kind::OneOf(&["full", "reduced", "off"]),
+        Help {
+            help: n_("How much things move: full, reduced (fades only) or off."),
+            default: r#""full""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     // How fast everything moves, as a share of the release's speed (M5.12b4):
     // 200 halves every length, 50 doubles it. The curve is a feel: each
     // names the curve every kind of animation (windows, workspaces, popups)
     // follows (M8.21 part 21e); there are no per-kind keys, as one preset
     // is simpler and every kind still follows it.
-    now("appearance.animation_speed", Kind::WholeFromTo(25, 400)),
-    now("appearance.animation_curve", Kind::OneOf(CURVES)),
+    now(
+        "appearance.animation_speed",
+        Kind::WholeFromTo(25, 400),
+        Help {
+            help: n_(
+                "How fast things move, in percent of the release's speed, from 25 to 400; 200 is twice as fast.",
+            ),
+            default: "100",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.animation_curve",
+        Kind::OneOf(CURVES),
+        Help {
+            help: n_(
+                "How animations feel: smooth, snappy (quicker) or springy (windows and pop-ups overshoot a little).",
+            ),
+            default: r#""smooth""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The desktop's widgets (M8.21 part 21j1): absent is none.
-    now(crate::lock_screen::DESKTOP_WIDGETS, Kind::DesktopWidgets),
+    now(
+        crate::lock_screen::DESKTOP_WIDGETS,
+        Kind::DesktopWidgets,
+        Help {
+            help: n_(
+                "The widgets on the desktop, over the wallpaper and under the windows, and where each one stands, as a list of tables.",
+            ),
+            default: "none",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The lock and login screens' widgets, each placed by an anchor and an
     // offset (M5.10c5); absent is the classic arrangement.
-    now("lock_screen.widgets", Kind::LockParts),
+    now(
+        "lock_screen.widgets",
+        Kind::LockParts,
+        Help {
+            help: n_(
+                "The widgets on the lock and login screens and where each one stands, as a list of tables.",
+            ),
+            default: "the look's",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The look that picks every widget and the wallpaper at once (M5.10c5c),
     // the wallpaper behind them, whether the count of unread notifications
     // shows, and the person's own looks made by Save as.
-    now("lock_screen.look", Kind::LockLook),
-    now("lock_screen.wallpaper", Kind::LockBackground),
+    now(
+        "lock_screen.look",
+        Kind::LockLook,
+        Help {
+            help: n_(
+                "The look of the lock and login screens: classic, magazine, minimal or one of your own.",
+            ),
+            default: r#""classic""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "lock_screen.wallpaper",
+        Kind::LockBackground,
+        Help {
+            help: n_(
+                "What lies behind the lock screen's widgets: the backdrop, the desktop wallpaper blurred or sharp, a colour or a picture.",
+            ),
+            default: "the look's",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // How much the wallpaper is darkened, in percent (M5.10c7g): absent is
     // the look's own, else the background's default.
     now(
         "lock_screen.dim",
         Kind::WholeFromTo(0, crate::lock_screen::MOST_DIM as i64),
+        Help {
+            help: n_(
+                "How much the lock screen's wallpaper is darkened, in percent from 0 to 80, so the words read.",
+            ),
+            default: "30, or 40 for a sharp wallpaper or picture",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "lock_screen.notifications",
         Kind::OneOf(crate::lock_screen::NOTIFICATIONS),
+        Help {
+            help: n_(
+                "Whether the lock screen shows how many notifications are unread: count, or none to hide it.",
+            ),
+            default: r#""count""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("lock_screen.looks", Kind::LockLooks),
+    now(
+        "lock_screen.looks",
+        Kind::LockLooks,
+        Help {
+            help: n_(
+                "Your own lock screen looks, each with its widgets and wallpaper, chosen by name.",
+            ),
+            default: "none",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The person's own themes (M5.12b6a), each a table of pictures and
     // appearance values, checked as a whole by `normalize`.
-    now("themes.*", Kind::OwnTheme),
+    now(
+        "themes.*",
+        Kind::OwnTheme,
+        Help {
+            help: n_(
+                "One of your own themes: its title, its pictures and the appearance values it sets.",
+            ),
+            default: "none",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The person's own layout presets (M5.17), each a table of `[layout]`'s keys
     // and the built-in preset it starts from.
-    now("presets.*", Kind::OwnPreset),
-    now("shortcuts.*", Kind::Keys),
-    now(CLIPBOARD_HISTORY, Kind::Flag),
-    now("default_apps.browser", Kind::Text),
-    now("default_apps.files", Kind::Text),
-    now("default_apps.editor", Kind::Text),
-    now("default_apps.terminal", Kind::Text),
-    now("default_apps.mail", Kind::Text),
-    now("startup.apps", Kind::Texts),
+    now(
+        "presets.*",
+        Kind::OwnPreset,
+        Help {
+            help: n_(
+                "One of your own layout presets: the built-in preset it starts from and the layout keys it sets.",
+            ),
+            default: "none",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "shortcuts.*",
+        Kind::Keys,
+        Help {
+            help: n_(
+                "The keys for one action, such as Super+X, or empty for none; the Shortcuts page lists the actions.",
+            ),
+            default: "each action's own keys, docs/SHORTCUTS.md",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        CLIPBOARD_HISTORY,
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Keeps the last texts and pictures you copied, in memory only, for Super+V; false keeps nothing.",
+            ),
+            default: "true",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "default_apps.browser",
+        Kind::Text,
+        Help {
+            help: n_(
+                "The app that opens web pages and web links, by its desktop file id without .desktop.",
+            ),
+            default: "the first installed browser",
+            from: DecidedBy::Image,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "default_apps.files",
+        Kind::Text,
+        Help {
+            help: n_("The app that opens folders, by its desktop file id without .desktop."),
+            default: "the first installed file manager",
+            from: DecidedBy::Image,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "default_apps.editor",
+        Kind::Text,
+        Help {
+            help: n_(
+                "The app that opens plain text files, by its desktop file id without .desktop.",
+            ),
+            default: "the first installed editor",
+            from: DecidedBy::Image,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "default_apps.terminal",
+        Kind::Text,
+        Help {
+            help: n_(
+                "The app the terminal shortcut opens, by its desktop file id without .desktop.",
+            ),
+            default: "the first installed terminal, else foot",
+            from: DecidedBy::Image,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "default_apps.mail",
+        Kind::Text,
+        Help {
+            help: n_(
+                "The app that opens mail and mail links, by its desktop file id without .desktop.",
+            ),
+            default: "the first installed mail app",
+            from: DecidedBy::Image,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "startup.apps",
+        Kind::Texts,
+        Help {
+            help: n_(
+                "The apps that start once the desktop is on screen, in the order listed, by desktop file id.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     now(
         LID_CLOSE,
         Kind::OneOf(&["suspend", "lock", "nothing", "poweroff"]),
+        Help {
+            help: n_(
+                "What closing the lid does: suspend (locking first), lock, nothing or power off; nothing happens while two or more screens are lit.",
+            ),
+            default: LID_CLOSE_DEFAULT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
     ),
-    now(LOCK_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
-    now(SCREEN_OFF_MINUTES, Kind::WholeFromTo(0, 1440)),
-    now(SLEEP_AFTER_MINUTES, Kind::WholeFromTo(0, 1440)),
+    now(
+        LOCK_AFTER_MINUTES,
+        Kind::WholeFromTo(0, 1440),
+        Help {
+            help: n_("How many minutes without input before the screen locks, 0 for never."),
+            default: LOCK_AFTER_MINUTES_DEFAULT_TEXT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        SCREEN_OFF_MINUTES,
+        Kind::WholeFromTo(0, 1440),
+        Help {
+            help: n_(
+                "Minutes without use before the screens turn off; the backlight dims 30 seconds before. 0 never turns them off.",
+            ),
+            default: SCREEN_OFF_MINUTES_DEFAULT_TEXT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        SLEEP_AFTER_MINUTES,
+        Kind::WholeFromTo(0, 1440),
+        Help {
+            help: n_(
+                "Minutes without use on battery before the computer sleeps. 0 never sleeps on its own.",
+            ),
+            default: SLEEP_AFTER_MINUTES_DEFAULT_TEXT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     now(
         POWER_BUTTON,
         Kind::OneOf(&["suspend", "poweroff", "ask", "nothing"]),
+        Help {
+            help: n_(
+                "What the power button does: suspend (the screen locks first), power off, ask (the screen locks and its power menu opens) or nothing.",
+            ),
+            default: POWER_BUTTON_DEFAULT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
     ),
     now(
         ON_BATTERY,
         Kind::OneOf(&["power-saver", "balanced", "performance"]),
+        Help {
+            help: n_(
+                "How hard the machine works on battery: power-saver, balanced or performance; plugged in, it is balanced, or performance when chosen here.",
+            ),
+            default: ON_BATTERY_DEFAULT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
     ),
-    now(SAVER, Kind::OneOf(&["auto", "on", "off"])),
-    now(GAME_MODE, Kind::OneOf(&["plugged-in", "always", "off"])),
-    now(BATTERY_CARE, Kind::Flag),
-    now("services.*", Kind::Flag),
+    now(
+        SAVER,
+        Kind::OneOf(&["auto", "on", "off"]),
+        Help {
+            help: n_(
+                "Battery saver: auto turns it on at 20 percent or less on battery, on keeps it on, off never; it lightens effects and runs power-saver.",
+            ),
+            default: SAVER_DEFAULT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        GAME_MODE,
+        Kind::OneOf(&["plugged-in", "always", "off"]),
+        Help {
+            help: n_(
+                "When a fullscreen game gets variable refresh: plugged-in (or with no battery), always or off; Super+G turns it on or off until you log out.",
+            ),
+            default: GAME_MODE_DEFAULT,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        BATTERY_CARE,
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Stop charging at 80 percent where the laptop offers a limit, so the battery keeps more of its health over the years.",
+            ),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "services.*",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Turns one switchable feature, such as ssh or bluetooth, on or off by its name.",
+            ),
+            default: "the image's",
+            from: DecidedBy::Image,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // The release lists `edel update` takes (M3.8); absent, the image's.
-    now("updates.channel", Kind::Channel),
-    later("updates.version", Kind::Text),
+    now(
+        "updates.channel",
+        Kind::Channel,
+        Help {
+            help: n_(
+                "The release channel whose updates this machine takes, such as stable or preview.",
+            ),
+            default: "the image's",
+            from: DecidedBy::Image,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    later(
+        "updates.version",
+        Kind::Text,
+        Help {
+            help: n_(
+                "A release to stay on instead of following the channel; this release does not act on it yet.",
+            ),
+            default: "follows the channel",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     now(
         "updates.automatic",
         Kind::OneOf(&["off", "check", "install", "install-and-restart"]),
+        Help {
+            help: n_(
+                "Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due.",
+            ),
+            default: "off",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
     ),
-    now("updates.restart_window", Kind::Hours),
-    now("apps.installed", Kind::AppIds),
+    now(
+        "updates.restart_window",
+        Kind::Hours,
+        Help {
+            help: n_(
+                "The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour.",
+            ),
+            default: "any hour",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "apps.installed",
+        Kind::AppIds,
+        Help {
+            help: n_(
+                "The Flathub apps installed for each administrator, by app id such as io.mpv.Mpv.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // What each app may use (M6.14a), the person's, laid onto Flatpak's
     // own state by shell-ui.
     now(
         "apps.camera",
         Kind::AppChoices(crate::app_permissions::CAMERA_CHOICES),
+        Help {
+            help: n_(
+                "Which apps may use the camera, by Flatpak app id: allow, ask every time or never.",
+            ),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "apps.microphone",
         Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
+        Help {
+            help: n_("Which apps may use the microphone, by Flatpak app id: allow or never."),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "apps.screenshots",
         Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
+        Help {
+            help: n_(
+                "Which apps may take a screenshot without asking, by Flatpak app id: allow or never.",
+            ),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "apps.notifications",
         Kind::AppChoices(crate::app_permissions::ALLOW_OR_NEVER),
+        Help {
+            help: n_("Which apps may show notifications, by Flatpak app id: allow or never."),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     now(
         "apps.files",
         Kind::AppChoices(crate::app_permissions::FILES_CHOICES),
+        Help {
+            help: n_(
+                "Which apps reach your files by themselves (allow) or only the ones you pick (ask), by Flatpak app id.",
+            ),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
-    now("addons.installed", Kind::Addons),
+    now(
+        "addons.installed",
+        Kind::Addons,
+        Help {
+            help: n_(
+                "The add-ons this machine has, by name; apply fetches one added, installs its apps now and starts it at the next restart; each is in edel addon list.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // Banners stay away while the notification list still fills (M5.9b).
-    now("notifications.do_not_disturb", Kind::Flag),
+    now(
+        "notifications.do_not_disturb",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Whether banners stay away; notifications still arrive and are listed in the notification centre.",
+            ),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // Where banners appear (M5.9j): by the status area, or a corner or the
     // top's middle.
     now(
@@ -678,43 +1866,183 @@ pub const KEYS: &[Key] = &[
             "bottom-left",
             "top",
         ]),
+        Help {
+            help: n_(
+                "Where banners appear: by the status area, in a corner, or at the top's middle.",
+            ),
+            default: r#""auto""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     // What the notifications button shows while some are unread (M5.9k).
     now(
         "notifications.badge",
         Kind::OneOf(&["dot", "count", "none"]),
+        Help {
+            help: n_(
+                "What the notifications button shows while some are unread: a dot, the count, or nothing.",
+            ),
+            default: r#""dot""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     // Where the notification list opens (M5.9l): hung on the button that
     // opened it, or a sheet along the left or the right side.
     now(
         "notifications.list",
         Kind::OneOf(&["button", "left", "right"]),
+        Help {
+            help: n_(
+                "Where the notification list opens: hung on its button, or as a sheet on the left or right.",
+            ),
+            default: r#""button""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     // The input method for typing languages a keyboard has no keys for
     // (M6.8): fcitx5, started with the session; absent or none runs none.
-    now("region.input_method", Kind::OneOf(&["none", "fcitx5"])),
+    now(
+        "region.input_method",
+        Kind::OneOf(&["none", "fcitx5"]),
+        Help {
+            help: n_(
+                "The input method for typing languages a keyboard has no keys for: fcitx5 or none.",
+            ),
+            default: r#""none""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // What apps may know of this computer's place (M6.14c): each app's
     // choice, then the person's switch, the machine's place and its
     // online lookup.
     now(
         "apps.location",
         Kind::AppChoices(crate::app_permissions::CAMERA_CHOICES),
+        Help {
+            help: n_(
+                "Which apps may know where this computer is, by Flatpak app id: allow, ask every time or never.",
+            ),
+            default: "{}",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
     ),
     // Location (M6.14c): the person's switch, the machine's place and its
     // online lookup.
-    now("location.enabled", Kind::Flag),
-    now("location.place", Kind::TimeZone),
-    now("location.online", Kind::Flag),
+    now(
+        "location.enabled",
+        Kind::Flag,
+        Help {
+            help: n_("Off gives every app nothing, whatever each app may use."),
+            default: "true",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "location.place",
+        Kind::TimeZone,
+        Help {
+            help: n_("The city apps are told, named by its time zone, such as Asia/Tashkent."),
+            default: "the time zone's city",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "location.online",
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Find the place from nearby Wi-Fi networks through BeaconDB, a community service, which is sent their hardware addresses.",
+            ),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // The stick that installs itself (M7.3): read by `edel install --unattended` only.
-    now("install.disk", Kind::Text),
-    now("install.erase", Kind::OneOf(&["empty-only", "yes"])),
-    now("install.then", Kind::OneOf(&["poweroff", "reboot"])),
+    now(
+        "install.disk",
+        Kind::Text,
+        Help {
+            help: n_(
+                "The disk a stick installs itself on: auto, the one fixed disk large enough, or a /dev/disk/by-id/ name.",
+            ),
+            default: r#""auto""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "install.erase",
+        Kind::OneOf(&["empty-only", "yes"]),
+        Help {
+            help: n_(
+                "Whether an unattended install erases only an empty disk, or any disk after a ten second countdown.",
+            ),
+            default: r#""empty-only""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
+    now(
+        "install.then",
+        Kind::OneOf(&["poweroff", "reboot"]),
+        Help {
+            help: n_(
+                "What the machine does once a stick has installed itself: power off or restart.",
+            ),
+            default: r#""poweroff""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // What the profiles named leave out (M7.6c): written by `-=` and `+=`
     // on a list a profile adds to, never by hand.
-    now("system.profiles_without", Kind::Without),
+    now(
+        "system.profiles_without",
+        Kind::Without,
+        Help {
+            help: n_(
+                "The apps and add-ons the profiles should not bring, which taking one out with -= writes and adding it again with += takes off.",
+            ),
+            default: "[]",
+            from: DecidedBy::Release,
+            belongs: Belongs::Device,
+            retired: None,
+        },
+    ),
     // Sound with little delay, for music and recording (M7.6b): the
     // compositor links the low-latency PipeWire file in while it is on.
-    now(LOW_LATENCY, Kind::Flag),
+    now(
+        LOW_LATENCY,
+        Kind::Flag,
+        Help {
+            help: n_(
+                "Sound arrives within about 5 ms, for music and recording, at a little more power while it plays; it applies from the next login.",
+            ),
+            default: "false",
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
 ];
 
 /// A whole machine. Every key is optional: an absent key means the release
@@ -4541,7 +5869,6 @@ version = "1.2"
     }
 
     static RETIRED: crate::key_help::Help = crate::key_help::Help {
-        key: "old.key",
         help: "an old key",
         default: "1",
         from: crate::key_help::DecidedBy::Release,
@@ -4550,7 +5877,6 @@ version = "1.2"
     };
 
     static CURRENT: crate::key_help::Help = crate::key_help::Help {
-        key: "new.key",
         help: "a key",
         default: "1",
         from: crate::key_help::DecidedBy::Release,
@@ -5103,33 +6429,55 @@ version = "1.2"
         assert_eq!(again.file, first.file);
     }
 
+    /// Every place a key is written by hand but Settings' row (M6.11, the
+    /// key table proposal's option E), checked for every key at once, so
+    /// one run names all that a new key still lacks rather than one gap a
+    /// run. Settings' own test names a key with no row or `NO_ROW` line.
     #[test]
-    fn the_structs_have_every_key_in_keys_txt() {
-        for line in keys_txt() {
-            assert!(
-                KEYS.iter().any(|k| k.path == line),
-                "{line} is in tests/keys.txt but not in KEYS; a key is never removed within a format"
-            );
-            let mut ignored = Vec::new();
-            let _: SettingsFile =
-                serde_ignored::deserialize(Value::Table(with_keys([line])), |path| {
-                    ignored.push(path.to_string())
-                })
-                .unwrap();
-            assert_eq!(ignored, Vec::<String>::new(), "the structs lack {line}");
-        }
-    }
-
-    #[test]
-    fn keys_txt_lists_every_key() {
+    fn every_key_is_complete() {
         let listed = keys_txt();
-        for key in KEYS {
-            assert!(
-                listed.contains(&key.path),
-                "add {} to tests/keys.txt",
-                key.path
-            );
+        let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/");
+        let settings_md = fs::read_to_string(format!("{docs}settings.md")).unwrap();
+        let defaults_md = fs::read_to_string(format!("{docs}defaults.md")).unwrap();
+        let mut paths: Vec<&str> = KEYS.iter().map(|key| key.path).collect();
+        let extra: Vec<&str> = listed
+            .iter()
+            .copied()
+            .filter(|line| !paths.contains(line))
+            .collect();
+        paths.extend(extra);
+        let mut gaps = Vec::new();
+        for path in paths {
+            let mut lacks = Vec::new();
+            if !KEYS.iter().any(|key| key.path == path) {
+                lacks.push(
+                    "its entry in KEYS, with its help (a key is never removed within a format)",
+                );
+            } else {
+                let mut ignored = Vec::new();
+                let _: SettingsFile =
+                    serde_ignored::deserialize(Value::Table(with_keys([path])), |at| {
+                        ignored.push(at.to_string())
+                    })
+                    .unwrap();
+                if !ignored.is_empty() {
+                    lacks.push("its field in the settings file's structs");
+                }
+            }
+            if !listed.contains(&path) {
+                lacks.push("its line in tests/keys.txt");
+            }
+            let row = format!("| `{path}` |");
+            if !settings_md.contains(&row) || !defaults_md.contains(&row) {
+                lacks.push(
+                    "its lines in docs/settings.md and docs/defaults.md (run EDEL_WRITE_DOCS=1 cargo test -p edel key_help)",
+                );
+            }
+            if !lacks.is_empty() {
+                gaps.push(format!("{path} lacks {}", lacks.join("; ")));
+            }
         }
+        assert!(gaps.is_empty(), "{}", gaps.join("\n"));
     }
 
     #[test]

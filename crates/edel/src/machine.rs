@@ -2422,8 +2422,13 @@ pub fn preset_list() -> Result<()> {
 /// person's own, one write, and the screen stays the same.
 pub fn preset_save(name: &str) -> Result<()> {
     let what = trf("saved the preset {name}", &[("name", name)]);
+    // A person's preset is made from their file laid over the machine's.
+    let below = match target_for(is_root(), &["layout.preset"], "edel preset")? {
+        Target::Person => fs::read_to_string(machine_file()).ok(),
+        Target::Machine => None,
+    };
     edit_own("edel preset", &what, &["layout.preset"], |text| {
-        presets::save_text(text, name)
+        presets::save_text(text, below.as_deref(), name)
     })
 }
 
@@ -3013,7 +3018,6 @@ mod tests {
     }
 
     static PRESET_LINE: key_help::Help = key_help::Help {
-        key: "layout.tiling",
         help: "tiling",
         default: "false",
         from: DecidedBy::Preset,
@@ -3022,7 +3026,6 @@ mod tests {
     };
 
     static RELEASE_LINE: key_help::Help = key_help::Help {
-        key: "network.hostname",
         help: "the name",
         default: "\"edel\"",
         from: DecidedBy::Release,
@@ -3031,7 +3034,6 @@ mod tests {
     };
 
     static HARDWARE_LINE: key_help::Help = key_help::Help {
-        key: "displays.main.scale",
         help: "the scale",
         default: "1",
         from: DecidedBy::Hardware,
