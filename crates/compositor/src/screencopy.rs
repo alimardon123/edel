@@ -19,7 +19,7 @@ use std::time::Duration;
 use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::{Element as _, Kind};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::{GlesMapping, GlesRenderer, GlesTexture};
 use smithay::backend::renderer::{Bind, ExportMem, Offscreen, TextureMapping};
 use smithay::output::Output;
 use smithay::reexports::wayland_protocols_wlr::screencopy::v1::server::zwlr_screencopy_frame_v1::{
@@ -168,26 +168,20 @@ fn client_name(client: &Client, display: &DisplayHandle) -> String {
     }
 }
 
-/// What a readback gives: the output's pixels and whether they are laid
-/// out top down (smithay's `TextureMapping::flipped`), or the reason there
-/// are none.
-type Readback = Result<(Vec<u8>, bool), String>;
-
-/// Renders `elements` into an offscreen texture of the output's buffer
-/// size and reads it back, as GL lays the rows out (`flipped`). The
-/// cursor is left out unless `cursor` says otherwise.
+/// Renders `elements` into `texture`, the output's offscreen texture at
+/// its buffer size, and starts reading it back; the mapping says how GL
+/// laid the rows out (`flipped`). The cursor is left out unless `cursor`
+/// says otherwise.
 fn read_output(
     renderer: &mut GlesRenderer,
+    texture: &mut GlesTexture,
     elements: &[Drawn],
     size: (i32, i32),
     scale: f64,
     background: [f32; 4],
     cursor: bool,
-) -> Result<(Vec<u8>, bool), String> {
+) -> Result<GlesMapping, String> {
     let buffer: Size<i32, Buffer> = size.into();
-    let mut texture: GlesTexture = renderer
-        .create_buffer(Fourcc::Argb8888, buffer)
-        .map_err(|e| format!("no texture for the copy: {e}"))?;
     let kept: Vec<&Drawn> = elements
         .iter()
         .filter(|e| cursor || !matches!(e.kind(), Kind::Cursor))
@@ -195,20 +189,14 @@ fn read_output(
     let mut damage =
         OutputDamageTracker::new(Size::<i32, Physical>::from(size), scale, Transform::Normal);
     let mut target = renderer
-        .bind(&mut texture)
+        .bind(texture)
         .map_err(|e| format!("binding the copy's texture: {e}"))?;
     damage
         .render_output(renderer, &mut target, 0, &kept, background)
         .map_err(|e| format!("drawing the copy: {e}"))?;
-    let mapping = renderer
+    renderer
         .copy_framebuffer(&target, Rectangle::from_size(buffer), Fourcc::Argb8888)
-        .map_err(|e| format!("reading the copy back: {e}"))?;
-    let flipped = mapping.flipped();
-    let pixels = renderer
-        .map_texture(&mapping)
-        .map_err(|e| format!("mapping the copy: {e}"))?
-        .to_vec();
-    Ok((pixels, flipped))
+        .map_err(|e| format!("reading the copy back: {e}"))
 }
 
 impl Edel {
@@ -239,14 +227,29 @@ impl Edel {
         let size = (mode.size.w, mode.size.h);
         let scale = output.current_scale().fractional_scale();
         let background = self.tokens.background.rgba();
+        // The texture is kept for the next frame at the same size, so a
+        // screen shared in a call allocates nothing per frame (the
+        // whole-system review of 2026-10-25).
+        let name = output.name();
+        let mut texture = match self.copy_textures.remove(&name) {
+            Some((kept, texture)) if kept == size => Ok(texture),
+            _ => renderer
+                .create_buffer(Fourcc::Argb8888, Size::<i32, Buffer>::from(size))
+                .map_err(|e| format!("no texture for the copy: {e}")),
+        };
         // One readback serves every frame the same way; the cursor is
         // read again only when a frame asked for it and another did not.
-        let mut readbacks: Vec<(bool, Readback)> = Vec::new();
+        let mut readbacks: Vec<(bool, Result<GlesMapping, String>)> = Vec::new();
         let now: Duration = Clock::<Monotonic>::new().now().into();
         for pending in mine {
             let cursor = pending.overlay_cursor;
             if !readbacks.iter().any(|(c, _)| *c == cursor) {
-                let read = read_output(renderer, elements, size, scale, background, cursor);
+                let read = match &mut texture {
+                    Ok(texture) => {
+                        read_output(renderer, texture, elements, size, scale, background, cursor)
+                    }
+                    Err(why) => Err(why.clone()),
+                };
                 readbacks.push((cursor, read));
             }
             let read = &readbacks
@@ -257,21 +260,24 @@ impl Edel {
             let Some(copy) = pending.copy.as_ref() else {
                 continue;
             };
-            let (pixels, flipped) = match read {
-                Ok((pixels, flipped)) if pending.buffer == size => (pixels, *flipped),
-                Ok(_) => {
-                    let why = "the output changed size since the frame was made";
-                    eprintln!(
-                        "edel-compositor: {}",
-                        crate::messages::copy_failed(&pending.output.name(), why)
-                    );
-                    pending.frame.failed();
-                    continue;
+            // The client's rows are copied straight from the mapped
+            // readback, with no copy of the whole screen in between.
+            let read = match read {
+                Ok(_) if pending.buffer != size => {
+                    Err("the output changed size since the frame was made".to_string())
                 }
+                Ok(mapping) => renderer
+                    .map_texture(mapping)
+                    .map(|pixels| (pixels, mapping.flipped()))
+                    .map_err(|e| format!("mapping the copy: {e}")),
+                Err(why) => Err(why.clone()),
+            };
+            let (pixels, flipped) = match read {
+                Ok(read) => read,
                 Err(why) => {
                     eprintln!(
                         "edel-compositor: {}",
-                        crate::messages::copy_failed(&pending.output.name(), why)
+                        crate::messages::copy_failed(&pending.output.name(), &why)
                     );
                     pending.frame.failed();
                     continue;
@@ -303,6 +309,9 @@ impl Edel {
             let secs = now.as_secs();
             pending_frame.ready((secs >> 32) as u32, secs as u32, now.subsec_nanos());
             self.log_copy(pending_frame, &pending.output, size);
+        }
+        if let Ok(texture) = texture {
+            self.copy_textures.insert(name, (size, texture));
         }
     }
 
