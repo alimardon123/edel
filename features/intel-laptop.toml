@@ -3,6 +3,11 @@ format = 1
 summary = "Intel laptops: Wi-Fi, Bluetooth, sound, cameras, sensors and the NPU"
 why = "Intel's Wi-Fi and Bluetooth chips, its laptops' sound since about 2019 (Sound Open Firmware, M6.15), cameras (IPU), the sensor hub that turns the screen and the NPU each need firmware from linux-firmware-intel and sof-firmware, together the biggest firmware a laptop carries, so it is one pack: the stick carries it and a machine with Intel's Wi-Fi or audio gets it, while a server or a VM does not. Intel's graphics firmware stays in the base (feature laptop), as i915 starts without it and would then run without its power saving."
 packages = ["linux-firmware-intel", "sof-firmware"]
+# Intel's Wi-Fi drivers (M8.17e), about 1.6 MiB, travel with the pack, as
+# every chip they drive is a PCI device of Intel's that the pack's match
+# finds. Other makers' Wi-Fi drivers stay in the base: they also drive USB
+# sticks sold under other vendors' ids, which no pack's match would find.
+kernel_drivers = ["drivers/net/wireless/intel"]
 addon = true
 # Intel's Wi-Fi (network, other), audio and cameras (multimedia), the NPU
 # (processing accelerators) and Bluetooth (USB 8087).

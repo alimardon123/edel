@@ -1501,12 +1501,14 @@ pub fn mount_all() -> Result<()> {
     Ok(())
 }
 
-/// Has udev take the mounted add-ons' device rules: udev read its rules
-/// and announced the devices present at boot before the add-ons were over
-/// `/usr` (edel-data runs after udev-settle), so an add-on's rules
-/// (printing's scanners, gaming's controllers, M7.6b; the desktop's sound
-/// devices, M8.17c) would reach only devices plugged in later, and maybe
-/// not even those. `data::mount_data` calls it once `/etc` has its layer
+/// Has udev take the mounted add-ons' device rules and drivers: udev read
+/// its rules and announced the devices present at boot before the add-ons
+/// were over `/usr` (edel-data runs after udev-settle), so an add-on's
+/// rules (printing's scanners, gaming's controllers, M7.6b; the desktop's
+/// sound devices, M8.17c) would reach only devices plugged in later, and
+/// maybe not even those, and its drivers (the desktop's sound, the Wi-Fi
+/// packs', M8.17e) would load for no device present at boot. Replaying the
+/// devices loads them, before the network or any session starts. `data::mount_data` calls it once `/etc` has its layer
 /// and the add-ons' accounts, so a rule's group (`seat`, which the desktop
 /// add-on brings) is known. Only where udev runs; a failure never stops
 /// the boot.
@@ -1515,13 +1517,13 @@ pub fn take_device_rules() {
         .iter()
         .map(|name| Path::new(places::ADDONS_RUN).join(name))
         .collect();
-    if brings_device_rules(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
+    if brings_for_devices(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
         let taken = run(&mut edel::base::reread_device_rules())
             .and_then(|()| run(&mut edel::base::replay_device_events()));
         match taken {
-            Ok(()) => println!("edel-data: udev took the add-ons' device rules"),
+            Ok(()) => println!("edel-data: udev took the add-ons' device rules and drivers"),
             Err(err) => eprintln!(
-                "warning: edel-data: udev could not take the add-ons' device rules, so a device plugged in before this start may need plugging in again: {err:#}"
+                "warning: edel-data: udev could not take the add-ons' device rules and drivers, so a device plugged in before this start may need plugging in again: {err:#}"
             ),
         }
     }
@@ -1601,14 +1603,20 @@ pub fn has_services() -> bool {
 }
 
 /// Where an add-on's rules for udev are, relative to its mount, as
-/// printing's scanners and gaming's controllers ship them (M7.6b).
+/// printing's scanners and gaming's controllers ship them (M7.6b), and
+/// where its kernel drivers are, as the desktop's sound and the Wi-Fi
+/// packs bring them (M8.17e).
 const DEVICE_RULES: &str = "usr/lib/udev/rules.d";
+const DRIVERS: &str = "usr/lib/modules";
 
-/// Whether one of the add-ons mounted at `mounts` brings rules for udev,
-/// which udev read before the add-ons' layer was over `/usr`.
-pub fn brings_device_rules(mounts: &[PathBuf]) -> bool {
+/// Whether one of the add-ons mounted at `mounts` brings rules for udev or
+/// kernel drivers, which udev's first pass over the devices at boot ran
+/// without, as it came before the add-ons' layer was over `/usr`.
+pub fn brings_for_devices(mounts: &[PathBuf]) -> bool {
     mounts.iter().any(|mount| {
-        fs::read_dir(mount.join(DEVICE_RULES)).is_ok_and(|mut entries| entries.next().is_some())
+        [DEVICE_RULES, DRIVERS].iter().any(|dir| {
+            fs::read_dir(mount.join(dir)).is_ok_and(|mut entries| entries.next().is_some())
+        })
     })
 }
 
@@ -1842,20 +1850,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_an_add_on_with_device_rules_has_udev_read_them_again() {
+    fn only_an_add_on_with_device_rules_or_drivers_has_udev_read_them_again() {
         let root = std::env::temp_dir().join(format!("edel-device-rules-{}", process::id()));
-        let (with, without, empty) = (
+        let (with, without, empty, drivers) = (
             root.join("gaming"),
             root.join("orca"),
             root.join("printing"),
+            root.join("sound"),
         );
         fs::create_dir_all(with.join(DEVICE_RULES)).unwrap();
         fs::write(with.join(DEVICE_RULES).join("90-edel-gaming.rules"), "").unwrap();
         fs::create_dir_all(without.join("usr/bin")).unwrap();
         fs::create_dir_all(empty.join(DEVICE_RULES)).unwrap();
-        assert!(brings_device_rules(&[without.clone(), with]));
-        assert!(!brings_device_rules(&[without, empty]));
-        assert!(!brings_device_rules(&[]));
+        let sound = drivers.join(DRIVERS).join("6.12.1-0-lts/kernel/sound/hda");
+        fs::create_dir_all(&sound).unwrap();
+        fs::write(sound.join("snd-hda-intel.ko.gz"), "").unwrap();
+        assert!(brings_for_devices(&[without.clone(), drivers]));
+        assert!(brings_for_devices(&[without.clone(), with]));
+        assert!(!brings_for_devices(&[without, empty]));
+        assert!(!brings_for_devices(&[]));
         fs::remove_dir_all(&root).unwrap();
     }
 
