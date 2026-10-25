@@ -105,6 +105,17 @@ pub struct LockBefore {
     pub dim: Option<String>,
 }
 
+/// The keys that press the Undo bar's Undo, as its pill shows them, from
+/// the settings files; none when a person unbound them.
+fn undo_keys() -> Option<String> {
+    let (machine, person) = settings_texts();
+    edel::shortcuts::keys_in(
+        edel::shortcuts::UNDO_DESKTOP_EDIT,
+        [machine.as_deref(), person.as_deref()],
+    )
+    .map(|keys| keys.to_string())
+}
+
 /// The words the Undo bar says for what it undoes (M5.10c6).
 fn undo_words(undo: &Undo) -> &'static str {
     match undo {
@@ -989,6 +1000,7 @@ impl Shell {
             hover: false,
             width: self.screen_width(),
             text: words.to_string(),
+            keys: undo_keys(),
             style: editor::style(match undo {
                 Undo::Panels(_) => Kind::Panels,
                 Undo::LockScreen(_) | Undo::Desktop(_) => Kind::LockScreen,
@@ -1097,14 +1109,21 @@ impl Shell {
             bar.logged = places;
         }
         let size = (f64::from(layout.size.0), f64::from(layout.size.1));
-        bar.reader
-            .update(size, undo_bar::nodes(&layout, &view.text));
+        bar.reader.update(size, undo_bar::nodes(&layout, &view));
     }
 
     /// Undo on the bar (M5.31b, M5.10c6): what the bar holds is written back
     /// through the writer of its editor, and the panels show it when they are
     /// the ones undone; then the bar closes. Nothing changes when the line
     /// cannot be written.
+    /// The Undo bar's key (`shortcuts.undo_desktop_edit`): Undo, as the
+    /// pill does, while the bar shows, and nothing otherwise.
+    pub fn undo_key_pressed(&mut self) {
+        if self.undo_bar.is_some() {
+            self.undo_bar_undo();
+        }
+    }
+
     fn undo_bar_undo(&mut self) {
         let Some(undo) = self.undo_bar.as_ref().map(|b| b.undo.clone()) else {
             return;

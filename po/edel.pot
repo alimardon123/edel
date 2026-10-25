@@ -2639,6 +2639,9 @@ msgstr ""
 msgid "Open the clipboard history: the last texts and pictures you copied"
 msgstr ""
 
+msgid "Undo the change an editor's Done just made, while its Undo bar shows"
+msgstr ""
+
 msgid "this machine has no {program}, so it has no sound system; the sound feature brings PipeWire"
 msgstr ""
 

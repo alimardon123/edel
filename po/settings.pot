@@ -1688,6 +1688,9 @@ msgstr ""
 msgid "Clipboard history"
 msgstr ""
 
+msgid "Undo desktop edit"
+msgstr ""
+
 msgid "Keep clipboard history"
 msgstr ""
 
