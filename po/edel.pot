@@ -392,7 +392,10 @@ msgstr ""
 msgid "Profile"
 msgstr ""
 
-msgid "a language such as en_US.UTF-8 or de_DE.UTF-8"
+msgid "choose a language, such as en_US.UTF-8 or de_DE.UTF-8"
+msgstr ""
+
+msgid "{value} is not a language; choose one such as en_US.UTF-8 or de_DE.UTF-8"
 msgstr ""
 
 msgid "{name} is the system's own account; choose another username"
@@ -401,7 +404,10 @@ msgstr ""
 msgid "one of {names}"
 msgstr ""
 
-msgid "letters, digits and hyphens, up to 63"
+msgid "choose a computer name: letters, digits and hyphens, up to 63, such as ali-laptop"
+msgstr ""
+
+msgid "{value} is not a computer name: use letters, digits and hyphens, up to 63, such as ali-laptop"
 msgstr ""
 
 msgid "{model} · {size}"
@@ -2888,7 +2894,10 @@ msgstr ""
 msgid "{picture} is not a picture of {name}, so there is nothing to remove"
 msgstr ""
 
-msgid "a time zone such as Europe/Berlin or Asia/Tashkent"
+msgid "choose a time zone, such as Europe/Berlin or Asia/Tashkent"
+msgstr ""
+
+msgid "{value} is not a time zone this computer knows; choose one such as Europe/Berlin or Asia/Tashkent"
 msgstr ""
 
 msgid "Blue"

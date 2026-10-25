@@ -18,9 +18,13 @@ update_image_mib = 700
 # Since the desktop became an add-on (M8.17c) the root and memory are CI's
 # median on 2026-10-23 (461 MiB, 72 MiB) plus 20 percent; the boot keeps
 # its budget, as the VM's boot swings with the runner (3.2 to 3.7 s that day).
+# Since the laptops' firmware became hardware packs (M8.17d) the root is
+# CI's 355 MiB of 2026-10-24, AMD's graphics firmware in the base and in
+# the initramfs included, plus 5 percent, as `df` on one image does not
+# swing.
 #
 # Used space on the root (`df -Pm /` in the guest), in MiB.
-headless_root_mib = 553
+headless_root_mib = 373
 
 # Seconds from the kernel's start to the confirmed slot (`/proc/uptime`
 # when edel-boot-ok runs), median of three boots with KVM.

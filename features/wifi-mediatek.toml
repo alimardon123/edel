@@ -1,0 +1,28 @@
+# MediaTek Wi-Fi (M8.17d, ADR-012): a hardware pack.
+format = 1
+summary = "MediaTek Wi-Fi and Bluetooth: the firmware of the laptops' and dongles' chips"
+why = "MediaTek's Wi-Fi and Bluetooth chips (MT7921, MT7922, MT7925 and the older MT76 ones) cannot start without firmware (about 28 MiB before the list below), which only a machine with one needs, so it is a pack the stick carries and such a machine gets."
+packages = ["linux-firmware-mediatek"]
+addon = true
+# MediaTek's PCI chips and USB dongles.
+hardware = ["pci:v000014C3d*", "usb:v0E8Dp*"]
+
+# MT7921 and MT7922 (MT7961), MT7902, MT7925 and MT7927, and the older
+# MT7601, MT76x0, MT76x2 and MT7663.
+[[keep]]
+under = "lib/firmware"
+files = [
+  "mediatek/WIFI_*",
+  "mediatek/BT_RAM_CODE_*",
+  "mediatek/mt7925/*",
+  "mediatek/mt7927/*",
+  "mediatek/mt7601u.bin.zst",
+  "mediatek/mt7610*",
+  "mediatek/mt7650*",
+  "mediatek/mt7662*",
+  "mediatek/mt7663*",
+  "mediatek/mt7668*",
+  "mt7601u.bin.zst",
+  "mt7650.bin.zst",
+  "mt7662*",
+]

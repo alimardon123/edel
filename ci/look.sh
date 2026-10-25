@@ -11,7 +11,8 @@
 #   sh ci/look.sh NAME [COMMAND...]
 #   sh ci/look.sh location edel-settings --page location
 #
-# keeps out/look/NAME.png; with no COMMAND, the desktop alone. Needs a
+# keeps out/look/NAME.png; with no COMMAND, the desktop alone;
+# EDEL_LOOK_SCROLL=N scrolls a long page N wheel steps first. Needs a
 # Docker daemon and the Alpine mirror; the first run builds for some
 # minutes, later runs reuse target/look.
 set -eu
@@ -32,7 +33,7 @@ if [ -z "${EDEL_LOOK_INSIDE:-}" ]; then
 	# One image per package list, so later runs start at once.
 	tag=edel-look:$(echo "$branch $packages $(sed -n '/apk add/,/x11$/p' ci/look.sh)" | cksum | cut -d' ' -f1)
 	proxy=
-	for v in HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY no_proxy EDEL_LOOK_WAIT EDEL_LOOK_FLOAT; do
+	for v in HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY no_proxy EDEL_LOOK_WAIT EDEL_LOOK_FLOAT EDEL_LOOK_SCROLL; do
 		eval "[ -n \"\${$v:-}\" ]" && proxy="$proxy -e $v"
 	done
 	ca=
@@ -111,6 +112,18 @@ if [ $# -gt 0 ]; then
 		sleep 1
 		xdotool mousemove $(($1 + $3 - 41)) $(($2 - bar / 2)) click 1 mousemove 1279 400
 	fi
+fi
+# EDEL_LOOK_SCROLL=N turns the wheel N steps down over the window's
+# middle, for the lower part of a long page.
+if [ -n "${EDEL_LOOK_SCROLL:-}" ]; then
+	sleep 2
+	xdotool mousemove 740 450
+	i=0
+	while [ "$i" -lt "$EDEL_LOOK_SCROLL" ]; do
+		xdotool click 5
+		i=$((i + 1))
+	done
+	xdotool mousemove 1279 400
 fi
 # Let the window's first frames and the panel's redraw land.
 sleep "${EDEL_LOOK_WAIT:-4}"
