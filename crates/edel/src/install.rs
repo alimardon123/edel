@@ -693,12 +693,14 @@ pub fn from_a_stick() -> bool {
         .is_some_and(|disk| running_from_stick(sys, &disk))
 }
 
-/// A disk the installer page offers: its name, such as `sda`, and how
-/// people know it, its model and size.
+/// A disk the installer page offers: its name, such as `sda`, how people
+/// know it, its model and size, and its serial number where it reports
+/// one, which tells two sticks of one model apart.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiskChoice {
     pub name: String,
     pub title: String,
+    pub serial: Option<String>,
 }
 
 /// The disks Settings' installer page offers, read from `sys` (`/sys`, or
@@ -739,7 +741,16 @@ pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
                 ),
                 None => trf("{size} disk", &[("size", &capacity)]),
             };
-            (sectors > 0).then_some(DiskChoice { name, title })
+            let serial = ["device/serial", "device/wwid", "wwid"]
+                .iter()
+                .find_map(|f| fs::read_to_string(block.join(f)).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            (sectors > 0).then_some(DiskChoice {
+                name,
+                title,
+                serial,
+            })
         })
         .collect()
 }
@@ -1104,10 +1115,12 @@ mod tests {
                 DiskChoice {
                     name: "nvme0n1".into(),
                     title: "Samsung SSD 980 · 512 GB".into(),
+                    serial: None,
                 },
                 DiskChoice {
                     name: "sdb".into(),
                     title: "4.1 GB disk".into(),
+                    serial: None,
                 },
             ],
             "the computer's own disk first, then another stick; the running stick and the CD drive are not offered"

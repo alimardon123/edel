@@ -734,6 +734,8 @@ fn install_on(
                 "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
             )
         ),
+        // A plan reads no password, so one given is not here yet.
+        (true, None) if data.given => (true, None, None),
         (true, None) => (true, Some(PASSPHRASE_ASKED), None),
     };
     let plan = Plan {
@@ -1113,14 +1115,16 @@ fn write(
         fs::create_dir_all(&boot_dir).with_context(|| could_not_write(Path::new(&boot_dir)))?;
         fs::create_dir_all(&edel_dir).with_context(|| could_not_write(Path::new(&edel_dir)))?;
         let slot_dir = Path::new(SLOT_DIR);
-        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))
-            .with_context(|| could_not_write(Path::new(&boot_dir.join(efi_name))))?;
         for file in ["grub.cfg", "loader.toml"] {
             fs::copy(slot_dir.join(file), edel_dir.join(file))
                 .with_context(|| could_not_write(Path::new(&edel_dir.join(file))))?;
         }
         fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())
             .with_context(|| could_not_write(Path::new(&edel_dir.join("grubenv"))))?;
+        // The firmware's file last, once what it reads is on the disk.
+        run(&mut Command::new("sync")).with_context(|| could_not_write(&edel_dir))?;
+        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))
+            .with_context(|| could_not_write(Path::new(&boot_dir.join(efi_name))))?;
     }
 
     run(&mut Command::new("sync")).with_context(|| {

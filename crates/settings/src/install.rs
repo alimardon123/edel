@@ -885,8 +885,8 @@ const DISKS_CHANGED: &str = n_(
     "The disks changed since this page opened, so nothing was changed. Open this page again to choose the disk.",
 );
 
-/// Whether `choice` is still a disk `sys` offers, by the same name, model
-/// and size: the page read the list once, and the kernel gives a name
+/// Whether `choice` is still a disk `sys` offers, by the same name, model,
+/// size and serial number: the page read the list once, and the kernel gives a name
 /// pulled out to the next disk plugged in, which must never be erased in
 /// its place.
 fn still_offered(sys: &Path, running: Option<&str>, choice: &DiskChoice) -> bool {
@@ -1676,8 +1676,15 @@ mod tests {
             std::fs::write(block.join("device/model"), model).unwrap();
         };
         plug("Kingston", "31250000");
+        std::fs::write(sys.join("block/sdb/device/serial"), "A1").unwrap();
         let chosen = install::disk_choices(&sys, None).remove(0);
         assert!(still_offered(&sys, None, &chosen));
+        std::fs::write(sys.join("block/sdb/device/serial"), "B2").unwrap();
+        assert!(
+            !still_offered(&sys, None, &chosen),
+            "another stick of the same model"
+        );
+        std::fs::write(sys.join("block/sdb/device/serial"), "A1").unwrap();
         plug("Backup", "1953525168");
         assert!(
             !still_offered(&sys, None, &chosen),
