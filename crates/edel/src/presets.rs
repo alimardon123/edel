@@ -888,10 +888,19 @@ pub fn changed(file: &SettingsFile) -> Vec<String> {
 /// `[presets.NAME]` from the layout in use, its keys the file's own on top
 /// of the preset in use, and its base the built-in preset in use (an own
 /// preset in use keeps its base), then sets `layout.preset` to it and takes
-/// the moved keys out of `[layout]`, so the screen is the same. A name of
-/// the person's own that exists is replaced; a built-in's is refused.
-pub fn save_text(text: &str, name: &str) -> Result<String> {
+/// the moved keys out of `[layout]`, so the screen is the same. `below` is
+/// the machine's file, laid under `text` as readers lay it: a preset, an
+/// own preset or a `[layout]` key only the machine's file holds is in use
+/// too, and is kept in the new preset (the whole-system review of
+/// 2026-10-25); a machine file that cannot be read counts as empty. Only
+/// `text` is written. A name of the person's own that exists is replaced;
+/// a built-in's is refused.
+pub fn save_text(text: &str, below: Option<&str>, name: &str) -> Result<String> {
     let file = settings::read(text)?.file;
+    let machine = below
+        .and_then(|below| settings::read(below).ok())
+        .map(|read| read.file)
+        .unwrap_or_default();
     if !themes::is_name(name) {
         bail!("{}", name_message(name));
     }
@@ -904,17 +913,24 @@ pub fn save_text(text: &str, name: &str) -> Result<String> {
             )
         );
     }
-    let in_use = in_use_name(&file);
-    let (base, mut table) = match file.presets.get(in_use) {
-        Some(own) => (base_of(own), layout_table(&file.layout)?),
-        None => (
-            if is_built_in(in_use) { in_use } else { DEFAULT }.to_string(),
-            layout_table(&file.layout)?,
-        ),
+    let in_use = file
+        .layout
+        .preset
+        .as_deref()
+        .unwrap_or_else(|| in_use_name(&machine));
+    let own_in_use = file
+        .presets
+        .get(in_use)
+        .or_else(|| machine.presets.get(in_use));
+    let mut table = layout_table(&file.layout)?;
+    themes::merge(&mut table, layout_table(&machine.layout)?);
+    let base = match own_in_use {
+        Some(own) => {
+            themes::merge(&mut table, layout_table(&own.layout)?);
+            base_of(own)
+        }
+        None => if is_built_in(in_use) { in_use } else { DEFAULT }.to_string(),
     };
-    if let Some(own) = file.presets.get(in_use) {
-        themes::merge(&mut table, layout_table(&own.layout)?);
-    }
     table.insert("preset".into(), Value::String(base));
     let own: OwnPreset = Value::Table(table).try_into()?;
     let Value::Table(table) = Value::try_from(&own)? else {
@@ -1421,7 +1437,7 @@ mod tests {
     #[test]
     fn save_moves_the_layout_keys_and_keeps_every_other_byte() {
         let text = "format = 1\n# my desk\n[appearance]\naccent = \"blue\"\n\n[layout]\nwindow_buttons = \"left\"\ntiling = true # keep\n\n[network]\nhostname = \"lab\"\n";
-        let saved = save_text(text, "mine").unwrap();
+        let saved = save_text(text, None, "mine").unwrap();
         for line in [
             "# my desk\n",
             "[appearance]\naccent = \"blue\"\n",
@@ -1441,9 +1457,28 @@ mod tests {
     }
 
     #[test]
+    fn save_keeps_what_only_the_machines_file_sets() {
+        // The installer wrote Hive and tiling into the machine's file; the
+        // person's file has nothing of the layout. The saved preset is
+        // Hive-based and tiles, so the screen stays the same.
+        let machine = "format = 1\n[layout]\npreset = \"hive\"\nwindow_buttons = \"left\"\n";
+        let saved = save_text("format = 1\n", Some(machine), "mine").unwrap();
+        let read = file(&saved);
+        assert_eq!(read.layout.preset.as_deref(), Some("mine"));
+        assert_eq!(read.presets["mine"].preset, "hive");
+        assert_eq!(
+            read.presets["mine"].layout.window_buttons.as_deref(),
+            Some("left")
+        );
+        // A machine file that cannot be read counts as empty.
+        let saved = save_text("format = 1\n", Some("not toml ["), "mine").unwrap();
+        assert_eq!(file(&saved).presets["mine"].preset, "classic");
+    }
+
+    #[test]
     fn saved_shows_the_same_screen() {
         let text = "format = 1\n[layout]\nwindow_buttons = \"left\"\ntiling = true\n";
-        let saved = save_text(text, "mine").unwrap();
+        let saved = save_text(text, None, "mine").unwrap();
         assert_eq!(screen(text), screen(&saved));
         assert_eq!(
             screen(&saved).0,
@@ -1458,14 +1493,14 @@ mod tests {
     #[test]
     fn save_refuses_a_built_in_name_and_a_bad_one() {
         let text = "format = 1\n[layout]\npreset = \"hive\"\n";
-        let refused = save_text(text, "hive").unwrap_err().to_string();
+        let refused = save_text(text, None, "hive").unwrap_err().to_string();
         assert!(refused.contains("built-in preset"), "{refused}");
-        assert!(save_text(text, "My Desk").is_err());
+        assert!(save_text(text, None, "My Desk").is_err());
     }
 
     #[test]
     fn save_from_an_own_preset_keeps_its_base_and_keys() {
-        let saved = save_text(MINE, "other").unwrap();
+        let saved = save_text(MINE, None, "other").unwrap();
         let read = file(&saved);
         assert_eq!(read.presets["other"].preset, "hive");
         assert_eq!(
@@ -1475,7 +1510,7 @@ mod tests {
         assert_eq!(read.layout.preset.as_deref(), Some("other"));
         assert_eq!(screen(MINE), screen(&saved));
         // Saving over the one in use updates it, and keeps its base.
-        let updated = save_text(MINE, "mine").unwrap();
+        let updated = save_text(MINE, None, "mine").unwrap();
         assert_eq!(file(&updated).presets["mine"].preset, "hive");
     }
 

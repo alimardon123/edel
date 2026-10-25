@@ -360,7 +360,8 @@ impl Files {
     /// Saves the layout in use as the person's own preset `name`
     /// (`presets::save_text`, Save as preset, M5.17), one write.
     pub fn save_preset(&self, name: &str) -> Result<(), String> {
-        self.edit_person(|text| presets::save_text(text, name))
+        let machine = std::fs::read_to_string(&self.machine).ok();
+        self.edit_person(|text| presets::save_text(text, machine.as_deref(), name))
     }
 
     /// Deletes the person's own preset `name` (M5.17), one write; refused
