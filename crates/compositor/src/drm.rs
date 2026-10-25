@@ -47,23 +47,21 @@ use smithay::desktop::utils::{
     surface_primary_scanout_output, update_surface_primary_scanout_output,
 };
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
+use smithay::reexports::calloop::LoopHandle;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::calloop::{EventLoop, LoopHandle};
 use smithay::reexports::drm::control::{Device as _, ModeTypeFlags, connector, crtc};
 use smithay::reexports::input::Libinput;
 use smithay::reexports::rustix::fs::OFlags;
 use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
-use smithay::reexports::wayland_server::Display;
 use smithay::reexports::wayland_server::backend::GlobalId;
 use smithay::utils::{Clock, DeviceFd, Monotonic, Point, Size};
 use smithay::wayland::presentation::Refresh;
 
 use edel_compositor::layout::{auto_scale, parse_mode, pick_mode, place_screens};
 use edel_compositor::messages;
-use edel_compositor::tokens::Tokens;
 
-use crate::program::Program;
-use crate::state::{Edel, listen};
+use crate::backend::Backend;
+use crate::state::Edel;
 
 /// Where the session tells root it is up (M4.1, M4.8).
 const READY: &str = edel::places::READY_FILE;
@@ -366,25 +364,12 @@ fn is_card(path: &std::path::Path) -> bool {
         .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
-pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
-    let mut event_loop: EventLoop<Edel> =
-        EventLoop::try_new().context("creating the event loop")?;
-    let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
-    let mut state = Edel::new(
-        display.handle(),
-        event_loop.get_signal(),
-        event_loop.handle(),
-        tokens,
-    )?;
-    let handle = event_loop.handle();
-    let name = listen(&handle, &mut state, display)?;
-    state.socket = name.clone();
-    crate::xwayland::listen(&handle, &mut state, &name);
-    state.program = program;
-    state.game.session = state.game_session();
-    crate::decoration::load_text(&handle, &state.tokens.font, state.tokens.title_text_size);
-    crate::watch::start(&handle, &mut state);
-
+/// Opens the GPU and the seat's input devices (`backend::Open`).
+pub fn open(
+    handle: &LoopHandle<'static, Edel>,
+    state: &mut Edel,
+) -> Result<Rc<RefCell<dyn Backend>>> {
+    let handle = handle.clone();
     let (mut session, session_events) = open_seat()?;
     let seat = session.seat();
     let path = wait_for_gpu(&seat)?;
@@ -487,7 +472,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             }),
         );
     }
-    gpu.borrow_mut().scan(&mut state);
+    gpu.borrow_mut().scan(state);
     if gpu.borrow().screens.is_empty() {
         // Healthy all the same (M4.8): with the screen unplugged or off,
         // the desktop waits for one, as udev will say, rather than leave
@@ -499,7 +484,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
 
     let vblank = Rc::clone(&gpu);
     let later = handle.clone();
-    let socket = name.clone();
+    let socket = state.socket.clone();
     handle
         .insert_source(
             drm_events,
@@ -584,36 +569,18 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
             }
         })
         .map_err(|e| anyhow::anyhow!("watching the seat: {e}"))?;
-    if bench {
-        handle
-            .insert_source(
-                Timer::from_duration(Duration::from_secs(5)),
-                |_, _, state: &mut Edel| {
-                    state.signal.stop();
-                    TimeoutAction::Drop
-                },
-            )
-            .map_err(|e| anyhow::anyhow!("starting the bench timer: {e}"))?;
+    gpu.borrow_mut().render(state);
+    Ok(gpu)
+}
+
+impl Backend for Gpu {
+    fn scan(&mut self, state: &mut Edel) {
+        Gpu::scan(self, state);
     }
 
-    eprintln!("edel-compositor: listening on {name}");
-    gpu.borrow_mut().render(&mut state);
-    event_loop.run(None, &mut state, |state| {
-        state.space.refresh();
-        state.popups.cleanup();
-        state.sync_idle_inhibit();
-        let _ = state.display.flush_clients();
-        if let Ok(mut gpu) = gpu.try_borrow_mut() {
-            if std::mem::take(&mut state.screens_changed) {
-                gpu.scan(state);
-            }
-            gpu.render(state);
-        }
-    })?;
-    if bench {
-        println!("edel-compositor: {}", state.telemetry.summary());
+    fn render(&mut self, state: &mut Edel) {
+        Gpu::render(self, state);
     }
-    Ok(())
 }
 
 /// A connector's name as the settings file and the state file use it, such
