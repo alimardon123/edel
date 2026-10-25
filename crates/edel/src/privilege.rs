@@ -117,7 +117,7 @@ pub fn need(command: &Commands) -> Need {
             ) => Need::Admin,
         },
         Commands::Image { command } => match command {
-            ImageCommands::Check { .. } => Need::Anyone,
+            ImageCommands::Check { .. } | ImageCommands::Deps { .. } => Need::Anyone,
             ImageCommands::Build(_) => Need::Admin,
         },
         Commands::Theme { command } => match command {

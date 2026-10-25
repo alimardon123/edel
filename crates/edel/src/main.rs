@@ -15,6 +15,7 @@ mod crypt;
 mod data;
 mod def;
 mod default_apps;
+mod deps;
 mod device_key;
 mod first_boot;
 mod grubenv;
@@ -524,6 +525,9 @@ enum ReleaseCommands {
         /// An add-on, IMAGE.NAME.ext4.gz beside the images, with its feature file IMAGE.NAME.toml beside it; can be given more than once
         #[arg(long = "addon", value_name = "FILE")]
         addons: Vec<PathBuf>,
+        /// Another file of the release beside the images, such as a disk, whose sha256 the list carries for the download page; can be given more than once
+        #[arg(long = "download", value_name = "FILE")]
+        downloads: Vec<PathBuf>,
         /// The update images, all in one directory
         #[arg(required = true)]
         images: Vec<PathBuf>,
@@ -555,6 +559,12 @@ enum ImageCommands {
     Check {
         /// Image definition, for example images/edel.toml
         definition: PathBuf,
+    },
+    /// List the images' packages from Alpine community, docs/backports.md
+    Deps {
+        /// Package lists the build wrote, for example out/*.packages
+        #[arg(required = true)]
+        lists: Vec<PathBuf>,
     },
 }
 
@@ -879,6 +889,7 @@ fn run(command: Commands) -> Result<()> {
                 );
                 Ok(())
             }
+            ImageCommands::Deps { lists } => deps::deps(&lists),
         },
         Commands::Boot { command } => match command {
             BootCommands::MountData => data::mount_data(),
@@ -898,6 +909,7 @@ fn run(command: Commands) -> Result<()> {
                 base_url,
                 out,
                 addons,
+                downloads,
                 images,
             } => release::make(
                 &version,
@@ -906,6 +918,7 @@ fn run(command: Commands) -> Result<()> {
                 out.as_deref(),
                 &images,
                 &addons,
+                &downloads,
             )
             .map(|_| ()),
             ReleaseCommands::Sign {

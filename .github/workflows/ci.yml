@@ -248,7 +248,7 @@ jobs:
 
       - name: Hand the release lists to the sign job
         # Only the two lists: the signer never touches what the build made.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-lists
           path: |
@@ -275,6 +275,19 @@ jobs:
         # shell is named, so bash runs with pipefail and tee keeps a failure.
         shell: bash
         run: docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'sh ci/bom.sh --self-test && sh ci/bom.sh advisories' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: The backports list is the build's (M8.10b)
+        # docs/backports.md, every base package from Alpine community
+        # (ADR-003), made again by edel image deps in the build container,
+        # where apk uses the images' branch; the tool needs libgcc there,
+        # which the build installed with cargo in its own container.
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src "$ALPINE" sh -c 'apk add -q libgcc >/dev/null && target/release/edel image deps out/*.packages' >out/backports.md
+          if ! diff -u docs/backports.md out/backports.md; then
+            { echo "### Backports (M8.10b)"; echo; echo "docs/backports.md differs from the build; replace it with:"; echo; echo '```markdown'; cat out/backports.md; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+            echo "FAIL: docs/backports.md differs from what this build's packages give; the run's summary holds the new file"
+            exit 1
+          fi
 
       - name: Enable KVM
         run: |
@@ -662,15 +675,31 @@ jobs:
   # which proves the path.
   sign:
     name: Sign the release
-    needs: build
+    # After every test, so only a tested build is ever signed (the review
+    # of 2026-10-25).
+    needs: [build, rust, images, desktop]
     runs-on: ubuntu-latest
     environment: ${{ (github.event_name == 'push' || github.ref_type == 'tag') && 'release' || '' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The whole history, to check a tag's commit is on main.
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: edel-lists
           path: out
+      - name: A tag's commit is on main
+        # A tag gets the real key, so it must name reviewed code: a merge
+        # on main (the review of 2026-10-25). The release environment's own
+        # rules, a repository setting, are the guard an attacker cannot edit
+        # (docs/RELEASE.md).
+        if: github.ref_type == 'tag'
+        run: |
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "FAIL: $GITHUB_REF_NAME names $(git rev-parse --short HEAD), which is not on main; tag a commit on main"
+            exit 1
+          }
       - name: Build the signer from the locked sources
         run: cargo build --release --locked -p edel --bin edel
       - name: Sign and verify both lists
@@ -681,9 +710,11 @@ jobs:
           EDEL: target/release/edel
         run: sh ci/sign.sh
       - name: Hand the signed lists to the publish job
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-signed
+          # Only this run's publish job needs them.
+          retention-days: 1
           path: |
             out/release/release.toml
             out/release/release.toml.sig
@@ -716,7 +747,7 @@ jobs:
           path: out
       # The lists as the sign job signed them, over the build's unsigned
       # ones (M3.7).
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: edel-signed
           path: out
@@ -731,4 +762,5 @@ jobs:
       - name: Upload to the preview, or to a draft release for a tag
         env:
           GH_TOKEN: ${{ github.token }}
-        run: sh ci/release.sh publish "${{ github.ref_type == 'tag' && github.ref_name || 'preview' }}"
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'preview' }}
+        run: sh ci/release.sh publish "$TAG"

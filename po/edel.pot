@@ -3041,6 +3041,9 @@ msgstr ""
 msgid "installing an unsigned image; nothing checked where it came from"
 msgstr ""
 
+msgid "slot {running} has not finished starting yet, so slot {slot}, the version before it, is kept as the way back; run edel update again once Edel OS has started (edel status says when)"
+msgstr ""
+
 msgid "writing {location} to slot {slot} ({device})"
 msgstr ""
 
@@ -3408,6 +3411,12 @@ msgid "Only show the plan: every step, changing nothing"
 msgstr ""
 
 msgid "Check an image definition without building it"
+msgstr ""
+
+msgid "List the images' packages from Alpine community, docs/backports.md"
+msgstr ""
+
+msgid "Package lists the build wrote, for example out/*.packages"
 msgstr ""
 
 msgid "theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones"

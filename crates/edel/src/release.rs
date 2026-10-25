@@ -51,6 +51,20 @@ pub struct Manifest {
     /// The add-ons of this release (M7.2a), in the order they were given.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub addons: Vec<AddonEntry>,
+    /// Every other file of the release as it is downloaded (the disks, the
+    /// container image, the package lists), so the list's signature covers
+    /// them too (M8.10b, `docs/download.md`); machines never read it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub downloads: Vec<DownloadEntry>,
+}
+
+/// One file of a release's download page (M8.10b): its name beside
+/// `release.toml`, and the sha256 and size of its bytes as downloaded.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadEntry {
+    pub file: String,
+    pub sha256: String,
+    pub size: u64,
 }
 
 /// One add-on of a release (M7.2a): built for `image` (as `EDEL_IMAGE`) on
@@ -418,11 +432,13 @@ fn local_path(location: &str) -> &str {
     location.strip_prefix("file://").unwrap_or(location)
 }
 
-/// The HTTP client: a mirror that does not answer fails the download
-/// instead of hanging it (the image body itself may take as long as it
-/// takes).
-fn agent() -> ureq::Agent {
+/// The HTTP client for `location`: a mirror that does not answer fails the
+/// download instead of hanging it (the image body itself may take as long
+/// as it takes), and an `https://` download never follows a redirect to
+/// plain http (the review of 2026-10-25).
+fn agent(location: &str) -> ureq::Agent {
     ureq::Agent::config_builder()
+        .https_only(location.starts_with("https://"))
         .timeout_connect(Some(Duration::from_secs(30)))
         .timeout_recv_response(Some(Duration::from_secs(60)))
         .build()
@@ -446,7 +462,7 @@ fn could_not_read(path: &str) -> String {
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
-        let mut response = agent().get(location).call().with_context(|| {
+        let mut response = agent(location).get(location).call().with_context(|| {
             edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
         })?;
         Ok(response.body_mut().read_to_vec()?)
@@ -459,7 +475,7 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
 /// Opens an image for streaming, decompressing a `.gz` file on the way.
 fn open_image(location: &str) -> Result<Box<dyn Read>> {
     let raw: Box<dyn Read> = if is_url(location) {
-        let response = agent().get(location).call().with_context(|| {
+        let response = agent(location).get(location).call().with_context(|| {
             edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
         })?;
         Box::new(response.into_body().into_reader())
@@ -690,6 +706,7 @@ pub fn make(
     out_dir: Option<&Path>,
     images: &[PathBuf],
     addons: &[PathBuf],
+    downloads: &[PathBuf],
 ) -> Result<PathBuf> {
     if let Some(url) = base_url.filter(|u| !is_url(u)) {
         bail!(
@@ -772,6 +789,22 @@ pub fn make(
             size,
         });
     }
+    let mut download_entries = Vec::new();
+    for download in downloads {
+        if download.parent() != Some(dir) {
+            bail!("all images must be in one directory, beside release.toml");
+        }
+        let file = download
+            .file_name()
+            .context("a download needs a file name")?
+            .to_string_lossy()
+            .into_owned();
+        let (sha256, size) = sha256_reader(
+            &mut File::open(download)
+                .with_context(|| could_not_read(&download.display().to_string()))?,
+        )?;
+        download_entries.push(DownloadEntry { file, sha256, size });
+    }
     let date = Command::new("date")
         .args(["-u", "+%Y-%m-%dT%H:%M:%SZ"])
         .output()
@@ -785,6 +818,7 @@ pub fn make(
         expires: String::new(),
         images: entries,
         addons: addon_entries,
+        downloads: download_entries,
     };
     let out = out_dir.unwrap_or(dir);
     fs::create_dir_all(out)?;
@@ -870,6 +904,7 @@ mod tests {
                 expires: "2020-01-01".into(),
                 images: Vec::new(),
                 addons: Vec::new(),
+                downloads: Vec::new(),
             };
             let late = check_list(
                 &old,
@@ -1276,7 +1311,7 @@ mod tests {
     }
 
     #[test]
-    fn make_lists_an_add_on_with_its_summary_and_its_uncompressed_hash() {
+    fn make_lists_an_add_on_by_its_uncompressed_hash_and_a_download_by_its_own() {
         use std::io::Write;
         let dir = std::env::temp_dir().join(format!("edel-make-addon-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
@@ -1292,6 +1327,8 @@ mod tests {
         let addon = dir.join("edel-vm-x86_64.ci-hello.ext4.gz");
         gzip(&image, b"slot image");
         gzip(&addon, b"hello file");
+        let disk = dir.join("edel-vm-x86_64.img.gz");
+        gzip(&disk, b"whole disk");
         fs::write(
             dir.join("edel-vm-x86_64.ci-hello.toml"),
             "format = 1\nsummary = \"Says hello\"\n",
@@ -1304,9 +1341,18 @@ mod tests {
             None,
             std::slice::from_ref(&image),
             std::slice::from_ref(&addon),
+            std::slice::from_ref(&disk),
         )
         .unwrap();
         let list = parse_manifest(&fs::read_to_string(&path).unwrap()).unwrap();
+        // A download is listed by its bytes as downloaded, not unpacked.
+        let download = &list.downloads[0];
+        assert_eq!(download.file, "edel-vm-x86_64.img.gz");
+        assert_eq!(
+            download.sha256,
+            to_hex(&Sha256::digest(fs::read(&disk).unwrap()))
+        );
+        assert_eq!(download.size, fs::metadata(&disk).unwrap().len());
         let entry = &list.addons[0];
         assert_eq!(entry.name, "ci-hello");
         assert_eq!(entry.image, "edel-vm-x86_64");
