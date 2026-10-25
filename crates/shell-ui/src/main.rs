@@ -2237,6 +2237,18 @@ impl Shell {
         let (machine, person) = settings_texts();
         let without = styles::in_use_without_key(machine.as_deref(), person.as_deref());
         let value = (row != without).then_some(style);
+        // The style that applies anyway, with no line of the person's to
+        // take out: nothing to write (the whole-system review of 2026-10-25).
+        let no_line = || {
+            person
+                .as_deref()
+                .is_none_or(|text| settings::unset(text, styles::KEY).is_err())
+        };
+        if value.is_none() && no_line() {
+            eprintln!("edel-shell-ui: tiling style {style} chosen");
+            self.close_styles();
+            return;
+        }
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, styles::KEY, value) {
                 Ok(()) => eprintln!("edel-shell-ui: tiling style {style} chosen"),
