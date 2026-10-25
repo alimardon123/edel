@@ -15,6 +15,16 @@
 //!                                      every window fullscreen, game
 //!                                      mode on
 
+/// Every log line goes through `edel::session_log::write_line`, which drops
+/// a failed write instead of panicking as std's `eprintln!` does, so a full
+/// disk loses lines, never the session. Defined before the modules, it
+/// stands for `eprintln!` in all of them.
+macro_rules! eprintln {
+    ($($arg:tt)*) => {
+        edel::session_log::write_line(format_args!($($arg)*))
+    };
+}
+
 mod animate;
 mod backdrop;
 mod clipboard;
