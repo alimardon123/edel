@@ -49,6 +49,7 @@
 - [Review: AerynOS](REVIEW-aerynos.md)
 - [Review: postmarketOS](REVIEW-postmarketos.md)
 - [Review: this project, 2026-10-13](REVIEW-project-2026-10-13.md)
+- [Review: updater, guard and signing, 2026-10-25](REVIEW-signing-2026-10-25.md)
 - [Review: apps that last, and why new systems take years](REVIEW-apps-and-lessons.md)
 - [Review: everything walked as a newcomer](REVIEW-experience.md)
 - [Review: other projects' bugs, checked against ours](REVIEW-bugs.md)

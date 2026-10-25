@@ -27,6 +27,22 @@ if [ -n "${EDEL_RELEASE_KEY:-}" ]; then
 	trap 'rm -f out/keys/release.key' EXIT
 	(umask 077 && printf '%s\n' "$EDEL_RELEASE_KEY" >out/keys/release.key)
 	key=out/keys/release.key keys=images/keys signer=release
+	# The build ran untrusted code (cargo, apk), so the real key signs only
+	# the version and channel this run's ref gives (the review of
+	# 2026-10-25): a tag's own version on stable, else the preview.
+	if [ "${GITHUB_REF_TYPE:-}" = tag ]; then
+		want_channel=stable want_version=${GITHUB_REF_NAME#v}
+	else
+		want_channel=preview want_version=
+	fi
+	for manifest in out/release/release.toml out/channel/release.toml; do
+		channel=$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$manifest" | head -n 1)
+		version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$manifest" | head -n 1)
+		if [ "$channel" != "$want_channel" ] || { [ -n "$want_version" ] && [ "$version" != "$want_version" ]; }; then
+			echo "FAIL: $manifest is version $version on channel $channel, but this run signs ${want_version:-a preview} on $want_channel; nothing was signed"
+			exit 1
+		fi
+	done
 else
 	# Its own directory: verify reads every *.pub in it.
 	$edel release keygen out/keys/throwaway ci-release

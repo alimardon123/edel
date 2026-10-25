@@ -332,7 +332,7 @@ fn developer_layer() -> Result<()> {
 }
 
 /// Whether the kernel's command line marks a safe start (M7.1).
-fn is_safe_start(cmdline: &str) -> bool {
+pub(crate) fn is_safe_start(cmdline: &str) -> bool {
     cmdline
         .split_whitespace()
         .any(|word| word == crate::boot::SAFE_ARG)

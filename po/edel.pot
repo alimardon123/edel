@@ -3038,6 +3038,9 @@ msgstr ""
 msgid "installing an unsigned image; nothing checked where it came from"
 msgstr ""
 
+msgid "slot {running} has not finished starting yet, so slot {slot}, the version before it, is kept as the way back; run edel update again once Edel OS has started (edel status says when)"
+msgstr ""
+
 msgid "writing {location} to slot {slot} ({device})"
 msgstr ""
 

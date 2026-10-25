@@ -418,11 +418,13 @@ fn local_path(location: &str) -> &str {
     location.strip_prefix("file://").unwrap_or(location)
 }
 
-/// The HTTP client: a mirror that does not answer fails the download
-/// instead of hanging it (the image body itself may take as long as it
-/// takes).
-fn agent() -> ureq::Agent {
+/// The HTTP client for `location`: a mirror that does not answer fails the
+/// download instead of hanging it (the image body itself may take as long
+/// as it takes), and an `https://` download never follows a redirect to
+/// plain http (the review of 2026-10-25).
+fn agent(location: &str) -> ureq::Agent {
     ureq::Agent::config_builder()
+        .https_only(location.starts_with("https://"))
         .timeout_connect(Some(Duration::from_secs(30)))
         .timeout_recv_response(Some(Duration::from_secs(60)))
         .build()
@@ -446,7 +448,7 @@ fn could_not_read(path: &str) -> String {
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
-        let mut response = agent().get(location).call().with_context(|| {
+        let mut response = agent(location).get(location).call().with_context(|| {
             edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
         })?;
         Ok(response.body_mut().read_to_vec()?)
@@ -459,7 +461,7 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
 /// Opens an image for streaming, decompressing a `.gz` file on the way.
 fn open_image(location: &str) -> Result<Box<dyn Read>> {
     let raw: Box<dyn Read> = if is_url(location) {
-        let response = agent().get(location).call().with_context(|| {
+        let response = agent(location).get(location).call().with_context(|| {
             edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
         })?;
         Box::new(response.into_body().into_reader())
