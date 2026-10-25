@@ -6362,33 +6362,55 @@ version = "1.2"
         assert_eq!(again.file, first.file);
     }
 
+    /// Every place a key is written by hand but Settings' row (M6.11, the
+    /// key table proposal's option E), checked for every key at once, so
+    /// one run names all that a new key still lacks rather than one gap a
+    /// run. Settings' own test names a key with no row or `NO_ROW` line.
     #[test]
-    fn the_structs_have_every_key_in_keys_txt() {
-        for line in keys_txt() {
-            assert!(
-                KEYS.iter().any(|k| k.path == line),
-                "{line} is in tests/keys.txt but not in KEYS; a key is never removed within a format"
-            );
-            let mut ignored = Vec::new();
-            let _: SettingsFile =
-                serde_ignored::deserialize(Value::Table(with_keys([line])), |path| {
-                    ignored.push(path.to_string())
-                })
-                .unwrap();
-            assert_eq!(ignored, Vec::<String>::new(), "the structs lack {line}");
-        }
-    }
-
-    #[test]
-    fn keys_txt_lists_every_key() {
+    fn every_key_is_complete() {
         let listed = keys_txt();
-        for key in KEYS {
-            assert!(
-                listed.contains(&key.path),
-                "add {} to tests/keys.txt",
-                key.path
-            );
+        let docs = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/");
+        let settings_md = fs::read_to_string(format!("{docs}settings.md")).unwrap();
+        let defaults_md = fs::read_to_string(format!("{docs}defaults.md")).unwrap();
+        let mut paths: Vec<&str> = KEYS.iter().map(|key| key.path).collect();
+        let extra: Vec<&str> = listed
+            .iter()
+            .copied()
+            .filter(|line| !paths.contains(line))
+            .collect();
+        paths.extend(extra);
+        let mut gaps = Vec::new();
+        for path in paths {
+            let mut lacks = Vec::new();
+            if !KEYS.iter().any(|key| key.path == path) {
+                lacks.push(
+                    "its entry in KEYS, with its help (a key is never removed within a format)",
+                );
+            } else {
+                let mut ignored = Vec::new();
+                let _: SettingsFile =
+                    serde_ignored::deserialize(Value::Table(with_keys([path])), |at| {
+                        ignored.push(at.to_string())
+                    })
+                    .unwrap();
+                if !ignored.is_empty() {
+                    lacks.push("its field in the settings file's structs");
+                }
+            }
+            if !listed.contains(&path) {
+                lacks.push("its line in tests/keys.txt");
+            }
+            let row = format!("| `{path}` |");
+            if !settings_md.contains(&row) || !defaults_md.contains(&row) {
+                lacks.push(
+                    "its lines in docs/settings.md and docs/defaults.md (run EDEL_WRITE_DOCS=1 cargo test -p edel key_help)",
+                );
+            }
+            if !lacks.is_empty() {
+                gaps.push(format!("{path} lacks {}", lacks.join("; ")));
+            }
         }
+        assert!(gaps.is_empty(), "{}", gaps.join("\n"));
     }
 
     #[test]
