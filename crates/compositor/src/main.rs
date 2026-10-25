@@ -1,7 +1,7 @@
 //! `edel-compositor`: windows, floating and tiling, title bars, outputs and
-//! effects (ADR-002). It draws on the GPU through DRM (`drm.rs`), or, when
-//! started inside another desktop for development (built with the `winit`
-//! feature), in a window there (`winit.rs`).
+//! effects (ADR-002). One loop (`backend.rs`) draws on the GPU through DRM
+//! (`drm.rs`), or, when started inside another desktop for development
+//! (built with the `winit` feature), in a window there (`winit.rs`).
 //!
 //!     edel-compositor                  run until the window is closed
 //!     edel-compositor --bench          run for 5 s, then print the frame
@@ -27,6 +27,7 @@ macro_rules! eprintln {
 
 mod animate;
 mod backdrop;
+mod backend;
 mod clipboard;
 mod decoration;
 mod dmabuf;
@@ -111,10 +112,10 @@ fn main() -> ExitCode {
         session_log();
     }
     #[cfg(feature = "winit")]
-    let run = if inside { winit::run } else { drm::run };
+    let open: backend::Open = if inside { winit::open } else { drm::open };
     #[cfg(not(feature = "winit"))]
-    let run = drm::run;
-    match run(load_tokens(), bench, program) {
+    let open: backend::Open = drm::open;
+    match backend::run(load_tokens(), bench, program, &[open]) {
         Ok(()) => {
             if session {
                 eprintln!("{}", edel::session_log::ENDED);
