@@ -10,7 +10,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use inotify::{Inotify, WatchMask};
+use inotify::{EventMask, Inotify, WatchMask};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{Interest, LoopHandle, Mode, PostAction};
 
@@ -44,9 +44,16 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         let _ = fs::create_dir_all(dir);
     }
     let mut watched = 0;
-    for dir in [machine, person].into_iter().flatten() {
+    let mut person_watch = None;
+    for (dir, is_person) in [(machine, false), (person.clone(), true)] {
+        let Some(dir) = dir else { continue };
         match inotify.watches().add(&dir, mask) {
-            Ok(_) => watched += 1,
+            Ok(watch) => {
+                watched += 1;
+                if is_person {
+                    person_watch = Some(watch);
+                }
+            }
             Err(e) => eprintln!(
                 "edel-compositor: {}",
                 messages::folder_not_followed(&dir, e)
@@ -58,9 +65,10 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     }
     let inserted = handle.insert_source(
         Generic::new(inotify, Interest::READ, Mode::Level),
-        |_, inotify, state: &mut Edel| {
+        move |_, inotify, state: &mut Edel| {
             let mut buffer = [0u8; 4096];
             let mut changed = false;
+            let mut lost = false;
             loop {
                 // SAFETY: the descriptor is only read here, never closed.
                 match unsafe { inotify.get_mut() }.read_events(&mut buffer) {
@@ -68,6 +76,10 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
                         let mut any = false;
                         for event in events {
                             any = true;
+                            // A watched folder removed (a reset, or by
+                            // hand) ends its watch.
+                            lost |= event.mask.contains(EventMask::IGNORED)
+                                && person_watch.as_ref() == Some(&event.wd);
                             changed |= event
                                 .name
                                 .is_some_and(|n| places::is_settings_name(&n.to_string_lossy()));
@@ -82,6 +94,25 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
                         break;
                     }
                 }
+            }
+            // The person's folder is made and watched again, so changes
+            // keep applying at once (the whole-system review of 2026-10-25).
+            if let Some(dir) = person.as_ref().filter(|_| lost) {
+                let _ = fs::create_dir_all(dir);
+                // SAFETY: as above, the descriptor is not closed.
+                match unsafe { inotify.get_mut() }.watches().add(dir, mask) {
+                    Ok(watch) => {
+                        person_watch = Some(watch);
+                        eprintln!(
+                            "edel-compositor: {} was removed; following it again",
+                            dir.display()
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("edel-compositor: {}", messages::folder_not_followed(dir, e))
+                    }
+                }
+                changed = true;
             }
             if changed {
                 state.reload_settings();
