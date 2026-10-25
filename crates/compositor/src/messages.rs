@@ -166,6 +166,19 @@ pub fn screen_dark(name: &str, why: impl Display) -> String {
 pub const SCREEN_LIST: &str =
     "could not read the screens from the graphics card; the screens in use stay as they are";
 
+/// The graphics card the desktop draws on went away (the whole-system
+/// review of 2026-10-25).
+pub const GPU_GONE: &str = "the graphics card the desktop drew on went away; the session ends, and the login screen starts again on the card that is there now";
+
+/// The card's own driver took over from the firmware's framebuffer the
+/// session started on.
+pub fn gpu_taken_over(path: &Path) -> String {
+    format!(
+        "the graphics card's own driver started ({}) after the desktop began on the firmware's picture; the session ends, and the login screen starts again on the card's driver",
+        path.display()
+    )
+}
+
 /// Input devices do not come back after a terminal switch.
 pub const INPUT_LOST: &str =
     "the input devices did not come back; unplug and plug in the keyboard, or log in again";
