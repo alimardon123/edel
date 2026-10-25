@@ -519,6 +519,8 @@ impl Shell {
             Step::Act(Act::Undo) => self.undo_editor(),
             Step::Act(Act::Done) => self.close_editor(true),
             Step::Act(Act::Close) => self.close_editor(false),
+            Step::Act(Act::Add(tile)) => self.add_tile(tile),
+            Step::Act(Act::Remove(tile)) => self.remove_tile(tile),
             // The panels' drawer has no tabs (M5.10c6c3).
             Step::Tab(_) | Step::Nothing => {}
         }
@@ -882,9 +884,59 @@ impl Shell {
             }
             (None, _) => return,
         };
+        self.take_edit(&now, drag.name, done);
+    }
+
+    /// Return on drawer tile `tile`, whose widget no panel holds: the widget
+    /// goes at the end of the first panel, as a drop there puts it.
+    fn add_tile(&mut self, tile: usize) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let Some(name) = editor.view.tiles.get(tile).map(|t| t.name.clone()) else {
+            return;
+        };
+        let now = editor.now.clone();
+        let Some(first) = now.first() else {
+            return;
+        };
+        let to = Spot {
+            panel: 0,
+            group: Group::End,
+            index: first.end.len(),
+        };
+        let done = panel_edit::add_widget(&now, &name, to).map(|new| (new, "added"));
+        self.take_edit(&now, &name, done);
+    }
+
+    /// Return or Delete on drawer tile `tile`, whose widget a panel holds:
+    /// the widget is taken off, as a drag back to the drawer does.
+    fn remove_tile(&mut self, tile: usize) {
+        let Some(editor) = &self.editor else {
+            return;
+        };
+        let Some(name) = editor.view.tiles.get(tile).map(|t| t.name.clone()) else {
+            return;
+        };
+        let now = editor.now.clone();
+        let Some(at) = panel_edit::find(&now, &name) else {
+            return;
+        };
+        let done = panel_edit::remove_widget(&now, at).map(|new| (new, "took out"));
+        self.take_edit(&now, &name, done);
+    }
+
+    /// Shows the panels an edit of `name` made from `now`, logged, or says why
+    /// it was refused and leaves the panels as they are.
+    fn take_edit(
+        &mut self,
+        now: &[presets::Panel],
+        name: &str,
+        done: anyhow::Result<(Vec<presets::Panel>, &str)>,
+    ) {
         match done {
             Ok((new, what)) => {
-                eprintln!("edel-shell-ui: panel editor {what} {}", drag.name);
+                eprintln!("edel-shell-ui: panel editor {what} {name}");
                 if new != now {
                     self.take_panels(new);
                 }

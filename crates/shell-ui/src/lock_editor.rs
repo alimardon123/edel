@@ -888,7 +888,9 @@ fn drawer_key(view: &View, part: editor::Part, key: Key) -> Step {
         editor::Step::Act(Act::Undo) => Step::Undo,
         editor::Step::Act(Act::Done) => Step::Done,
         editor::Step::Act(Act::Close) => Step::Close,
-        editor::Step::Nothing => Step::Nothing,
+        // Return on a tile is this drawer's own, above; Delete takes no part
+        // from the drawer.
+        editor::Step::Act(Act::Add(_) | Act::Remove(_)) | editor::Step::Nothing => Step::Nothing,
     }
 }
 
