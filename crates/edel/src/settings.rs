@@ -2505,8 +2505,10 @@ pub fn write_all(path: &Path, edits: &[(&str, Option<&str>)]) -> Result<()> {
 }
 
 /// Writes a settings file's whole text to `path` (its folder made first),
-/// through a file beside it that is renamed over it, so a reader never sees
-/// half a file. The writers above and Settings' theme edits use it.
+/// through a file beside it that is synced and renamed over it, so a reader
+/// never sees half a file and a power cut leaves the old file or the new
+/// one. Every write of a settings file goes through it (ADR-010): the
+/// writers above, Settings' theme edits, `edel settings` and the installer.
 pub fn write_text(path: &Path, edited: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         fs::create_dir_all(dir).with_context(|| {
@@ -2516,8 +2518,13 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
             )
         })?;
     }
-    let new = path.with_extension("toml.edel-new");
-    let written = fs::write(&new, edited).and_then(|()| fs::rename(&new, path));
+    let new = PathBuf::from(format!("{}.edel-new", path.display()));
+    let written = fs::File::create(&new)
+        .and_then(|mut file| {
+            std::io::Write::write_all(&mut file, edited.as_bytes())?;
+            file.sync_all()
+        })
+        .and_then(|()| fs::rename(&new, path));
     // A full disk stops the write halfway (M8.11): the file kept as it was,
     // and the half-written one taken out, not left to fill the disk more.
     if written.is_err() {
@@ -2527,6 +2534,46 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
         trf(
             "could not write {path}",
             &[("path", &path.display().to_string())],
+        )
+    })
+}
+
+/// Makes the settings file at `from` the one at `to`, its own copy. A file
+/// in a newer format brings the `.v<N>` this release reads beside it, so
+/// this release reads it at `to` too (ADR-008): what `edel settings apply`
+/// keeps as the machine's file and `edel install` copies onto a new disk.
+pub fn copy_file(from: &Path, to: &Path) -> Result<()> {
+    let text = fs::read_to_string(from).with_context(|| could_not_read(from))?;
+    if format(&text).is_ok_and(|f| f > FORMAT) {
+        let older = versioned(from, FORMAT);
+        let older_text = fs::read_to_string(&older).with_context(|| could_not_read(&older))?;
+        write_text(&versioned(to, FORMAT), &older_text)?;
+    }
+    write_text(to, &text).with_context(|| {
+        trf(
+            "could not save {path}",
+            &[("path", &to.display().to_string())],
+        )
+    })
+}
+
+/// Moves the settings file at `from` to `to`, with every `.v<N>` beside it,
+/// the older formats first, so a file is never left without the format
+/// this release reads.
+pub fn move_file(from: &Path, to: &Path) -> Result<()> {
+    for format in 1..=FORMAT {
+        let old = versioned(from, format);
+        if old.exists() {
+            fs::rename(&old, versioned(to, format))?;
+        }
+    }
+    fs::rename(from, to).with_context(|| {
+        trf(
+            "could not rename {from} to {to}",
+            &[
+                ("from", &from.display().to_string()),
+                ("to", &to.display().to_string()),
+            ],
         )
     })
 }
@@ -3908,6 +3955,25 @@ pub fn write_slot_copy(root: &Path, text: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_moved_file_takes_its_older_formats_along() {
+        let dir = std::env::temp_dir().join(format!("edel-move-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let (from, to) = (dir.join("old.toml"), dir.join(crate::places::SETTINGS));
+        write_text(&from, "format = 99\n").unwrap();
+        write_text(&versioned(&from, FORMAT), &format!("format = {FORMAT}\n")).unwrap();
+        move_file(&from, &to).unwrap();
+        assert!(!from.exists() && !versioned(&from, FORMAT).exists());
+        assert_eq!(fs::read_to_string(&to).unwrap(), "format = 99\n");
+        assert!(versioned(&to, FORMAT).exists());
+        assert!(
+            !dir.join(format!("{}.edel-new", crate::places::SETTINGS))
+                .exists()
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn a_failed_write_keeps_the_file_and_leaves_no_half_file() {

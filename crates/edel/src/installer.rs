@@ -541,9 +541,7 @@ pub fn install(
             let (answers, password) = ask_questions()?;
             let text = answers.settings_text()?;
             let file = PathBuf::from(edel::places::INSTALL_ANSWERS);
-            fs::create_dir_all(edel::places::RUN_DIR)
-                .with_context(|| could_not_write(Path::new(&edel::places::RUN_DIR)))?;
-            fs::write(&file, text).with_context(|| could_not_write(Path::new(&file)))?;
+            edel::settings::write_text(&file, &text)?;
             (
                 file,
                 password.map(|p| (answers.user.unwrap_or_default(), p)),
@@ -1043,8 +1041,7 @@ fn write(
                 .strip_prefix(edel::places::DATA_MOUNT)
                 .unwrap_or(&machine),
         );
-        fs::create_dir_all(target.parent().unwrap_or(&data.0))?;
-        fs::copy(system_file, &target).with_context(|| could_not_write(Path::new(&target)))?;
+        edel::settings::copy_file(system_file, &target)?;
         // The mark that this disk was installed, so a USB disk holding it
         // is no stick: no live login, no install without a password
         // (M6.17).
