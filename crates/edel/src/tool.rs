@@ -1,6 +1,7 @@
 //! Running another program for a person's page (roadmap M5.8a): the one
-//! place `edel::network` and `edel::bluetooth` start `nmcli` and
-//! `bluetoothctl`, so both wait the same way and neither can hang a page.
+//! place `edel::network`, `edel::bluetooth` and `edel::sound` start
+//! `nmcli`, `bluetoothctl` and `wpctl`, so all wait the same way and none
+//! can hang a page or the panel.
 //! A program that does not answer within its time is killed, because
 //! `bluetoothctl` waits for ever for a `bluetoothd` that is not running.
 //! Std only.

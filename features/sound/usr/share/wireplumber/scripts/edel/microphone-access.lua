@@ -84,11 +84,17 @@ SimpleEventHook {
     if event:get_data ("permission-manager") ~= nil then
       return
     end
-    if client:get_property ("pipewire.access") ~= "flatpak" then
+    -- A Flatpak app, whether it speaks PipeWire or PulseAudio (whose
+    -- server here marks its clients in pipewire.client.access).
+    if client:get_property ("pipewire.access") ~= "flatpak"
+        and client:get_property ("pipewire.client.access") ~= "flatpak" then
       return
     end
-    -- A Flatpak app that manages sound (a mixer) keeps WirePlumber's way.
-    if client:get_property ("media.category") == "Manager" then
+    -- A Flatpak app that manages sound (a mixer) keeps WirePlumber's way,
+    -- unless it is refused the microphone: an app names its own category,
+    -- while its app id comes from its sandbox, so only the id decides.
+    if client:get_property ("media.category") == "Manager"
+        and not refused (client:get_property ("pipewire.access.portal.app_id")) then
       return
     end
     if event:get_data ("effective-access") == nil then

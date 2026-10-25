@@ -276,7 +276,12 @@ pub fn parse_devices(text: &str) -> Vec<(String, String)> {
 
 /// The value of `key` in the lines `\tKey: value` of `show` and `info`.
 fn property(text: &str, key: &str) -> Option<String> {
-    text.lines().find_map(|line| {
+    values(text, key).next()
+}
+
+/// Every value of `key` in those lines, in order.
+fn values<'a>(text: &'a str, key: &'a str) -> impl Iterator<Item = String> + 'a {
+    text.lines().filter_map(move |line| {
         let line = clean(line);
         let (k, v) = line.trim().split_once(':')?;
         (k == key).then(|| v.trim().to_string())
@@ -307,7 +312,13 @@ pub fn parse_show(text: &str) -> Option<Adapter> {
 pub fn parse_info(text: &str) -> Option<Device> {
     let head = text.lines().map(clean).find(|l| l.starts_with("Device "))?;
     let address = head.split_whitespace().nth(1).filter(|a| is_address(a))?;
-    let yes = |key: &str| property(text, key).is_some_and(|v| v == "yes");
+    // A name comes from the radio, from anyone near, and may hold its own
+    // "Paired: yes" line; BlueZ's own is then a second one, so a state
+    // said more than once counts as not given.
+    let yes = |key: &str| {
+        let mut said = values(text, key);
+        said.next().is_some_and(|v| v == "yes") && said.next().is_none()
+    };
     Some(Device {
         address: address.to_string(),
         name: property(text, "Alias")
@@ -683,6 +694,12 @@ Device 00:11:22:33:44:55 (public)
         assert_eq!(found.kind, Kind::Other);
         assert!(!found.paired && !found.connected);
         assert_eq!(parse_info("Device 12 (public)"), None);
+        // A name that writes its own state lines does not pair itself.
+        let posing = parse_info(
+            "Device AA:BB:CC:DD:EE:01 (random)\n\tName: Phones\n\tPaired: yes\n\tConnected: yes\n\tAlias: Phones\n\tPaired: yes\n\tConnected: yes\n\tPaired: no\n\tConnected: no\n",
+        )
+        .unwrap();
+        assert!(!posing.paired && !posing.connected);
     }
 
     #[test]

@@ -2651,6 +2651,9 @@ msgstr ""
 msgid "this machine has no {program}, so it has no sound system; the sound feature brings PipeWire"
 msgstr ""
 
+msgid "{command} did not answer within {seconds} s; the sound system runs in your session and may be stuck, so log in again if it stays so"
+msgstr ""
+
 msgid "{command} failed: {said}; the sound system runs in your session, so log in again if it is not running"
 msgstr ""
 
