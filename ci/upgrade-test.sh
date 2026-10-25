@@ -78,6 +78,9 @@ upgrade() {
 	old=$(os_value "$slot" VERSION_ID)
 	[ -f "$dir/$channel/release.toml" ] ||
 		fail "$name is version $old on channel '$channel', which this build makes no update list for (ci/build.sh)"
+	new=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$dir/$channel/release.toml" | head -n 1)
+	[ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)" = "$new" ] && [ "$old" != "$new" ] ||
+		fail "$name is version $old, not older than this build's $new, so no release would update it (set EDEL_VERSION for ci/build.sh)"
 	# A slot is shrunk to its files (M2.5); two more need a little room.
 	free=$(dumpe2fs -h "$slot" 2>/dev/null | sed -n 's/^Free blocks: *//p')
 	if [ "${free:-0}" -lt 256 ]; then resize2fs -f "$slot" >/dev/null 2>&1; fi
