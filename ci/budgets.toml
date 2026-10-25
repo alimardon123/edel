@@ -15,15 +15,17 @@ update_image_mib = 700
 # The one image's initramfs (`/boot/initramfs-lts`), in MiB, checked by
 # ci/initramfs-check.sh (M8.17e): it only finds and checks the root slot.
 # 19.3 MiB measured with Alpine 3.24's linux-lts and the image's mkinitfs
-# features on 2026-10-25, without kms, plus 10 percent; `du -m` rounds up.
+# features on 2026-10-25, without kms, and 20 MiB by CI the same day (`du -m`
+# rounds up), plus 10 percent.
 initramfs_mib = 22
 
 # What a person downloads to write a stick (M8.17f): the one image,
 # `out/edel-x86_64.img.gz`, its slot, the add-ons it carries and the
 # default apps on its data partition, in MiB. 2155 MiB measured on `main`
-# on 2026-10-25 (the `edel-try-x86_64` download); the first value is that,
-# to be lowered to this lane's first measurement plus 5 percent.
-stick_mib = 2155
+# on 2026-10-25 (the `edel-try-x86_64` download), and 2108.9 MiB in CI the
+# same day with M8.17e's smaller initramfs; the budget is that plus 2
+# percent, under main's, as the default apps from Flathub move it a little.
+stick_mib = 2150
 
 # The one image (images/edel.toml, M8.17) booted with no screen: CI's first
 # measurement on 2026-10-17 (1099 MiB, 4.34 s, 85 MiB) plus 20 percent. The
@@ -34,10 +36,12 @@ stick_mib = 2155
 # Since the laptops' firmware became hardware packs (M8.17d) the root is
 # CI's 355 MiB of 2026-10-24, AMD's graphics firmware in the base and in
 # the initramfs included, plus 5 percent, as `df` on one image does not
-# swing.
+# swing. Since the initramfs leaves out the graphics drivers and the sound
+# cards' and Intel's Wi-Fi drivers travel with their add-ons (M8.17e), it
+# is CI's 295 MiB of 2026-10-25 plus 5 percent.
 #
 # Used space on the root (`df -Pm /` in the guest), in MiB.
-headless_root_mib = 373
+headless_root_mib = 310
 
 # Seconds from the kernel's start to the confirmed slot (`/proc/uptime`
 # when edel-boot-ok runs), median of three boots with KVM.

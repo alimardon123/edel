@@ -29,8 +29,10 @@ needed_modules() {
 
 # The graphics drivers no initramfs may hold (M8.17e): the root loads them
 # at the start, with their firmware, and the firmware's picture lights the
-# screen until then. A driver here would start without its firmware.
-graphics="amdgpu i915 xe radeon nouveau virtio_gpu vmwgfx"
+# screen until then. A driver here would start without its firmware. The
+# virtual machines' (virtio_gpu, vmwgfx) need none and may stay, as the
+# kernel feature's modules list them.
+graphics="amdgpu i915 xe radeon nouveau"
 
 . ci/budgets.sh
 
