@@ -203,19 +203,22 @@ mod tests {
 
     #[test]
     fn find_takes_a_concrete_key_for_a_star() {
-        let about = |path: &str| {
+        // KEYS is a const, so the same line may sit at two addresses: the
+        // words tell the lines apart.
+        let help = |path: &str| {
             KEYS.iter()
                 .find(|key| key.path == path)
-                .map(|key| &key.about)
+                .map(|key| key.about.help)
         };
-        assert!(std::ptr::eq(
-            find("users.ali.admin").unwrap(),
-            about("users.*.admin").unwrap()
-        ));
-        assert!(std::ptr::eq(
-            find("layout.preset").unwrap(),
-            about("layout.preset").unwrap()
-        ));
+        assert_eq!(
+            find("users.ali.admin").map(|line| line.help),
+            help("users.*.admin")
+        );
+        assert_eq!(
+            find("layout.preset").map(|line| line.help),
+            help("layout.preset")
+        );
+        assert_ne!(help("users.*.admin"), help("layout.preset"));
         assert!(find("no.such").is_none());
     }
 
