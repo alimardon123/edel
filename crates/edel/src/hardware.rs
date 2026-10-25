@@ -185,6 +185,25 @@ pub fn devices() -> Vec<Device> {
     devices_in(Path::new(BUS), Path::new(DMI_MODALIAS))
 }
 
+/// The modaliases of the devices under `bus` that have no driver, each
+/// once, for the drivers an add-on brought (M8.17e).
+pub fn without_driver_in(bus: &Path) -> Vec<String> {
+    let mut found = Vec::new();
+    for bus_name in names(bus) {
+        let devices = bus.join(&bus_name).join("devices");
+        for name in names(&devices) {
+            let folder = devices.join(&name);
+            if let Some(modalias) = read_trimmed(&folder.join("modalias"))
+                && fs::symlink_metadata(folder.join("driver")).is_err()
+                && !found.contains(&modalias)
+            {
+                found.push(modalias);
+            }
+        }
+    }
+    found
+}
+
 /// The packs file's text: one `NAME`, a tab and the summary per pack. A
 /// tab or line break in a summary becomes a space, so a line is a pack.
 pub fn packs_text(packs: &[Pack]) -> String {
@@ -439,6 +458,22 @@ mod tests {
         );
         assert_eq!(fs::read_to_string(&probe).unwrap(), "0000:00:03.0");
         assert!(start_again_at(&bus, &[]).is_empty());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_the_devices_without_a_driver_are_asked_for_one() {
+        let dir = temp("without-driver");
+        let bus = dir.join("bus");
+        pci(&bus, "0000:00:1b.0", "pci:v00008086d00002668sv00001AF4");
+        pci(&bus, "0000:00:1c.0", "pci:v00008086d00002668sv00001AF4");
+        let bound = pci(&bus, "0000:00:04.0", "pci:v00001AF4d00001041sv00001AF4");
+        symlink("../../../drivers/virtio-pci", bound.join("driver")).unwrap();
+        assert_eq!(
+            without_driver_in(&bus),
+            ["pci:v00008086d00002668sv00001AF4"]
+        );
+        assert!(without_driver_in(&dir.join("none")).is_empty());
         fs::remove_dir_all(&dir).unwrap();
     }
 

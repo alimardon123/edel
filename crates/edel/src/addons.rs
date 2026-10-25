@@ -1508,7 +1508,10 @@ pub fn mount_all() -> Result<()> {
 /// sound devices, M8.17c) would reach only devices plugged in later, and
 /// maybe not even those, and its drivers (the desktop's sound, the Wi-Fi
 /// packs', M8.17e) would load for no device present at boot. Replaying the
-/// devices loads them, before the network or any session starts. `data::mount_data` calls it once `/etc` has its layer
+/// devices sets the rules; udev loads drivers only when a device arrives,
+/// so each device that has no driver is asked for its own by its modalias,
+/// as udev would have at its arrival, before the network or any session
+/// starts. `data::mount_data` calls it once `/etc` has its layer
 /// and the add-ons' accounts, so a rule's group (`seat`, which the desktop
 /// add-on brings) is known. Only where udev runs; a failure never stops
 /// the boot.
@@ -1517,13 +1520,26 @@ pub fn take_device_rules() {
         .iter()
         .map(|name| Path::new(places::ADDONS_RUN).join(name))
         .collect();
-    if brings_for_devices(&mounts) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
+    if brings(&mounts, DRIVERS) {
+        // Most devices without a driver have none anywhere (a bridge, a
+        // hub's port), so a failed call is no warning.
+        let waiting = edel::hardware::without_driver_in(Path::new(edel::hardware::BUS));
+        let served = waiting
+            .iter()
+            .filter(|modalias| run(&mut edel::base::load_driver(modalias)).is_ok())
+            .count();
+        println!(
+            "edel-data: {served} of the {} devices without a driver have one loaded now the add-ons are mounted",
+            waiting.len()
+        );
+    }
+    if brings(&mounts, DEVICE_RULES) && Path::new(edel::base::DEVICE_EVENTS_SOCKET).exists() {
         let taken = run(&mut edel::base::reread_device_rules())
             .and_then(|()| run(&mut edel::base::replay_device_events()));
         match taken {
-            Ok(()) => println!("edel-data: udev took the add-ons' device rules and drivers"),
+            Ok(()) => println!("edel-data: udev took the add-ons' device rules"),
             Err(err) => eprintln!(
-                "warning: edel-data: udev could not take the add-ons' device rules and drivers, so a device plugged in before this start may need plugging in again: {err:#}"
+                "warning: edel-data: udev could not take the add-ons' device rules, so a device plugged in before this start may need plugging in again: {err:#}"
             ),
         }
     }
@@ -1609,14 +1625,13 @@ pub fn has_services() -> bool {
 const DEVICE_RULES: &str = "usr/lib/udev/rules.d";
 const DRIVERS: &str = "usr/lib/modules";
 
-/// Whether one of the add-ons mounted at `mounts` brings rules for udev or
-/// kernel drivers, which udev's first pass over the devices at boot ran
-/// without, as it came before the add-ons' layer was over `/usr`.
-pub fn brings_for_devices(mounts: &[PathBuf]) -> bool {
+/// Whether one of the add-ons mounted at `mounts` brings something in
+/// `dir`, rules for udev (`DEVICE_RULES`) or kernel drivers (`DRIVERS`),
+/// which udev's first pass over the devices at boot ran without, as it
+/// came before the add-ons' layer was over `/usr`.
+fn brings(mounts: &[PathBuf], dir: &str) -> bool {
     mounts.iter().any(|mount| {
-        [DEVICE_RULES, DRIVERS].iter().any(|dir| {
-            fs::read_dir(mount.join(dir)).is_ok_and(|mut entries| entries.next().is_some())
-        })
+        fs::read_dir(mount.join(dir)).is_ok_and(|mut entries| entries.next().is_some())
     })
 }
 
@@ -1865,10 +1880,12 @@ mod tests {
         let sound = drivers.join(DRIVERS).join("6.12.1-0-lts/kernel/sound/hda");
         fs::create_dir_all(&sound).unwrap();
         fs::write(sound.join("snd-hda-intel.ko.gz"), "").unwrap();
-        assert!(brings_for_devices(&[without.clone(), drivers]));
-        assert!(brings_for_devices(&[without.clone(), with]));
-        assert!(!brings_for_devices(&[without, empty]));
-        assert!(!brings_for_devices(&[]));
+        assert!(brings(&[without.clone(), drivers.clone()], DRIVERS));
+        assert!(!brings(&[without.clone(), drivers], DEVICE_RULES));
+        assert!(brings(&[without.clone(), with.clone()], DEVICE_RULES));
+        assert!(!brings(&[without.clone(), with], DRIVERS));
+        assert!(!brings(&[without, empty], DEVICE_RULES));
+        assert!(!brings(&[], DRIVERS));
         fs::remove_dir_all(&root).unwrap();
     }
 

@@ -33,8 +33,8 @@ pub struct Feature {
     /// Folders of the kernel's drivers, under `lib/modules/VERSION/kernel`,
     /// that travel with this feature when an add-on brings it (M8.17e):
     /// the image builder takes them out of the slot and puts them in the
-    /// add-on, so a machine without it never carries them, and udev loads
-    /// them once the add-on is mounted, as `edel-data` replays the devices.
+    /// add-on, so a machine without it never carries them, and `edel-data`
+    /// loads them for the devices without a driver once it is mounted.
     /// The sound feature's `sound/pci`, Intel's pack's Wi-Fi drivers.
     #[serde(default)]
     pub kernel_drivers: Vec<String>,
