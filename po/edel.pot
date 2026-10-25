@@ -1178,10 +1178,19 @@ msgstr ""
 msgid "{why}; exporting only what the machine has"
 msgstr ""
 
+msgid "The look, layout, panels and shortcuts are {name}'s own."
+msgstr ""
+
 msgid "Files this machine changed in /etc, kept on /data and not described above:"
 msgstr ""
 
 msgid "Developer mode changed {count} files under /usr; they are not carried, as add-ons are the way to bring software to other machines."
+msgstr ""
+
+msgid "this person"
+msgstr ""
+
+msgid "could not read {path} as {name}, so the export leaves out their own settings"
 msgstr ""
 
 msgid "{id} is not a Flatpak app id, such as org.gnome.TextEditor"
@@ -2184,6 +2193,12 @@ msgid "{path} is format {format}, newer than this release reads, and there is no
 msgstr ""
 
 msgid "format {format} is newer than this release, so {older} was read instead"
+msgstr ""
+
+msgid "could not read {path}, so it was left as it was; fix or move it, then try again"
+msgstr ""
+
+msgid "another program is still changing {path}; try again"
 msgstr ""
 
 msgid "could not save {path}"

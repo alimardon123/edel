@@ -422,7 +422,8 @@ impl Files {
 
     /// Writes the person's whole file as `edit` makes it from its text
     /// (ADR-008: the library's writers do the editing, a file never half
-    /// written); a file with no text starts with the format line.
+    /// written, the file's lock held); a file with no text starts with the
+    /// format line, and one that cannot be read is refused.
     pub fn edit_person<E: std::fmt::Display>(
         &self,
         edit: impl FnOnce(&str) -> Result<String, E>,
@@ -431,12 +432,20 @@ impl Files {
             .person
             .as_ref()
             .ok_or("there is no home folder to keep your settings in")?;
-        let text = match std::fs::read_to_string(path) {
-            Ok(text) => text,
-            Err(_) => format!("format = {}\n", settings::FORMAT),
-        };
-        let edited = edit(&text).map_err(|e| format!("{e:#}"))?;
-        settings::write_text(path, &edited).map_err(|e| format!("{e:#}"))
+        // The library's edit takes its own errors; this one's are kept here
+        // and said as they are.
+        let mut refused = None;
+        let written = settings::edit(path, |text| match edit(text) {
+            Ok(edited) => Ok(edited),
+            Err(e) => {
+                refused = Some(format!("{e:#}"));
+                Ok(text.to_string())
+            }
+        });
+        match (refused, written) {
+            (Some(why), _) => Err(why),
+            (None, written) => written.map_err(|e| format!("{e:#}")),
+        }
     }
 
     /// The panels that apply, as shell-ui draws them (M5.31d): the person's
