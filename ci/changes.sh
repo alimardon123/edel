@@ -28,7 +28,7 @@ set -eu
 kind() {
 	case "$1" in
 	features/* | images/* | presets/* | design/* | crates/*/src/* | po/*) echo all ;;
-	docs/* | *.md | book.toml | SUMMARY.md | theme/* | LICENSE | .github/workflows/release.yml | .github/workflows/monthly.yml | ci/monthly.sh | ci/audit.sh | ci/audit-exceptions.toml | ci/site.sh | ci/one-place.sh | ci/seams.sh | ci/keys-check.sh | ci/defaults-diff.sh | ci/changes.sh) echo none ;;
+	docs/* | *.md | book.toml | SUMMARY.md | theme/* | LICENSE | .github/workflows/release.yml | .github/workflows/monthly.yml | .github/workflows/runtime-spike.yml | ci/runtime-spike/* | ci/monthly.sh | ci/audit.sh | ci/audit-exceptions.toml | ci/site.sh | ci/one-place.sh | ci/seams.sh | ci/keys-check.sh | ci/defaults-diff.sh | ci/changes.sh) echo none ;;
 	ci/boot-test.sh | ci/system-test.sh | ci/install-test.sh | ci/install-test/* | ci/ab-test.sh | ci/ab-test/* | ci/apps-test.sh | ci/apps-test/* | ci/flatpak-test.sh | ci/flatpak/* | ci/fleet-test.sh | ci/fleet/* | ci/server-test.sh | ci/server/* | ci/upgrade-test.sh | ci/upgrade-test/* | ci/updates-test.sh | ci/updates-test/* | ci/developer-test.sh | ci/developer-test/* | ci/vm-tests.sh | ci/sizes.sh | ci/https-serve.py | ci/initramfs-check.sh | ci/kernel-options.toml | ci/container-test.sh | ci/repro-check.sh | ci/keys-carried.sh | ci/release.sh | ci/channel.sh | ci/sign.sh | ci/package-report.sh | ci/bom.sh) echo vm ;;
 	ci/desktop-part.sh | ci/basics-test.sh | ci/release-checklist.sh) echo desktop ;;
 	*) echo all ;;
@@ -95,6 +95,7 @@ self_test() {
 	try "yes yes" "ci/sizes.sh ci/desktop-part.sh" "ci/sizes.sh and ci/desktop-part.sh"
 	try "yes yes" ".github/workflows/ci.yml" ".github/workflows/ci.yml"
 	try "yes yes" "Cargo.lock" "Cargo.lock"
+	try "no no" "ci/runtime-spike/all.sh .github/workflows/runtime-spike.yml" "the app runtime spike alone"
 	try "no no" "" "empty input"
 	# Which changes leave an earlier build's images good for a lane run.
 	for case in "yes ci/desktop-test.sh ci/budgets.toml docs/ROADMAP.md" "no ci/desktop-test.sh ci/desktop/seed.toml" "no ci/build.sh" "no crates/edel/src/main.rs" "yes "; do
