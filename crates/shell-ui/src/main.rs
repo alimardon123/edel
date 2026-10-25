@@ -15,11 +15,13 @@
 //! `launcher.rs`), and the status area's click opens quick settings
 //! (M5.9a, `quick.rs`). It exits when the compositor goes away.
 
-// One write per line, so the session's processes never mix their lines
-// in its log (edel::session_log::line).
+/// Every log line goes through `edel::session_log::write_line`, which drops
+/// a failed write instead of panicking as std's `eprintln!` does, so a full
+/// disk loses lines, never the session. Defined before the modules, it
+/// stands for `eprintln!` in all of them.
 macro_rules! eprintln {
     ($($arg:tt)*) => {
-        edel::eprintln_whole!($($arg)*)
+        edel::session_log::write_line(format_args!($($arg)*))
     };
 }
 
@@ -2235,6 +2237,18 @@ impl Shell {
         let (machine, person) = settings_texts();
         let without = styles::in_use_without_key(machine.as_deref(), person.as_deref());
         let value = (row != without).then_some(style);
+        // The style that applies anyway, with no line of the person's to
+        // take out: nothing to write (the whole-system review of 2026-10-25).
+        let no_line = || {
+            person
+                .as_deref()
+                .is_none_or(|text| settings::unset(text, styles::KEY).is_err())
+        };
+        if value.is_none() && no_line() {
+            eprintln!("edel-shell-ui: tiling style {style} chosen");
+            self.close_styles();
+            return;
+        }
         match places::person_settings().map(|p| places::found(&p)) {
             Some(path) => match settings::write(&path, styles::KEY, value) {
                 Ok(()) => eprintln!("edel-shell-ui: tiling style {style} chosen"),
@@ -3188,10 +3202,13 @@ impl KeyboardHandler for Shell {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
+        keyboard: &wl_keyboard::WlKeyboard,
         _: u32,
         event: KeyEvent,
     ) {
+        if self.not_the_locks(keyboard) {
+            return;
+        }
         if self.access.is_some() {
             self.access_key(event);
         } else if self.lock.is_some() {
@@ -3227,10 +3244,13 @@ impl KeyboardHandler for Shell {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
+        keyboard: &wl_keyboard::WlKeyboard,
         _: u32,
         event: KeyEvent,
     ) {
+        if self.not_the_locks(keyboard) {
+            return;
+        }
         if self.access.is_some() {
             self.access_key(event);
         } else if self.lock.is_some() {

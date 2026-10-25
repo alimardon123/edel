@@ -23,9 +23,10 @@ const GAP: f32 = 8.0;
 /// The room for "Panels changed", logical pixels; a longer text is cut
 /// short with an ellipsis.
 const TEXT: f32 = 128.0;
-/// The Undo pill as wide as the drawer's, and 36 px high; on a Compact
-/// screen 44 px high, where a finger lands.
+/// The Undo pill as wide as the drawer's, wider with the keys that press
+/// it, and 36 px high; on a Compact screen 44 px high, where a finger lands.
 const PILL_WIDTH: f32 = 88.0;
+const PILL_WITH_KEYS: f32 = 136.0;
 const PILL: f32 = 36.0;
 const PILL_TOUCH: f32 = 44.0;
 
@@ -38,6 +39,9 @@ pub struct View {
     pub hover: bool,
     pub width: u32,
     pub text: String,
+    /// The keys that press Undo (`shortcuts.undo_desktop_edit`), which
+    /// the pill shows; none when they are unbound.
+    pub keys: Option<String>,
     /// The look of the editor that opened the bar (`editor::style`): the
     /// lock screen's glass, or the desktop's colours.
     pub style: Style,
@@ -57,16 +61,30 @@ fn compact(view: &View) -> bool {
     view.width > 0 && view.width < quick::COMPACT_BELOW
 }
 
+/// The pill's words: "Undo", and the keys that press it when they are bound,
+/// "Undo (Super+Z)", so a keyboard user learns them where they are needed.
+pub fn label(view: &View) -> String {
+    match &view.keys {
+        Some(keys) => format!("{} ({keys})", tr("Undo")),
+        None => tr("Undo").to_string(),
+    }
+}
+
 /// The bar's size and where its parts lie: the text on the left, the pill
 /// on the right, both centred in the card's padding.
 pub fn layout(view: &View) -> Layout {
     let pill = if compact(view) { PILL_TOUCH } else { PILL };
-    let (w, h) = (PAD + TEXT + GAP + PILL_WIDTH + PAD, pill + 2.0 * PAD);
+    let pill_width = if view.keys.is_some() {
+        PILL_WITH_KEYS
+    } else {
+        PILL_WIDTH
+    };
+    let (w, h) = (PAD + TEXT + GAP + pill_width + PAD, pill + 2.0 * PAD);
     Layout {
         size: (w.ceil() as u32, h.ceil() as u32),
         card: Rect::new(0.0, 0.0, w, h),
         text: Rect::new(PAD, PAD, TEXT, pill),
-        undo: Rect::new(PAD + TEXT + GAP, PAD, PILL_WIDTH, pill),
+        undo: Rect::new(PAD + TEXT + GAP, PAD, pill_width, pill),
     }
 }
 
@@ -90,8 +108,12 @@ pub fn places(l: &Layout) -> String {
     format!("card {}x{}, undo {}", l.size.0, l.size.1, at(l.undo))
 }
 
-/// What a screen reader finds: the text, then the Undo button.
-pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
+/// Where `nodes` puts the Undo button, which a reader's press names.
+pub const UNDO_ITEM: usize = 1;
+
+/// What a screen reader finds: the text, then the Undo button, named as the
+/// pill is, keys and all.
+pub fn nodes(l: &Layout, view: &View) -> Vec<Item> {
     let at = |r: Rect| {
         accesskit::Rect::new(
             f64::from(r.x),
@@ -111,8 +133,8 @@ pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
         disabled: false,
     };
     vec![
-        item(Role::Label, text, at(l.text)),
-        item(Role::Button, tr("Undo"), at(l.undo)),
+        item(Role::Label, &view.text, at(l.text)),
+        item(Role::Button, &label(view), at(l.undo)),
     ]
 }
 
@@ -140,7 +162,7 @@ pub fn paint(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: Option<&mu
     edit_kit::button(
         pixmap,
         l.undo,
-        tr("Undo"),
+        &label(view),
         ButtonKind::Quiet,
         state,
         tokens,
@@ -160,6 +182,7 @@ mod tests {
             hover: false,
             width,
             text: "Panels changed".into(),
+            keys: None,
             style: Style::DESKTOP,
         }
     }
@@ -192,21 +215,41 @@ mod tests {
 
     #[test]
     fn the_nodes_are_a_label_and_an_undo_button() {
-        let nodes = nodes(&layout(&view(1280)), "Panels changed");
+        let nodes = nodes(&layout(&view(1280)), &view(1280));
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0].role, Role::Label);
         assert_eq!(nodes[0].label, "Panels changed");
-        assert_eq!(nodes[1].role, Role::Button);
-        assert_eq!(nodes[1].label, "Undo");
+        assert_eq!(nodes[UNDO_ITEM].role, Role::Button);
+        assert_eq!(nodes[UNDO_ITEM].label, "Undo");
     }
 
     #[test]
     fn the_lock_screens_bar_says_its_own_words() {
         let mut lock = view(1280);
         lock.text = "Lock screen changed".into();
-        let nodes = nodes(&layout(&lock), &lock.text);
+        let nodes = nodes(&layout(&lock), &lock);
         assert_eq!(nodes[0].label, "Lock screen changed");
         assert_eq!(nodes[1].label, "Undo");
+    }
+
+    #[test]
+    fn the_pill_names_the_keys_that_press_it_and_grows_for_them() {
+        let mut keyed = view(1280);
+        keyed.keys = Some("Super+Z".into());
+        assert_eq!(label(&keyed), "Undo (Super+Z)");
+        let l = layout(&keyed);
+        assert_eq!(l.size, (296, 60));
+        assert_eq!(l.undo, Rect::new(148.0, 12.0, 136.0, 36.0));
+        assert_eq!(nodes(&l, &keyed)[UNDO_ITEM].label, "Undo (Super+Z)");
+        if let Some(mut text) = fonts() {
+            let size = Tokens::built_in().panel_text_size as f32;
+            let width = text.line(&label(&keyed), size).width;
+            assert!(
+                width + 2.0 * PAD <= l.undo.w,
+                "Undo (Super+Z) is {width} px in a {} px pill",
+                l.undo.w
+            );
+        }
     }
 
     fn fonts() -> Option<Text> {
@@ -225,6 +268,7 @@ mod tests {
                 hover: true,
                 width: 1280,
                 text: "Panels changed".into(),
+                keys: Some("Super+Z".into()),
                 style: Style::DESKTOP,
             };
             let l = layout(&v);

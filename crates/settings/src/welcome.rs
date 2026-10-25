@@ -37,7 +37,7 @@ use edel::i18n::{n_, tr, trf};
 use edel::install::Question;
 use edel::settings::Source;
 
-use crate::files::Files;
+use crate::files::{self, Files};
 use crate::install;
 use crate::style::Theme;
 use crate::{actions, cmd, preview, region, status, widgets};
@@ -53,10 +53,6 @@ const STYLE_KEY: &str = "appearance.mode";
 /// machine's at the end (the installer writes them into the machine's file).
 const OWN_KEYS: [&str; 4] = [LANGUAGE_KEY, KEYBOARD_KEY, LAYOUT_KEY, STYLE_KEY];
 
-/// The keyboard layout the release gives (`region.keyboard`).
-const RELEASE_KEYBOARD: &str = "us";
-/// The style the release gives (`appearance.mode`).
-const RELEASE_STYLE: &str = "light";
 /// The styles, as `appearance.mode` takes them, in the order shown.
 const STYLES: [&str; 3] = ["light", "dark", "auto"];
 
@@ -1132,14 +1128,19 @@ fn language_picked(code: &str, problem: &gtk::Label) {
     }
     let keyboard = Files::here()
         .chosen(KEYBOARD_KEY)
-        .unwrap_or_else(|| RELEASE_KEYBOARD.to_string());
+        .unwrap_or_else(|| files::release_value(KEYBOARD_KEY));
     let old = edel::install::suggested_keyboard(&before);
     let follows = install::first_layout(&keyboard) == install::first_layout(&old);
     write(LANGUAGE_KEY, code, install::LANGUAGE, problem);
     if follows {
         let suggested = edel::install::suggested_keyboard(code);
         let layout = edel::install::keyboard_for(install::first_layout(&suggested));
-        write(KEYBOARD_KEY, &layout, RELEASE_KEYBOARD, problem);
+        write(
+            KEYBOARD_KEY,
+            &layout,
+            &files::release_value(KEYBOARD_KEY),
+            problem,
+        );
     }
 }
 
@@ -1150,7 +1151,7 @@ fn keyboard(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
     let rules = std::fs::read_to_string(edel::keyboard::RULES).ok();
     let applied = Files::here()
         .chosen(KEYBOARD_KEY)
-        .unwrap_or_else(|| RELEASE_KEYBOARD.to_string());
+        .unwrap_or_else(|| files::release_value(KEYBOARD_KEY));
     let suggested = install::first_layout(&applied).to_string();
     let (values, names) = install::keyboard_offer(rules.as_deref(), &suggested);
     let at = values
@@ -1169,7 +1170,12 @@ fn keyboard(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
         };
         if let Some(layout) = values.get(choice.selected()) {
             let value = edel::install::keyboard_for(layout);
-            write(KEYBOARD_KEY, &value, RELEASE_KEYBOARD, &problem);
+            write(
+                KEYBOARD_KEY,
+                &value,
+                &files::release_value(KEYBOARD_KEY),
+                &problem,
+            );
         }
     });
     let hint = gtk::Label::builder()
@@ -1241,12 +1247,12 @@ fn layout(column: &gtk::Box, problem: &gtk::Label, theme: &Rc<Theme>) -> Vec<Gro
     vec![("welcome presets places", items)]
 }
 
-/// The style page: Light, Dark and Automatic, the one in use chosen (Light
-/// when none is set). A choice writes `appearance.mode`.
+/// The style page: Light, Dark and Automatic, the one in use chosen (the
+/// release's, Automatic, when none is set). A choice writes `appearance.mode`.
 fn style(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
     let applied = Files::here()
         .chosen(STYLE_KEY)
-        .unwrap_or_else(|| RELEASE_STYLE.to_string());
+        .unwrap_or_else(|| files::release_value(STYLE_KEY));
     let labels = [tr("Light"), tr("Dark"), tr("Automatic")].map(|label| label.to_string());
     let segments = widgets::Segments::new(&labels);
     segments.set_selected(style_at(&applied));
@@ -1258,7 +1264,7 @@ fn style(column: &gtk::Box, problem: &gtk::Label) -> Vec<Group> {
             return;
         };
         if let Some(mode) = STYLES.get(segments.selected()) {
-            write(STYLE_KEY, mode, RELEASE_STYLE, &problem);
+            write(STYLE_KEY, mode, &files::release_value(STYLE_KEY), &problem);
         }
     });
     column.append(&segments.widget());
@@ -1310,6 +1316,15 @@ fn log_places(root: &gtk::Box, groups: Vec<Group>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_welcome_starts_from_the_releases_style_and_keyboard() {
+        // Automatic, as Appearance shows for the same file: picking Light
+        // must write it, or the screen turns dark at sunset.
+        assert_eq!(files::release_value(STYLE_KEY), "auto");
+        assert_eq!(files::release_value(KEYBOARD_KEY), "us");
+        assert_eq!(style_at(&files::release_value(STYLE_KEY)), 2);
+    }
 
     #[test]
     fn a_person_s_welcome_asks_language_keyboard_layout_style_then_done() {

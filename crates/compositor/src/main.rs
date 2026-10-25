@@ -1,7 +1,7 @@
 //! `edel-compositor`: windows, floating and tiling, title bars, outputs and
-//! effects (ADR-002). It draws on the GPU through DRM (`drm.rs`), or, when
-//! started inside another desktop for development (built with the `winit`
-//! feature), in a window there (`winit.rs`).
+//! effects (ADR-002). One loop (`backend.rs`) draws on the GPU through DRM
+//! (`drm.rs`), or, when started inside another desktop for development
+//! (built with the `winit` feature), in a window there (`winit.rs`).
 //!
 //!     edel-compositor                  run until the window is closed
 //!     edel-compositor --bench          run for 5 s, then print the frame
@@ -15,16 +15,19 @@
 //!                                      every window fullscreen, game
 //!                                      mode on
 
-// One write per line, so the session's processes never mix their lines
-// in its log (edel::session_log::line).
+/// Every log line goes through `edel::session_log::write_line`, which drops
+/// a failed write instead of panicking as std's `eprintln!` does, so a full
+/// disk loses lines, never the session. Defined before the modules, it
+/// stands for `eprintln!` in all of them.
 macro_rules! eprintln {
     ($($arg:tt)*) => {
-        edel::eprintln_whole!($($arg)*)
+        edel::session_log::write_line(format_args!($($arg)*))
     };
 }
 
 mod animate;
 mod backdrop;
+mod backend;
 mod clipboard;
 mod decoration;
 mod dmabuf;
@@ -44,6 +47,7 @@ mod input;
 mod keyboard;
 mod layers;
 mod lock;
+mod off_loop;
 mod outputs;
 mod pointer;
 mod program;
@@ -109,10 +113,10 @@ fn main() -> ExitCode {
         session_log();
     }
     #[cfg(feature = "winit")]
-    let run = if inside { winit::run } else { drm::run };
+    let open: backend::Open = if inside { winit::open } else { drm::open };
     #[cfg(not(feature = "winit"))]
-    let run = drm::run;
-    match run(load_tokens(), bench, program) {
+    let open: backend::Open = drm::open;
+    match backend::run(load_tokens(), bench, program, &[open]) {
         Ok(()) => {
             if session {
                 eprintln!("{}", edel::session_log::ENDED);

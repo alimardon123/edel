@@ -26,7 +26,7 @@
 #                    edel::base (crates/edel/src/base.rs), so the base
 #                    stays replaceable (ADR-010, roadmap M6.17)
 #
-#   the programs     the compositor and shell-ui run only the programs
+#   the programs     the compositor, shell-ui and Settings run only the programs
 #                    allowed_program() lists, each with its reason and what
 #                    happens where it is missing, so the desktop's run-time
 #                    ties are written down like its build-time ones (M6.17);
@@ -213,15 +213,18 @@ allowed_program() {
 	# Tells foot that the colour scheme changed (procps or busybox); without
 	# it a terminal follows at its next start.
 	"shell-ui pkill") return 0 ;;
+	# shell-ui draws the Lock screen page's look pictures; without it the
+	# page shows empty frames.
+	"settings edel-shell-ui") return 0 ;;
 	*) return 1 ;;
 	esac
 }
 
-# check_programs ROOT: the compositor and shell-ui run only what
+# check_programs ROOT: the compositor, shell-ui and Settings run only what
 # allowed_program() lists, read from each Command::new: a "NAME", or a
 # constant of the same file, else of the part, holding one.
 check_programs() {
-	for part in compositor shell-ui; do
+	for part in compositor shell-ui settings; do
 		files=$(cd "$1" && find "crates/$part/src" -name '*.rs' -type f | sort)
 		all=$(for file in $files; do code_of "$1/$file"; done)
 		for file in $files; do
@@ -337,7 +340,7 @@ if [ "${1:-}" = --self-test ]; then
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work and run only the programs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
+	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
 else
 	exit 1
 fi

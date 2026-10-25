@@ -759,6 +759,9 @@ commands() {
 			;;
 		'everyday off') pkill -f '[e]del-testclient --lock-pointer'; pkill -f '[e]del-testclient --inhibit-idle' ;;
 		idle) say "idle_inhibitors $(sed -n 's/^idle_inhibitors = //p' "$state_file")" ;;
+		# A sandboxed window and a plain one asking to come forward on
+		# their own (the whole-system review of 2026-10-25).
+		activation) activation_asked & ;;
 		# The globals a plain client and a sandboxed one see (M5.22).
 		globals)
 			say "plain $(as_ci edel-testclient --globals </dev/null 2>&1)"
@@ -2061,6 +2064,33 @@ four_windows() {
 	for n in 1 2 3 4; do
 		as_ci edel-testclient --size 200x150 --colour 3366cc --title "s$n" </dev/null >/dev/null 2>&1 &
 		shown $((${before:-0} + n))
+	done
+}
+
+# activation_asked: for a sandboxed window, then a plain one, opens it,
+# then a window to type in, which takes the keyboard, then lets the first
+# ask to come forward with a token it made itself, and says which window
+# has the keyboard then: the typing one after the sandboxed ask, the asker
+# after the plain one (the whole-system review of 2026-10-25).
+activation_asked() {
+	for kind in sandboxed plain; do
+		go=/tmp/edel-activate-$kind
+		rm -f "$go"
+		flag=
+		[ "$kind" = sandboxed ] && flag=--sandboxed
+		before=$(grep -c '^\[\[windows\]\]' "$state_file" 2>/dev/null || true)
+		as_ci edel-testclient $flag --size 200x150 --colour 446688 --title "pull-$kind" --activate "$go" </dev/null >/dev/null 2>&1 &
+		shown $((${before:-0} + 1))
+		as_ci edel-testclient --size 200x150 --colour 884466 --title "typing-$kind" </dev/null >/dev/null 2>&1 &
+		shown $((${before:-0} + 2))
+		sleep 1
+		say "activation $kind before $(as_ci edel-testclient --toplevels </dev/null 2>&1)"
+		touch "$go"
+		sleep 2
+		say "activation $kind after $(as_ci edel-testclient --toplevels </dev/null 2>&1)"
+		pkill -f "[e]del-testclient .*--title pull-$kind"
+		pkill -f "[e]del-testclient .*--title typing-$kind"
+		sleep 1
 	done
 }
 

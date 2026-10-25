@@ -18,12 +18,12 @@
 //! never do (M6.17, ADR-010; `ci/seams.sh` checks it).
 
 // One write per line, so the session's processes never mix their lines
-// in its log (session_log::line). Without the `os` feature no module
+// in its log (session_log::write_line). Without the `os` feature no module
 // writes a line.
 #[allow(unused_macros)]
 macro_rules! eprintln {
     ($($arg:tt)*) => {
-        crate::eprintln_whole!($($arg)*)
+        crate::session_log::write_line(format_args!($($arg)*))
     };
 }
 

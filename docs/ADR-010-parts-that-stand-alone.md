@@ -73,7 +73,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | Words people read, in English | the code that shows them, marked with `edel::i18n`'s `tr` (M5.24a) | `po/PART.pot` (generated), which translators' `LANG/PART.po` follow |
 | The channels and where each one's release list is served | `edel::settings::CHANNELS`, `edel::release::channel_list` (M5.8c) | `edel update`, Settings' Channel row |
 | Commands and their help | `edel`'s command table (`crates/edel/src/main.rs`) | a command reference (generated, M5.27) |
-| What each setting means, its default and who decides it (M6.11) | `edel::key_help` | `edel settings get`, `docs/settings.md` and `docs/defaults.md` (generated) |
+| What each setting means, its default and who decides it (M6.11) | each key's entry in `edel::settings::KEYS`, read through `edel::key_help` | `edel settings get`, `docs/settings.md` and `docs/defaults.md` (generated) |
 | The `edel` command each Settings button runs, and its page (M6.11) | `crates/settings/src/actions.rs` | the Settings pages; a test holds it to the command reference |
 | Which key a Settings row shows, and why a key has none (M6.11) | `crates/settings/src/rows.rs` | the Settings pages and search; a test holds it to the key table |
 | The Alpine branch and the build container | one owner M5.27 names (today written in 24 files) | the image definitions, CI, docs |

@@ -683,6 +683,10 @@ pub const ROWS: &[Row] = &[
         key: "shortcuts.clipboard_history",
         title: n_("Clipboard history"),
     },
+    Row {
+        key: "shortcuts.undo_desktop_edit",
+        title: n_("Undo desktop edit"),
+    },
     // Whether the clipboard keeps what is copied (M7.13), beside its shortcut.
     Row {
         key: edel::settings::CLIPBOARD_HISTORY,

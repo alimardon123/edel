@@ -27,9 +27,10 @@ const INTRO: &str = n_("The keys for each action. Change one and press the keys 
 
 /// The action whose row the clipboard's switch follows (M7.13).
 const CLIPBOARD_ACTION: &str = "clipboard_history";
-/// What the clipboard switch says under its title (M7.13).
+/// What the clipboard switch says under its title (M7.13), with the keys
+/// the desktop follows for the clipboard history action.
 const HISTORY_WHAT: &str =
-    n_("Keeps the last texts and pictures you copied, in memory only, for Super+V");
+    n_("Keeps the last texts and pictures you copied, in memory only, for {keys}");
 
 /// The title of the one closed row that holds the 18 numbered workspace
 /// keys, the first action of which is `go_to_workspace_1`.
@@ -97,9 +98,10 @@ impl Ui {
             history.switch.set_active(history_on(&files));
             history.quiet.set(false);
             let source = files.source(CLIPBOARD_HISTORY);
+            let what = history_what(&keys_of(&files, CLIPBOARD_ACTION));
             let line_text = match rows::note(&source, false) {
-                Some(note) => format!("{} · {note}", tr(HISTORY_WHAT)),
-                None => tr(HISTORY_WHAT).to_string(),
+                Some(note) => format!("{what} · {note}"),
+                None => what,
             };
             history.row.subtitle.set_label(&line_text);
             history.row.reset.set_visible(rows::resettable(&source));
@@ -119,6 +121,22 @@ impl Ui {
         }
         self.update();
     }
+}
+
+/// The keys of `action` as the desktop follows them (the person's over the
+/// machine's over the release's), or None, as this page shows an action
+/// with no keys, when they took them off. Every sentence that names a key
+/// takes it from here, so a rebound key is never shown wrong (the
+/// whole-system review of 2026-10-25).
+pub fn keys_of(files: &Files, action: &str) -> String {
+    files
+        .shortcut(action)
+        .unwrap_or_else(|| tr("None").to_string())
+}
+
+/// What the clipboard switch says, with `keys` for the clipboard history.
+fn history_what(keys: &str) -> String {
+    trf(HISTORY_WHAT, &[("keys", keys)])
 }
 
 /// Whether the clipboard history is on: the person's file over the machine's,
@@ -736,5 +754,12 @@ mod tests {
             ACTIONS.len(),
             "one row per action"
         );
+    }
+
+    #[test]
+    fn history_what_names_the_rebound_keys() {
+        let words = history_what("Super+Shift+V");
+        assert!(words.contains("Super+Shift+V"), "{words}");
+        assert!(!words.contains("Super+V"), "{words}");
     }
 }

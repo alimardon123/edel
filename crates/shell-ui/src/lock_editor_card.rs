@@ -1684,25 +1684,7 @@ impl Shell {
             return self.write_desktop_editor(le);
         }
         let (machine, person) = settings_texts();
-        let person_lock: LockScreen = person
-            .as_deref()
-            .and_then(|text| settings::read(text).ok())
-            .map(|read| read.file.lock_screen)
-            .unwrap_or_default();
-        let before = LockBefore {
-            dim: person_lock.dim.map(|dim| dim.to_string()),
-            looks: person_lock
-                .looks
-                .as_ref()
-                .and_then(|own| toml::Value::try_from(own).ok())
-                .map(|value| value.to_string()),
-            look: person_lock.look.clone(),
-            parts: person_lock
-                .parts
-                .as_deref()
-                .and_then(|parts| lock_screen::widgets_value(parts).ok()),
-            background: person_lock.background.clone(),
-        };
+        let before = lock_before(person.as_deref());
         let lock = lock::lock_settings(machine.as_deref(), person.as_deref());
         let lines = match lock_editor::written(&le.view, &lock) {
             Ok(lines) => lines,
@@ -1757,30 +1739,13 @@ impl Shell {
                 undo: Undo::LockScreen(before),
             });
         }
-        let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
-            eprintln!("edel-shell-ui: {}", messages::LOCK_SCREEN_NO_HOME);
-            return None;
-        };
-        let mut words = Vec::new();
-        for (key, new, _, word) in changed {
-            if let Err(e) = settings::write(&path, key, new.as_deref()) {
-                eprintln!(
-                    "edel-shell-ui: {}",
-                    messages::lock_screen_not_kept(format!("{e:#}"))
-                );
-                return None;
-            }
-            words.push(format!(
-                "{word} {}",
-                if new.is_some() {
-                    "written"
-                } else {
-                    "taken out"
-                }
-            ));
-        }
+        let edits: Vec<_> = changed
+            .into_iter()
+            .map(|(key, new, _, word)| (key, new, word))
+            .collect();
+        let what = write_lock_lines(edits)?;
         Some(Saved {
-            what: words.join("; "),
+            what,
             undo: Undo::LockScreen(before),
         })
     }
@@ -1924,51 +1889,103 @@ impl Shell {
             .map_or(0, |p| self.above_panel(p.style, p.size, p.floating, room))
     }
 
-    /// Writes the person's `lock_screen.widgets` as `value` (the list as
-    /// `lock_screen::widgets_value` writes it), or takes the line out for None,
-    /// for Undo on the Undo bar (M5.10c6b). Returns what it did, or None after
-    /// logging why it could not.
-    /// Puts the three lines of the person's file back as Done found them
-    /// (M5.10c6c3), each line written or taken out as it was. Returns the
-    /// words the log says; None when a write fails, which is logged.
+    /// Puts the lines of the person's file back as Done found them
+    /// (M5.10c6c3), for Undo on the Undo bar: only the lines that differ
+    /// now, in one write, so a line the file never had is not taken out
+    /// again, and Undo applies whole or not at all (the whole-system review
+    /// of 2026-10-25). Returns the words the log says; None when the write
+    /// fails, which is logged.
     pub(crate) fn save_lock_lines(&self, before: &LockBefore) -> Option<String> {
-        let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
-            eprintln!("edel-shell-ui: {}", messages::LOCK_SCREEN_NO_HOME);
-            return None;
-        };
-        let lines = [
-            (LOOKS, before.looks.as_deref(), LOOKS),
-            (LOOK, before.look.as_deref(), LOOK),
+        let (_, person) = settings_texts();
+        let now = lock_before(person.as_deref());
+        let edits = [
+            (LOOKS, &before.looks, &now.looks, LOOKS),
+            (LOOK, &before.look, &now.look, LOOK),
             (
                 lock_screen::WIDGETS,
-                before.parts.as_deref(),
+                &before.parts,
+                &now.parts,
                 "lock_screen.widgets",
             ),
-            (WALLPAPER, before.background.as_deref(), WALLPAPER),
+            (WALLPAPER, &before.background, &now.background, WALLPAPER),
             (
                 lock_screen::DIM_KEY,
-                before.dim.as_deref(),
+                &before.dim,
+                &now.dim,
                 lock_screen::DIM_KEY,
             ),
-        ];
-        let mut words = Vec::new();
-        for (key, value, word) in lines {
-            if let Err(e) = settings::write(&path, key, value) {
-                eprintln!(
-                    "edel-shell-ui: {}",
-                    messages::lock_screen_not_kept(format!("{e:#}"))
-                );
-                return None;
-            }
-            words.push(format!(
+        ]
+        .into_iter()
+        .filter(|(_, old, now, _)| old != now)
+        .map(|(key, old, _, word)| (key, old.clone(), word))
+        .collect();
+        write_lock_lines(edits)
+    }
+}
+
+/// The person's lock screen lines in `person`, their file's text, as Done
+/// and Undo compare them.
+fn lock_before(person: Option<&str>) -> LockBefore {
+    let person_lock: LockScreen = person
+        .and_then(|text| settings::read(text).ok())
+        .map(|read| read.file.lock_screen)
+        .unwrap_or_default();
+    LockBefore {
+        dim: person_lock.dim.map(|dim| dim.to_string()),
+        looks: person_lock
+            .looks
+            .as_ref()
+            .and_then(|own| toml::Value::try_from(own).ok())
+            .map(|value| value.to_string()),
+        look: person_lock.look.clone(),
+        parts: person_lock
+            .parts
+            .as_deref()
+            .and_then(|parts| lock_screen::widgets_value(parts).ok()),
+        background: person_lock.background.clone(),
+    }
+}
+
+/// Writes `edits` (each a key, its new line or None to take it out, and the
+/// word the log says) to the person's file in one write, so they apply
+/// whole or not at all. The looks are written before the look line that
+/// names one of them, and taken out after it. Returns the words the log
+/// says; None when the write fails, which is logged.
+fn write_lock_lines(mut edits: Vec<(&str, Option<String>, &str)>) -> Option<String> {
+    let Some(path) = places::person_settings().map(|p| places::found(&p)) else {
+        eprintln!("edel-shell-ui: {}", messages::LOCK_SCREEN_NO_HOME);
+        return None;
+    };
+    let at = |edits: &[(&str, Option<String>, &str)], key| edits.iter().position(|e| e.0 == key);
+    if let (Some(looks), Some(look)) = (at(&edits, LOOKS), at(&edits, LOOK)) {
+        if edits[looks].1.is_none() && looks < look {
+            let line = edits.remove(look);
+            edits.insert(looks, line);
+        }
+    }
+    let lines: Vec<(&str, Option<&str>)> = edits
+        .iter()
+        .map(|(key, value, _)| (*key, value.as_deref()))
+        .collect();
+    if let Err(e) = settings::write_all(&path, &lines) {
+        eprintln!(
+            "edel-shell-ui: {}",
+            messages::lock_screen_not_kept(format!("{e:#}"))
+        );
+        return None;
+    }
+    let words: Vec<String> = edits
+        .iter()
+        .map(|(_, value, word)| {
+            format!(
                 "{word} {}",
                 if value.is_some() {
                     "written"
                 } else {
                     "taken out"
                 }
-            ));
-        }
-        Some(words.join("; "))
-    }
+            )
+        })
+        .collect();
+    Some(words.join("; "))
 }

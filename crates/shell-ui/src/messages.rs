@@ -454,6 +454,12 @@ pub fn screenshot_not_saved(why: impl Display) -> String {
 /// so the app that asked takes no picture.
 pub const ACCESS_NOT_SHOWN: &str = "could not draw the dialog asking whether an app may take a screenshot; the request was cancelled, so no picture is taken";
 
+/// More apps' questions are waiting than are kept: the newest is cancelled,
+/// so an app asking in a loop cannot fill the screen with questions.
+pub fn access_too_many(app: &str, waiting: usize) -> String {
+    format!("{app}'s question was cancelled: {waiting} are already waiting to be answered")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -462,6 +468,13 @@ mod tests {
     fn the_access_dialog_that_cannot_be_drawn_says_what_follows() {
         assert!(ACCESS_NOT_SHOWN.contains("the request was cancelled"));
         assert!(ACCESS_NOT_SHOWN.ends_with("no picture is taken"));
+    }
+
+    #[test]
+    fn a_question_past_the_waiting_ones_says_which_app_and_why() {
+        let line = access_too_many("org.example.Shot", 4);
+        assert!(line.starts_with("org.example.Shot's question was cancelled"));
+        assert!(line.contains("4 are already waiting"));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! The wallpaper behind the windows (M5.10c4b): `edel::wallpapers` says
 //! what `appearance.wallpaper` shows, and this turns a picture, read and
 //! fitted to a screen by `edel::pictures` as CSS `object-fit: cover` does,
-//! into the buffers the screens draw. Each screen keeps
+//! on a thread (`off_loop.rs`), into the buffers the screens draw. Each screen keeps
 //! its picture's buffer until the picture or the screen's size changes, so
 //! an idle desktop draws nothing.
 
@@ -59,6 +59,9 @@ pub struct Shown {
     pub screens: HashMap<(String, String), Screen>,
     /// Whether the first settings load has said what is shown.
     pub announced: bool,
+    /// Counts the settings loads, so a picture read for an earlier one is
+    /// not shown.
+    generation: u64,
 }
 
 impl Shown {
@@ -70,6 +73,7 @@ impl Shown {
             logged: Vec::new(),
             screens: HashMap::new(),
             announced: false,
+            generation: 0,
         }
     }
 
@@ -130,6 +134,7 @@ impl Edel {
             .collect();
         self.wallpaper.what = what;
         self.wallpaper.screens.clear();
+        self.wallpaper.generation += 1;
         self.wallpaper.announced = true;
         for index in 0..self.desks.count() {
             self.note_workspace(index);
@@ -194,7 +199,8 @@ impl Edel {
     }
 
     /// The picture of `path` on `output`, made again only when the screen's
-    /// physical size changes (`Screen::size`).
+    /// physical size changes (`Screen::size`). It is read and fitted off
+    /// the frame (`off_loop`); until it comes the background shows.
     fn picture_elements(
         &mut self,
         renderer: &mut GlesRenderer,
@@ -214,8 +220,21 @@ impl Edel {
             .get(&key)
             .is_none_or(|s| s.size != size)
         {
-            let screen = load_screen(path, &name, size);
-            self.wallpaper.screens.insert(key.clone(), screen);
+            self.wallpaper.screens.insert(
+                key.clone(),
+                Screen {
+                    size,
+                    ..Default::default()
+                },
+            );
+            let (generation, key, path) =
+                (self.wallpaper.generation, key.clone(), path.to_path_buf());
+            self.off_loop("wallpaper", move || {
+                let pixmap = load_pixmap(&path, &name, size);
+                Box::new(move |state: &mut Edel| {
+                    state.wallpaper_read(generation, key, size, pixmap)
+                })
+            });
         }
         let Some(buffer) = self
             .wallpaper
@@ -244,27 +263,48 @@ impl Edel {
     }
 }
 
+impl Edel {
+    /// Shows the picture read for screen `key` at `size`, unless the
+    /// settings or the screen changed meanwhile.
+    fn wallpaper_read(
+        &mut self,
+        generation: u64,
+        key: (String, String),
+        size: (u32, u32),
+        pixmap: Option<Pixmap>,
+    ) {
+        if generation != self.wallpaper.generation {
+            return;
+        }
+        let Some(screen) = self
+            .wallpaper
+            .screens
+            .get_mut(&key)
+            .filter(|s| s.size == size)
+        else {
+            return;
+        };
+        screen.picture = pixmap.as_ref().map(painted);
+        self.repaint = true;
+        self.dirty = true;
+    }
+}
+
 /// `path` made into `size` pixels for the screen `name`, logging what
-/// happened; a picture that cannot be read is kept as `None`.
-fn load_screen(path: &Path, name: &str, size: (u32, u32)) -> Screen {
+/// happened; a picture that cannot be read is `None`, so the background
+/// colour shows and the picture is not read again.
+fn load_pixmap(path: &Path, name: &str, size: (u32, u32)) -> Option<Pixmap> {
     match edel::pictures::load(path, size) {
         Ok(pixmap) => {
             eprintln!("edel-compositor: wallpaper on {name} {}x{}", size.0, size.1);
-            Screen {
-                size,
-                picture: Some(painted(&pixmap)),
-                ..Default::default()
-            }
+            Some(pixmap)
         }
         Err(why) => {
             eprintln!(
                 "edel-compositor: {}",
                 messages::wallpaper_not_read(path, &why)
             );
-            Screen {
-                size,
-                ..Default::default()
-            }
+            None
         }
     }
 }

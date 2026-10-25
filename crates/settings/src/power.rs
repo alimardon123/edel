@@ -44,9 +44,15 @@ use edel::settings::{
 
 use crate::choice_row::{self, ChoiceRow};
 use crate::files::Files;
-use crate::{battery_care, card, widgets};
+use crate::shortcuts::keys_of;
+use crate::{battery_care, card, rows, widgets};
 
 const INTRO: &str = n_("The battery, the lid and the power button.");
+
+/// What the Game mode row says under its title, with the keys the desktop
+/// follows for the Game mode action.
+const GAME_MODE_WHAT: &str =
+    n_("A fullscreen game gets variable refresh; {keys} turns it on or off");
 
 /// How often the page looks at UPower while it is on screen, in seconds.
 const FOLLOW: u32 = 5;
@@ -232,6 +238,19 @@ fn minute_label(value: &str) -> String {
     }
 }
 
+/// The line under the Game mode row: its words with the keys the desktop
+/// follows for the action, then where its value comes from.
+fn game_mode_line(files: &Files) -> String {
+    let what = trf(
+        GAME_MODE_WHAT,
+        &[("keys", &keys_of(files, "toggle_game_mode"))],
+    );
+    match rows::note(&files.source(GAME_MODE), false) {
+        Some(note) => format!("{what} · {note}"),
+        None => what,
+    }
+}
+
 /// The group under Other batteries with the lid, the power button, the
 /// screen lock, the screen off and sleep times and the battery's profile
 /// (M7.8, M7.16b). The minute rows list the file's own minutes too, so the
@@ -281,6 +300,10 @@ impl Lid {
         }
         for row in self.rows.borrow().iter() {
             row.update(&files);
+            // The row writes its template's words; this sets them with the keys.
+            if row.key == GAME_MODE {
+                row.row.subtitle.set_label(&game_mode_line(&files));
+            }
         }
     }
 
@@ -340,12 +363,7 @@ impl Lid {
                 ),
                 SAVER_DEFAULT,
             ),
-            ChoiceRow::new(
-                &self.group,
-                GAME_MODE,
-                n_("A fullscreen game gets variable refresh; Super+G turns it on or off"),
-                GAME_MODE_DEFAULT,
-            ),
+            ChoiceRow::new(&self.group, GAME_MODE, GAME_MODE_WHAT, GAME_MODE_DEFAULT),
         ];
         let rows: Vec<Rc<ChoiceRow>> = specs
             .into_iter()

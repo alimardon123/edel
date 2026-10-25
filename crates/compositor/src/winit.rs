@@ -5,29 +5,22 @@
 //!
 //! A frame is drawn only when something changed (`Edel::dirty`), so an idle
 //! desktop draws nothing; `--bench` runs for 5 s and prints the frame
-//! telemetry.
+//! telemetry. It runs in `backend.rs`'s loop, as `drm.rs` does.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::winit::{self, WinitEvent, WinitGraphicsBackend};
 use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
-use smithay::reexports::calloop::EventLoop;
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::wayland_server::Display;
+use smithay::reexports::calloop::LoopHandle;
 use smithay::utils::Transform;
 
-use edel_compositor::tokens::Tokens;
-
-use crate::program::Program;
+use crate::backend::Backend;
 use crate::state::Edel;
-
-/// How long `--bench` measures.
-const BENCH: Duration = Duration::from_secs(5);
 
 struct Window {
     backend: WinitGraphicsBackend<GlesRenderer>,
@@ -36,26 +29,11 @@ struct Window {
     started: Instant,
 }
 
-pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> {
-    let mut event_loop: EventLoop<Edel> =
-        EventLoop::try_new().context("creating the event loop")?;
-    let display: Display<Edel> = Display::new().context("creating the Wayland display")?;
-    let mut state = Edel::new(
-        display.handle(),
-        event_loop.get_signal(),
-        event_loop.handle(),
-        tokens,
-    )?;
-    let handle = event_loop.handle();
-
-    let name = crate::state::listen(&handle, &mut state, display)?;
-    state.socket = name.clone();
-    crate::xwayland::listen(&handle, &mut state, &name);
-    state.program = program;
-    state.game.session = state.game_session();
-    crate::decoration::load_text(&handle, &state.tokens.font, state.tokens.title_text_size);
-    crate::watch::start(&handle, &mut state);
-
+/// Opens a window on the desktop the compositor runs in (`backend::Open`).
+pub fn open(
+    handle: &LoopHandle<'static, Edel>,
+    state: &mut Edel,
+) -> Result<Rc<RefCell<dyn Backend>>> {
     let (mut backend, events) = winit::init::<GlesRenderer>()
         .map_err(|e| anyhow::anyhow!("opening a window on this desktop: {e}"))?;
     state.start_effects(&crate::tiers::renderer_name(backend.renderer()));
@@ -88,7 +66,7 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
     state.apply_scales();
     state.outputs_changed();
     // From inside the loop, so a program that cannot start ends it.
-    let (later, socket) = (handle.clone(), name.clone());
+    let (later, socket) = (handle.clone(), state.socket.clone());
     handle.insert_idle(move |state| {
         crate::program::start(&later, state, &socket);
         crate::shellui::start(&later, state, &socket);
@@ -99,38 +77,26 @@ pub fn run(tokens: Tokens, bench: bool, program: Option<Program>) -> Result<()> 
         output,
         started: Instant::now(),
     }));
-
-    if bench {
-        handle
-            .insert_source(Timer::from_duration(BENCH), |_, _, state: &mut Edel| {
-                state.signal.stop();
-                TimeoutAction::Drop
-            })
-            .map_err(|e| anyhow::anyhow!("starting the bench timer: {e}"))?;
-    }
     let events_window = Rc::clone(&window);
     handle
         .insert_source(events, move |event, _, state: &mut Edel| {
             on_event(&mut events_window.borrow_mut(), state, event)
         })
         .map_err(|e| anyhow::anyhow!("watching the window: {e}"))?;
+    Ok(window)
+}
 
-    eprintln!("edel-compositor: listening on {name}");
-    event_loop.run(None, &mut state, |state| {
-        state.space.refresh();
-        state.popups.cleanup();
-        state.sync_idle_inhibit();
-        let _ = state.display.flush_clients();
-        // A client's commit or new window marks the screen dirty outside
-        // the window's events; ask for a frame here, once per dispatch.
+impl Backend for Window {
+    /// One window, one screen: nothing to look for.
+    fn scan(&mut self, _: &mut Edel) {}
+
+    /// A client's commit or new window marks the screen dirty outside the
+    /// window's events; ask for a frame here, once per dispatch.
+    fn render(&mut self, state: &mut Edel) {
         if state.dirty {
-            window.borrow().backend.window().request_redraw();
+            self.backend.window().request_redraw();
         }
-    })?;
-    if bench {
-        println!("edel-compositor: {}", state.telemetry.summary());
     }
-    Ok(())
 }
 
 fn on_event(window: &mut Window, state: &mut Edel, event: WinitEvent) {

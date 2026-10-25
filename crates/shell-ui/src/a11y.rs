@@ -11,10 +11,11 @@ use edel::i18n::tr;
 use std::sync::{Arc, Mutex};
 
 use accesskit::{
-    ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId, Rect, Role,
-    TreeId, TreeInfo, TreeUpdate,
+    Action, ActionHandler, ActionRequest, ActivationHandler, DeactivationHandler, Node, NodeId,
+    Rect, Role, TreeId, TreeInfo, TreeUpdate,
 };
 use accesskit_unix::Adapter;
+use smithay_client_toolkit::reexports::calloop::channel::Sender;
 
 /// One node of a panel's tree: a widget, what a reader calls it and where
 /// it is in the panel, in logical pixels.
@@ -43,13 +44,20 @@ const ROOT: NodeId = NodeId(0);
 /// The whole tree of a panel `size` big (logical pixels) holding `items`.
 #[cfg(test)]
 pub fn tree(size: (f64, f64), items: &[Item]) -> TreeUpdate {
-    named(tr("Panel"), size, items, None)
+    named(tr("Panel"), size, items, None, false)
 }
 
 /// The tree of a window called `label`, `size` big, holding `items`, the
 /// `focus`th of them holding the keyboard when one does: the panel's, and
-/// the quick settings card's.
-pub fn named(label: &str, size: (f64, f64), items: &[Item], focus: Option<usize>) -> TreeUpdate {
+/// the quick settings card's. Where the window is `pressable`, its buttons
+/// say a reader may press them (`Reader::pressing`).
+pub fn named(
+    label: &str,
+    size: (f64, f64),
+    items: &[Item],
+    focus: Option<usize>,
+    pressable: bool,
+) -> TreeUpdate {
     let mut root = Node::new(Role::Window);
     root.set_label(label);
     root.set_bounds(Rect::new(0.0, 0.0, size.0, size.1));
@@ -57,6 +65,9 @@ pub fn named(label: &str, size: (f64, f64), items: &[Item], focus: Option<usize>
     let mut focused = ROOT;
     for (i, item) in items.iter().enumerate() {
         let id = add(&mut nodes, item);
+        if pressable && item.role == Role::Button {
+            nodes[id.0 as usize - 1].1.add_action(Action::Click);
+        }
         if focus == Some(i) {
             focused = id;
         }
@@ -116,11 +127,28 @@ fn add(nodes: &mut Vec<(NodeId, Node)>, item: &Item) -> NodeId {
 /// keyboard.
 type Shown = ((f64, f64), Vec<Item>, Option<usize>);
 
+/// Which of `items`, counted at the top as `named` lays them out, the node
+/// `id` is; a part inside one (a tray icon) is none.
+fn top_level(items: &[Item], id: NodeId) -> Option<usize> {
+    fn count(item: &Item) -> u64 {
+        1 + item.children.iter().map(count).sum::<u64>()
+    }
+    let mut next = 1;
+    for (i, item) in items.iter().enumerate() {
+        if id.0 == next {
+            return Some(i);
+        }
+        next += count(item);
+    }
+    None
+}
+
 /// A window's link to screen readers: a panel's, or the card's.
 pub struct Reader {
     adapter: Adapter,
     latest: Arc<Mutex<Option<Shown>>>,
     label: &'static str,
+    pressable: bool,
 }
 
 impl Reader {
@@ -132,11 +160,27 @@ impl Reader {
     /// A reader for a window called `label`.
     pub fn new(label: &'static str) -> Reader {
         let latest = Arc::new(Mutex::new(None));
-        let adapter = Adapter::new(Latest(Arc::clone(&latest), label), Nothing, Nothing);
+        let adapter = Adapter::new(Latest(Arc::clone(&latest), label, false), Nothing, Nothing);
         Reader {
             adapter,
             latest,
             label,
+            pressable: false,
+        }
+    }
+
+    /// A reader for a window called `label` whose buttons a reader can
+    /// press: each press sends the button's place among the window's items
+    /// to `pressed`, which the window's own code acts on, as for a click.
+    pub fn pressing(label: &'static str, pressed: Sender<usize>) -> Reader {
+        let latest = Arc::new(Mutex::new(None));
+        let press = Press(Arc::clone(&latest), pressed);
+        let adapter = Adapter::new(Latest(Arc::clone(&latest), label, true), press, Nothing);
+        Reader {
+            adapter,
+            latest,
+            label,
+            pressable: true,
         }
     }
 
@@ -153,26 +197,50 @@ impl Reader {
         if let Ok(mut latest) = self.latest.lock() {
             *latest = Some((size, items.clone(), focus));
         }
-        let label = self.label;
+        let (label, pressable) = (self.label, self.pressable);
         self.adapter
-            .update_if_active(|| named(label, size, &items, focus));
+            .update_if_active(|| named(label, size, &items, focus, pressable));
     }
 }
 
 /// Gives a reader that turns accessibility on the window's latest tree.
-struct Latest(Arc<Mutex<Option<Shown>>>, &'static str);
+struct Latest(Arc<Mutex<Option<Shown>>>, &'static str, bool);
 
 impl ActivationHandler for Latest {
     fn request_initial_tree(&mut self) -> Option<TreeUpdate> {
         let latest = self.0.lock().ok()?;
         let (size, items, focus) = latest.as_ref()?;
-        Some(named(self.1, *size, items, *focus))
+        Some(named(self.1, *size, items, *focus, self.2))
     }
 }
 
 /// The panel's widgets take no actions from a reader yet; the keyboard
 /// reaches the launcher (Super) and the layout (Super+Y).
 struct Nothing;
+
+/// Sends a reader's press of a window's button to the window's code, on
+/// the event loop (the whole-system review of 2026-10-25: the Undo bar's
+/// button was read out but could not be pressed).
+struct Press(Arc<Mutex<Option<Shown>>>, Sender<usize>);
+
+impl ActionHandler for Press {
+    fn do_action(&mut self, request: ActionRequest) {
+        if request.action != Action::Click {
+            return;
+        }
+        let Ok(latest) = self.0.lock() else {
+            return;
+        };
+        let Some((_, items, _)) = latest.as_ref() else {
+            return;
+        };
+        if let Some(i) = top_level(items, request.target_node) {
+            if items[i].role == Role::Button {
+                let _ = self.1.send(i);
+            }
+        }
+    }
+}
 
 impl ActionHandler for Nothing {
     fn do_action(&mut self, _: ActionRequest) {}
@@ -268,5 +336,42 @@ mod tests {
         assert_eq!((node(2).0, node(2).1.label()), (NodeId(2), Some("Network")));
         assert_eq!((node(3).0, node(3).1.label()), (NodeId(3), Some("Volume")));
         assert_eq!(node(4).1.value(), Some("14:05"));
+    }
+
+    #[test]
+    fn a_pressable_windows_buttons_say_so_and_a_press_finds_its_item() {
+        let item = |role, label: &str, children| Item {
+            role,
+            label: label.into(),
+            bounds: Rect::new(0.0, 0.0, 10.0, 10.0),
+            children,
+            toggled: None,
+            value: None,
+            value_text: None,
+            disabled: false,
+        };
+        let items = [
+            item(
+                Role::Group,
+                "Tray",
+                vec![item(Role::Button, "Network", vec![])],
+            ),
+            item(Role::Label, "Lock screen changed", vec![]),
+            item(Role::Button, "Undo", vec![]),
+        ];
+        let pressable = named("Undo", (10.0, 10.0), &items, None, true);
+        let undo = pressable
+            .nodes
+            .iter()
+            .find(|(id, _)| *id == NodeId(4))
+            .unwrap();
+        assert!(undo.1.supports_action(Action::Click));
+        let plain = named("Undo", (10.0, 10.0), &items, None, false);
+        assert!(!plain.nodes[4].1.supports_action(Action::Click));
+        assert_eq!(top_level(&items, NodeId(1)), Some(0));
+        assert_eq!(top_level(&items, NodeId(2)), None);
+        assert_eq!(top_level(&items, NodeId(3)), Some(1));
+        assert_eq!(top_level(&items, NodeId(4)), Some(2));
+        assert_eq!(top_level(&items, NodeId(5)), None);
     }
 }

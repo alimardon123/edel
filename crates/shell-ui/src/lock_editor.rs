@@ -11,7 +11,7 @@
 
 use accesskit::Role;
 use edel::i18n::{tr, trf};
-use edel::lock_screen::{self, Anchor, Background, DatePart, DateStyle, Guide, Part, Placed, SNAP};
+use edel::lock_screen::{self, Anchor, Background, DateStyle, Guide, Part, Placed, SNAP};
 use edel::settings::{LockScreen, OwnLook};
 use edel::tokens::{Colour, Tokens};
 use edel::wallpapers::Wallpaper;
@@ -888,7 +888,9 @@ fn drawer_key(view: &View, part: editor::Part, key: Key) -> Step {
         editor::Step::Act(Act::Undo) => Step::Undo,
         editor::Step::Act(Act::Done) => Step::Done,
         editor::Step::Act(Act::Close) => Step::Close,
-        editor::Step::Nothing => Step::Nothing,
+        // Return on a tile is this drawer's own, above; Delete takes no part
+        // from the drawer.
+        editor::Step::Act(Act::Add(_) | Act::Remove(_)) | editor::Step::Nothing => Step::Nothing,
     }
 }
 
@@ -1764,7 +1766,7 @@ pub fn preview_words(part: Part, when: &lock::When, charge: Option<u8>) -> Strin
             when.day,
             when.month,
             when.year,
-            &[DatePart::Weekday, DatePart::Day, DatePart::Month],
+            &lock_screen::DEFAULT_SHOW,
             DateStyle::Short,
         ),
         Part::Battery => charge.map_or_else(String::new, |c| format!("{c}%")),

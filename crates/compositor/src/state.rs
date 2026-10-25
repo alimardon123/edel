@@ -213,6 +213,8 @@ pub struct Edel {
     _security_context: smithay::wayland::security_context::SecurityContextState,
     /// The event loop's handle, for the sockets sandboxes ask for (M5.22).
     pub handle: Option<LoopHandle<'static, Edel>>,
+    /// Where threads send work done off the frame (`off_loop.rs`).
+    pub off_loop: Option<smithay::reexports::calloop::channel::Sender<crate::off_loop::Answer>>,
     /// The protocols everyday apps expect (`everyday.rs`, M5.23).
     pub primary_selection: smithay::wayland::selection::primary_selection::PrimarySelectionState,
     /// ext-data-control-v1, for shell-ui's clipboard history (M7.13).
@@ -229,6 +231,12 @@ pub struct Edel {
     /// The frames clients asked to copy the screen into, until their
     /// buffers are filled (`screencopy.rs`, M6.3).
     pub pending_copies: Vec<crate::screencopy::Pending>,
+    /// Each output's offscreen texture for those copies, with its size,
+    /// kept while the size stays (`screencopy.rs`).
+    pub copy_textures: std::collections::HashMap<
+        String,
+        ((i32, i32), smithay::backend::renderer::gles::GlesTexture),
+    >,
     /// The clients whose first copy has been logged, once each.
     pub copy_clients: Vec<smithay::reexports::wayland_server::backend::ClientId>,
     /// The keyboard shortcuts inhibit global (M5.13b, `everyday.rs`).
@@ -294,6 +302,7 @@ impl Edel {
                 _,
             >(&display, crate::sandbox::shell_may),
             handle: None,
+            off_loop: None,
             primary_selection,
             // Clipboard history (M7.13), hidden from sandboxed apps.
             data_control,
@@ -314,6 +323,7 @@ impl Edel {
                 &display,
             ),
             pending_copies: Vec::new(),
+            copy_textures: std::collections::HashMap::new(),
             copy_clients: Vec::new(),
             keyboard_shortcuts_inhibit:
                 smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState::new::<

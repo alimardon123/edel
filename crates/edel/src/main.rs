@@ -5,10 +5,10 @@
 //! learn. The settings file parser is the library half (`edel::settings`).
 
 // One write per line, so the session's processes never mix their lines
-// in its log (edel::session_log::line).
+// in its log (edel::session_log::write_line).
 macro_rules! eprintln {
     ($($arg:tt)*) => {
-        edel::eprintln_whole!($($arg)*)
+        edel::session_log::write_line(format_args!($($arg)*))
     };
 }
 
