@@ -245,7 +245,8 @@ impl Shell {
     pub fn open_editor(&mut self) {
         // The panels stay clickable around the desktop's editor (M8.21 part
         // 21j2), so the panel editor does not open over it.
-        if self.editor.is_some() || self.lock_editor.is_some() {
+        // Never over the lock screen: its keyboard would take the keys.
+        if self.editor.is_some() || self.lock_editor.is_some() || self.lock.is_some() {
             return;
         }
         self.close_popups();
