@@ -14,10 +14,11 @@
 # virtio balloon device, through which the guest's own kernel reports its
 # memory; nothing is installed or changed inside any guest. Memory in use
 # is MemTotal less MemAvailable, the number Edel OS's own memory budgets
-# use. For each size the VM runs 420 s with nobody touching it (the
+# use. For each size the VM runs 420 s with nobody using it but a press of
+# Shift every 10 s, which keeps every screen awake and unlocked (the
 # desktop's idle number is the median of the last minute), then Escape
-# (which leaves GNOME's overview), Super, "firefox" and, 20 s later, Return
-# open the browser the way a person would; 120 s later Return accepts
+# (which leaves GNOME's overview), Super, "firefox" and Return, three times
+# 30 s apart for a slow search, open the browser the way a person would; 120 s later Return accepts
 # Firefox's first-run notice and the address bar opens a page that plays a
 # video served from this host, and the median of the last minute of 120 s
 # more is the number with Firefox. Screenshots of each moment show whether
@@ -116,10 +117,13 @@ measure() {
 		$media &
 	qemu=$!
 	start=$(date +%s)
-	# sample UNTIL: a sample every 10 s until second UNTIL of the run.
+	# sample UNTIL: a sample every 10 s until second UNTIL of the run,
+	# each after a press of Shift, as a person reading the screen would
+	# make, so no system dims, blanks or locks its screen in the meantime.
 	sample() {
 		while [ $(($(date +%s) - start)) -lt "$1" ]; do
 			sleep 10
+			python3 ci/qmp.py key shift >/dev/null 2>&1 || true
 			echo "$(($(date +%s) - start)) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
 		done
 	}
@@ -130,8 +134,13 @@ measure() {
 	python3 ci/qmp.py key meta_l || true
 	sleep 3
 	python3 ci/qmp.py type firefox || true
-	sleep 20
-	python3 ci/qmp.py key ret || true
+	# Return three times, 30 s apart: a slow search has its result for
+	# one of them, and once the browser is open the others reach it.
+	for _ in 1 2 3; do
+		sleep 20
+		python3 ci/qmp.py key ret || true
+		sleep 10
+	done
 	sample 540
 	python3 ci/qmp.py screendump "$run-opened.png" || true
 	python3 ci/qmp.py key ret || true
