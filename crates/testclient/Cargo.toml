@@ -13,6 +13,9 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.104"
+# --wifi-join joins through edel::network::join, the call Settings makes;
+# the library without its features, as it only runs nmcli.
+edel = { path = "../edel", default-features = false }
 # --lid (M7.8) shuts a lid switch on uinput: the ioctl numbers and the
 # kernel's input_event, which no crate here already has.
 libc = "0.2"

@@ -43,7 +43,9 @@
 //! at once does (M8.21, the other projects' bugs review), and prints
 //! `flashed N`. `--sandboxed` connects through a security context, as a
 //! Flatpak app does, and `--activate FILE` asks to come forward once FILE
-//! exists (`activate.rs`).
+//! exists (`activate.rs`). `--wifi-join SSID PASSWORD` draws nothing: it
+//! joins that Wi-Fi network through `edel::network::join`, as Settings
+//! does, and prints whether it joined (`wifi.rs`).
 //!
 //!     edel-testclient --size 300x200 --colour cc3333 --title one
 //!     edel-testclient --layer bottom --size 0x40 --colour 2f343f
@@ -60,6 +62,7 @@
 //!     edel-testclient --location SECONDS
 //!     edel-testclient --clipboard
 //!     edel-testclient --flash 40
+//!     edel-testclient --wifi-join edel-psk PASSWORD
 
 use anyhow::{Context, Result, bail};
 use smithay_client_toolkit::compositor::{CompositorHandler, CompositorState, FrameCallbackData};
@@ -307,6 +310,7 @@ mod sandbox;
 mod smooth;
 mod sni;
 mod toplevels;
+mod wifi;
 mod workspaces;
 
 fn main() -> Result<()> {
@@ -330,6 +334,7 @@ fn main() -> Result<()> {
         ["--globals"] => return sandbox::run(false),
         ["--security-context"] => return sandbox::run(true),
         ["--toplevels", title] => return toplevels::run(Some(title)),
+        ["--wifi-join", ssid, password] => return wifi::join(ssid, password),
         _ => {}
     }
     let args = args()?;

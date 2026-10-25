@@ -1037,6 +1037,7 @@ name = "edel-testclient"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "edel",
  "libc",
  "smithay-client-toolkit 0.21.1",
  "zbus",

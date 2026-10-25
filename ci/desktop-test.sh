@@ -1756,6 +1756,30 @@ case_network() {
 	"ci=0 nobody="[1-9]*) ;;
 	*) fail "ci should change the network and nobody should be refused: $(value network_auth)" ;;
 	esac
+	# Wi-Fi join: two access points on mac80211_hwsim's radios, one WPA2
+	# and one WPA3, joined through edel::network::join as Settings does; a
+	# wrong password is refused in words and leaves no connection behind.
+	asked=$(count 'DESKTOP-TEST: wifi_left ')
+	guest 'wifi join'
+	wait_more 'DESKTOP-TEST: wifi_left ' "$asked" 400 || fail "the service did not finish the Wi-Fi join: $(value wifi_seen)"
+	case "$(value wifi_seen)" in
+	*edel-psk:WPA2*edel-sae:WPA3* | *edel-sae:WPA3*edel-psk:WPA2*) ;;
+	*) fail "the two access points should show as WPA2 and WPA3: \"$(value wifi_seen)\"; $(value wifi_left)" ;;
+	esac
+	case "$(value wifi_wrong)" in
+	*"edel-psk: refused: the password for edel-psk was missing or wrong"*"kept: 0") ;;
+	*) fail "a wrong password should be refused in words and leave nothing behind: $(value wifi_wrong); $(value wifi_left)" ;;
+	esac
+	for ssid in edel-psk edel-sae; do
+		case "$(value "wifi_$ssid")" in
+		*"$ssid: joined "*" on: $ssid 10.42."*) ;;
+		*) fail "edel::network::join should join $ssid and get an address: $(value "wifi_$ssid"); $(value wifi_left)" ;;
+		esac
+	done
+	case "$(value wifi_left)" in
+	"radios 0, rules 0, "*) ;;
+	*) fail "the Wi-Fi join should leave the machine as found: $(value wifi_left)" ;;
+	esac
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: bluetooth_list ')
