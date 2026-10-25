@@ -90,6 +90,9 @@ pub fn places(l: &Layout) -> String {
     format!("card {}x{}, undo {}", l.size.0, l.size.1, at(l.undo))
 }
 
+/// Where `nodes` puts the Undo button, which a reader's press names.
+pub const UNDO_ITEM: usize = 1;
+
 /// What a screen reader finds: the text, then the Undo button.
 pub fn nodes(l: &Layout, text: &str) -> Vec<Item> {
     let at = |r: Rect| {
@@ -196,8 +199,8 @@ mod tests {
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0].role, Role::Label);
         assert_eq!(nodes[0].label, "Panels changed");
-        assert_eq!(nodes[1].role, Role::Button);
-        assert_eq!(nodes[1].label, "Undo");
+        assert_eq!(nodes[UNDO_ITEM].role, Role::Button);
+        assert_eq!(nodes[UNDO_ITEM].label, "Undo");
     }
 
     #[test]

@@ -14,8 +14,8 @@ use edel::panel_edit::{self, Group, PANELS, Spot};
 use edel::places;
 use edel::presets::{self, Edge, Size, Style};
 use edel::settings;
-use smithay_client_toolkit::reexports::calloop::RegistrationToken;
 use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay_client_toolkit::reexports::calloop::{RegistrationToken, channel};
 use smithay_client_toolkit::reexports::client::protocol::{wl_keyboard, wl_surface};
 use smithay_client_toolkit::seat::keyboard::{KeyEvent, Keysym};
 use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
@@ -124,6 +124,8 @@ pub struct UndoBar {
     pub timer: Option<RegistrationToken>,
     pub logged: String,
     pub reader: a11y::Reader,
+    /// A reader's presses of Undo, on the event loop.
+    pub presses: Option<RegistrationToken>,
 }
 
 /// Marks each tile placed when a panel in `now` holds its widget.
@@ -999,6 +1001,18 @@ impl Shell {
         };
         popup.set_cards(undo_bar::cards(&layout, &self.tokens), &self.compositor);
         anchor_above(&popup.surface, edge, above);
+        // A screen reader presses Undo as a pointer does (the whole-system
+        // review of 2026-10-25); the bar's second item is its Undo button.
+        let (pressed, presses) = channel::channel::<usize>();
+        let presses = self
+            .handle
+            .insert_source(presses, |event, _, shell: &mut Shell| {
+                if let channel::Event::Msg(undo_bar::UNDO_ITEM) = event {
+                    shell.undo_bar_undo();
+                }
+            })
+            .inspect_err(|e| eprintln!("edel-shell-ui: no reader presses for the undo bar: {e}"))
+            .ok();
         // The bar never takes the keyboard from what a person is typing in.
         popup
             .surface
@@ -1010,7 +1024,8 @@ impl Shell {
             undo,
             timer: None,
             logged: String::new(),
-            reader: a11y::Reader::new(words),
+            reader: a11y::Reader::pressing(words, pressed),
+            presses,
         });
         let timer = self.undo_timer();
         if let Some(bar) = &mut self.undo_bar {
@@ -1041,7 +1056,7 @@ impl Shell {
         let Some(bar) = self.undo_bar.take() else {
             return;
         };
-        if let Some(token) = bar.timer {
+        for token in [bar.timer, bar.presses].into_iter().flatten() {
             self.handle.remove(token);
         }
         drop(bar);
