@@ -6045,10 +6045,10 @@ case_frame_rate() {
 	guest 'frame rate game'
 	wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 		fail "the game stand-in did not play as a game"
-	on=$(count 'edel-compositor: the frame rate overlay on (Super+Shift+G)')
+	on=$(count 'edel-compositor: the frame rate overlay on [(]Super[+]Shift[+]G[)]')
 	shows=$(count 'edel-compositor: the frame rate overlay shows ')
 	python3 ci/qmp.py key meta_l-shift-g
-	wait_more 'edel-compositor: the frame rate overlay on (Super+Shift+G)' "$on" || fail "Super+Shift+G did not turn the frame rate overlay on"
+	wait_more 'edel-compositor: the frame rate overlay on [(]Super[+]Shift[+]G[)]' "$on" || fail "Super+Shift+G did not turn the frame rate overlay on"
 	wait_more 'edel-compositor: the frame rate overlay shows ' "$shows" 20 || fail "the overlay showed no numbers over the game"
 	numbers=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: the frame rate overlay shows ' | tail -n 1)
 	case "$numbers" in
@@ -6082,9 +6082,9 @@ case_frame_rate() {
 	set -- $best
 	awk -v p="$1" -v b="$limit" 'BEGIN { exit !(p <= b) }' ||
 		fail "with the frame rate overlay on, a game's slowest frames are worse than the budget in both runs: p99 $3 ms is $1 times its median $2 ms (budget $limit times)"
-	off=$(count 'edel-compositor: the frame rate overlay off (Super+Shift+G)')
+	off=$(count 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]')
 	python3 ci/qmp.py key meta_l-shift-g
-	wait_more 'edel-compositor: the frame rate overlay off (Super+Shift+G)' "$off" || fail "Super+Shift+G did not turn the frame rate overlay off"
+	wait_more 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]' "$off" || fail "Super+Shift+G did not turn the frame rate overlay off"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on a game's frames had p99 $3 ms, $1 times the median $2 ms (budget $limit times)." >>"$GITHUB_STEP_SUMMARY"
 	fi
