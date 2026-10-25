@@ -2,12 +2,14 @@
 //! `apps.screenshots`, `apps.notifications` and `apps.files` choices, laid
 //! onto the portals' permission store over the session bus and onto the
 //! person's Flatpak override files. shell-ui does it at start and on each
-//! settings change. Only what changed since the last pass is written, in a
-//! thread of its own, so the panel never waits on the bus. The rules, which
+//! settings change. Only what changed since the last pass is written, by
+//! one worker thread in the order the changes came, so the panel never
+//! waits on the bus. The rules, which
 //! entries and lines a choice makes, are `edel::app_permissions`.
 
 use std::io::ErrorKind;
 use std::path::Path;
+use std::sync::{OnceLock, mpsc};
 
 use edel::app_permissions::{
     Entry, STORE_BUS, STORE_INTERFACE, STORE_PATH, asked_every_time, dropped, entries, files_asked,
@@ -97,16 +99,30 @@ pub fn follow(
     if plan.set.is_empty() && plan.delete.is_empty() && plan.files.is_empty() {
         return asked;
     }
-    let connection = connection.cloned();
     // The bus answers when the portal does, so the work runs off the panel's
-    // thread.
-    std::thread::spawn(move || {
-        if let Some(connection) = &connection {
-            store(connection, &plan.set, &plan.delete);
-        }
-        write_files(&plan.files);
-    });
+    // thread, on the one worker.
+    let _ = worker().send((connection.cloned(), plan));
     asked
+}
+
+/// The one thread that lays the plans on, in the order the changes came,
+/// so an older choice never lands after a newer one and no two passes
+/// write the same `.new` file (the whole-system review of 2026-10-25).
+fn worker() -> &'static mpsc::Sender<(Option<zbus::blocking::Connection>, Plan)> {
+    static WORKER: OnceLock<mpsc::Sender<(Option<zbus::blocking::Connection>, Plan)>> =
+        OnceLock::new();
+    WORKER.get_or_init(|| {
+        let (send, plans) = mpsc::channel::<(Option<zbus::blocking::Connection>, Plan)>();
+        std::thread::spawn(move || {
+            for (connection, plan) in plans {
+                if let Some(connection) = &connection {
+                    store(connection, &plan.set, &plan.delete);
+                }
+                write_files(&plan.files);
+            }
+        });
+        send
+    })
 }
 
 /// Sets and deletes the store's entries over the bus. One failure never
