@@ -1,11 +1,11 @@
 # Spike: app runtimes that keep apps working for years
 
-**Date:** 2026-10-25 (roadmap M10.9 and M10.10)
+**Date:** 2026-10-25 (roadmap M10.9 and M10.10), with the review and fairer tests the same day
 **Asked by:** Alimardon, on 2026-10-25: test now the ways apps could be "independent" of the system for 10 to 20 years, on old and new Edel OS alike, while staying "much more faster, lightweight, just like Alpine".
 
 ## Verdict
 
-**All three ways run, an older app works on a newer base and a newer app on an older one, and a Flatpak runtime built from Alpine's packages is the best default for our own and the default apps.** It downloads about a quarter of what Flathub's does, takes about a fifth of the disk, and opens as fast, while keeping Flatpak's one format, sandbox, sharing and updates. Apps that carry everything (M10.9) open fastest but copy GTK into every app. Flathub stays for apps built only for glibc (Steam, Chrome, VS Code). Choosing the Alpine runtime changes ADR-003, so it waits for Alimardon's word.
+**All three ways run, an older app works on a newer base and a newer app on an older one, but Flathub stays the one app format for now (ADR-003 unchanged).** A Flatpak runtime built from Alpine's packages measured lighter and quicker to open, and an old one, built without a graphics driver, draws with a newer machine's own driver. But an outside review (2026-10-25, below) weighed what the numbers leave out: GTK sits in Alpine's community repository, which gets fixes for about six months, so a runtime of our own means patching it ourselves for years; third-party apps target Flathub's runtimes anyway; and Flathub's runtime carries far more. The seam worth keeping is the machine lending its own driver to old runtimes. A runtime of our own comes back only when someone can keep it secure, with the hours a year written down.
 
 ## What was measured
 
@@ -40,16 +40,28 @@ Download is the gzip of a bundle, the compressed objects of our Flatpak reposito
 
 ## What it means
 
+The first reading, before the review below weighed it:
+
 - **A runtime from Alpine is the light Flatpak.** One download serves every app on it, like Flathub's, and it is about a quarter the size, because musl, Alpine's small packages and no second copy of the graphics extension add up. Apps on it are a few MB each.
 - **Because it is musl like the base, it can take the machine's own graphics drivers,** with the same "newer copy wins" rule the bundles use. An old runtime then knows new GPUs without a rebuilt graphics extension (M10.2). Flathub's glibc runtimes cannot use our musl drivers. Taking them from the base loosens "apps never link against the base" (ADR-003, ADR-005) to "apps link only against the frozen part", which waits for Alimardon's word; until then the runtime carries its own mesa, as measured here.
 - **Bundles suit command-line tools** (about 2 MB each) and single apps, but every GTK app would carry about 200 MB of its own GTK, so ten apps take about 2 GB. They are a second app format beside Flatpak, which Simple argues against.
 - **Ten years and more:** none of the three is held up by the base. Bundles and our runtime rest on musl's promise never to break an older program and on the kernel's; Flathub's on glibc inside its runtime. What ages is the graphics driver inside an old runtime, which our runtime avoids by taking the base's.
 - **Not measured yet:** runtimes built from Debian's or Fedora's packages (M10.10's wider question), a real GPU (these ran on mesa's software renderer in containers, so times compare the ways but are not what a laptop shows), and the yearly work to build and update a runtime.
 
+## The review and the fairer tests (2026-10-25)
+
+Alimardon asked for an independent review of the first verdict (a Fable advisor, working offline from this page and the ADRs). It found the recommendation "half right, and too early": the runtime's upkeep (GTK and glib fixes for every runtime still in use, by one person), the size comparison (Flathub's GNOME platform holds media, spelling and translations ours did not), single-app memory that cannot show sharing, the software renderer, and default apps that need no runtime at all. It asked for three more tests, all in `ci/runtime-spike/`:
+
+1. **Default apps inside the system** (Alpine packages beside Settings, which already carries GTK 4 and libadwaita): Calculator, Text Editor, Clocks and Loupe together add 28 MB to a slot and 10 MB to each update; the store, the files app and the editor of today's defaults (Bazaar, Portfolio, Text Editor) add 191 MB and 70 MB, and Firefox 306 MB and 117 MB. Small apps would be cheap there, the defaults as chosen would not, and each update would carry them every month.
+2. **An old runtime on a newer machine's driver** (`host-gl.sh`): runtimes from Alpine 3.18 (2023, musl 1.2.4) and 3.22, built with no graphics driver, both drew with the 3.24 machine's mesa 26.1, its `libgallium` loaded from the machine, ten libraries (3.18) or four (3.22) taken from the driver's newer copies. The feared mismatch, a newer driver needing a newer musl than the runtime's, did not happen with this mesa; started by the machine's own musl loader instead, it works too, the way out if it ever does. So the 10 year promise for GPUs need not rebuild a graphics extension for every old runtime (M10.2), for a musl runtime.
+3. **Flathub, fairly** (`fair.sh`, ten starts, three apps at once): the calculator opened in a median of 730 ms from Flathub and 430 ms from the Alpine runtime, steady across ten runs; Calculator, Text Editor and Clocks open together took 463 MB and 455 MB, the same; the first start is 1.5 s against 2.3 s, Flathub ahead. On disk Flathub took 2.6 GB (its GNOME platform 1.1 GB, and the graphics extension twice, 470 MB each, the second for its codecs), the Alpine runtime 0.5 GB; to download 753 MB against 198 MB.
+
+These ran in the same containers, on the software renderer; a real GPU is still to be measured, on a machine Alimardon has.
+
 ## Principles check
 
 - **Reliable:** every way was run on an older and a newer base before anything changes; nothing ships from the spike, and the base and the updater are untouched.
 - **Instant:** the Alpine runtime and the bundles open faster than Flathub's app here; the gap is measured, not assumed.
-- **Simple:** the recommendation keeps one app format, Flatpak, and adds no part to the base.
-- **Efficient:** a quarter of Flathub's download and a fifth of its disk for the same app.
-- **Traded off:** a yearly runtime of our own to build and keep secure, and, if Alimardon agrees, apps loading the base's graphics drivers.
+- **Simple:** one app format, Flatpak and Flathub, stays; nothing is added to the base.
+- **Efficient:** the tests show where Flathub's weight is (its GNOME platform, and its graphics extension twice), for when a runtime of our own is weighed again.
+- **Traded off:** Flathub's larger download and disk, and its slower start in these runs, for not keeping a runtime secure ourselves.
