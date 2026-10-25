@@ -8909,8 +8909,9 @@ profile_off() {
 }
 
 case_profiles() {
-	# First, the gaming feature's /dev/uinput is the seat group's, mode 660,
-	# and ci may write it (M7.6b). Then leave out what a profile brings
+	# First, the gaming feature's /dev/uinput and /dev/ntsync are the seat
+	# group's, mode 660, and ci may write them (M7.6b, M8.33), and the base
+	# allows 1048576 memory maps (M8.33). Then leave out what a profile brings
 	# (M7.6c): with gaming named and ci an admin, `edel settings diff` would
 	# install Steam; `apps.installed-=` writes it to system.profiles_without
 	# instead, `edel settings apply` ends 0 and the diff no longer names
@@ -8918,8 +8919,8 @@ case_profiles() {
 	asked=$(count 'DESKTOP-TEST: gaming_devices ')
 	guest 'gaming devices'
 	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput"
-	[ "$(value gaming_devices)" = 'seat 660 writable' ] ||
-		fail "/dev/uinput is not group seat's with mode 660, writable by ci, as the gaming add-on's rule and modules-load.d file make it: $(value gaming_devices)"
+	[ "$(value gaming_devices)" = 'seat 660 writable ntsync seat 660 writable maps 1048576' ] ||
+		fail "/dev/uinput and /dev/ntsync are not group seat's with mode 660, writable by ci, as the gaming add-on's rule and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
 	asked=$(count 'DESKTOP-TEST: profile_gaming ')
 	guest 'profile gaming'
 	wait_more 'DESKTOP-TEST: profile_gaming ' "$asked" || fail "the service did not name the gaming profile"
@@ -8949,7 +8950,7 @@ case_profiles() {
 	case "$reset" in
 	*Steam*) fail "system.profiles_without stayed after the profile was reset: $reset" ;;
 	esac
-	echo "PASS: /dev/uinput was group seat's, mode 660, and ci could write it; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
+	echo "PASS: /dev/uinput and /dev/ntsync were group seat's, mode 660, and ci could write them, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
 }
 
 case_office_fonts() {

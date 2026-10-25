@@ -8,3 +8,6 @@ TAG=="uaccess", SUBSYSTEM=="hidraw|usb|misc", GROUP="seat", MODE="0660"
 # A controller's own input device, which games read through SDL, as logind
 # would give it; only joysticks, never a keyboard.
 SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_JOYSTICK}=="1", ENV{ID_INPUT_KEYBOARD}!="1", GROUP="seat", MODE="0660"
+# Proton's fast sync (M8.33): games open /dev/ntsync, root's alone unless a
+# rule says otherwise, so the people at the machine get it.
+KERNEL=="ntsync", SUBSYSTEM=="misc", GROUP="seat", MODE="0660"
