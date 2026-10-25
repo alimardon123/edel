@@ -399,6 +399,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("greeter_dir", GREETER_DIR.to_string()),
         ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),
+        ("keys_dir", KEYS_DIR.to_string()),
         ("firewall_rules", FIREWALL_RULES.to_string()),
         ("esp_dir", ESP_DIR.to_string()),
         // Inside a person's home (M5.28a).

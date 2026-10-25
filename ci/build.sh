@@ -292,6 +292,16 @@ done
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" $downloads "$@"
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel "$@"
+# The upgrade test's update (M3.5): the release's update images and add-ons
+# beside one list for each channel an old release can be on, signed with
+# the throwaway key ci/upgrade-test.sh makes the old release trust.
+for channel in preview stable; do
+	rm -rf "out/upgrade-test/$channel"
+	mkdir -p "out/upgrade-test/$channel"
+	ln out/release/*.ext4.gz out/release/*.*.toml "out/upgrade-test/$channel/"
+	./target/release/edel release make --version "$version" --channel "$channel" --out "out/upgrade-test/$channel" "$@"
+	./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "out/upgrade-test/$channel/release.toml"
+done
 
 # A FAT stick holding a settings file (M6.6b), which desktop-test.sh live
 # plugs in for Settings' installer page to find; FAT, as a stick written on
@@ -301,5 +311,5 @@ mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
 hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
-	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/updates-test out/install-test out/keys out/release out/repro out/system-test
+	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/updates-test out/upgrade-test out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test
