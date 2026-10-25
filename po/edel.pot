@@ -1472,22 +1472,22 @@ msgstr ""
 msgid "Office"
 msgstr ""
 
-msgid "Developer"
-msgstr ""
-
-msgid "Creative"
-msgstr ""
-
-msgid "Gaming"
-msgstr ""
-
 msgid "LibreOffice, printing and scanning"
+msgstr ""
+
+msgid "Developer"
 msgstr ""
 
 msgid "Podman containers and the VSCodium editor"
 msgstr ""
 
+msgid "Creative"
+msgstr ""
+
 msgid "Krita for drawing, GIMP for photos and low-latency sound"
+msgstr ""
+
+msgid "Gaming"
 msgstr ""
 
 msgid "Steam, and game mode for every fullscreen game"
