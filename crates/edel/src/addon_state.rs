@@ -362,7 +362,7 @@ mod tests {
 
     #[test]
     fn a_pack_serves_the_devices_its_image_found_for_it() {
-        let dir = std::env::temp_dir().join(format!("edel-offered-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("edel-pack-devices-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let pack =
             "format = 1\nsummary = \"Realtek\"\naddon = true\nhardware = [\"usb:v0BDAp*\"]\n";
