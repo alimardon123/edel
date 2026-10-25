@@ -68,5 +68,6 @@ Generated from `ACTIONS` in `crates/edel/src/shortcuts.rs` (roadmap M5.13); a ca
 | `lock_screen` | `Super+L` | Lock the screen | yes |
 | `next_keyboard_layout` | `Super+Space` | Switch to the next keyboard layout of region.keyboard |  |
 | `toggle_game_mode` | `Super+G` | Turn game mode on or off until the next login: a fullscreen game gets variable refresh |  |
+| `toggle_frame_rate` | `Super+Shift+G` | Show or hide the frame rate over a fullscreen game until the next login |  |
 | `show_tray` | `Super+Shift+B` | Open or close the tray's apps behind its arrow, with the keyboard on them |  |
 | `clipboard_history` | `Super+V` | Open the clipboard history: the last texts and pictures you copied |  |

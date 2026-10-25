@@ -194,6 +194,10 @@ impl Shell {
     /// and after each change of the settings files. Unchanged, nothing
     /// happens; with none left, the surfaces go.
     pub(crate) fn desktop_follow(&mut self, machine: Option<&str>, person: Option<&str>) {
+        // A game session draws none (M8.26).
+        if self.game_session {
+            return;
+        }
         let parts: Vec<Placed> = edel::settings::desktop_widgets_in(machine, person)
             .into_iter()
             .filter(|placed| draws(placed.part))

@@ -27,7 +27,9 @@
 //! `game_frame_shown` from the backend's page flip), kept in
 //! `edel::smoothness::Frames`; when it stops playing, its record replaces
 //! its app's in the person's `games.toml`, which `edel report` shows, and
-//! the log says it in one line.
+//! the log says it in one line. The same frames feed the frame rate
+//! overlay (M8.27, `frame_rate.rs`): `Recording::recent` keeps the last
+//! seconds of them, and `Game::live` gives what it shows.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
@@ -49,6 +51,7 @@ use smithay::reexports::wayland_server::{
 use smithay::wayland::compositor::with_states;
 
 use edel::smoothness::Frames;
+use edel_compositor::frame_times::{Recent, Shown};
 use edel_compositor::game::{GameMode, When};
 
 use crate::state::Edel;
@@ -61,11 +64,15 @@ pub struct Game {
     pub mode: GameMode,
     /// Whether the machine runs on its battery, as shell-ui says (M7.7c).
     pub on_battery: bool,
+    /// A game session (M8.26): game mode is on whatever the key says.
+    pub session: bool,
     /// Whether a game played at the last state change, so the log says
     /// when one starts and when it ends (M7.7c).
     pub stepped_aside: Cell<bool>,
     /// The game that plays now and its frames (M7.7d).
     recording: RefCell<Option<Recording>>,
+    /// The frame rate overlay (M8.27).
+    pub overlay: RefCell<crate::frame_rate::Overlay>,
 }
 
 /// A game's frames while it plays (M7.7d).
@@ -78,12 +85,14 @@ struct Recording {
     /// Whether it committed since its last frame reached the screen.
     fresh: bool,
     frames: Frames,
+    /// Its last frames, for the overlay (M8.27).
+    recent: Recent,
 }
 
 impl Game {
     /// Whether game mode is on now.
     pub fn on(&self) -> bool {
-        self.mode.on(|| self.on_battery)
+        self.session || self.mode.on(|| self.on_battery)
     }
 
     /// A surface committed (M7.7d): when it is the game's, its next page
@@ -102,8 +111,19 @@ impl Game {
         if let Some(recording) = self.recording.borrow_mut().as_mut() {
             if recording.output == output && std::mem::take(&mut recording.fresh) {
                 recording.frames.shown(at);
+                recording.recent.shown(at);
             }
         }
+    }
+}
+
+impl Game {
+    /// What the frame rate overlay shows over the game that plays on the
+    /// screen named `output` (M8.27), once it has shown two frames there.
+    pub fn live(&self, output: &str) -> Option<Shown> {
+        let recording = self.recording.borrow();
+        let recording = recording.as_ref().filter(|r| r.output == output)?;
+        recording.recent.shown_now()
     }
 }
 
@@ -215,6 +235,7 @@ impl Edel {
                 output,
                 fresh: false,
                 frames: Frames::default(),
+                recent: Recent::default(),
             })
         });
     }

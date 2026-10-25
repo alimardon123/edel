@@ -2630,6 +2630,9 @@ msgstr ""
 msgid "Turn game mode on or off until the next login: a fullscreen game gets variable refresh"
 msgstr ""
 
+msgid "Show or hide the frame rate over a fullscreen game until the next login"
+msgstr ""
+
 msgid "Open or close the tray's apps behind its arrow, with the keyboard on them"
 msgstr ""
 

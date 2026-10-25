@@ -514,10 +514,10 @@ jobs:
               fallback switcher presets own-presets buttons styles scroll sandbox everyday scale
           - part: B
             cases: >-
-              titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness
+              titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness frame-rate
               keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper
               settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome display
-              sound network firewall power updates portal own-bars capture tray
+              sound network firewall power updates portal own-bars capture tray game-session
           - part: C
             cases: >-
               one-screen scheme sun terminal accent contrast wallpaper glass desktop-widgets completion lock lock-edit lock-looks

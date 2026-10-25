@@ -49,9 +49,11 @@ pub struct ShellUi {
 }
 
 /// Starts shell-ui the first time the desktop is on screen, unless the
-/// session runs one program instead (the greeter).
+/// session is the greeter's, which runs one program instead. A game
+/// session's (M8.26) gets `--game`: no panels, but the lock screen and the
+/// idle ladder, which only shell-ui draws and keeps.
 pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str) {
-    if state.shell_ui.started || state.program.is_some() {
+    if state.shell_ui.started || state.greeter() {
         return;
     }
     state.shell_ui.started = true;
@@ -63,6 +65,9 @@ fn spawn(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: String) 
     command
         .envs(state.cursors.env())
         .env("WAYLAND_DISPLAY", &wayland);
+    if state.game_session() {
+        command.arg("--game");
+    }
     // The apps the launcher starts inherit it, X11 ones too.
     match &state.x11 {
         Some(x11) => command.env("DISPLAY", format!(":{}", x11.number)),

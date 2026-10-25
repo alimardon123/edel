@@ -15,7 +15,21 @@ fi
 # Edel (XDG_CURRENT_DESKTOP), which apps and the portals go by (M5.5a).
 # Qt apps, in Flatpak's sandbox too, read the colour scheme, fonts and
 # accent from the settings portal (QT_QPA_PLATFORMTHEME, M6.2a).
-env XDG_CURRENT_DESKTOP=Edel QT_QPA_PLATFORMTHEME=xdgdesktopportal dbus-run-session -- edel-compositor
+# A game session (M8.26), the gaming add-on's edel-game.desktop: --game
+# and the program the compositor runs with a shell-ui of no panels (the
+# lock screen and the idle ladder kept), every window fullscreen, ending
+# the session when the program ends. A Flatpak
+# app that is not installed starts the desktop instead, and says so.
+if [ "${1:-}" = --game ]; then
+	shift
+	if [ "${1:-} ${2:-}" = 'flatpak run' ] && ! flatpak info "${3:-}" >/dev/null 2>&1; then
+		echo "edel-session: the game session's app, ${3:-}, is not installed, so the desktop starts instead; the gaming profile installs it: edel settings set system.profiles+=gaming" >&2
+		set --
+	else
+		set -- --game -- "$@"
+	fi
+fi
+env XDG_CURRENT_DESKTOP=Edel QT_QPA_PLATFORMTHEME=xdgdesktopportal dbus-run-session -- edel-compositor "$@"
 status=$?
 
 # What the session started and left running when the compositor ended, a

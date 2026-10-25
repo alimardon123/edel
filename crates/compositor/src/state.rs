@@ -1296,7 +1296,9 @@ impl CompositorHandler for Edel {
             if maximize {
                 self.maximize(&window);
             }
-            let fullscreen = std::mem::take(&mut data(&window).borrow_mut().fullscreen_when_placed);
+            // In a game session every window opens fullscreen (M8.26).
+            let fullscreen = std::mem::take(&mut data(&window).borrow_mut().fullscreen_when_placed)
+                || self.game_session();
             if fullscreen {
                 self.fullscreen(&window, None);
             }
