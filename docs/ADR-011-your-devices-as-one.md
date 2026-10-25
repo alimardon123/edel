@@ -106,6 +106,7 @@ Sections 12, 16, 17 and 18 wait until the OS is stable (after M8), but what they
 - **Screen sharing (M6.3) uses the standard portals and PipeWire**, so help (14) and a device as a screen (5) reuse it.
 - **Roles are profiles (M7.6)**, so a second life (13) adds files, not code.
 - **Nothing listens on the network until a device is paired**, the rule every section here keeps.
+- **Trust lives in the keys, never in the way bytes travel.** Pairing, `[devices.NAME]`, backups and folders in step name a device by its identity key and encrypt end to end with the devices' own keys, so the local network, the person's own tunnel, or later an end-to-end encrypted relay (asked about by Alimardon on 2026-10-25 for people far from home; option C stays rejected unless they reopen it) is one more way to carry the same bytes, not a change to pairing or the file.
 
 ### 20. A box with no screen, used from your phone
 

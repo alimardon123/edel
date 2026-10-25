@@ -41,7 +41,10 @@ impl Edel {
         let Some(screen) = output.and_then(|o| self.space.output_geometry(&o)) else {
             return;
         };
-        if !self.is_fullscreen(window) {
+        // A relayout puts a fullscreen window back on its screen; only a
+        // window that becomes fullscreen takes the keyboard.
+        let already = self.is_fullscreen(window);
+        if !already {
             // Taken before the flag is set, while the frame still counts.
             let Some(frame) = self.frame_of(window) else {
                 return;
@@ -67,7 +70,9 @@ impl Edel {
         );
         self.slide(window, screen.loc);
         self.space.map_element(window.clone(), screen.loc, true);
-        self.focus(window);
+        if !already {
+            self.focus(window);
+        }
         self.dirty = true;
         self.state_changed();
     }
