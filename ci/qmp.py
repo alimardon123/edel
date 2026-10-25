@@ -39,8 +39,13 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  would (QMP system_wakeup; M6.7)
     qmp.py plug ID FILE          plug the raw image FILE in as a removable
                                  USB stick named ID on the xhci bus (M6.6b)
+    qmp.py memory                print "IN_USE TOTAL" in MiB, the guest's
+                                 memory in use (MemTotal less MemAvailable)
+                                 as its virtio balloon driver reports it to
+                                 the device balloon0, or "none" while it has
+                                 reported nothing (desktop-memory.sh)
 
-The first ten and the last three talk to the QMP socket named by $QMP.
+The first ten and the last four talk to the QMP socket named by $QMP.
 Key names are QEMU's QKeyCodes (a, 1, ret, spc, ctrl, alt, meta_l, f1 and so on).
 """
 
@@ -326,6 +331,18 @@ def main(argv):
                 file={"driver": "file", "filename": path})
         qmp.run("device_add", driver="usb-storage", bus="xhci.0", drive=name, id=name,
                 removable=True)
+    elif command == "memory":
+        # The driver reports only while QEMU polls it; asking again for
+        # the same interval changes nothing.
+        balloon = "/machine/peripheral/balloon0"
+        qmp.run("qom-set", path=balloon, property="guest-stats-polling-interval", value=2)
+        report = qmp.run("qom-get", path=balloon, property="guest-stats")
+        stats = report.get("stats", {})
+        total, available = stats.get("stat-total-memory", -1), stats.get("stat-available-memory", -1)
+        if report.get("last-update", 0) == 0 or total < 0 or available < 0:
+            print("none")
+        else:
+            print((total - available) >> 20, total >> 20)
     else:
         raise SystemExit(f"qmp: unknown command {command}\n{__doc__}")
 

@@ -5985,7 +5985,9 @@ case_clipboard() {
 case_smoothness() {
 	# The smoothness gate (M7.7e): a game stand-in, fullscreen and drawing on
 	# every frame, with game mode on (the VM has no battery), times 1200
-	# frames as the screen presented them. Its slowest 1 percent, as a
+	# frames as the screen presented them, after its first 0.5 s, the
+	# window's open animation, which the client keeps apart and reports
+	# (smooth.rs). Its slowest 1 percent, as a
 	# multiple of its median frame, must stay within game_frame_p99_ratio:
 	# the VM's screen has no refresh of its own, so the median is the
 	# runner's pace and the ratio is how much worse the slow frames are
@@ -6018,10 +6020,11 @@ case_smoothness() {
 		slowest=$(echo "$line" | sed -n 's/.*slowest_ms=\([0-9.]*\).*/\1/p')
 		direct=$(echo "$line" | sed -n 's/.*direct=\([0-9]*\).*/\1/p')
 		discarded=$(echo "$line" | sed -n 's/.*discarded=\([0-9]*\).*/\1/p')
+		settle=$(echo "$line" | sed -n 's/.*opening_intervals=\([0-9]*\) opening_worst_ms=\([0-9.]*\).*/\1 intervals of the first 0.5 s apart, the slowest \2 ms/p')
 		[ -n "$frames" ] && [ -n "$median" ] && [ -n "$p99" ] && [ -n "$direct" ] || fail "the game stand-in's line lacks a number (run $run): $line"
 		ratio=$(awk -v p="$p99" -v m="$median" 'BEGIN { if (m > 0) printf "%.2f", p / m; else print 99 }')
 		share=$(awk -v d="$direct" -v f="$frames" 'BEGIN { printf "%.1f", d * 100 / (f + 1) }')
-		echo "smoothness run $run: median $median ms, p99 $p99 ms ($ratio times the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded"
+		echo "smoothness run $run: median $median ms, p99 $p99 ms ($ratio times the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}"
 		# The better run: the lower ratio.
 		if [ -z "$best" ] || awk -v p="$ratio" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
 			best="$ratio $slowest $share $discarded $median $p99"
@@ -6080,8 +6083,9 @@ case_frame_rate() {
 		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
 		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
 		[ -n "$median" ] && [ -n "$p99" ] || fail "the timed game stand-in failed (run $run): $line"
+		settle=$(echo "$line" | sed -n 's/.*opening_intervals=\([0-9]*\) opening_worst_ms=\([0-9.]*\).*/\1 intervals of the first 0.5 s apart, the slowest \2 ms/p')
 		ratio=$(awk -v p="$p99" -v m="$median" 'BEGIN { if (m > 0) printf "%.2f", p / m; else print 99 }')
-		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($ratio times the median)"
+		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($ratio times the median); ${settle:-no start kept apart}"
 		if [ -z "$best" ] || awk -v p="$ratio" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
 			best="$ratio $median $p99"
 		fi
