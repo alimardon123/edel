@@ -428,6 +428,11 @@ commands() {
 			;;
 		'update log') say "update $(tr '\n' ';' </tmp/update.log)" ;;
 		# A window that asks to fill its screen (M5.20).
+		# A game stand-in that draws on every frame until it is closed, for
+		# the frame rate overlay (M8.27).
+		'frame rate game')
+			as_ci edel-testclient --fullscreen --busy --size 300x200 --colour 7a3fb0 --title framerate </dev/null >/dev/null 2>&1 &
+			;;
 		'full window')
 			as_ci edel-testclient --fullscreen --size 300x200 --colour 33aa66 --title full </dev/null >/dev/null 2>&1 &
 			;;
@@ -1406,6 +1411,24 @@ commands() {
 			before=$(cut -d' ' -f1 /proc/uptime)
 			pkill -9 -x edel-compositor
 			respawned "$before" &
+			;;
+		# The game session (M8.26): ci's session ends as a log out ends
+		# it, so greetd starts its greeter again, which the case logs in
+		# from; then how many compositors and shell-uis ci runs, and how
+		# often the greeter has shown.
+		'end session')
+			echo 'ci:edel-desktop-test' | chpasswd
+			shown=$(grep -ac 'edel-shell-ui: greeter shown' /tmp/greeter.log 2>/dev/null)
+			pkill -x -u ci edel-compositor
+			i=0
+			while [ "$(grep -ac 'edel-shell-ui: greeter shown' /tmp/greeter.log 2>/dev/null)" = "$shown" ] && [ "$i" -lt 300 ]; do
+				sleep 0.1
+				i=$((i + 1))
+			done
+			say "greeter_again $(grep -ac 'edel-shell-ui: greeter shown' /tmp/greeter.log 2>/dev/null) after $shown"
+			;;
+		'game session')
+			say "game_session compositor $(pgrep -x -u ci edel-compositor | wc -l) shell-ui $(pgrep -x -u ci edel-shell-ui | wc -l) greeter $(grep -ac 'edel-shell-ui: greeter shown' /tmp/greeter.log 2>/dev/null)"
 			;;
 		# The input method (M6.8): fcitx5 on the machine's file, which the
 		# compositor starts or stops as the setting changes; reset takes it out.

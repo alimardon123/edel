@@ -284,6 +284,9 @@
 #               share that went straight to the
 #               screen at least game_direct_percent_floor; one more run when
 #               the first is over (M7.7e)
+#   frame-rate  Super+Shift+G shows the frame rate overlay over a fullscreen
+#               game stand-in (frame-rate.png), the game timed again with it
+#               on within game_frame_p99_ratio, and hidden again (M8.27)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -346,6 +349,13 @@
 #               set shows in the diff and its reset undoes it, and dropping
 #               the add-on leaves the diff empty, no file of it in /etc
 #               or /usr/lib/edel and none of its apps in flatpak ps (M7.9)
+#   game-session  last, as it ends ci's session: with the gaming profile
+#               installing the stand-in for Steam, the login screen's
+#               Edel OS Game session logs ci in to the compositor alone,
+#               which runs flatpak run com.valvesoftware.Steam -gamepadui
+#               fullscreen in game mode, shell-ui with no panels but the
+#               lock (Super+L, unlocked with ci's password), and Super+Q
+#               ending the game brings the login screen back (M8.26)
 #   flatpak     last but suspend and lid: `edel settings set apps.installed` lists io.mpv.Mpv
 #               and `edel settings apply` installs it for ci from Flathub
 #               with flatpak --user (up to 900 s for the download); mpv's
@@ -1061,6 +1071,110 @@ case_respawn() {
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
 	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login"
+}
+
+case_game_session() {
+	# A game session (M8.26): the gaming add-on's edel-game.desktop, which
+	# the login screen offers beside Edel OS. The gaming profile installs
+	# the stand-in for Steam (ci/apps/make-repo.sh), which takes Steam's
+	# -gamepadui as a game draws, on every frame. ci's session ends, ci
+	# logs in to Edel OS Game from the login screen's session chip, and
+	# the compositor runs the stand-in fullscreen, game mode on, with a
+	# shell-ui that draws no panels but keeps the lock screen and the idle
+	# ladder. Super+L locks and ci's password unlocks. Super+Q ends the
+	# game, which ends the session, and the login screen shows again. Kept
+	# as game-session.png and game-session-lock.png.
+	asked=$(count 'DESKTOP-TEST: gaming_standin ')
+	guest 'gaming standin'
+	wait_more 'DESKTOP-TEST: gaming_standin ' "$asked" || fail "the service did not point ci's Flathub at the stand-in"
+	[ "$(value gaming_standin | cut -d' ' -f1)" = 0 ] || fail "adding the stand-in's remote for ci failed: $(value gaming_standin)"
+	profile_on gaming
+	asked=$(count 'DESKTOP-TEST: greeter_again ')
+	guest 'end session'
+	wait_more 'DESKTOP-TEST: greeter_again ' "$asked" 60 || fail "no word from the test service after ci's session ended"
+	again=$(value greeter_again)
+	[ "${again%% *}" != "${again##* }" ] || fail "the login screen did not show again after ci's session ended: $again"
+	guest 'greeter places'
+	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
+		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	box=$(printf '%s\n' "$places" | sed -n 's/.*person[0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) ci,.*/\1 \2 \3 \4/p')
+	[ -n "$box" ] || fail "ci is not on the greeter's people row: \"$places\""
+	chip=$(printf '%s\n' "$places" | sed -n 's/.*session \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) .*/\1 \2 \3 \4/p')
+	[ -n "$chip" ] || fail "the greeter has no session chip: \"$places\""
+	read -r cx cy cw ch <<-EOF
+		$chip
+	EOF
+	python3 ci/qmp.py click $((cx + cw / 2)) $((cy + ch / 2))
+	sleep 1
+	asked=$(count 'DESKTOP-TEST: greeter.log .*session[0-9][0-9]* [0-9+x]* Edel OS Game')
+	guest 'greeter places'
+	wait_more 'DESKTOP-TEST: greeter.log .*session[0-9][0-9]* [0-9+x]* Edel OS Game' "$asked" 10 ||
+		fail "the session chip's menu has no Edel OS Game row: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greeter.log ' | tail -n 3)"
+	places=$(tr -d '\r' <"$log" | sed -n 's/.*DESKTOP-TEST: greeter\.log .*greeter places //p' | tail -n 1)
+	row=$(printf '%s\n' "$places" | sed -n 's/.*session[0-9][0-9]* \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\) Edel OS Game.*/\1 \2 \3 \4/p')
+	read -r rx ry rw rh <<-EOF
+		$row
+	EOF
+	python3 ci/qmp.py click $((rx + rw / 2)) $((ry + rh / 2))
+	sleep 1
+	read -r bx by bw bh <<-EOF
+		$box
+	EOF
+	python3 ci/qmp.py click $((bx + bw / 2)) $((by + bh / 2))
+	sleep 1
+	started=$(count 'edel-compositor: a game session: flatpak run com.valvesoftware.Steam -gamepadui')
+	full=$(count 'edel-compositor: window edel-testclient fullscreen')
+	playing=$(count 'a game is playing')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: a game session: flatpak run com.valvesoftware.Steam -gamepadui' "$started" 90 || {
+		guest 'greeter log'
+		sleep 3
+		fail "logging in to Edel OS Game did not start the compositor's game session: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
+	}
+	wait_more 'edel-compositor: window edel-testclient fullscreen' "$full" 60 ||
+		fail "the stand-in for Steam did not show fullscreen in the game session"
+	wait_more 'a game is playing' "$playing" 30 || fail "the game session did not turn game mode on for the stand-in"
+	asked=$(count 'DESKTOP-TEST: game_session ')
+	guest 'game session'
+	wait_more 'DESKTOP-TEST: game_session ' "$asked" 10 || fail "no word from the test service about the game session's processes"
+	case "$(value game_session)" in
+	'compositor 1 shell-ui 1 greeter '*) ;;
+	*) fail "the game session runs one compositor and one shell-ui for ci, not: $(value game_session)" ;;
+	esac
+	wait_for 'edel-shell-ui: a game session: no panels or desktop widgets' 30 ||
+		fail "the game session's shell-ui did not say it draws no panels"
+	shown=$(value game_session | sed 's/.* greeter //')
+	shot game-session 640 400 cc3333 >/dev/null ||
+		fail "the middle of the screen is not the stand-in's #cc3333 in the game session"
+	# Super+L locks the screen over the game, as on the desktop, and ci's
+	# password unlocks it (game-session-lock.png).
+	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	python3 ci/qmp.py key meta_l-l
+	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" || fail "Super+L did not lock the screen in the game session"
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/game-session-lock.png"
+	unlocked=$(count 'edel-compositor: screen unlocked$')
+	python3 ci/qmp.py type 'edel-desktop-test\n'
+	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the game session's screen"
+	# The game has the keyboard again once the lock's surface is gone.
+	sleep 1
+	python3 ci/qmp.py key meta_l-q
+	# The game's end ends the session: ci runs no compositor or shell-ui,
+	# and the greeter has shown again.
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: game_session ')
+		guest 'game session'
+		wait_more 'DESKTOP-TEST: game_session ' "$asked" 10 || fail "no word from the test service after the game ended"
+		case "$(value game_session)" in
+		"compositor 0 shell-ui 0 greeter "*) [ "$(value game_session | sed 's/.* greeter //')" -gt "$shown" ] && break ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "ending the game with Super+Q did not end the session and bring the login screen back: $(value game_session)"
+		sleep 1
+	done
+	echo "PASS: with the gaming profile installing the stand-in for Steam, ci logged in to Edel OS Game from the login screen's session chip, the compositor ran flatpak run com.valvesoftware.Steam -gamepadui fullscreen, in game mode, with a shell-ui of no panels whose lock Super+L showed and ci's password undid, and Super+Q ending the game brought the login screen back"
 }
 
 case_layers() {
@@ -5920,6 +6034,67 @@ case_smoothness() {
 	echo "PASS: a fullscreen game stand-in in game mode presented its frames with p99 $6 ms, $1 times its median $5 ms (budget $limit times), slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
 }
 
+case_frame_rate() {
+	# The frame rate overlay (M8.27): over a fullscreen game stand-in in
+	# game mode (the VM has no battery), Super+Shift+G shows the compositor's
+	# panel of the game's frame rate, frame time and slowest 1 percent with
+	# a graph in the upper left corner, kept as frame-rate.png, the rest of
+	# the screen the game's colour; nothing is put into the game. With it
+	# on, the smoothness gate's game is timed again and its slowest 1
+	# percent must stay within game_frame_p99_ratio times its median (the
+	# frames are composited now, so the direct share is not asked); a run
+	# over is measured once more. Super+Shift+G hides it again.
+	limit=$(budget game_frame_p99_ratio)
+	playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
+	guest 'frame rate game'
+	wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
+		fail "the game stand-in did not play as a game"
+	on=$(count 'edel-compositor: the frame rate overlay on [(]Super[+]Shift[+]G[)]')
+	shows=$(count 'edel-compositor: the frame rate overlay shows ')
+	python3 ci/qmp.py key meta_l-shift-g
+	wait_more 'edel-compositor: the frame rate overlay on [(]Super[+]Shift[+]G[)]' "$on" || fail "Super+Shift+G did not turn the frame rate overlay on"
+	wait_more 'edel-compositor: the frame rate overlay shows ' "$shows" 20 || fail "the overlay showed no numbers over the game"
+	numbers=$(tr -d '\r' <"$log" | grep -a 'edel-compositor: the frame rate overlay shows ' | tail -n 1)
+	case "$numbers" in
+	*'shows '[0-9]*' fps, '[0-9]*.[0-9]' ms   1% '[0-9]*.[0-9]' ms') ;;
+	*) fail "the overlay's numbers do not read as a frame rate, a frame time and the slowest 1 percent: $numbers" ;;
+	esac
+	shot frame-rate 100 24 '!7a3fb0' >/dev/null || fail "the upper left corner shows the game, not the overlay (frame-rate.png)"
+	shot frame-rate 640 600 7a3fb0 >/dev/null || fail "the middle of the screen is not the game's colour with the overlay on (frame-rate.png)"
+	ended=$(count 'edel-compositor: the game ended; the desktop is back')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 || fail "Super+Q did not end the game stand-in"
+	best=''
+	for run in 1 2; do
+		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
+		n=$(count 'DESKTOP-TEST: smooth ')
+		guest 'smooth game'
+		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
+			fail "the timed game stand-in did not play as a game (run $run)"
+		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
+		line=$(value smooth)
+		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
+		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
+		[ -n "$median" ] && [ -n "$p99" ] || fail "the timed game stand-in failed (run $run): $line"
+		ratio=$(awk -v p="$p99" -v m="$median" 'BEGIN { if (m > 0) printf "%.2f", p / m; else print 99 }')
+		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($ratio times the median)"
+		if [ -z "$best" ] || awk -v p="$ratio" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$ratio $median $p99"
+		fi
+		awk -v p="${best%% *}" -v b="$limit" 'BEGIN { exit !(p <= b) }' && break
+	done
+	set -- $best
+	awk -v p="$1" -v b="$limit" 'BEGIN { exit !(p <= b) }' ||
+		fail "with the frame rate overlay on, a game's slowest frames are worse than the budget in both runs: p99 $3 ms is $1 times its median $2 ms (budget $limit times)"
+	off=$(count 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]')
+	python3 ci/qmp.py key meta_l-shift-g
+	wait_more 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]' "$off" || fail "Super+Shift+G did not turn the frame rate overlay off"
+	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on a game's frames had p99 $3 ms, $1 times the median $2 ms (budget $limit times)." >>"$GITHUB_STEP_SUMMARY"
+	fi
+	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on a game's frames had p99 $3 ms, $1 times its median $2 ms (budget $limit times); Super+Shift+G hid it"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -9768,12 +9943,12 @@ fi
 
 # The profile cases (M7.6b) take what a machine would download from this
 # host, the guest's 10.0.2.2, on a port of its own (rollback has 8001):
-# profile-gaming a stand-in for Steam and ai-agents its two apps' stand-ins from the test apps'
+# profile-gaming and game-session a stand-in for Steam and ai-agents its two apps' stand-ins from the test apps'
 # repository;
 # profile-developer our own container image (ci/build.sh's
 # out/desktop-container).
 case " $* " in
-*' profile-gaming '* | *' profile-developer '* | *' ai-agents '*)
+*' profile-gaming '* | *' profile-developer '* | *' ai-agents '* | *' game-session '*)
 	rm -rf "$dir/serve"
 	mkdir -p "$dir/serve"
 	ln -s "$PWD/out/apps-repo" "$dir/serve/apps"

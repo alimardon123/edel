@@ -5,6 +5,15 @@
 //! running shell-ui's greeter (`edel-shell-ui --greeter`, M5.10b): when
 //! the greeter logs someone in it exits, the greeter's compositor stops,
 //! and greetd starts the person's session.
+//!
+//! A game session (M8.26, `edel-compositor --game -- PROGRAM ARG...`, the
+//! gaming add-on's login choice) is a person's session, its log and its
+//! own programs (PipeWire) included, with a shell-ui of no panels
+//! (`edel-shell-ui --game`, which keeps the lock screen and the idle
+//! ladder), no startup apps and no welcome: PROGRAM, Steam's Big Picture,
+//! runs until it exits, which
+//! ends the session and brings back the login screen; every window opens
+//! fullscreen and game mode is on (`games.rs`).
 
 use std::io;
 use std::process::{Command, ExitStatus};
@@ -20,14 +29,31 @@ use crate::state::Edel;
 pub struct Program {
     argv: Vec<String>,
     started: bool,
+    /// A game session's program (M8.26), not the greeter.
+    pub game: bool,
 }
 
 impl Program {
-    pub fn new(argv: Vec<String>) -> Program {
+    pub fn new(argv: Vec<String>, game: bool) -> Program {
         Program {
             argv,
             started: false,
+            game,
         }
+    }
+}
+
+impl Edel {
+    /// Whether the session runs one program instead of a person's desktop:
+    /// the greeter. A game session (M8.26) is a person's, with a shell-ui of
+    /// no panels.
+    pub fn greeter(&self) -> bool {
+        self.program.as_ref().is_some_and(|p| !p.game)
+    }
+
+    /// Whether this is a game session (M8.26).
+    pub fn game_session(&self) -> bool {
+        self.program.as_ref().is_some_and(|p| p.game)
     }
 }
 
@@ -42,6 +68,12 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel, wayland: &str
     }
     program.started = true;
     let name = program.argv[0].clone();
+    if program.game {
+        eprintln!(
+            "edel-compositor: a game session: {}, every window fullscreen, game mode on, shell-ui with no panels",
+            program.argv.join(" ")
+        );
+    }
     let mut command = Command::new(&name);
     command
         .args(&program.argv[1..])

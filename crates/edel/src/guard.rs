@@ -340,6 +340,19 @@ pub fn guard() -> Result<()> {
                             &fs::read_to_string(places::DEVELOPER_NOW).unwrap_or_default(),
                         )
                 }
+                // GRUB's block unread, its own word still counts: a safe
+                // start means no slot had a try left, so a restart would
+                // only loop (the review of 2026-10-25).
+                Err(err)
+                    if crate::data::is_safe_start(
+                        &fs::read_to_string("/proc/cmdline").unwrap_or_default(),
+                    ) =>
+                {
+                    eprintln!(
+                        "warning: edel guard: could not read how many tries the slots have left, and this is a safe start, so the machine keeps running: {err:#}"
+                    );
+                    false
+                }
                 Err(err) => {
                     eprintln!(
                         "warning: edel guard: could not read how many tries the slots have left, so the machine restarts as before: {err:#}"

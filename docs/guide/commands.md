@@ -210,6 +210,14 @@ Check an image definition without building it.
 |---|---|
 | `DEFINITION` | Image definition, for example images/edel.toml |
 
+### `edel image deps LISTS...`
+
+List the images' packages from Alpine community, docs/backports.md.
+
+| | What it does |
+|---|---|
+| `LISTS` | Package lists the build wrote, for example out/*.packages |
+
 ## `edel theme`
 
 theme: a look as a set of pictures and appearance values, built in or your own; the Appearance page of Settings shows the same ones.

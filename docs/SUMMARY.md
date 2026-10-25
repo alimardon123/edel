@@ -4,6 +4,7 @@
 
 # Use Edel OS
 
+- [Download](download.md)
 - [Try it](TRY-IT.md)
 - [Hardware reports](hardware.md)
 - [Install](INSTALL.md)
@@ -24,6 +25,8 @@
 - [File formats](FORMATS.md)
 - [Platform levels](platform-levels.md)
 - [Releases](RELEASE.md)
+- [Security fixes](SECURITY.md)
+- [Backports](backports.md)
 - [Messages and logs](MESSAGES.md)
 - [Layout guide for apps](layout-guide.md)
 - [The look](mockups/README.md)
@@ -48,6 +51,7 @@
 - [Review: AerynOS](REVIEW-aerynos.md)
 - [Review: postmarketOS](REVIEW-postmarketos.md)
 - [Review: this project, 2026-10-13](REVIEW-project-2026-10-13.md)
+- [Review: updater, guard and signing, 2026-10-25](REVIEW-signing-2026-10-25.md)
 - [Review: apps that last, and why new systems take years](REVIEW-apps-and-lessons.md)
 - [Review: everything walked as a newcomer](REVIEW-experience.md)
 - [Review: other projects' bugs, checked against ours](REVIEW-bugs.md)

@@ -277,15 +277,19 @@ for f in out/*.ext4.gz out/*.img.gz out/*.qcow2 out/*.tar.gz out/*.packages out/
 	ln "$f" out/release/
 done
 # The update images are IMAGE.ext4.gz; the add-ons IMAGE.NAME.ext4.gz, each
-# with its feature file IMAGE.NAME.toml beside it (M7.2a).
+# with its feature file IMAGE.NAME.toml beside it (M7.2a). Every other file
+# is a download, whose sum the release's own list carries (M8.10b).
 set --
-for f in out/release/*.ext4.gz; do
+downloads=
+for f in out/release/*; do
 	case "${f##*/}" in
 	*.*.ext4.gz) set -- "$@" --addon "$f" ;;
-	*) set -- "$@" "$f" ;;
+	*.ext4.gz) set -- "$@" "$f" ;;
+	*) downloads="$downloads --download $f" ;;
 	esac
 done
-./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" "$@"
+# shellcheck disable=SC2086 # the file names hold no spaces
+./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" $downloads "$@"
 ./target/release/edel release make --version "$version" --channel "${EDEL_CHANNEL:-ci}" \
 	--base-url "https://github.com/alimardon123/edel/releases/download/$tag" --out out/channel "$@"
 

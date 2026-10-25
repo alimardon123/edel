@@ -66,6 +66,8 @@ pub enum Act {
     Overview,
     /// Game mode on or off until the next login (M7.7).
     GameMode,
+    /// The frame rate overlay over a game, shown or hidden (M8.27).
+    FrameRate,
     /// shell-ui's clipboard history, open or closed (M7.13).
     ClipboardHistory,
 }
@@ -88,6 +90,7 @@ impl Act {
             "toggle_tiling" => Some(Act::Tiling),
             "toggle_fullscreen" => Some(Act::Fullscreen),
             "toggle_game_mode" => Some(Act::GameMode),
+            "toggle_frame_rate" => Some(Act::FrameRate),
             "clipboard_history" => Some(Act::ClipboardHistory),
             "minimize_window" => Some(Act::Minimize),
             "toggle_maximize" => Some(Act::Maximize),

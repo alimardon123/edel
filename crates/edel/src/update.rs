@@ -203,6 +203,16 @@ fn confirm(env: &mut Env, running: Slot) -> Option<Slot> {
     passed_over.then_some(other)
 }
 
+/// Whether the running slot may be the only way back, so the other slot can
+/// be written: GRUB counted a try for it and the guard has not confirmed it
+/// yet, so the other slot is still the version that last worked (the
+/// review of 2026-10-25). A safe start, when no slot had a try left, is
+/// settled: there is no better way back to keep, and an update may be the
+/// fix.
+fn running_is_settled(env: &Env, running: Slot, safe: bool) -> bool {
+    safe || env.tries(running) == 0
+}
+
 /// Makes the other slot start next; refused when it is switched off.
 fn roll_back(env: &mut Env, running: Slot) -> Result<Slot> {
     let target = running.other();
@@ -641,6 +651,20 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
     {
         let esp = Esp::mount(&disk)?;
         let mut env = esp.load()?;
+        let safe =
+            crate::data::is_safe_start(&fs::read_to_string("/proc/cmdline").unwrap_or_default());
+        if !running_is_settled(&env, disk.running, safe) {
+            bail!(
+                "{}",
+                trf(
+                    "slot {running} has not finished starting yet, so slot {slot}, the version before it, is kept as the way back; run edel update again once Edel OS has started (edel status says when)",
+                    &[
+                        ("running", &disk.running.to_string()),
+                        ("slot", &slot.to_string())
+                    ]
+                )
+            );
+        }
         before_install(&mut env, slot);
         esp.save(&env)?;
     }
@@ -1163,6 +1187,19 @@ mod tests {
         assert_eq!(env.order(), [Slot::A, Slot::B]);
         assert!(env.ok(Slot::A) && !env.ok(Slot::B));
         assert_eq!((env.tries(Slot::A), env.tries(Slot::B)), (0, 3));
+    }
+
+    #[test]
+    fn an_unconfirmed_slot_keeps_the_version_before() {
+        // B was installed and is on its first try; A last worked.
+        let env = Env::parse("ORDER=B A\nA_OK=1\nA_TRY=0\nB_OK=1\nB_TRY=1\n").unwrap();
+        assert!(!running_is_settled(&env, Slot::B, false));
+        // Once the guard confirmed B, A may be written.
+        let env = Env::parse("ORDER=B A\nA_OK=1\nA_TRY=0\nB_OK=1\nB_TRY=0\n").unwrap();
+        assert!(running_is_settled(&env, Slot::B, false));
+        // A safe start has no better way back to keep.
+        let env = Env::parse("ORDER=B A\nA_OK=1\nA_TRY=3\nB_OK=1\nB_TRY=3\n").unwrap();
+        assert!(running_is_settled(&env, Slot::B, true));
     }
 
     #[test]

@@ -1679,6 +1679,9 @@ msgstr ""
 msgid "Game mode on or off"
 msgstr ""
 
+msgid "Frame rate over games"
+msgstr ""
+
 msgid "Show tray"
 msgstr ""
 
