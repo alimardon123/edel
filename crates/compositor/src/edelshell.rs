@@ -180,6 +180,17 @@ impl Edel {
         }
     }
 
+    /// The Undo bar's key: shell-ui undoes what Done just changed, when its
+    /// Undo bar shows, and does nothing otherwise.
+    pub fn undo_change(&self) {
+        eprintln!("edel-compositor: undo desktop change");
+        for (link, _) in self.links.0.borrow().iter() {
+            if link.is_alive() {
+                link.undo();
+            }
+        }
+    }
+
     /// The launcher's key: shell-ui shows its launcher, or hides it.
     pub fn show_launcher(&self) {
         eprintln!("edel-compositor: launcher");

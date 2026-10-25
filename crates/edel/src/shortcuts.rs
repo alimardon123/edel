@@ -435,7 +435,35 @@ pub const ACTIONS: &[Action] = &[
         Group::System,
         n_("Open the clipboard history: the last texts and pictures you copied"),
     ),
+    action(
+        UNDO_DESKTOP_EDIT,
+        "Super+Z",
+        false,
+        Group::System,
+        n_("Undo the change an editor's Done just made, while its Undo bar shows"),
+    ),
 ];
+
+/// The action that presses the Undo bar's Undo (the key table proposal's
+/// option B, 2026-10-25), whose keys the bar shows.
+pub const UNDO_DESKTOP_EDIT: &str = "undo_desktop_edit";
+
+/// The keys `name` has from the machine's and the person's settings file
+/// texts, the person's over the machine's, laid over the defaults; none
+/// when it is unbound. A file that does not read counts as absent.
+pub fn keys_in(name: &str, texts: [Option<&str>; 2]) -> Option<Keys> {
+    let mut file = BTreeMap::new();
+    for text in texts.into_iter().flatten() {
+        if let Ok(read) = crate::settings::read(text) {
+            file.extend(read.file.shortcuts);
+        }
+    }
+    resolve(&file)
+        .0
+        .into_iter()
+        .find(|(action, _)| action.name == name)
+        .and_then(|(_, keys)| keys)
+}
 
 /// The action called `name`.
 pub fn find(name: &str) -> Option<&'static Action> {

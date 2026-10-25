@@ -226,5 +226,13 @@
         opens its clipboard history, or closes it if it is open.
       </description>
     </event>
+
+    <event name="undo">
+      <description summary="the Undo bar's key was pressed">
+        Super+Z, unless [shortcuts] says otherwise: while the Undo bar
+        shows after an editor's Done, shell-ui undoes that change as its
+        Undo button does; otherwise it does nothing.
+      </description>
+    </event>
   </interface>
 </protocol>
