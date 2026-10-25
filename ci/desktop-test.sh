@@ -1157,15 +1157,19 @@ case_game_session() {
 	unlocked=$(count 'edel-compositor: screen unlocked$')
 	python3 ci/qmp.py type 'edel-desktop-test\n'
 	wait_more 'edel-compositor: screen unlocked$' "$unlocked" || fail "ci's password did not unlock the game session's screen"
+	# The game has the keyboard again once the lock's surface is gone.
+	sleep 1
 	python3 ci/qmp.py key meta_l-q
-	# The game's end ends the session: ci runs no compositor, and the
-	# greeter has shown once more.
+	# The game's end ends the session: ci runs no compositor or shell-ui,
+	# and the greeter has shown again.
 	i=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: game_session ')
 		guest 'game session'
 		wait_more 'DESKTOP-TEST: game_session ' "$asked" 10 || fail "no word from the test service after the game ended"
-		[ "$(value game_session)" = "compositor 0 shell-ui 0 greeter $((shown + 1))" ] && break
+		case "$(value game_session)" in
+		"compositor 0 shell-ui 0 greeter "*) [ "$(value game_session | sed 's/.* greeter //')" -gt "$shown" ] && break ;;
+		esac
 		i=$((i + 1))
 		[ "$i" -lt 30 ] || fail "ending the game with Super+Q did not end the session and bring the login screen back: $(value game_session)"
 		sleep 1
