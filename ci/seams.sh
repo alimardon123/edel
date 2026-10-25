@@ -146,24 +146,17 @@ allowed() {
 	# Writes add-on images under /data/addons and their links; it reads the
 	# settings file only for the add-ons a machine wants (M7.2a).
 	crates/edel/src/addons.rs) return 0 ;;
+	# Writes the disk it installs (partitions, the boot files, grubenv, the
+	# install marks and first passwords); the settings file it copies and
+	# the answers it asks go through edel::settings (M8.13's finding fixed).
+	crates/edel/src/installer.rs) return 0 ;;
+	# Writes the files apply changes (accounts, the hostname, the time zone,
+	# the location's files, marks); the machine's settings file it renames,
+	# keeps, seeds and edits through edel::settings.
+	crates/edel/src/machine.rs) return 0 ;;
 	# Save as writes the export the person chose, a copy of the settings
 	# file's text in a file they pick, not the settings file itself.
 	crates/settings/src/system.rs) return 0 ;;
-	*) return 1 ;;
-	esac
-}
-
-# known_gap FILE: true for a file that writes the settings file itself,
-# outside edel::settings. It passes with a NOTE line until its writes move
-# into edel::settings (roadmap M8.13's finding); remove its line then.
-known_gap() {
-	case "$1" in
-	# Copies the settings file given to edel install onto the new data
-	# partition (write, fs::copy).
-	crates/edel/src/installer.rs) return 0 ;;
-	# Writes the machine's and the person's settings file itself: settle_names
-	# (a rename), keep_as_machine_file, seed and edit (set and reset).
-	crates/edel/src/machine.rs) return 0 ;;
 	*) return 1 ;;
 	esac
 }
@@ -178,10 +171,6 @@ check_seam() {
 		writes=$(code_of "$1/$file" | grep -E 'fs::write|File::create|OpenOptions::new|fs::rename|fs::copy' || true)
 		[ -n "$writes" ] || continue
 		allowed "$file" && continue
-		if known_gap "$file"; then
-			echo "NOTE: $file writes the settings file itself, outside edel::settings; a known gap (M8.13), to move into edel::settings"
-			continue
-		fi
 		fail "$file names the settings file and writes a file itself; the settings file is written only through edel::settings (ADR-011), so call its writer there, or add $file to allowed() in ci/seams.sh with the reason its write is another file"
 	done
 }
@@ -351,7 +340,7 @@ if [ "${1:-}" = --self-test ]; then
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, the settings file is written by edel::settings, bar the known gaps in the NOTE lines, and only edel::base names the base's tools)"
+	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
 else
 	exit 1
 fi

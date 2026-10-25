@@ -1,0 +1,69 @@
+name: Desktop memory
+
+# Edel OS's live desktop beside Ubuntu's and Fedora's (roadmap M8.36, the
+# release readiness audit of 2026-10-25): each booted from its own
+# download in the same QEMU machine, at 1.5 GiB and 1 GiB, its memory in
+# use read through the virtio balloon idle and with Firefox playing a
+# video (ci/desktop-memory.sh says how). Started by hand from the Actions
+# tab (Run workflow), never on a schedule or a change, so it spends three
+# runners only when someone wants the numbers.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-memory
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: Desktop memory ${{ matrix.system }}
+    runs-on: ubuntu-latest
+    # actions: read takes main's newest desktop image.
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [edel, ubuntu, fedora]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install QEMU, UEFI firmware and ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf ffmpeg
+
+      - name: Measure ${{ matrix.system }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh ci/desktop-memory.sh ${{ matrix.system }}
+          {
+            echo "### Desktop memory: ${{ matrix.system }}"
+            echo
+            echo "MemTotal less MemAvailable, in MiB, from the guest's virtio balloon driver; the pictures are in the artifact edel-desktop-memory-${{ matrix.system }}."
+            echo
+            echo "| System | VM | Idle desktop | With Firefox and a video | Peak | VM at the end |"
+            echo "|---|---|---|---|---|---|"
+            cat out/desktop-memory/results.md
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the pictures and samples
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-desktop-memory-${{ matrix.system }}
+          if-no-files-found: ignore
+          path: |
+            out/desktop-memory/*.png
+            out/desktop-memory/*.samples
+            out/desktop-memory/*.serial
+            out/desktop-memory/results.md

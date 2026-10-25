@@ -9,7 +9,15 @@
 //! is right. The first presented frame gives no interval, so N intervals
 //! need N+1 presented frames. The client asks for feedback only after the
 //! first frame callback, so the window's start, its fullscreen configure
-//! and game mode's switch are not counted. CI's smoothness gate reads this
+//! and game mode's switch are not counted, and the intervals of the first
+//! `SETTLE` after the first presented frame are kept apart: the window's
+//! open animation fades it in over the first 100 ms or so, which happens
+//! once when a game starts and is not a stutter while it plays, yet on a
+//! runner drawing a frame in 8 ms those are the 12 slowest of 1200, its
+//! whole p99. The line says how many there were and the slowest of them
+//! (`opening_intervals=... opening_worst_ms=...`, names that end in none
+//! of the other keys, as CI reads each key as the last match of its
+//! name), so a slow start still shows. CI's smoothness gate reads this
 //! line.
 
 use std::time::Duration;
@@ -25,14 +33,24 @@ use smithay_client_toolkit::reexports::protocols::wp::presentation_time::client:
 
 use crate::Client;
 
-/// The intervals between presented frames, and how they were presented.
+/// How long after its first presented frame the window is still starting.
+const SETTLE: Duration = Duration::from_millis(500);
+
+/// The presentation feedback `--smooth` asks for, and what it measured.
 pub struct Smooth {
+    presentation: WpPresentation,
+    frames: Frames,
+}
+
+/// The intervals between presented frames, and how they were presented.
+struct Frames {
     want: usize,
+    first: Option<Duration>,
     last: Option<Duration>,
+    settling: Vec<Duration>,
     intervals: Vec<Duration>,
     direct: u32,
     discarded: u32,
-    presentation: WpPresentation,
 }
 
 /// Binds `wp_presentation`, which `--smooth` needs to see when frames reach
@@ -40,12 +58,8 @@ pub struct Smooth {
 pub fn bind(globals: &GlobalList, qh: &QueueHandle<Client>, want: usize) -> Result<Smooth> {
     let presentation: WpPresentation = globals.bind(qh, 1..=1, ()).context("no wp_presentation")?;
     Ok(Smooth {
-        want,
-        last: None,
-        intervals: Vec::new(),
-        direct: 0,
-        discarded: 0,
         presentation,
+        frames: Frames::new(want),
     })
 }
 
@@ -55,9 +69,43 @@ impl Smooth {
         self.presentation.feedback(surface, qh, ());
     }
 
+    /// How many intervals have been measured so far.
+    pub fn seen(&self) -> usize {
+        self.frames.intervals.len()
+    }
+
+    pub fn done(&self) -> bool {
+        self.frames.done()
+    }
+
+    /// The line `--smooth` prints when it is done.
+    pub fn line(&self) -> String {
+        self.frames.line()
+    }
+}
+
+impl Frames {
+    fn new(want: usize) -> Frames {
+        Frames {
+            want,
+            first: None,
+            last: None,
+            settling: Vec::new(),
+            intervals: Vec::new(),
+            direct: 0,
+            discarded: 0,
+        }
+    }
+
     fn presented(&mut self, at: Duration, direct: bool) {
+        let first = *self.first.get_or_insert(at);
         if let Some(prev) = self.last {
-            self.intervals.push(at.saturating_sub(prev));
+            let interval = at.saturating_sub(prev);
+            if at < first + SETTLE {
+                self.settling.push(interval);
+            } else {
+                self.intervals.push(interval);
+            }
         }
         self.last = Some(at);
         if direct {
@@ -69,18 +117,13 @@ impl Smooth {
         self.discarded += 1;
     }
 
-    /// How many intervals have been measured so far.
-    pub fn seen(&self) -> usize {
-        self.intervals.len()
-    }
-
-    pub fn done(&self) -> bool {
+    fn done(&self) -> bool {
         self.intervals.len() >= self.want
     }
 
-    /// The line `--smooth` prints when it is done.
-    pub fn line(&self) -> String {
+    fn line(&self) -> String {
         let (median, p99, slowest) = summary(&self.intervals);
+        let (_, _, settle_slowest) = summary(&self.settling);
         format(
             self.intervals.len(),
             median,
@@ -88,6 +131,10 @@ impl Smooth {
             slowest,
             self.direct,
             self.discarded,
+        ) + &format!(
+            " opening_intervals={} opening_worst_ms={:.1}",
+            self.settling.len(),
+            settle_slowest.as_secs_f64() * 1000.0
         )
     }
 }
@@ -159,12 +206,12 @@ impl Dispatch<WpPresentationFeedback, ()> for Client {
                     .into_result()
                     .is_ok_and(|kind| kind.contains(Kind::ZeroCopy));
                 if let Some(smooth) = client.smooth.as_mut() {
-                    smooth.presented(at, direct);
+                    smooth.frames.presented(at, direct);
                 }
             }
             wp_presentation_feedback::Event::Discarded => {
                 if let Some(smooth) = client.smooth.as_mut() {
-                    smooth.discarded();
+                    smooth.frames.discarded();
                 }
             }
             _ => {}
@@ -211,6 +258,19 @@ mod tests {
             summary(&[]),
             (Duration::ZERO, Duration::ZERO, Duration::ZERO)
         );
+    }
+
+    #[test]
+    fn the_first_half_second_is_kept_apart() {
+        let mut smooth = Frames::new(3);
+        for ms in [0, 40, 80, 520, 528, 536] {
+            smooth.presented(Duration::from_millis(ms), false);
+        }
+        assert_eq!(smooth.settling.len(), 2);
+        assert!(smooth.done());
+        assert!(smooth
+            .line()
+            .ends_with("median_ms=8.0 p99_ms=440.0 slowest_ms=440.0 direct=0 discarded=0 opening_intervals=2 opening_worst_ms=40.0"));
     }
 
     #[test]

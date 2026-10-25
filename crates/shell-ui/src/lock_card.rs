@@ -564,6 +564,12 @@ impl Shell {
         let Some(card) = &mut self.lock else {
             return;
         };
+        // The USB stick's own account has no password (`*`), so none could
+        // ever match: Return opens its lock, which only hides the screen.
+        if card.user == edel::places::LIVE_USER {
+            eprintln!("edel-shell-ui: lock: {} has no password", card.user);
+            return self.unlock_screen();
+        }
         if card.password.letters() == 0 {
             return;
         }

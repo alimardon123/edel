@@ -545,7 +545,7 @@ impl Edel {
             let stack: Vec<Window> = self.space.elements().cloned().collect();
             for (window, frame) in self.desks.arrange(&areas) {
                 if self.is_fullscreen(&window) {
-                    self.fullscreen(&window, None);
+                    self.refit_fullscreen(&window);
                 } else if self.is_maximized(&window) {
                     self.maximize(&window);
                 } else {

@@ -5,6 +5,9 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "could not read {path} ({why}), so only the default add-ons start until it is fixed"
+msgstr ""
+
 msgid "Installed"
 msgstr ""
 
@@ -1022,9 +1025,6 @@ msgstr ""
 msgid "skipped {key}: not supported yet"
 msgstr ""
 
-msgid "could not rename {from} to {to}"
-msgstr ""
-
 msgid "renamed {from} to {to}"
 msgstr ""
 
@@ -1044,9 +1044,6 @@ msgid "nothing to change"
 msgstr ""
 
 msgid "{failed} of {total} changes could not be applied, listed above; the others were applied, and edel settings diff shows what is left"
-msgstr ""
-
-msgid "could not save {path}"
 msgstr ""
 
 msgid "{what} in {path}; {then}"
@@ -2183,6 +2180,12 @@ msgstr ""
 msgid "format {format} is newer than this release, so {older} was read instead"
 msgstr ""
 
+msgid "could not save {path}"
+msgstr ""
+
+msgid "could not rename {from} to {to}"
+msgstr ""
+
 msgid "{key}: not supported yet; this release does not act on it, so it cannot be set"
 msgstr ""
 
@@ -3080,7 +3083,7 @@ msgstr ""
 msgid "could not write the slot"
 msgstr ""
 
-msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the next edel update tries again"
+msgid "slot {failed} did not start, so Edel OS went back to slot {running}; your files and settings are unchanged, and the automatic updates pass that release over until a newer one comes (edel update installs it again by hand)"
 msgstr ""
 
 msgid "the fallback happened but could not be recorded ({why}), so Settings will not mention it"

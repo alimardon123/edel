@@ -1586,21 +1586,7 @@ fn settle_names() -> Result<()> {
     let machine = places::machine_settings();
     let found = machine_file();
     if found != machine {
-        for format in 1..=settings::FORMAT {
-            let old = settings::versioned(&found, format);
-            if old.exists() {
-                fs::rename(&old, settings::versioned(&machine, format))?;
-            }
-        }
-        fs::rename(&found, &machine).with_context(|| {
-            trf(
-                "could not rename {from} to {to}",
-                &[
-                    ("from", &found.display().to_string()),
-                    ("to", &machine.display().to_string()),
-                ],
-            )
-        })?;
+        settings::move_file(&found, &machine)?;
         println!(
             "edel settings: {}",
             trf(
@@ -1748,7 +1734,7 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     }
     let machine = places::machine_settings();
     if let Some(path) = file.filter(|f| !same_file(f, &machine)) {
-        keep_as_machine_file(path, &machine)?;
+        settings::copy_file(path, &machine)?;
         println!(
             "edel settings: {}",
             trf(
@@ -1802,24 +1788,6 @@ pub(crate) fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
     out.sync_all()?;
     fs::rename(&new, path).with_context(|| could_not_write(path))?;
     Ok(())
-}
-
-/// Makes the applied `from` this machine's file `to`. A file in a newer
-/// format brings the `.v<N>` this release read, so the next boot reads it
-/// too (ADR-008).
-fn keep_as_machine_file(from: &Path, to: &Path) -> Result<()> {
-    let text = fs::read(from).with_context(|| could_not_read(from))?;
-    if settings::format(&String::from_utf8_lossy(&text)).is_ok_and(|f| f > settings::FORMAT) {
-        let older = settings::versioned(from, settings::FORMAT);
-        let older_text = fs::read(&older).with_context(|| could_not_read(&older))?;
-        write_whole(&settings::versioned(to, settings::FORMAT), &older_text)?;
-    }
-    write_whole(to, &text).with_context(|| {
-        trf(
-            "could not save {path}",
-            &[("path", &to.display().to_string())],
-        )
-    })
 }
 
 /// `edel settings diff [FILE]`: what apply would change, one `change:` line
@@ -1980,15 +1948,16 @@ fn write_edit_at(
             )
         );
     }
-    let doing = could_not_write(&path);
-    fs::create_dir_all(machine.parent().unwrap_or(Path::new("/")))
-        .map_err(|err| io_failure(err, &doing))?;
-    let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    fs::write(&new, &edited).map_err(|err| io_failure(err, &doing))?;
-    fs::File::open(&new)
-        .and_then(|file| file.sync_all())
-        .map_err(|err| io_failure(err, &doing))?;
-    fs::rename(&new, &path).map_err(|err| io_failure(err, &doing))?;
+    // A person who is no administrator is refused with the command to run
+    // instead, as io_failure says it.
+    settings::write_text(&path, &edited).map_err(|err| {
+        match err.root_cause().downcast_ref::<std::io::Error>() {
+            Some(io) if io.kind() == std::io::ErrorKind::PermissionDenied => {
+                io_failure(std::io::Error::from(io.kind()), &could_not_write(&path))
+            }
+            _ => err,
+        }
+    })?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     let next_login = keys.contains(&settings::LOW_LATENCY);
     // The boot's apply runs the offline sections (ab-boot's edel-settings);
@@ -2812,7 +2781,7 @@ fn seed(target: &Path) -> Result<Option<String>> {
             );
             return Ok(None);
         }
-        write_whole(target, text.as_bytes())?;
+        settings::write_text(target, &text)?;
         Ok(Some(from.to_string()))
     };
     let volume =
@@ -4054,7 +4023,7 @@ mod tests {
         fs::write(&from, "format = 9\n").unwrap();
         fs::write(dir.join("new.toml.v1"), "format = 1\n").unwrap();
         let to = places::settings_in(&dir.join("data"));
-        keep_as_machine_file(&from, &to).unwrap();
+        settings::copy_file(&from, &to).unwrap();
         assert_eq!(fs::read_to_string(&to).unwrap(), "format = 9\n");
         assert_eq!(
             fs::read_to_string(settings::versioned(

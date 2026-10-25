@@ -368,7 +368,7 @@ pub fn parse_details(text: &str) -> Vec<Detail> {
 
 /// `nmcli` with `args`, giving what it printed, or why it could not.
 fn nmcli(args: &[String], time: Duration) -> Result<String> {
-    let line = tool::command_line(NMCLI, args);
+    let line = tool::command_line(NMCLI, &hidden(args));
     let done = match tool::run(NMCLI, args, time) {
         Ok(done) => done,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
@@ -399,6 +399,16 @@ fn nmcli(args: &[String], time: Duration) -> Result<String> {
         bail!("{}", explain(&line, &done.err, &done.out));
     }
     Ok(done.out)
+}
+
+/// `args` with a Wi-Fi password replaced by the word `PASSWORD`, as
+/// Settings' Copy as command shows it, so no message ever repeats one.
+fn hidden(args: &[String]) -> Vec<String> {
+    let after_password = std::iter::once(false).chain(args.iter().map(|a| a == "password"));
+    args.iter()
+        .zip(after_password)
+        .map(|(word, hide)| if hide { "PASSWORD" } else { word }.to_string())
+        .collect()
 }
 
 /// What a failed `nmcli` said, in words that tell what to do.
@@ -868,6 +878,10 @@ mod tests {
         assert_eq!(
             command_line(&join_args("Cafe Guest", Some("secret one"))),
             "nmcli device wifi connect 'Cafe Guest' password 'secret one'"
+        );
+        assert_eq!(
+            command_line(&hidden(&join_args("Cafe Guest", Some("secret one")))),
+            "nmcli device wifi connect 'Cafe Guest' password PASSWORD"
         );
         assert_eq!(
             join_args("Open Air", None),

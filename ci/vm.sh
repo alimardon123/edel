@@ -119,3 +119,27 @@ partition_in() {
 	[ -n "$part_place" ] || return 1
 	dd if="$1" of="$2" bs=4M oflag=seek_bytes seek=$((${part_place% *} * 512)) conv=notrunc status=none
 }
+
+# main_image FILE: the gzipped desktop image (edel-x86_64.img.gz) of the
+# newest push to main, which CI keeps 14 days as the artifact
+# edel-try-x86_64 (docs/TRY-IT.md), into FILE; false when GH_TOKEN is
+# unset or none is kept. The upgrade test (M3.5) updates it until a
+# preview exists, and desktop-memory.sh measures it.
+main_image() {
+	[ -n "${GH_TOKEN:-}" ] || return 1
+	main_api="https://api.github.com/repos/${GITHUB_REPOSITORY:-alimardon123/edel}/actions/artifacts"
+	main_id=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "$main_api?name=edel-try-x86_64&per_page=20" | python3 -c '
+import json, sys
+kept = [a for a in json.load(sys.stdin)["artifacts"]
+        if not a["expired"] and a["workflow_run"]["head_branch"] == "main"]
+kept.sort(key=lambda a: a["created_at"], reverse=True)
+print(kept[0]["id"] if kept else "")') || return 1
+	[ -n "$main_id" ] || return 1
+	curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o "$1.zip" "$main_api/$main_id/zip" || return 1
+	python3 -c 'import sys, zipfile, shutil
+with zipfile.ZipFile(sys.argv[1]) as z, z.open("edel-x86_64.img.gz") as src, open(sys.argv[2], "wb") as out:
+    shutil.copyfileobj(src, out, 4 << 20)' "$1.zip" "$1"
+	main_ok=$?
+	rm -f "$1.zip"
+	return "$main_ok"
+}
