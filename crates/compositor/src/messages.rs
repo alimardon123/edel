@@ -309,6 +309,14 @@ pub fn low_latency_not_linked(link: &Path, why: impl Display) -> String {
     )
 }
 
+/// An app asked to bring `title` forward with a token it may not use: a
+/// sandboxed app's own, without the keyboard, or one kept too long. The
+/// window stays where it is (the whole-system review of 2026-10-25).
+pub fn activation_refused(title: &str) -> String {
+    format!(
+        "{title} asked to come forward without a click or a key in the app with the keyboard; it stays where it is, so the keys keep going where the person types"
+    )
+}
 #[cfg(test)]
 mod tests {
     use super::*;
