@@ -3180,10 +3180,13 @@ impl KeyboardHandler for Shell {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
+        keyboard: &wl_keyboard::WlKeyboard,
         _: u32,
         event: KeyEvent,
     ) {
+        if self.not_the_locks(keyboard) {
+            return;
+        }
         if self.access.is_some() {
             self.access_key(event);
         } else if self.lock.is_some() {
@@ -3219,10 +3222,13 @@ impl KeyboardHandler for Shell {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &wl_keyboard::WlKeyboard,
+        keyboard: &wl_keyboard::WlKeyboard,
         _: u32,
         event: KeyEvent,
     ) {
+        if self.not_the_locks(keyboard) {
+            return;
+        }
         if self.access.is_some() {
             self.access_key(event);
         } else if self.lock.is_some() {
