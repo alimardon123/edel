@@ -18,7 +18,7 @@
 # edel-try-x86_64, docs/TRY-IT.md), when GH_TOKEN can read it; with
 # neither, the test says so and passes.
 #
-#   sh ci/upgrade-test.sh   logs in out/upgrade-test-N.log, one per disk
+#   sh ci/upgrade-test.sh   logs in out/upgrade-test-N.log and out/upgrade-test-N-again.log, per disk
 set -eu
 . ci/vm.sh
 . ci/names.sh
@@ -70,7 +70,9 @@ os_value() {
 # out/upgrade-test-N.log.
 upgrade() {
 	n=$1 name=$2 gz=$3
-	disk=$dir/disk.img slot=$dir/slot-a.ext4 log=out/upgrade-test-$n.log
+	disk=$dir/disk.img slot=$dir/slot-a.ext4
+	# Not log: run_vm sets that one.
+	out=out/upgrade-test-$n.log again=out/upgrade-test-$n-again.log
 	echo "== $name"
 	gunzip -c "$gz" | dd of="$disk" bs=4M conv=sparse status=none
 	partition_out "$disk" 2 "$slot" || fail "$name: the disk has no slot A"
@@ -103,24 +105,24 @@ upgrade() {
 	python3 -m http.server 8000 --bind 127.0.0.1 --directory "$dir/$channel" >"$dir/http.log" 2>&1 &
 	server=$!
 	# Slot A starts, updates and restarts; slot B starts and is confirmed.
-	run_vm "$log" 'edel update: slot B confirmed|UPGRADE-TEST: FAIL' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
+	run_vm "$out" 'edel update: slot B confirmed|UPGRADE-TEST: FAIL' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
 		-drive if=none,id=disk0,format=raw,file="$disk" \
 		-device virtio-blk-pci,drive=disk0,bootindex=0
 	kill "$server" 2>/dev/null || true
-	cat "$log"
+	cat "$out"
 	log_has() {
-		tr -d '\r' <"$log" | grep -q "$1"
+		tr -d '\r' <"$out" | grep -q "$1"
 	}
 	log_has 'UPGRADE-TEST: installed, restarting' || fail "$name ($old, $channel) did not install this build"
 	{ [ "$found" = 1 ] && log_has 'edel update: slot B confirmed'; } || fail "$name: this build did not start and confirm in slot B after the update"
-	loader=$(tr -d '\r' <"$log" | sed -n 's/.*edel update: \(boot loader updated to .*\)$/\1/p' | head -n 1)
+	loader=$(tr -d '\r' <"$out" | sed -n 's/.*edel update: \(boot loader updated to .*\)$/\1/p' | head -n 1)
 
 	# Once more, under the loader slot B left on the old disk.
-	run_vm "$log.2" 'edel update: slot B confirmed' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
+	run_vm "$again" 'edel update: slot B confirmed' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
 		-drive if=none,id=disk0,format=raw,file="$disk" \
 		-device virtio-blk-pci,drive=disk0,bootindex=0
-	cat "$log.2" >>"$log"
-	rm -f "$log.2" "$disk"
+	cat "$again"
+	rm -f "$disk"
 	[ "$found" = 1 ] || fail "$name: slot B did not start again after the update"
 	echo "PASS: $name ($old, $channel) updated to this build, slot B started and was confirmed twice; ${loader:-the boot loader was the same}"
 }
