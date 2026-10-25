@@ -14,12 +14,11 @@
 # virtio balloon device, through which the guest's own kernel reports its
 # memory; nothing is installed or changed inside any guest. Memory in use
 # is MemTotal less MemAvailable, the number Edel OS's own memory budgets
-# use. For each size the VM runs 420 s with nobody using it but the
-# pointer moved a pixel and back every 10 s from second 200, which keeps every screen awake and
-# unlocked (the desktop's idle number is the median of the last minute);
-# then Firefox opens on a page that plays a video served from this host,
-# the way a person opens it on each system (below), and the median of the
-# last minute of 240 s
+# use. For each size the VM runs 300 s with nobody touching it (the
+# desktop's idle number is the median of the last minute); then Firefox
+# opens on a page that plays a video served from this host, the way a
+# person opens it on each system (below), and the median of the last
+# minute of 240 s
 # more is the number with Firefox. Screenshots of each moment show whether
 # the desktop, the browser and the video really came; a number without its
 # picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
@@ -116,23 +115,18 @@ measure() {
 		$media &
 	qemu=$!
 	start=$(date +%s)
-	# sample UNTIL: a sample every 10 s until second UNTIL of the run;
-	# from second 200, when every desktop is up, each after the pointer
-	# moves a pixel and back, as a person reading the screen would, so no
-	# system dims, blanks or locks its screen. (A press of Shift did the
-	# same until Ubuntu's live session left its desktop for a text console
-	# in both runs that pressed it.)
+	# sample UNTIL: a sample every 10 s until second UNTIL of the run.
+	# Nothing touches a system before Firefox: Edel OS locks and GNOME
+	# blanks an idle screen after 5 minutes, and keeping them awake with
+	# a key or the pointer left Ubuntu's 1.5 GiB live session at a text
+	# console in three runs of three, so the idle minute ends at 300 s.
 	sample() {
 		while [ $(($(date +%s) - start)) -lt "$1" ]; do
 			sleep 10
-			if [ $(($(date +%s) - start)) -ge 200 ]; then
-				python3 ci/qmp.py nudge 1 0 >/dev/null 2>&1 || true
-				python3 ci/qmp.py nudge -1 0 >/dev/null 2>&1 || true
-			fi
 			echo "$(($(date +%s) - start)) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
 		done
 	}
-	sample 420
+	sample 300
 	python3 ci/qmp.py screendump "$run.png" || true
 	# Firefox, the way a person opens it on each system: GNOME's Alt+F2
 	# runs it with the page, as its search lost the keys to the welcome
@@ -146,7 +140,7 @@ measure() {
 		python3 ci/qmp.py type firefox || true
 		sleep 5
 		python3 ci/qmp.py key ret || true
-		sample 540
+		sample 420
 		python3 ci/qmp.py screendump "$run-opened.png" || true
 		python3 ci/qmp.py key tab || true
 		sleep 1
@@ -162,17 +156,17 @@ measure() {
 		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/' || true
 		sleep 2
 		python3 ci/qmp.py key ret || true
-		sample 540
+		sample 420
 		python3 ci/qmp.py screendump "$run-opened.png" || true
 		;;
 	esac
-	sample 660
+	sample 540
 	python3 ci/qmp.py screendump "$run-firefox.png" || true
 	state=$(python3 ci/qmp.py status 2>/dev/null || echo stopped)
 	kill "$qemu" 2>/dev/null || true
 	wait "$qemu" 2>/dev/null || true
-	idle=$(median "$run.samples" 360 425)
-	firefox=$(median "$run.samples" 600 665)
+	idle=$(median "$run.samples" 240 305)
+	firefox=$(median "$run.samples" 480 545)
 	peak=$(awk '$2 != "none" { print $2 }' "$run.samples" | sort -n | tail -n 1)
 	echo "| $label | $size MiB | $idle | $firefox | ${peak:-none} | $state |" | tee -a "$dir/results.md"
 }
