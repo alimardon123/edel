@@ -213,6 +213,8 @@ pub struct Edel {
     _security_context: smithay::wayland::security_context::SecurityContextState,
     /// The event loop's handle, for the sockets sandboxes ask for (M5.22).
     pub handle: Option<LoopHandle<'static, Edel>>,
+    /// Where threads send work done off the frame (`off_loop.rs`).
+    pub off_loop: Option<smithay::reexports::calloop::channel::Sender<crate::off_loop::Answer>>,
     /// The protocols everyday apps expect (`everyday.rs`, M5.23).
     pub primary_selection: smithay::wayland::selection::primary_selection::PrimarySelectionState,
     /// ext-data-control-v1, for shell-ui's clipboard history (M7.13).
@@ -294,6 +296,7 @@ impl Edel {
                 _,
             >(&display, crate::sandbox::shell_may),
             handle: None,
+            off_loop: None,
             primary_selection,
             // Clipboard history (M7.13), hidden from sandboxed apps.
             data_control,

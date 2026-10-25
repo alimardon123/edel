@@ -114,6 +114,8 @@ const TIP_MOST: i32 = 420;
 #[derive(Default)]
 pub struct Kept {
     backdrops: HashMap<String, Painted>,
+    /// What each screen's backdrop being painted off the frame shows.
+    asked: HashMap<String, String>,
 }
 
 /// How much smaller than the screen the backdrop is painted.
@@ -949,11 +951,27 @@ impl Edel {
             tokens.backdrop_text,
             crate::wallpaper::describe(&what)
         );
-        let kept = &mut self.overview_kept.backdrops;
-        if kept.get(&name).is_none_or(|p| p.shows != shows) {
-            if let Some(pixmap) = backdrop_of(&what, pixels, blurred, &name, &tokens) {
-                kept.insert(name.clone(), painted(shows, &pixmap));
-            }
+        // Painted off the frame (`off_loop`); the one before shows meanwhile.
+        let kept = &mut self.overview_kept;
+        if kept.backdrops.get(&name).is_none_or(|p| p.shows != shows)
+            && kept.asked.get(&name) != Some(&shows)
+        {
+            kept.asked.insert(name.clone(), shows.clone());
+            let (name, tokens) = (name.clone(), tokens.clone());
+            self.off_loop("backdrop", move || {
+                let pixmap = backdrop_of(&what, pixels, blurred, &name, &tokens);
+                Box::new(move |state: &mut Edel| {
+                    let kept = &mut state.overview_kept;
+                    if kept.asked.get(&name) != Some(&shows) {
+                        return;
+                    }
+                    kept.asked.remove(&name);
+                    if let Some(pixmap) = pixmap {
+                        kept.backdrops.insert(name, painted(shows, &pixmap));
+                    }
+                    state.dirty = true;
+                })
+            });
         }
         if let Some(backdrop) = self.overview_kept.backdrops.get(&name) {
             front.extend(placed(renderer, backdrop, area, area, scale));
