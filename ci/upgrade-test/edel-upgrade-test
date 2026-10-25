@@ -1,0 +1,33 @@
+#!/sbin/openrc-run
+# Test only (roadmap M3.5): ci/upgrade-test.sh writes this service into
+# slot A of an old release's disk, with the run's throwaway public key;
+# nothing else of the old release changes, and no image ever has it. Once
+# the slot is confirmed it updates to the build under test, served on the
+# host as 10.0.2.2, with the old release's own edel, then restarts. Slot
+# B, the new build, does not have it.
+
+description="CI only: update this old release to the build under test"
+
+depend() {
+	need edel-boot-ok
+}
+
+start() {
+	ebegin "Updating to the build under test"
+	(
+		# An update waits while the running slot is not yet confirmed,
+		# so it is tried again for up to 5 minutes.
+		i=0
+		until /usr/bin/edel update --allow-http http://10.0.2.2:8000/release.toml >/dev/console 2>&1; do
+			i=$((i + 1))
+			if [ "$i" -ge 60 ]; then
+				echo "UPGRADE-TEST: FAIL: the old release did not install the update" >/dev/console
+				exit 1
+			fi
+			sleep 5
+		done
+		echo "UPGRADE-TEST: installed, restarting" >/dev/console
+		reboot
+	) &
+	eend 0
+}

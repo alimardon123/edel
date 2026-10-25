@@ -419,7 +419,8 @@ jobs:
     # earlier run of the pull request built (ci/changes.sh's reuse).
     if: ${{ !cancelled() && needs.changes.outputs.images == 'yes' && (needs.build.result == 'success' || (needs.build.result == 'skipped' && needs.changes.outputs.reuse != '')) }}
     runs-on: ubuntu-latest
-    # actions: read takes the earlier run's archive.
+    # actions: read takes the earlier run's archive, and main's desktop
+    # image for the upgrade test.
     permissions:
       contents: read
       actions: read
@@ -468,6 +469,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
 
       - name: Run the ${{ matrix.lane }} lane
+        # GH_TOKEN reads main's newest desktop image, which the upgrade test
+        # (M3.5) updates until a preview is published.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: sh ci/vm-tests.sh ${{ matrix.lane }}
 
       - name: Keep the lane's logs and screenshots
