@@ -466,6 +466,15 @@ pub const ROWS: &[Row] = &[
         key: "updates.channel",
         title: n_("Channel"),
     },
+    // Updates by themselves (M7.5b), the machine's keys, as root.
+    Row {
+        key: "updates.automatic",
+        title: n_("Automatic updates"),
+    },
+    Row {
+        key: "updates.restart_window",
+        title: n_("Restart between"),
+    },
     // The System page's developer mode (M7.1): a switch that changes the
     // machine's key as root, as the Region page's machine keys do.
     Row {
@@ -760,6 +769,7 @@ pub fn label(value: &str) -> String {
         "lock" => n_("Lock the screen"),
         "power-saver" => n_("Power saver"),
         "plugged-in" => n_("When plugged in"),
+        "check" => n_("Check only"),
         "on" => n_("On"),
         "off" => n_("Off"),
         _ => return crate::files::title(&value.replace('-', " ")),
@@ -877,14 +887,6 @@ mod tests {
         (
             "users.*.login_shell",
             "the shell a terminal starts, for people who use one; set in the file or with edel settings set",
-        ),
-        (
-            "updates.automatic",
-            "a key of the machine's file, which Settings does not write yet; the Updates page's row comes with M7.5b",
-        ),
-        (
-            "updates.restart_window",
-            "a key of the machine's file, which Settings does not write yet; the Updates page's row comes with M7.5b",
         ),
         (
             "network.hostname",

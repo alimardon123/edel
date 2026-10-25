@@ -1,0 +1,45 @@
+# Intel laptops (M8.17d, ADR-012): a hardware pack.
+format = 1
+summary = "Intel laptops: Wi-Fi, Bluetooth, sound, cameras, sensors and the NPU"
+why = "Intel's Wi-Fi and Bluetooth chips, its laptops' sound since about 2019 (Sound Open Firmware, M6.15), cameras (IPU), the sensor hub that turns the screen and the NPU each need firmware from linux-firmware-intel and sof-firmware, together the biggest firmware a laptop carries, so it is one pack: the stick carries it and a machine with Intel's Wi-Fi or audio gets it, while a server or a VM does not. Intel's graphics firmware stays in the base (feature laptop), as i915 starts without it and would then run without its power saving."
+packages = ["linux-firmware-intel", "sof-firmware"]
+addon = true
+# Intel's Wi-Fi (network, other), audio and cameras (multimedia), the NPU
+# (processing accelerators) and Bluetooth (USB 8087).
+hardware = ["pci:v00008086d*bc02sc80*", "pci:v00008086d*bc04*", "pci:v00008086d*bc12*", "usb:v8087p*"]
+
+# Of Intel's Wi-Fi, only the newest version of each chip the kernel's
+# iwlwifi asks for stays (a chip it does not name keeps every version).
+[[keep]]
+under = "lib/firmware"
+files = [
+  # Wi-Fi and Bluetooth: the chips themselves and the names the driver
+  # asks for, links into intel/iwlwifi.
+  "intel/iwlwifi/*",
+  "iwlwifi-*",
+  "intel/ibt-*",
+  # Cameras (IPU, the visual sensing controller), the sensor hub that turns
+  # the screen, the NPU, and the audio DSPs of older laptops.
+  "intel/ipu/*",
+  "intel/ipu3-fw.bin.zst",
+  "intel/irci_*",
+  "intel/vsc/*",
+  "intel/ish/*",
+  "intel/vpu/*",
+  "intel/avs/*",
+  "intel/avs/*/*",
+  "intel/catpt/*/*",
+  "intel/dsp_fw_*",
+  "intel/fw_sst_*",
+  "intel/IntcSST2.bin.zst",
+  # Sound Open Firmware (M6.15): Intel's signed images and the generic HDA
+  # topologies only; the community-signed ones are for Chromebooks.
+  "intel/sof/*",
+  "intel/sof/intel-signed/*",
+  "intel/sof-tplg/sof-hda-generic*",
+  "intel/sof-ipc4/*/*",
+  "intel/sof-ipc4/*/intel-signed/*",
+  "intel/sof-ipc4-tplg/sof-hda-generic*",
+]
+newest = ["intel/iwlwifi/*"]
+newest_by = "iwlwifi"

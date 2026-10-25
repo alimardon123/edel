@@ -22,8 +22,9 @@ headless = ["ssh"]
 # Built beside the image from its root, signed in its release, and
 # mounted on a machine whose settings file names them (M7.2a). The
 # desktop is one of them (M8.17c), and wallpapers, fonts-cjk, orca and
-# graphics-nvidia are built on it.
-addons = ["desktop", "wallpapers", "fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming", "graphics-nvidia", "ai-agents"]
+# graphics-nvidia are built on it; the laptops' firmware packs are the
+# last four (M8.17d).
+addons = ["desktop", "wallpapers", "fonts-cjk", "orca", "printing", "containers", "virtualization", "gaming", "graphics-nvidia", "ai-agents", "intel-laptop", "wifi-mediatek", "wifi-qualcomm", "wifi-realtek"]
 
 [vm]
 kernel = "lts"
@@ -37,4 +38,7 @@ cmdline = "console=tty0 console=ttyS0,115200"
 # The disk carries the desktop and its wallpapers on its data partition, and a machine has it
 # while its settings file names no add-ons of its own (M8.17c): the stick,
 # and every machine installed from it, starts the desktop where a screen is.
-carry = ["desktop", "wallpapers"]
+# It carries the laptops' firmware packs too (M8.17d), of which a machine
+# has those its own hardware matches, so any laptop works from the stick
+# offline and an install copies only its own chips' packs.
+carry = ["desktop", "wallpapers", "intel-laptop", "wifi-mediatek", "wifi-qualcomm", "wifi-realtek"]

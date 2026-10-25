@@ -27,6 +27,7 @@ use edel::settings::{PAGES, Source};
 
 use crate::files::{self, Files};
 use crate::install::{self, LANGUAGE as ENGLISH};
+use crate::widgets::CONTROL_WIDTH;
 use crate::widgets::{Line, exit_text, monitors, reset_words, root_command, set_words};
 use crate::{cmd, rows, widgets};
 
@@ -43,9 +44,6 @@ const RELEASE_KEYBOARD: &str = "us";
 const RELEASE_INPUT: &str = "none";
 /// The one server the clock is set from when no list is set.
 const RELEASE_SERVER: &str = "pool.ntp.org";
-
-/// The width of the controls at the right of a row, as Install draws them.
-const CONTROL_WIDTH: i32 = 240;
 
 /// Whether `key` is the machine's (the clock's), set as root, not the
 /// person's file.

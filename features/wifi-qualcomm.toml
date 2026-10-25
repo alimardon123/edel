@@ -1,0 +1,22 @@
+# Qualcomm Wi-Fi (M8.17d, ADR-012): a hardware pack.
+format = 1
+summary = "Qualcomm Wi-Fi: the firmware of the laptops' Atheros and Qualcomm chips"
+why = "ath10k and ath11k cannot start a Wi-Fi chip without its firmware (about 31 MiB before the list below), which only a machine with one of these chips needs, so it is a pack the stick carries and such a machine gets."
+packages = ["linux-firmware-ath10k", "linux-firmware-ath11k"]
+addon = true
+# Qualcomm Atheros (168c) and Qualcomm Technologies (17cb) chips.
+hardware = ["pci:v0000168Cd*", "pci:v000017CBd*"]
+
+# QCA6174 and QCA9377 (ath10k), WCN6855, QCA6390, QCA2066 and QCA6698AQ
+# (ath11k), the laptops' chips.
+[[keep]]
+under = "lib/firmware"
+files = [
+  "ath10k/QCA6174/*/*",
+  "ath10k/QCA9377/*/*",
+  "ath11k/WCN6855/*/*",
+  "ath11k/WCN6855/*/nfa765/*",
+  "ath11k/QCA6390/*/*",
+  "ath11k/QCA2066/*/*",
+  "ath11k/QCA6698AQ/*/*",
+]

@@ -24,10 +24,10 @@ pub const PASSWD: &str = "/etc/passwd";
 pub const GROUP: &str = "/etc/group";
 
 /// The first user id of a person: below it are the system's own accounts.
-const FIRST_UID: u32 = 1000;
+pub const FIRST_UID: u32 = 1000;
 
 /// The user id `nobody` has, which no person has or goes above.
-const NOBODY: u32 = 65534;
+pub const NOBODY: u32 = 65534;
 
 /// One person.
 #[derive(Debug, Clone, PartialEq, Eq)]
