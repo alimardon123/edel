@@ -1676,6 +1676,10 @@ impl Segments {
     }
 }
 
+/// The width of a choice or entry at the right of a row, so a page's
+/// controls line up.
+pub(crate) const CONTROL_WIDTH: i32 = 240;
+
 /// The words of an `edel settings set KEY=VALUE` line for a machine key,
 /// the Settings action's words first.
 pub(crate) fn set_words(key: &str, value: &str) -> Vec<String> {

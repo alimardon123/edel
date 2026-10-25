@@ -120,6 +120,7 @@ When docs disagree, the newer ADR wins.
 | `docs/` | Principles, ADR-001 to ADR-012, the reviews of other projects and of this one (`REVIEW-project-2026-10-13.md`), the roadmap, and the guide (`index.md`, `guide/`); index in `docs/README.md`; mdBook builds it all into the docs site (`book.toml`, `SUMMARY.md`, `theme/`, M8.10a) |
 | `.github/workflows/ci.yml` | The workflow "CI": Rust checks (the docs site's build included), What this change can affect (`ci/changes.sh`: drafts and steps into a lane branch run Rust checks only, a draft labelled `lane-NAME` runs that VM test lane alone, and a change skips the jobs it cannot affect, their checks still passing), Build and boot images (joining the build and three VM test lanes, each on a runner of its own), Desktop tests (beside it, four "Desktop part" jobs at once, each on a runner of its own, joined by one check, M6.17), Desktop on another distribution (M5.15a: the desktop built on Ubuntu and run under Xvfb without Edel OS's folders), Publish the release (off until `EDEL_PUBLISH` is `yes`) and Publish the docs site (off until `EDEL_SITE` is `yes`) |
 | `.github/workflows/release.yml` | The workflow "Release": moves the stable channel when a tagged release is published, then pushes the container image to ghcr.io (off until `EDEL_REGISTRY` is `yes`, M8.9) |
+| `.github/workflows/monthly.yml` | The workflow "Monthly rebuild" (M8.3, [docs/SECURITY.md](docs/SECURITY.md)): on the 1st of each month refreshes the build container's digest, opens a pull request `monthly/YYYY-MM` with the package changes and starts "CI" on it; its merge tags `vYYYY.MM.0` and starts "CI" on the tag |
 | `Cargo.toml`, `Cargo.lock` | Workspace of six crates, `edel` the default member (so `cargo run` and `ci/build.sh` build only the tool); the lock file is committed |
 | `out/`, `target/` | Build output, git-ignored; `out/work/` is owned by root after a real build |
 
@@ -136,7 +137,7 @@ cargo clippy -p edel-compositor --all-targets --locked --features winit -- -D wa
 cargo test --workspace --locked
 for def in images/*.toml; do cargo run --quiet --locked -- image check "$def"; done
 cargo build --locked --lib --no-default-features
-sh ci/keys-check.sh && sh ci/changes.sh --self-test
+sh ci/keys-check.sh && sh ci/changes.sh --self-test && sh ci/monthly.sh --self-test
 sh ci/one-place.sh && sh ci/one-place.sh --self-test   # every fact at its owner (M5.27)
 sh ci/seams.sh && sh ci/seams.sh --self-test   # every part stands alone (M8.13)
 sh ci/audit.sh         # the dependency audit (M3.9); installs cargo-audit with cargo the first time, needs the network for the advisory database

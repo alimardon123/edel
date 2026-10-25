@@ -1067,11 +1067,17 @@ impl Build<'_> {
     }
 
     /// Writes `<stem>.qcow2` next to the disk `disk`, compressed, the form
-    /// clouds and virtual machine hosts import (M7.4).
+    /// clouds and virtual machine hosts import (M7.4). `-W -m 16` compresses
+    /// on every core, a third of the time on one (31 s against 10 s for a
+    /// 973 MiB disk, measured 2026-10-24), with the same bytes' size; the
+    /// compression stays zlib, which every host reads, as zstd needs QEMU
+    /// 5.1 or newer to open the file (Reliable before Efficient).
     fn qcow2(&self, disk: &Path) -> Result<()> {
         self.runner.run(
             Command::new("qemu-img")
-                .args(["convert", "-q", "-c", "-f", "raw", "-O", "qcow2"])
+                .args([
+                    "convert", "-q", "-c", "-W", "-m", "16", "-f", "raw", "-O", "qcow2",
+                ])
                 .arg(disk)
                 .arg(disk.with_extension("qcow2")),
         )
@@ -1531,7 +1537,7 @@ impl Build<'_> {
         let after = addons::scan(a_root)?;
         let all = addons::diff(before, &after);
         let mut kept = all.clone();
-        keep_addon(&addon.name, &keeps, &mut kept, &after)?;
+        keep_addon(&addon.name, &keeps, &mut kept, &after, a_root)?;
         let kept: BTreeSet<&String> = kept.new.iter().collect();
         for path in all.new.iter().filter(|p| !kept.contains(p)) {
             let at = a_root.join(path);
@@ -1573,7 +1579,7 @@ impl Build<'_> {
         // again, M8.17c): the image's copy stays, so it is no change.
         diff.changed
             .retain(|path| !same_entry(&root.join(path), &a_root.join(path)));
-        keep_addon(name, &keeps, &mut diff, &after)?;
+        keep_addon(name, &keeps, &mut diff, &after, a_root)?;
         let plan = addons::plan_tree(&diff, &after, name, font_cache)?;
         let is_dir = |path: &str| after.get(path).is_some_and(|s| s.dir);
 
@@ -1761,51 +1767,75 @@ fn container_tar_args(epoch: Option<u64>) -> Vec<String> {
     args
 }
 
+/// The folder `under` names in `root`, through the links `merge_usr` made
+/// there (`lib` leads to `usr/lib`), as an add-on's copy of the root is
+/// merged before its packages go in, so their files are found under
+/// `usr/lib/firmware` when a feature says `lib/firmware`. A folder that is
+/// not there, or a link out of the root, is taken as written.
+fn real_under(root: &Path, under: &str) -> String {
+    match (fs::canonicalize(root.join(under)), fs::canonicalize(root)) {
+        (Ok(at), Ok(root)) => at
+            .strip_prefix(&root)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| under.to_string()),
+        _ => under.to_string(),
+    }
+}
+
 /// Takes out of an add-on's new files what its `[[keep]]` lists do not keep
-/// (M7.2a), as the image's own `[[keep]]` does for its packages: under each
-/// folder, the new files a listed pattern matches stay. A pattern that
-/// matches no new file is a mistake, as in the image. The image's own files
-/// are never touched: the add-on only ships fewer of them.
+/// (M7.2a), with the plan the image's own `[[keep]]` uses for its packages
+/// (`edel::keep::plan`): under each folder, the new files a listed pattern
+/// matches stay, a link only with what it points at, and of a `newest`
+/// family only the newest version the `newest_by` module of the add-on's
+/// root asks for (the Wi-Fi packs, M8.17d). A pattern that matches no new
+/// file is a mistake, as in the image. The image's own files are never
+/// touched: the add-on only ships fewer of them.
 fn keep_addon(
     name: &str,
     keeps: &[edel::keep::Keep],
     diff: &mut addons::Diff,
     after: &BTreeMap<String, addons::Stamp>,
+    a_root: &Path,
 ) -> Result<()> {
     for keep in keeps {
-        let under = keep.under.trim_matches('/');
+        let real = real_under(a_root, keep.under.trim_matches('/'));
+        let under = real.as_str();
         let prefix = format!("{under}/");
-        // Whether a new file below the folder is one the list keeps.
-        let keeps_it = |path: &str| {
-            keep.files
-                .iter()
-                .any(|pattern| edel::keep::matches(pattern, &path[prefix.len()..]))
-        };
         let files: Vec<&str> = diff
             .new
             .iter()
             .map(String::as_str)
             .filter(|p| p.starts_with(&prefix) && after.get(*p).is_some_and(|s| !s.dir))
             .collect();
-        for pattern in &keep.files {
-            if !files
-                .iter()
-                .any(|p| edel::keep::matches(pattern, &p[prefix.len()..]))
-            {
-                bail!(
-                    "add-on {name}: keep pattern {pattern:?} under /{under} matches no new file; fix the list in the feature"
-                );
-            }
-        }
-        let total = files.len();
-        let taken: BTreeSet<String> = files
+        let entries: Vec<edel::keep::Entry> = files
             .iter()
-            .copied()
-            .filter(|path| !keeps_it(path))
-            .map(str::to_string)
+            .map(|path| {
+                let stamp = &after[*path];
+                edel::keep::Entry {
+                    path: path[prefix.len()..].to_string(),
+                    link: stamp.link.clone(),
+                    size: stamp.size,
+                }
+            })
             .collect();
-        let kept = total - taken.len();
+        let declared = match &keep.newest_by {
+            Some(module) => declared_firmware(a_root, module)?,
+            None => Vec::new(),
+        };
+        let plan = edel::keep::plan(&entries, keep, &declared)
+            .with_context(|| format!("add-on {name}"))?;
+        let kept = plan.kept.len();
+        let taken: BTreeSet<String> = plan
+            .removed
+            .iter()
+            .map(|path| format!("{prefix}{path}"))
+            .collect();
         diff.new.retain(|p| !taken.contains(p));
+        let keeps_it = |path: &str| {
+            keep.files
+                .iter()
+                .any(|pattern| edel::keep::matches(pattern, &path[prefix.len()..]))
+        };
         // A file of the start the packages rewrote below the folder (the
         // fonts' X index over the desktop, M8.17c) is no file the add-on
         // keeps either: its start's copy shows, or none where the add-on
@@ -2319,6 +2349,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_keep_under_lib_is_found_under_usr_lib_in_a_merged_root() {
+        let root = std::env::temp_dir().join(format!("edel-real-under-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("usr/lib/firmware/amdgpu")).unwrap();
+        std::os::unix::fs::symlink("usr/lib", root.join("lib")).unwrap();
+        assert_eq!(real_under(&root, "lib/firmware"), "usr/lib/firmware");
+        assert_eq!(real_under(&root, "usr/share/fonts"), "usr/share/fonts");
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
     fn source_date_epoch_takes_digits_and_nothing_else() {
         assert_eq!(source_date_epoch(None).unwrap(), None);
         assert_eq!(source_date_epoch(Some("")).unwrap(), None);
@@ -2652,7 +2693,7 @@ mod tests {
             changed: vec!["usr/share/fonts/fonts.scale".into(), "usr/bin/x".into()],
             ..Default::default()
         };
-        keep_addon("fonts-cjk", &[keep], &mut diff, &after).unwrap();
+        keep_addon("fonts-cjk", &[keep], &mut diff, &after, Path::new("/none")).unwrap();
         // The index the packages rewrote below the folder stays out.
         assert_eq!(diff.changed, ["usr/bin/x"]);
         assert_eq!(
@@ -2675,8 +2716,15 @@ mod tests {
             new: after.keys().cloned().collect(),
             ..Default::default()
         };
-        let err = keep_addon("fonts-hack", &[missing], &mut diff, &after).unwrap_err();
-        assert!(err.to_string().contains("matches no new file"), "{err}");
+        let err = keep_addon(
+            "fonts-hack",
+            &[missing],
+            &mut diff,
+            &after,
+            Path::new("/none"),
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("matches no file"), "{err:#}");
     }
 
     #[test]

@@ -8,6 +8,10 @@ on:
     # ready_for_review: a draft runs Rust checks only (ci/changes.sh), so
     # marking it ready starts the rest.
     types: [opened, synchronize, reopened, ready_for_review]
+  # The monthly rebuild (M8.3, .github/workflows/monthly.yml) starts a run on
+  # its branch and on its tag this way, as its own token's pushes start none;
+  # a run on a v* tag then counts as a tag's push, for signing and publishing.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -108,6 +112,8 @@ jobs:
         # Its gather, its failure and the publish gate, proven on fixed
         # pictures (ci/release-checklist.sh); no network, no release.
         run: sh ci/release-checklist.sh --self-test
+      - name: The monthly rebuild names its branch, tag and package diff (M8.3)
+        run: sh ci/monthly.sh --self-test
       - name: Visible defaults changed
         # The diff of design/, presets/ and docs/defaults.md against the
         # last kept release, or main before there is one, in the run's
@@ -361,7 +367,7 @@ jobs:
           case "$EDEL_TAG" in v*) sh ci/release.sh dry-run "$EDEL_TAG" && sh ci/channel.sh dry-run "$EDEL_TAG" ;; esac
 
       - name: Keep the release for the publish job
-        if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
+        if: (github.event_name == 'push' || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-release
@@ -511,14 +517,14 @@ jobs:
               titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness frame-rate
               keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper
               settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome display
-              sound network firewall power updates portal own-bars capture tray
+              sound network firewall power updates portal own-bars capture tray game-session
           - part: C
             cases: >-
               one-screen scheme sun terminal accent contrast wallpaper glass desktop-widgets completion lock lock-edit lock-looks
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid another-base
           - part: D
-            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents game-session
+            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents poweroff
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -650,14 +656,15 @@ jobs:
   # only the two lists come from the build, and the signer is built here
   # from the locked sources (Cargo.lock's checksums pin every crate), with
   # nothing cached, so nothing the build made runs while the key is here.
-  # Only a push gets the key, in the GitHub environment "release", which
-  # Alimardon can make wait for their approval; pull requests sign with a
-  # throwaway key, which proves the path.
+  # Only a push, or a run on a tag (the monthly rebuild starts one, M8.3),
+  # gets the key, in the GitHub environment "release", which Alimardon can
+  # make wait for their approval; pull requests sign with a throwaway key,
+  # which proves the path.
   sign:
     name: Sign the release
     needs: build
     runs-on: ubuntu-latest
-    environment: ${{ github.event_name == 'push' && 'release' || '' }}
+    environment: ${{ (github.event_name == 'push' || github.ref_type == 'tag') && 'release' || '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -669,8 +676,8 @@ jobs:
       - name: Sign and verify both lists
         env:
           # Empty until Alimardon adds the secret (docs/RELEASE.md), and
-          # always empty for pull requests.
-          EDEL_RELEASE_KEY: ${{ github.event_name == 'push' && secrets.EDEL_RELEASE_KEY || '' }}
+          # always empty for pull requests and branches' dispatched runs.
+          EDEL_RELEASE_KEY: ${{ (github.event_name == 'push' || github.ref_type == 'tag') && secrets.EDEL_RELEASE_KEY || '' }}
           EDEL: target/release/edel
         run: sh ci/sign.sh
       - name: Hand the signed lists to the publish job
@@ -690,7 +697,7 @@ jobs:
   publish:
     name: Publish the release
     needs: [rust, images, desktop, sign]
-    if: github.event_name == 'push' && vars.EDEL_PUBLISH == 'yes'
+    if: (github.event_name == 'push' || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
     # One publish per ref at a time, never cancelled halfway: two merges in
     # a row upload one after the other, and ci/release.sh keeps the newer.
     concurrency:

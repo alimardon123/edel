@@ -9218,6 +9218,36 @@ case_ai_agents() {
 	echo "PASS: the AI agents add-on brought nothing until addons.installed named it; then edel settings apply installed the stand-ins for Alpaca and Newelle from ci's Flathub (this host) with the diff then empty, the launcher started Newelle with flatpak run and its window mapped (ai-agents.png), flatpak ps listed it while it ran, a stand-in agent's doas edel settings set as ci showed in the diff and its reset undid it, and dropping the add-on left the diff empty, no file of it in /etc or /usr/lib/edel and none of its apps running (flatpak ps)"
 }
 
+case_poweroff() {
+	# A desktop powers off (2026-10-24), last in its part: with ci's session
+	# open and Test A running in Flatpak's sandbox, `poweroff` must end the
+	# VM within 60 s. Its portals and sandboxes outlive the login screen,
+	# and OpenRC's killprocs hung on one waiting for the stopped document
+	# portal; edel-leave ends them first, so the console must show its
+	# line. /data itself stays "in use" at its unmount, as the add-ons'
+	# images on it lie under /usr until mount-ro makes everything read-only.
+	shown=$(count 'edel-shell-ui: launcher shown')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super did not open the launcher"
+	opened=$(count 'edel-compositor: mapped window test-a')
+	python3 ci/qmp.py type test
+	python3 ci/qmp.py key ret
+	wait_more 'edel-compositor: mapped window test-a' "$opened" 60 || fail "Test A did not map a window to power off with"
+	guest 'power off'
+	i=0
+	while kill -0 "$qemu" 2>/dev/null; do
+		i=$((i + 1))
+		if [ "$i" -ge 60 ]; then
+			tr -d '\r' <"$log" | tail -n 40
+			fail "the desktop did not power off within 60 s of poweroff; the console's last lines are above"
+		fi
+		sleep 1
+	done
+	said=$(tr -d '\r' <"$log" | grep -a 'edel boot leave: ' | tail -n 1)
+	[ -n "$said" ] || fail "the machine powered off without edel-leave ending the sessions (no 'edel boot leave:' line)"
+	echo "PASS: with ci's session open and Test A running, poweroff ended the VM in $i s, and edel-leave ended the sessions first ($said)"
+}
+
 
 case_descriptors() {
 	# Files held open (M8.11, Sway #6310's "too many open files"): ten

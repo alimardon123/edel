@@ -215,6 +215,27 @@ msgstr ""
 msgid "Wrong password. Type it again."
 msgstr ""
 
+msgid "Looks for an update once an hour and installs nothing."
+msgstr ""
+
+msgid "Installs updates by itself; each starts at your next restart."
+msgstr ""
+
+msgid "Installs updates and restarts in the hours below; a computer with a screen asks you to restart."
+msgstr ""
+
+msgid "Edel OS updates when you choose."
+msgstr ""
+
+msgid "{start} to {end}"
+msgstr ""
+
+msgid "Any hour"
+msgstr ""
+
+msgid "When an update may restart this computer by itself, in local time."
+msgstr ""
+
 msgid "This laptop offers no charge limit, so it always charges to 100%."
 msgstr ""
 
@@ -527,7 +548,7 @@ msgstr ""
 msgid "Could not save this change in your settings file ({path}): this account may not write it. Log out and in again, or ask an administrator."
 msgstr ""
 
-msgid "no disk to install on"
+msgid "choose a disk to install on; plug one in if none is listed"
 msgstr ""
 
 msgid "Who logs in"
@@ -572,6 +593,9 @@ msgstr ""
 msgid "Disk"
 msgstr ""
 
+msgid "Encrypt your files"
+msgstr ""
+
 msgid "How windows and panels are laid out. Change it any time in Settings."
 msgstr ""
 
@@ -582,6 +606,9 @@ msgid "Review and install"
 msgstr ""
 
 msgid "Install on"
+msgstr ""
+
+msgid "Your files"
 msgstr ""
 
 msgid "Show the plan"
@@ -621,6 +648,18 @@ msgid "From the settings file"
 msgstr ""
 
 msgid "Not given yet"
+msgstr ""
+
+msgid "Encrypted with your password"
+msgstr ""
+
+msgid "Not encrypted"
+msgstr ""
+
+msgid "Only your password opens them. This computer asks for it at each start."
+msgstr ""
+
+msgid "Anyone who has this disk can read them."
 msgstr ""
 
 msgid "On {device}, answering {what}. Use it, and only the rest is asked."
@@ -1496,6 +1535,12 @@ msgstr ""
 msgid "Channel"
 msgstr ""
 
+msgid "Automatic updates"
+msgstr ""
+
+msgid "Restart between"
+msgstr ""
+
 msgid "Developer mode"
 msgstr ""
 
@@ -1710,6 +1755,9 @@ msgid "Power saver"
 msgstr ""
 
 msgid "When plugged in"
+msgstr ""
+
+msgid "Check only"
 msgstr ""
 
 msgid "Edel OS's choice"

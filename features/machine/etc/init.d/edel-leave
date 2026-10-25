@@ -1,0 +1,32 @@
+#!/sbin/openrc-run
+# At shutdown, once the login screen and ssh have stopped and before the
+# data partition is unmounted, ends what people's sessions left running and
+# unmounts their FUSE file systems (`edel boot leave`). A person's portals,
+# Flatpak sandboxes and rootless containers outlive greetd and sshd, in
+# mount namespaces fuser cannot see, and killprocs, which stops every
+# process before it signals them, hung on a process waiting for the
+# stopped document portal (2026-10-24). Starting
+# does nothing and nothing stays running.
+
+description="End people's sessions at shutdown"
+
+depend() {
+	need localmount
+	before greetd sshd
+}
+
+start() {
+	return 0
+}
+
+stop() {
+	# Only a shutdown or a restart ends people's processes; stopping the
+	# service by hand leaves them be.
+	case "$RC_RUNLEVEL" in
+	shutdown | reboot) ;;
+	*) return 0 ;;
+	esac
+	ebegin "Ending people's sessions"
+	/usr/bin/edel boot leave
+	eend $?
+}
