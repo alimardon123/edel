@@ -1145,8 +1145,8 @@ case_game_session() {
 	wait_for 'edel-shell-ui: a game session: no panels or desktop widgets' 30 ||
 		fail "the game session's shell-ui did not say it draws no panels"
 	shown=$(value game_session | sed 's/.* greeter //')
-	shot game-session 640 400 3333cc >/dev/null ||
-		fail "the middle of the screen is not the stand-in's #3333cc in the game session"
+	shot game-session 640 400 cc3333 >/dev/null ||
+		fail "the middle of the screen is not the stand-in's #cc3333 in the game session"
 	# Super+L locks the screen over the game, as on the desktop, and ci's
 	# password unlocks it (game-session-lock.png).
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
