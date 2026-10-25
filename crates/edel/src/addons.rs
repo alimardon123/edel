@@ -1521,15 +1521,26 @@ pub fn take_device_rules() {
         .map(|name| Path::new(places::ADDONS_RUN).join(name))
         .collect();
     if brings(&mounts, DRIVERS) {
-        // Most devices without a driver have none anywhere (a bridge, a
-        // hub's port), so a failed call is no warning.
-        let waiting = edel::hardware::without_driver_in(Path::new(edel::hardware::BUS));
-        let served = waiting
+        // Only the devices an add-on's driver names are asked for, so the
+        // start pays one call for each of them, not one for every device
+        // without a driver (a bridge, a hub's port).
+        let kernel = fs::read_to_string("/proc/sys/kernel/osrelease").unwrap_or_default();
+        let aliases = driver_aliases(
+            &Path::new("/").join(DRIVERS).join(kernel.trim()),
+            kernel.trim(),
+            &mounts,
+        );
+        let waiting: Vec<String> =
+            edel::hardware::without_driver_in(Path::new(edel::hardware::BUS))
+                .into_iter()
+                .filter(|modalias| edel::hardware::serves_one(&aliases, modalias))
+                .collect();
+        let loaded = waiting
             .iter()
             .filter(|modalias| run(&mut edel::base::load_driver(modalias)).is_ok())
             .count();
         println!(
-            "edel-data: {served} of the {} devices without a driver have one loaded now the add-ons are mounted",
+            "edel-data: loaded the add-ons' drivers for {loaded} of the {} devices that wait for one",
             waiting.len()
         );
     }
@@ -1624,6 +1635,40 @@ pub fn has_services() -> bool {
 /// packs bring them (M8.17e).
 const DEVICE_RULES: &str = "usr/lib/udev/rules.d";
 const DRIVERS: &str = "usr/lib/modules";
+
+/// The modalias patterns of the kernel drivers the add-ons mounted at
+/// `mounts` bring (M8.17e): the lines of the kernel's `modules.alias` in
+/// `modules` (`/usr/lib/modules/KERNEL`) whose module `modules.dep` finds
+/// in one of them. The kernel's index is the slot's and stays whole.
+fn driver_aliases(modules: &Path, kernel: &str, mounts: &[PathBuf]) -> Vec<String> {
+    let dep = fs::read_to_string(modules.join("modules.dep")).unwrap_or_default();
+    let brought: BTreeSet<String> = dep
+        .lines()
+        .filter_map(|line| line.split_once(':').map(|(path, _)| path))
+        .filter(|path| {
+            mounts
+                .iter()
+                .any(|m| m.join(DRIVERS).join(kernel).join(path).is_file())
+        })
+        .filter_map(|path| {
+            let file = path.rsplit('/').next()?;
+            let name = file.split(".ko").next()?;
+            Some(name.replace('-', "_"))
+        })
+        .collect();
+    let alias = fs::read_to_string(modules.join("modules.alias")).unwrap_or_default();
+    alias
+        .lines()
+        .filter_map(|line| {
+            let mut words = line.split_whitespace();
+            (words.next() == Some("alias")).then_some(())?;
+            let (pattern, module) = (words.next()?, words.next()?);
+            brought
+                .contains(&module.replace('-', "_"))
+                .then(|| pattern.to_string())
+        })
+        .collect()
+}
 
 /// Whether one of the add-ons mounted at `mounts` brings something in
 /// `dir`, rules for udev (`DEVICE_RULES`) or kernel drivers (`DRIVERS`),
@@ -1863,6 +1908,37 @@ mod tests {
     use std::process;
 
     use super::*;
+
+    #[test]
+    fn only_the_aliases_of_the_drivers_an_add_on_brings_are_asked_for() {
+        let root = std::env::temp_dir().join(format!("edel-driver-aliases-{}", process::id()));
+        let kernel = "6.18.57-0-lts";
+        let modules = root.join("slot").join(kernel);
+        fs::create_dir_all(&modules).unwrap();
+        fs::write(
+            modules.join("modules.dep"),
+            "kernel/sound/hda/controllers/snd-hda-intel.ko.gz: kernel/sound/core/snd.ko.gz\nkernel/sound/core/snd.ko.gz:\nkernel/drivers/net/virtio_net.ko.gz:\n",
+        )
+        .unwrap();
+        fs::write(
+            modules.join("modules.alias"),
+            "# Aliases extracted from modules themselves.\nalias pci:v00008086d00002668sv*sd*bc*sc*i* snd_hda_intel\nalias virtio:d00000001v* virtio_net\nalias char-major-116-* snd\n",
+        )
+        .unwrap();
+        let desktop = root.join("desktop");
+        let hda = desktop
+            .join(DRIVERS)
+            .join(kernel)
+            .join("kernel/sound/hda/controllers");
+        fs::create_dir_all(&hda).unwrap();
+        fs::write(hda.join("snd-hda-intel.ko.gz"), "").unwrap();
+        assert_eq!(
+            driver_aliases(&modules, kernel, &[desktop]),
+            ["pci:v00008086d00002668sv*sd*bc*sc*i*"]
+        );
+        assert!(driver_aliases(&modules, kernel, &[]).is_empty());
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn only_an_add_on_with_device_rules_or_drivers_has_udev_read_them_again() {

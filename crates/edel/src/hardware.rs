@@ -112,9 +112,12 @@ pub fn glob(pattern: &str, name: &str, slash_stops: bool) -> bool {
 
 /// Whether any device's modalias matches any of the packs' `patterns`.
 pub fn serves(patterns: &[String], devices: &[Device]) -> bool {
-    devices
-        .iter()
-        .any(|d| patterns.iter().any(|p| glob(p, &d.modalias, false)))
+    devices.iter().any(|d| serves_one(patterns, &d.modalias))
+}
+
+/// Whether one of `patterns` matches the modalias `modalias`.
+pub fn serves_one(patterns: &[String], modalias: &str) -> bool {
+    patterns.iter().any(|p| glob(p, modalias, false))
 }
 
 /// Whether the firmware file `file` is under `dir`, as itself or
