@@ -2811,7 +2811,7 @@ fn find_by_label(label: &str) -> Option<PathBuf> {
 /// not loaded yet, so mount cannot guess it.
 fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
     let Some(text) = with_mounted(device, fs, false, |dir| {
-        fs::read_to_string(places::found(&places::settings_in(&dir.join(inner)))).ok()
+        edel::install::read_inside(dir, &places::found(&places::settings_in(&dir.join(inner))))
     }) else {
         eprintln!(
             "warning: {}",
@@ -2847,8 +2847,11 @@ pub(crate) fn with_mounted<T>(
         cmd.status().is_ok_and(|s| s.success())
     };
     let mounted = match fs {
-        Some(kind) => mount(kind, "ro,iocharset=iso8859-1"),
-        None => mount("vfat", "ro,iocharset=iso8859-1") || mount("auto", "ro"),
+        Some(kind) => mount(kind, "ro,nosuid,nodev,noexec,iocharset=iso8859-1"),
+        None => {
+            mount("vfat", "ro,nosuid,nodev,noexec,iocharset=iso8859-1")
+                || mount("auto", "ro,nosuid,nodev,noexec")
+        }
     };
     if !mounted {
         return None;
