@@ -599,6 +599,14 @@ pub fn hostname_answer(value: &str) -> Result<String, String> {
     }
 }
 
+/// Whether a passphrase can be typed at a console in any layout: printable
+/// ASCII only, since a console map gives no other letters for sure. The
+/// data's passphrase is the person's password, so Settings' installer
+/// page refuses an encrypted install with any other (M8.2).
+pub fn typable(passphrase: &str) -> bool {
+    !passphrase.is_empty() && passphrase.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
+
 /// Whether an install onto a computer of `form` (`form_factor`) encrypts
 /// its data unless asked otherwise (M8.2): laptops and computers with a
 /// screen do, as they are the ones lost or left; a virtual machine or a
@@ -777,6 +785,14 @@ pub fn list_entry(disk: &Disk, removable: bool, running: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_printable_ascii_is_typable_at_a_console() {
+        assert!(typable("edel-ci-tty 42!"));
+        assert!(!typable("grüße"));
+        assert!(!typable(""));
+        assert!(!typable("tab\there"));
+    }
 
     #[test]
     fn a_removable_disk_edel_install_wrote_is_no_stick() {

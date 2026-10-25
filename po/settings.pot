@@ -548,6 +548,9 @@ msgstr ""
 msgid "Could not save this change in your settings file ({path}): this account may not write it. Log out and in again, or ask an administrator."
 msgstr ""
 
+msgid "the password opens the encrypted files at each start, where only a-z, A-Z, digits, spaces and signs can be typed for sure; choose such a password, or turn Encrypt your files off"
+msgstr ""
+
 msgid "choose a disk to install on; plug one in if none is listed"
 msgstr ""
 
@@ -621,6 +624,9 @@ msgid "Restart now"
 msgstr ""
 
 msgid "Erase and install asks you to press it twice."
+msgstr ""
+
+msgid "The disks changed since this page opened, so nothing was changed. Open this page again to choose the disk."
 msgstr ""
 
 msgid "English (US) is added, to type your username and password; Super+Space switches"
