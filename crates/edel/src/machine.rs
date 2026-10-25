@@ -2453,8 +2453,13 @@ pub fn preset_list() -> Result<()> {
 /// person's own, one write, and the screen stays the same.
 pub fn preset_save(name: &str) -> Result<()> {
     let what = trf("saved the preset {name}", &[("name", name)]);
+    // A person's preset is made from their file laid over the machine's.
+    let below = match target_for(is_root(), &["layout.preset"], "edel preset")? {
+        Target::Person => fs::read_to_string(machine_file()).ok(),
+        Target::Machine => None,
+    };
     edit_own("edel preset", &what, &["layout.preset"], |text| {
-        presets::save_text(text, name)
+        presets::save_text(text, below.as_deref(), name)
     })
 }
 
