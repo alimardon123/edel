@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use crate::features::Feature;
 use crate::hardware::{self, Device, Pack};
-use crate::i18n::n_;
+use crate::i18n::{n_, trf};
 use crate::places;
 use crate::services;
 use crate::settings::SettingsFile;
@@ -104,16 +104,47 @@ pub fn installed(file: &SettingsFile, default: &[String]) -> Vec<String> {
 }
 
 /// The add-ons this machine's settings file has ([`installed`]) with the
-/// running slot's default; none when the file is unreadable.
+/// running slot's default.
 pub fn installed_on_machine() -> Vec<String> {
+    installed_on_machine_or(&[])
+}
+
+/// As [`installed_on_machine`], but when the file is there and cannot be
+/// read (a typo made by hand, a newer format with no older file beside
+/// it), the running slot's default and `kept`, the add-ons already on the
+/// disk: a mistake in the file never takes the desktop away or throws a
+/// downloaded add-on out, and the warning names the file.
+pub fn installed_on_machine_or(kept: &[String]) -> Vec<String> {
     let path = places::found(&places::machine_settings());
     let default = running_default();
     match crate::settings::read_on_machine(&path) {
         Ok(read) => installed(&read.file, &default),
         // No file yet: the first boot, before apply seeds it.
         Err(_) if !path.exists() => default,
-        Err(_) => Vec::new(),
+        Err(err) => {
+            eprintln!(
+                "warning: {}",
+                trf(
+                    "could not read {path} ({why}), so the default add-ons and those already here are used until it is fixed",
+                    &[
+                        ("path", &path.display().to_string()),
+                        ("why", &format!("{err:#}"))
+                    ]
+                )
+            );
+            with_kept(default, kept)
+        }
     }
+}
+
+/// `default` and then each of `kept` it does not name, in order.
+fn with_kept(mut all: Vec<String>, kept: &[String]) -> Vec<String> {
+    for name in kept {
+        if !all.contains(name) {
+            all.push(name.clone());
+        }
+    }
+    all
 }
 
 /// Where one add-on stands on this machine.
@@ -355,6 +386,18 @@ impl Facts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unreadable_file_keeps_the_default_and_what_is_here() {
+        let names = |l: &[&str]| l.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(
+            with_kept(
+                names(&["desktop", "wallpapers"]),
+                &names(&["gaming", "desktop"])
+            ),
+            names(&["desktop", "wallpapers", "gaming"])
+        );
+    }
 
     fn file(text: &str) -> SettingsFile {
         crate::settings::read(text).unwrap().file

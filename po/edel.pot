@@ -5,6 +5,9 @@ msgid ""
 msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 
+msgid "could not read {path} ({why}), so the default add-ons and those already here are used until it is fixed"
+msgstr ""
+
 msgid "Installed"
 msgstr ""
 
