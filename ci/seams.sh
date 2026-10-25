@@ -26,6 +26,12 @@
 #                    edel::base (crates/edel/src/base.rs), so the base
 #                    stays replaceable (ADR-010, roadmap M6.17)
 #
+#   the paths        no crate reads another crate's directory by a relative
+#                    path ("../compositor/", "../../settings/"); a part
+#                    reaches another only through edel, a plain file at its
+#                    place or a protocol, and the pairs that share a file
+#                    are in allowed_path() below, each with its reason
+#
 #   the programs     the compositor, shell-ui and Settings run only the programs
 #                    allowed_program() lists, each with its reason and what
 #                    happens where it is missing, so the desktop's run-time
@@ -256,6 +262,36 @@ check_programs() {
 	done
 }
 
+# allowed_path PART CRATE: the crates whose directory PART reads by a
+# relative path, each with its reason.
+allowed_path() {
+	case "$1 $2" in
+	# The compositor and shell-ui share their private protocol,
+	# edel-shell-v1.xml, which the compositor owns; the desktop's two parts
+	# are lifted out together (M5.15), so the path between them holds.
+	"shell-ui compositor") return 0 ;;
+	*) return 1 ;;
+	esac
+}
+
+# check_paths ROOT: no crate reads another crate's directory by a relative
+# path, from its manifest ("../NAME/") or from a source file
+# ("../../NAME/"), unless allowed_path() lists the pair.
+check_paths() {
+	for dir in "$1"/crates/*/; do
+		part=$(basename "$dir")
+		files=$(cd "$1" && find "crates/$part" -name '*.rs' -type f | sort)
+		for file in $files; do
+			others=$(code_of "$1/$file" | grep -oE '"/?(\.\./){1,2}(compositor|edel|settings|shell-ui|testclient|testheader)/' | sed 's/^"[/.]*//; s/\/$//' | sort -u)
+			for other in $others; do
+				[ "$other" = "$part" ] && continue
+				allowed_path "$part" "$other" && continue
+				fail "$file reads crates/$other by a relative path; a part reaches another only through edel, a file at its place or a protocol (ADR-010), so move what both need into edel, or add \"$part $other\" to allowed_path() in ci/seams.sh with the reason"
+			done
+		done
+	done
+}
+
 # check ROOT LOCK: every rule over the checkout at ROOT.
 check() {
 	root=$1 lock=$2
@@ -267,6 +303,7 @@ check() {
 	check_seam "$root"
 	check_base "$root"
 	check_programs "$root"
+	check_paths "$root"
 	[ "$failed" = 0 ]
 }
 
@@ -334,13 +371,18 @@ if [ "${1:-}" = --self-test ]; then
 	printf '%s\n' 'fn probe() {' '    let _ = std::process::Command::new("edel-secret-tool");' '}' >"$copy/crates/shell-ui/src/program_probe.rs"
 	caught "$copy" "crates/shell-ui/src/program_probe.rs runs edel-secret-tool"
 
-	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui, a settings write in shell-ui, rc-update outside edel::base and an unlisted program in shell-ui"
+	copy="$work/path"
+	seed "$copy"
+	printf '%s\n' 'const PAGES: &str = include_str!("../../settings/src/main.rs");' >"$copy/crates/shell-ui/src/path_probe.rs"
+	caught "$copy" "crates/shell-ui/src/path_probe.rs reads crates/settings by a relative path"
+
+	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui, a settings write in shell-ui, rc-update outside edel::base, an unlisted program in shell-ui and shell-ui reading Settings' source by a relative path"
 	[ "$ok" = 1 ]
 	exit
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
+	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, no crate reads another's directory but the pairs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
 else
 	exit 1
 fi
