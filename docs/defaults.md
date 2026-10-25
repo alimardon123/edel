@@ -1,6 +1,6 @@
 # Defaults
 
-This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from `crates/edel/src/key_help.rs` and must not be edited by hand. It gives the value every settings key has while the settings file does not set it, and who decides that value. [The settings file](settings.md) says what each key does.
+This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from the key table, `KEYS` in `crates/edel/src/settings.rs`, and must not be edited by hand. It gives the value every settings key has while the settings file does not set it, and who decides that value. [The settings file](settings.md) says what each key does.
 
 | Key | Default | Decided by |
 |---|---|---|
