@@ -672,6 +672,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Game mode on or off"),
     },
     Row {
+        key: "shortcuts.toggle_frame_rate",
+        title: n_("Frame rate over games"),
+    },
+    Row {
         key: "shortcuts.show_tray",
         title: n_("Show tray"),
     },

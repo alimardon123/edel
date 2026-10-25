@@ -140,12 +140,20 @@ fn args() -> Result<Args> {
             "--lock-pointer" => lock_pointer = true,
             "--inhibit-idle" => inhibit_idle = true,
             "--clipboard" => clipboard = true,
-            "--busy" => busy = true,
+            // Steam's own flag for Big Picture, which the game session
+            // starts it with (M8.26), so the stand-in for Steam
+            // (ci/apps/make-repo.sh) draws as a game does.
+            "--busy" | "-gamepadui" => busy = true,
             _ => {}
         }
         if matches!(
             word.as_str(),
-            "--fullscreen" | "--lock-pointer" | "--inhibit-idle" | "--clipboard" | "--busy"
+            "--fullscreen"
+                | "--lock-pointer"
+                | "--inhibit-idle"
+                | "--clipboard"
+                | "--busy"
+                | "-gamepadui"
         ) {
             continue;
         }

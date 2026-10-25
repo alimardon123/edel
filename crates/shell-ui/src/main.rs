@@ -314,6 +314,11 @@ struct Shell {
     /// Whether a game plays on some screen, as the compositor says
     /// (M7.7b): on the charger the power profile is then Performance.
     game: bool,
+    /// A game session's shell-ui (M8.26, `--game`): no panels and no desktop
+    /// widgets, whatever the settings files say, only what keeps the
+    /// machine safe and asleep when left: the lock screen, the idle ladder,
+    /// power and notifications.
+    game_session: bool,
     /// Whether the battery saver is on, as `power_rules::saver` last decided
     /// (M8.31): the compositor draws at most the Lite tier while it is, and
     /// the panels draw without fillets.
@@ -534,6 +539,8 @@ fn run() -> Result<()> {
     if words.first().is_some_and(|w| w == "--greeter") {
         anyhow::bail!("--greeter takes --cmd COMMAND, the session to start");
     }
+    // A game session's (M8.26): the compositor starts it with --game.
+    let game_session = words.first().is_some_and(|w| w == "--game");
     // Huge pages stay off for this small process, before any thread starts:
     // with them on, a thread stack that happens to cover a 2 MiB boundary is
     // backed by one 2 MiB page at its first touch, which CI read as 2 MiB
@@ -544,7 +551,13 @@ fn run() -> Result<()> {
     if let Some((language, words)) = edel::i18n::init("shell-ui") {
         eprintln!("edel-shell-ui: words in {language}, {words} translated");
     }
-    let (preset, scheme) = from_system_files();
+    let (mut preset, scheme) = from_system_files();
+    if game_session {
+        preset.panels.clear();
+        eprintln!(
+            "edel-shell-ui: a game session: no panels or desktop widgets, the lock screen and the idle ladder kept"
+        );
+    }
     // foot's theme follows the scheme, and a running foot repaints (M6.13).
     terminal::follow(scheme == Scheme::Dark);
     // Apps' colours follow ours too (M6.18): their gtk.css is written now.
@@ -696,6 +709,7 @@ fn run() -> Result<()> {
         status_tx,
         playing: false,
         game: false,
+        game_session,
         saver: false,
         saver_latched: false,
         saver_told: false,
@@ -1485,8 +1499,11 @@ impl Shell {
     /// panel takes its new widgets and is drawn again, its surface kept;
     /// otherwise the open popups close, the panels' surfaces go and every
     /// wanted panel is made anew. Logs `panels now EDGE (N widgets), ...`
-    /// either way.
+    /// either way. A game session keeps none.
     pub fn panels_changed(&mut self, wanted: Vec<presets::Panel>) {
+        if self.game_session {
+            return;
+        }
         let features = edel::places::found_shared(edel::features::DIR);
         self.app_press = None;
         self.workspace_press = None;

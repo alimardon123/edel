@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=Edel OS Game
+Comment=Steam's Big Picture alone, fullscreen, in game mode
+Exec=/usr/libexec/edel-session --game flatpak run com.valvesoftware.Steam -gamepadui
+Type=Application
