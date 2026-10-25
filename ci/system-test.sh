@@ -146,9 +146,9 @@ grep -q 'not permitted' out/doas-visitor.log || fail "visitor's doas -n edel sta
 echo "PASS: visitor, who is not in group admin, was refused by doas: $(head -c 200 out/doas-visitor.log)"
 code=0
 ssh_ci 'echo wrong | doas -n edel rollback --password-stdin' >out/doas-wrong.log 2>&1 || code=$?
-[ "$code" = 1 ] || fail "a wrong password exited $code, not 1: $(cat out/doas-wrong.log)"
+[ "$code" = 67 ] || fail "a wrong password exited $code, not 67: $(cat out/doas-wrong.log)"
 grep -q 'wrong password for ci' out/doas-wrong.log || fail "a wrong password was not said: $(cat out/doas-wrong.log)"
-echo "PASS: rollback with a wrong password exited 1 and said wrong password for ci"
+echo "PASS: rollback with a wrong password exited 67 and said wrong password for ci"
 code=0
 ssh_ci 'echo edel-ci-test | doas -n edel update --password-stdin /nonexistent/release.toml' >out/doas-update.log 2>&1 || code=$?
 [ "$code" != 0 ] || fail "update with a missing release exited 0"
