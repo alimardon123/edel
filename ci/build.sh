@@ -32,12 +32,12 @@ cargo build --release --locked --workspace
 # shared apk cache (roadmap M3.1). Test images that no step downloads are
 # built with --no-compress. build VERSION ARGS...
 version=${EDEL_VERSION:-0.1}
-rm -rf out/apk-cache
+rm -rf out/apk-cache out/apk-cache-tests
 build() {
 	build_version=$1
 	shift
 	./target/release/edel image build --version "$build_version" --channel "${EDEL_CHANNEL:-ci}" \
-		--apk-cache out/apk-cache "$@"
+		--apk-cache "${apk_cache:-out/apk-cache}" "$@"
 }
 . ci/names.sh
 # Two throwaway signing keys, new on every run; the real keys arrive with
@@ -83,10 +83,17 @@ if [ "$what" = desktop-test ]; then
 	exit 0
 fi
 
-for def in images/*.toml; do
-	build "$version" "$def" --out out
-done
-
+# The test images build beside the one image, which spends most of its
+# minutes compressing on every core while theirs mostly unpack packages on
+# one, so the build ends minutes sooner (CI speed-ups, 2026-10-25). The
+# container image goes first, alone: it fetches the run's package index,
+# which the test images then take in a copy of the cache of their own, so
+# two apk never write one cache. Their output is printed after the one
+# image's, not between its lines.
+build "$version" images/container.toml --out out
+cp -a out/apk-cache out/apk-cache-tests
+(
+apk_cache=out/apk-cache-tests
 # Built again from the same commit (M8.6): ci/repro-check.sh wants the
 # container image byte for byte the same, and compares the CI VM image's
 # slot, which is not required yet; the CI VM image is built twice here, as
@@ -261,6 +268,18 @@ mkdir -p "$update"
 ln out/apps-test-update/edel-apps-test-x86_64.ext4.gz "$update/"
 ./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-apps-test-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
+) >out/build-tests.log 2>&1 &
+tests=$!
+for def in images/*.toml; do
+	[ "$def" = images/container.toml ] || build "$version" "$def" --out out
+done
+tests_ok=0
+wait "$tests" || tests_ok=$?
+cat out/build-tests.log
+[ "$tests_ok" = 0 ] || {
+	echo "ci/build.sh: building the test images failed (exit $tests_ok); out/build-tests.log above says where"
+	exit 1
+}
 
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update

@@ -23,12 +23,18 @@ pub const LAST_LINES: usize = 60;
 /// so a log an app filled with megabytes is never read whole.
 const TAIL_BYTES: u64 = 64 * 1024;
 
-/// Writes one line to standard error, which in a session is this log, and
-/// drops a failed write: with a full disk the line is lost, never the
-/// session (std's `eprintln!` panics then). The compositor's and shell-ui's
-/// `eprintln!` call this.
+/// Writes one line to standard error, which in a session is this log, in a
+/// single write, and drops a failed write: with a full disk the line is
+/// lost, never the session (std's `eprintln!` panics then). Every process
+/// of a session writes to the log's one file, and `writeln!` writes a line
+/// in several pieces, so two processes writing at once mixed their lines
+/// ("osd shown, edel-compositor: key game mode off" on 2026-10-25); one
+/// append to a file is never split by another's. `edel`, the compositor,
+/// shell-ui and Settings define their `eprintln!` as a call to this.
 pub fn write_line(args: fmt::Arguments) {
-    let _ = writeln!(io::stderr(), "{args}");
+    let mut text = args.to_string();
+    text.push('\n');
+    let _ = io::stderr().lock().write_all(text.as_bytes());
 }
 
 /// A new session's log in `dir`, the one before moved to
