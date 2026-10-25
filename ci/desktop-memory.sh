@@ -15,12 +15,11 @@
 # memory; nothing is installed or changed inside any guest. Memory in use
 # is MemTotal less MemAvailable, the number Edel OS's own memory budgets
 # use. For each size the VM runs 420 s with nobody using it but a press of
-# Shift every 10 s, which keeps every screen awake and unlocked (the
-# desktop's idle number is the median of the last minute), then Escape
-# (which leaves GNOME's overview), Super, "firefox" and Return, three times
-# 30 s apart for a slow search, open the browser the way a person would; 120 s later Return accepts
-# Firefox's first-run notice and the address bar opens a page that plays a
-# video served from this host, and the median of the last minute of 120 s
+# Shift every 10 s from second 200, which keeps every screen awake and
+# unlocked (the desktop's idle number is the median of the last minute);
+# then Firefox opens on a page that plays a video served from this host,
+# the way a person opens it on each system (below), and the median of the
+# last minute of 240 s
 # more is the number with Firefox. Screenshots of each moment show whether
 # the desktop, the browser and the video really came; a number without its
 # picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
@@ -117,37 +116,51 @@ measure() {
 		$media &
 	qemu=$!
 	start=$(date +%s)
-	# sample UNTIL: a sample every 10 s until second UNTIL of the run,
-	# each after a press of Shift, as a person reading the screen would
-	# make, so no system dims, blanks or locks its screen in the meantime.
+	# sample UNTIL: a sample every 10 s until second UNTIL of the run;
+	# from second 200, when every desktop is up, each after a press of
+	# Shift, as a person reading the screen would make, so no system dims,
+	# blanks or locks its screen (none is pressed while a system starts).
 	sample() {
 		while [ $(($(date +%s) - start)) -lt "$1" ]; do
 			sleep 10
-			python3 ci/qmp.py key shift >/dev/null 2>&1 || true
+			if [ $(($(date +%s) - start)) -ge 200 ]; then
+				python3 ci/qmp.py key shift >/dev/null 2>&1 || true
+			fi
 			echo "$(($(date +%s) - start)) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
 		done
 	}
 	sample 420
 	python3 ci/qmp.py screendump "$run.png" || true
-	python3 ci/qmp.py key esc || true
-	sleep 2
-	python3 ci/qmp.py key meta_l || true
-	sleep 3
-	python3 ci/qmp.py type firefox || true
-	# Return three times, 30 s apart: a slow search has its result for
-	# one of them, and once the browser is open the others reach it.
-	for _ in 1 2 3; do
-		sleep 20
+	# Firefox, the way a person opens it on each system: GNOME's Alt+F2
+	# runs it with the page, as its search lost the keys to the welcome
+	# windows Ubuntu and Fedora open over a live session; Edel OS's
+	# launcher opens it, Tab and Return take Firefox's first-run notice,
+	# and the address bar the page.
+	case "$system" in
+	edel)
+		python3 ci/qmp.py key meta_l || true
+		sleep 3
+		python3 ci/qmp.py type firefox || true
+		sleep 5
 		python3 ci/qmp.py key ret || true
-		sleep 10
-	done
-	sample 540
-	python3 ci/qmp.py screendump "$run-opened.png" || true
-	python3 ci/qmp.py key ret || true
-	sleep 5
-	python3 ci/qmp.py key ctrl-l || true
-	sleep 2
-	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
+		sample 540
+		python3 ci/qmp.py screendump "$run-opened.png" || true
+		python3 ci/qmp.py key tab || true
+		sleep 1
+		python3 ci/qmp.py key ret || true
+		sleep 5
+		python3 ci/qmp.py key ctrl-l || true
+		sleep 2
+		python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
+		;;
+	*)
+		python3 ci/qmp.py key alt-f2 || true
+		sleep 5
+		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/\n' || true
+		sample 540
+		python3 ci/qmp.py screendump "$run-opened.png" || true
+		;;
+	esac
 	sample 660
 	python3 ci/qmp.py screendump "$run-firefox.png" || true
 	state=$(python3 ci/qmp.py status 2>/dev/null || echo stopped)
