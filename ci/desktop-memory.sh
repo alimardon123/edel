@@ -154,8 +154,12 @@ measure() {
 		python3 ci/qmp.py key alt-f2 || true
 		sleep 5
 		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/' || true
+		# Return, then the keypad's Enter: GNOME's run dialog kept the
+		# command after Return alone in two runs.
 		sleep 2
 		python3 ci/qmp.py key ret || true
+		sleep 3
+		python3 ci/qmp.py key kp_enter || true
 		sample 420
 		python3 ci/qmp.py screendump "$run-opened.png" || true
 		;;
