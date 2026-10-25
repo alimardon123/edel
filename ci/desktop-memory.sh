@@ -14,8 +14,8 @@
 # virtio balloon device, through which the guest's own kernel reports its
 # memory; nothing is installed or changed inside any guest. Memory in use
 # is MemTotal less MemAvailable, the number Edel OS's own memory budgets
-# use. For each size the VM runs 420 s with nobody using it but a press of
-# Shift every 10 s from second 200, which keeps every screen awake and
+# use. For each size the VM runs 420 s with nobody using it but the
+# pointer moved a pixel and back every 10 s from second 200, which keeps every screen awake and
 # unlocked (the desktop's idle number is the median of the last minute);
 # then Firefox opens on a page that plays a video served from this host,
 # the way a person opens it on each system (below), and the median of the
@@ -117,14 +117,17 @@ measure() {
 	qemu=$!
 	start=$(date +%s)
 	# sample UNTIL: a sample every 10 s until second UNTIL of the run;
-	# from second 200, when every desktop is up, each after a press of
-	# Shift, as a person reading the screen would make, so no system dims,
-	# blanks or locks its screen (none is pressed while a system starts).
+	# from second 200, when every desktop is up, each after the pointer
+	# moves a pixel and back, as a person reading the screen would, so no
+	# system dims, blanks or locks its screen. (A press of Shift did the
+	# same until Ubuntu's live session left its desktop for a text console
+	# in both runs that pressed it.)
 	sample() {
 		while [ $(($(date +%s) - start)) -lt "$1" ]; do
 			sleep 10
 			if [ $(($(date +%s) - start)) -ge 200 ]; then
-				python3 ci/qmp.py key shift >/dev/null 2>&1 || true
+				python3 ci/qmp.py nudge 1 0 >/dev/null 2>&1 || true
+				python3 ci/qmp.py nudge -1 0 >/dev/null 2>&1 || true
 			fi
 			echo "$(($(date +%s) - start)) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
 		done
@@ -156,7 +159,9 @@ measure() {
 	*)
 		python3 ci/qmp.py key alt-f2 || true
 		sleep 5
-		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/\n' || true
+		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/' || true
+		sleep 2
+		python3 ci/qmp.py key ret || true
 		sample 540
 		python3 ci/qmp.py screendump "$run-opened.png" || true
 		;;
