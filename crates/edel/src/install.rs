@@ -599,6 +599,14 @@ pub fn hostname_answer(value: &str) -> Result<String, String> {
     }
 }
 
+/// Whether a passphrase can be typed at a console in any layout: printable
+/// ASCII only, since a console map gives no other letters for sure. The
+/// data's passphrase is the person's password, so Settings' installer
+/// page refuses an encrypted install with any other (M8.2).
+pub fn typable(passphrase: &str) -> bool {
+    !passphrase.is_empty() && passphrase.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
+
 /// Whether an install onto a computer of `form` (`form_factor`) encrypts
 /// its data unless asked otherwise (M8.2): laptops and computers with a
 /// screen do, as they are the ones lost or left; a virtual machine or a
@@ -685,12 +693,14 @@ pub fn from_a_stick() -> bool {
         .is_some_and(|disk| running_from_stick(sys, &disk))
 }
 
-/// A disk the installer page offers: its name, such as `sda`, and how
-/// people know it, its model and size.
+/// A disk the installer page offers: its name, such as `sda`, how people
+/// know it, its model and size, and its serial number where it reports
+/// one, which tells two sticks of one model apart.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiskChoice {
     pub name: String,
     pub title: String,
+    pub serial: Option<String>,
 }
 
 /// The disks Settings' installer page offers, read from `sys` (`/sys`, or
@@ -731,7 +741,16 @@ pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
                 ),
                 None => trf("{size} disk", &[("size", &capacity)]),
             };
-            (sectors > 0).then_some(DiskChoice { name, title })
+            let serial = ["device/serial", "device/wwid", "wwid"]
+                .iter()
+                .find_map(|f| fs::read_to_string(block.join(f)).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            (sectors > 0).then_some(DiskChoice {
+                name,
+                title,
+                serial,
+            })
         })
         .collect()
 }
@@ -777,6 +796,14 @@ pub fn list_entry(disk: &Disk, removable: bool, running: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_printable_ascii_is_typable_at_a_console() {
+        assert!(typable("edel-ci-tty 42!"));
+        assert!(!typable("grüße"));
+        assert!(!typable(""));
+        assert!(!typable("tab\there"));
+    }
 
     #[test]
     fn a_removable_disk_edel_install_wrote_is_no_stick() {
@@ -1088,10 +1115,12 @@ mod tests {
                 DiskChoice {
                     name: "nvme0n1".into(),
                     title: "Samsung SSD 980 · 512 GB".into(),
+                    serial: None,
                 },
                 DiskChoice {
                     name: "sdb".into(),
                     title: "4.1 GB disk".into(),
+                    serial: None,
                 },
             ],
             "the computer's own disk first, then another stick; the running stick and the CD drive are not offered"

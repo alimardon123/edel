@@ -434,6 +434,9 @@ msgstr ""
 msgid "could not read the data's passphrase from standard input; give it on one line"
 msgstr ""
 
+msgid "no passphrase for the data on standard input, so nothing was changed; give it on one line, run edel install in a terminal, or leave out --encrypt"
+msgstr ""
+
 msgid "Passphrase for the data: "
 msgstr ""
 
@@ -447,6 +450,12 @@ msgid "the two passphrases differ; type them again"
 msgstr ""
 
 msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
+msgstr ""
+
+msgid "the data is not encrypted, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type"
+msgstr ""
+
+msgid "a passphrase for the data is asked once the plan is confirmed (or read as one line of standard input)"
 msgstr ""
 
 msgid "/dev/{name} is not a whole disk; name a disk such as /dev/sda, not a partition"
@@ -506,13 +515,16 @@ msgstr ""
 msgid "/dev/{name} is the disk this system runs from; install to another disk"
 msgstr ""
 
-msgid "/dev/{name} is in use, as one of its parts is open (in Files, say); eject it there, or choose another disk; nothing was changed"
+msgid "/dev/{name} is in use, as one of its parts is open (in Files, say, or unlocked, or used for swap); eject or close it there, or choose another disk; nothing was changed"
 msgstr ""
 
 msgid "could not check {path}"
 msgstr ""
 
 msgid "{path} has problems, so nothing was changed; fix these (edel settings check shows them again):"
+msgstr ""
+
+msgid "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
 msgstr ""
 
 msgid "this was only the plan; nothing was changed; leave out --plan to install"
@@ -525,12 +537,6 @@ msgid "stopped, because {name} was not typed; nothing was changed"
 msgstr ""
 
 msgid "this system lacks {tools}, which installing needs, so nothing was changed; this stick is damaged or not an Edel OS stick: write it again from the download"
-msgstr ""
-
-msgid "the data is not encrypted after all, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type"
-msgstr ""
-
-msgid "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt"
 msgstr ""
 
 msgid "a passphrase may hold only a-z, A-Z, digits, spaces and signs, which the start's prompt can always type; nothing was changed"
@@ -569,12 +575,6 @@ msgstr ""
 msgid "the copy of Edel OS on {disk} is damaged and cannot start yet (the file system check stopped with code {code}); run edel install again, and if it fails again the disk may be failing"
 msgstr ""
 
-msgid "writing the boot loader"
-msgstr ""
-
-msgid "could not format the start-up partition {part}"
-msgstr ""
-
 msgid "creating the data partition"
 msgstr ""
 
@@ -585,6 +585,12 @@ msgid "the new encrypted data partition did not open with its passphrase; run ed
 msgstr ""
 
 msgid "could not format the data partition {part}"
+msgstr ""
+
+msgid "writing the boot loader"
+msgstr ""
+
+msgid "could not format the start-up partition {part}"
 msgstr ""
 
 msgid "Edel OS is installed on {disk}; restart, and take the stick out when the screen goes dark"

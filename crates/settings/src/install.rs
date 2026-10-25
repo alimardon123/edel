@@ -34,7 +34,7 @@ use std::time::Duration;
 use gtk::prelude::*;
 use gtk::{gio, glib};
 
-use edel::i18n::{tr, trf};
+use edel::i18n::{n_, tr, trf};
 use edel::install::{self, Answers, DiskChoice};
 
 use crate::files::Files;
@@ -87,6 +87,8 @@ pub struct Form {
     pub skip: Vec<&'static str>,
     /// Whether a password is asked: not when the file names several people
     pub password_needed: bool,
+    /// Whether the data is encrypted with the password (M8.2)
+    pub encrypt: bool,
 }
 
 /// The question key each field asks, as `edel::install::QUESTIONS` names it.
@@ -112,6 +114,8 @@ pub fn check(form: &Form, rules: Option<&str>) -> Result<(Answers, String), Vec<
         Err(tr("a password cannot be empty").to_string())
     } else if form.password != form.again {
         Err(tr("the two passwords differ; type them again").to_string())
+    } else if form.encrypt && !install::typable(&form.password) {
+        Err(tr("the password opens the encrypted files at each start, where only a-z, A-Z, digits, spaces and signs can be typed for sure; choose such a password, or turn Encrypt your files off").to_string())
     } else {
         Ok(String::new())
     };
@@ -387,8 +391,9 @@ struct Ui {
     show_plan: gtk::Button,
     erase: gtk::Button,
     restart: gtk::Button,
-    /// The disk the plan shown is for; None while no plan is shown
-    planned: RefCell<Option<String>>,
+    /// The disk the plan shown is for, as the page named it; None while
+    /// no plan is shown
+    planned: RefCell<Option<DiskChoice>>,
     armed: Cell<bool>,
     /// The keyboard suggested last, so a keyboard the person typed is kept
     suggested: RefCell<String>,
@@ -874,6 +879,20 @@ pub fn page() -> gtk::Widget {
 }
 
 /// The disk the system runs from, which is never offered.
+/// What the page says when the disk chosen is gone or another took its
+/// name (a stick pulled and another disk plugged in).
+const DISKS_CHANGED: &str = n_(
+    "The disks changed since this page opened, so nothing was changed. Open this page again to choose the disk.",
+);
+
+/// Whether `choice` is still a disk `sys` offers, by the same name, model,
+/// size and serial number: the page read the list once, and the kernel gives a name
+/// pulled out to the next disk plugged in, which must never be erased in
+/// its place.
+fn still_offered(sys: &Path, running: Option<&str>, choice: &DiskChoice) -> bool {
+    install::disk_choices(sys, running).contains(choice)
+}
+
 fn running() -> Option<String> {
     let mountinfo = std::fs::read_to_string("/proc/self/mountinfo").ok()?;
     install::running_disk(&mountinfo, Path::new("/sys"))
@@ -1194,6 +1213,14 @@ impl Ui {
         }
     }
 
+    /// The disk chosen, as the page named it.
+    fn chosen_disk(&self) -> Option<DiskChoice> {
+        self.disk
+            .as_ref()
+            .and_then(|d| self.disks.get(d.selected()))
+            .cloned()
+    }
+
     /// The form as it stands.
     fn form(&self) -> Form {
         Form {
@@ -1202,17 +1229,14 @@ impl Ui {
             user: self.user.text().to_string(),
             password: self.password.text().to_string(),
             again: self.again.text().to_string(),
-            disk: self
-                .disk
-                .as_ref()
-                .and_then(|d| self.disks.get(d.selected()))
-                .map(|d| d.name.clone()),
+            disk: self.chosen_disk().map(|d| d.name),
             timezone: self.zone_value(),
             hostname: self.hostname.text().to_string(),
             preset: self.presets[self.preset.selected().min(self.presets.len() - 1)].to_string(),
             profile: self.profile_value(),
             skip: self.skipped(),
             password_needed: self.password_needed(),
+            encrypt: self.encrypted(),
         }
     }
 
@@ -1428,6 +1452,12 @@ impl Ui {
                 return;
             }
         };
+        let Some(choice) = self.chosen_disk().filter(|c| {
+            c.name == disk && still_offered(Path::new("/sys"), running().as_deref(), c)
+        }) else {
+            self.say_problem(tr(DISKS_CHANGED));
+            return;
+        };
         let file = answers_file();
         let text = match self.found.borrow().as_ref() {
             Some(found) if self.using.get() => install::merged(&found.text, &answers),
@@ -1466,7 +1496,7 @@ impl Ui {
                 run.code
             );
             if run.ok {
-                *ui.planned.borrow_mut() = Some(disk);
+                *ui.planned.borrow_mut() = Some(choice);
                 ui.erase.set_sensitive(true);
                 ui.erase.grab_focus();
             }
@@ -1490,9 +1520,10 @@ impl Ui {
     /// The first press asks again, naming the disk, for five seconds; the
     /// second installs.
     fn erase_pressed(self: &Rc<Self>) {
-        let Some(disk) = self.planned.borrow().clone() else {
+        let Some(choice) = self.planned.borrow().clone() else {
             return;
         };
+        let disk = choice.name.clone();
         if !self.armed.get() {
             self.armed.set(true);
             self.erase
@@ -1506,6 +1537,11 @@ impl Ui {
             return;
         }
         self.disarm();
+        if !still_offered(Path::new("/sys"), running().as_deref(), &choice) {
+            self.stale();
+            self.say_problem(tr(DISKS_CHANGED));
+            return;
+        }
         self.erase.set_sensitive(false);
         self.show_plan.set_sensitive(false);
         widgets::say(
@@ -1625,7 +1661,62 @@ mod tests {
             profile: "none".into(),
             skip: Vec::new(),
             password_needed: true,
+            encrypt: true,
         }
+    }
+
+    #[test]
+    fn a_disk_that_took_anothers_name_is_not_the_one_chosen() {
+        let sys = std::env::temp_dir().join(format!("edel-settings-disks-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&sys);
+        let plug = |model: &str, sectors: &str| {
+            let block = sys.join("block/sdb");
+            std::fs::create_dir_all(block.join("device")).unwrap();
+            std::fs::write(block.join("size"), sectors).unwrap();
+            std::fs::write(block.join("device/model"), model).unwrap();
+        };
+        plug("Kingston", "31250000");
+        std::fs::write(sys.join("block/sdb/device/serial"), "A1").unwrap();
+        let chosen = install::disk_choices(&sys, None).remove(0);
+        assert!(still_offered(&sys, None, &chosen));
+        std::fs::write(sys.join("block/sdb/device/serial"), "B2").unwrap();
+        assert!(
+            !still_offered(&sys, None, &chosen),
+            "another stick of the same model"
+        );
+        std::fs::write(sys.join("block/sdb/device/serial"), "A1").unwrap();
+        plug("Backup", "1953525168");
+        assert!(
+            !still_offered(&sys, None, &chosen),
+            "the backup disk is now sdb"
+        );
+        std::fs::remove_dir_all(&sys).unwrap();
+    }
+
+    #[test]
+    fn an_encrypted_install_needs_a_password_the_start_can_type() {
+        let umlaut = Form {
+            password: "grüße".into(),
+            again: "grüße".into(),
+            ..form()
+        };
+        let problems = check(&umlaut, None).unwrap_err();
+        assert!(
+            problems.iter().any(
+                |(field, why)| *field == Field::Again && why.contains("Encrypt your files off")
+            ),
+            "{problems:?}"
+        );
+        assert!(
+            check(
+                &Form {
+                    encrypt: false,
+                    ..umlaut
+                },
+                None
+            )
+            .is_ok()
+        );
     }
 
     #[test]

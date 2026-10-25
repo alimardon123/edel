@@ -53,12 +53,6 @@ fn cryptsetup() -> Command {
     command
 }
 
-/// Whether a passphrase can be typed at a console in any layout: printable
-/// ASCII only, since a console map gives no other letters for sure.
-pub fn typable(passphrase: &str) -> bool {
-    !passphrase.is_empty() && passphrase.bytes().all(|b| (0x20..0x7f).contains(&b))
-}
-
 /// The console map for the keyboard setting `keyboard` (xkb's names, such
 /// as `de`, `uz(latin)` or `ru,us`): the first Latin layout's map that
 /// `exists`, the variant's if there is one, else none for `us` or a layout
@@ -428,14 +422,6 @@ mod tests {
         assert_eq!(keymap_in(&head).as_deref(), Some("de"));
         head[SUBSYSTEM_AT..SUBSYSTEM_AT + 12].copy_from_slice(b"keymap=d/../");
         assert_eq!(keymap_in(&head), None);
-    }
-
-    #[test]
-    fn only_printable_ascii_is_typable_at_a_console() {
-        assert!(typable("edel-ci-tty 42!"));
-        assert!(!typable("grüße"));
-        assert!(!typable(""));
-        assert!(!typable("tab\there"));
     }
 
     #[test]
