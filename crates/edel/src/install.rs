@@ -460,11 +460,23 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
 pub fn file_in(dir: &Path) -> Option<(std::path::PathBuf, String)> {
     for inner in [dir.to_path_buf(), dir.join("EFI/edel")] {
         let path = crate::places::found(&crate::places::settings_in(&inner));
-        if let Ok(text) = fs::read_to_string(&path) {
+        if let Some(text) = read_inside(dir, &path) {
             return Some((path, text));
         }
     }
     None
+}
+
+/// The text of the plain file at `path` when it lies inside `top`, links
+/// followed: on a disk somebody plugged in, a link may name any file of
+/// this machine, such as its password hashes, which root reads for nobody.
+pub fn read_inside(top: &Path, path: &Path) -> Option<String> {
+    let top = fs::canonicalize(top).ok()?;
+    let real = fs::canonicalize(path).ok()?;
+    if !real.starts_with(&top) || !fs::metadata(&real).ok()?.is_file() {
+        return None;
+    }
+    fs::read_to_string(&real).ok()
 }
 
 /// A TOML basic string.
@@ -1218,5 +1230,28 @@ mod tests {
         fs::write(&top, "format = 1\n# top\n").unwrap();
         assert_eq!(file_in(&dir).unwrap().0, top);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_link_out_of_a_plugged_in_disk_is_not_read() {
+        let dir = std::env::temp_dir().join(format!("edel-read-inside-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("disk")).unwrap();
+        fs::write(dir.join("secret"), "hash").unwrap();
+        fs::write(dir.join("disk/own.toml"), "format = 1\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("secret"), dir.join("disk/out.toml")).unwrap();
+        std::os::unix::fs::symlink("own.toml", dir.join("disk/in.toml")).unwrap();
+        let disk = dir.join("disk");
+        assert_eq!(
+            read_inside(&disk, &disk.join("own.toml")).as_deref(),
+            Some("format = 1\n")
+        );
+        assert_eq!(
+            read_inside(&disk, &disk.join("in.toml")).as_deref(),
+            Some("format = 1\n")
+        );
+        assert_eq!(read_inside(&disk, &disk.join("out.toml")), None);
+        assert_eq!(read_inside(&disk, &disk), None, "a folder is no file");
+        fs::remove_dir_all(dir).unwrap();
     }
 }

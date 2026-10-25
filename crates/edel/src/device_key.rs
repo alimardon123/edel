@@ -19,13 +19,28 @@ use crate::release::{fixed, from_hex, to_hex};
 /// replaced.
 pub fn ensure(secret: &Path, public: &Path) -> Result<bool> {
     if secret.exists() {
-        // A public half lost after the secret was made is written again
-        // from the secret, so the two always match.
-        if !public.exists() {
-            let seed = read_seed(secret)?;
-            write_file(public, &public_text(&seed), 0o644)?;
+        match read_seed(secret) {
+            Ok(seed) => {
+                // A public half lost after the secret was made is written
+                // again from the secret, so the two always match.
+                if !public.exists() {
+                    write_file(public, &public_text(&seed), 0o644)?;
+                }
+                return Ok(false);
+            }
+            // A secret cut short by a power cut opens nothing: kept aside,
+            // never deleted, and a new pair made in its place.
+            Err(why) => {
+                let aside = secret.with_extension("key.damaged");
+                fs::rename(secret, &aside)
+                    .with_context(|| format!("could not move {} aside", secret.display()))?;
+                let _ = fs::remove_file(public);
+                eprintln!(
+                    "edel: {why:#}, so it is kept as {} and this device gets a new identity key",
+                    aside.display()
+                );
+            }
         }
-        return Ok(false);
     }
     let mut seed = [0u8; 32];
     let mut urandom = fs::File::open("/dev/urandom").context("could not open /dev/urandom")?;
@@ -72,6 +87,7 @@ fn write_file(path: &Path, text: &str, mode: u32) -> Result<()> {
         .open(path)
         .with_context(|| format!("could not create {}", path.display()))?;
     file.write_all(text.as_bytes())
+        .and_then(|()| file.sync_all())
         .with_context(|| format!("could not write {}", path.display()))
 }
 
@@ -139,6 +155,22 @@ mod tests {
         fs::remove_file(&public).unwrap();
         assert!(!ensure(&secret, &public).unwrap());
         assert_eq!(fs::read_to_string(&public).unwrap(), before);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_secret_cut_short_is_kept_aside_and_made_again() {
+        let dir = scratch("cut-short");
+        let (secret, public) = (dir.join("device.key"), dir.join("device.pub"));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&secret, "").unwrap();
+        assert!(ensure(&secret, &public).unwrap());
+        assert!(read_seed(&secret).is_ok());
+        assert!(public.exists());
+        assert_eq!(
+            fs::read_to_string(dir.join("device.key.damaged")).unwrap(),
+            ""
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

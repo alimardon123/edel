@@ -280,8 +280,19 @@ pub fn guard() -> Result<()> {
     let mut start = Instant::now();
     let mut stood_down = false;
     let mut said_no_screen = false;
+    // The add-ons' feature files are read again only when what is mounted
+    // changed, not ten times a second on the boot's critical path.
+    let mut known: Option<(String, HealthPlan)> = None;
     loop {
-        let plan = plan.with_addons(Path::new(places::ADDONS_RUN));
+        let mounted = fs::read_to_string("/proc/self/mountinfo").unwrap_or_default();
+        let plan = match &known {
+            Some((seen, plan)) if *seen == mounted => plan.clone(),
+            _ => {
+                let fresh = plan.with_addons(Path::new(places::ADDONS_RUN));
+                known = Some((mounted, fresh.clone()));
+                fresh
+            }
+        };
         let files = plan.wanted(edel::services::screen_now);
         if !said_no_screen
             && files.len() == plan.files.len()
