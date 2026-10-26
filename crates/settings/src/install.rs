@@ -1315,8 +1315,15 @@ impl Ui {
             ui.stop_file.set_visible(false);
             ui.file_card.set_visible(true);
             eprintln!("edel-settings: install found a settings file");
-            // Nothing typed yet: the keyboard goes to Use it.
-            if ui.user.has_focus() && ui.user.text().is_empty() && ui.use_file.is_visible() {
+            // Nothing typed yet: the keyboard goes to Use it. The window's
+            // own focus is asked, as the entry hands it to its text inside
+            // and has_focus is false while the window is not yet active.
+            let user_focused = ui
+                .user
+                .root()
+                .and_then(|root| root.focus())
+                .is_some_and(|w| w.is_ancestor(&ui.user) || w == ui.user);
+            if user_focused && ui.user.text().is_empty() && ui.use_file.is_visible() {
                 ui.use_file.grab_focus();
             }
         });
