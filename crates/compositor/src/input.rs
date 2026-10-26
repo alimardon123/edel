@@ -458,6 +458,15 @@ impl Edel {
                 );
                 self.tell_lid(closed);
             }
+            InputEvent::SwitchToggle { event } if event.switch() == Some(Switch::TabletMode) => {
+                let on = event.state() == SwitchState::On;
+                eprintln!(
+                    "edel-compositor: tablet mode {}",
+                    if on { "on" } else { "off" }
+                );
+                self.tablet_mode = on;
+                self.sync_shell();
+            }
             _ => {}
         }
         None

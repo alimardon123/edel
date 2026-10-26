@@ -161,6 +161,8 @@ pub fn css(t: &Tokens, dark: bool) -> String {
     // A problem reads in the close button's red.
     let error = css_colour(t.title_close_hover);
     let font = &t.font;
+    // Touch mode's rows (M9.6), a finger's target.
+    let target = edel::touch::TARGET;
     let size = t.text_size;
     // The Power page's figure (M5.32): the large charge, as the board draws it.
     let power = size * 28 / 13;
@@ -250,6 +252,8 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-badge image {{ margin: 1px; }}
 .edel-group {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}
 .edel-row {{ padding: 6px 14px; min-height: 34px; }}
+.edel-touch .edel-row {{ padding: 8px 16px; min-height: {target}px; }}
+.edel-touch .edel-pages > row:not(.edel-heading) {{ min-height: {target}px; margin-bottom: 4px; }}
 .edel-row + .edel-row {{ border-top: 1px solid {line}; }}
 .edel-row-subtitle {{ color: {muted}; font-size: {tiny}px; }}
 .edel-row-subtitle.edel-error {{ color: {error}; margin-top: 0; }}

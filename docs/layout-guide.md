@@ -31,7 +31,7 @@ Touch mode is a desktop-wide setting that says a person is using fingers rather 
 |---|---|---|---|
 | `io.github.alimardon123.edel` | `touch-mode` | boolean (`b`) | `true` in touch mode, else `false` |
 
-Read it once with `ReadOne`, and follow `SettingChanged` for the same namespace and key, which the portal sends whenever it flips. An app that cannot read it (an older portal, a sandbox without it) assumes `false`. shell-ui serves it from M9.6, as it serves the colour scheme and the accent today (M5.5).
+Read it once with `ReadOne`, and follow `SettingChanged` for the same namespace and key, which the portal sends whenever it flips. An app that cannot read it (an older portal, a sandbox without it) assumes `false`. shell-ui serves it (M9.6), as it serves the colour scheme and the accent (M5.5): true while a 2-in-1's tablet-mode switch is on, and Settings grows its rows to 44 px then.
 
 ## Live resize, never restart
 
