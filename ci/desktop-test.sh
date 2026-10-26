@@ -9519,6 +9519,21 @@ if [ "$*" = live ]; then
 		partition_out "$target" 4 "$dir/target-data.img" || return 1
 		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
 	}
+	# esp_id: the volume serial of the target's start-up partition, which
+	# each install's mkfs.vfat makes new. The installer writes that
+	# partition last (#500), so an install is done once the serial is new
+	# and the firmware's file, BOOTX64.EFI, has its size in its folder
+	# entry (bytes 28 to 31 of the 32 that begin with its 8.3 name).
+	esp_id() {
+		partition_out "$target" 1 "$dir/target-esp.img" 2>/dev/null || return 0
+		od -An -tx1 -j67 -N4 "$dir/target-esp.img" | tr -d ' \n'
+	}
+	esp_done() {
+		[ "$(esp_id)" != "$1" ] || return 1
+		at=$(grep -abo 'BOOTX64 EFI' "$dir/target-esp.img" | head -n 1 | cut -d: -f1)
+		[ -n "$at" ] || return 1
+		[ "$(od -An -tu4 -j$((at + 28)) -N4 "$dir/target-esp.img" | tr -d ' ')" -gt 0 ]
+	}
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
@@ -9785,6 +9800,7 @@ if [ "$*" = live ]; then
 	# the plan, and the same disk is installed again from the file.
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	old_esp=$(esp_id)
 	cp out/install-file.img "$dir/install-file.img"
 	python3 ci/qmp.py plug filestick "$PWD/$dir/install-file.img"
 	sleep 5
@@ -9813,6 +9829,16 @@ if [ "$*" = live ]; then
 			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
 			stick_logs
 			fail "Settings' installer page did not install from the settings file on the stick within 600 s (install-file.png, install-file-plan.png, install-file-failed.png)"
+		fi
+		sleep 10
+	done
+	i=0
+	until esp_done "$old_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 60 ]; then
+			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition but no boot loader within 600 s (install-file-failed.png)"
 		fi
 		sleep 10
 	done
