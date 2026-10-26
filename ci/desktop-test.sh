@@ -1777,7 +1777,7 @@ case_network() {
 		esac
 	done
 	case "$(value wifi_left)" in
-	"radios 0, rules 0, "*) ;;
+	"radios 0, namespaces 0, "*) ;;
 	*) fail "the Wi-Fi join should leave the machine as found: $(value wifi_left)" ;;
 	esac
 	i=0
