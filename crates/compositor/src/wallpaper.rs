@@ -213,7 +213,9 @@ impl Edel {
         let Some(mode) = output.current_mode() else {
             return Vec::new();
         };
-        let size = (mode.size.w.max(0) as u32, mode.size.h.max(0) as u32);
+        // A turned screen's picture is drawn at its turned size (M9.8).
+        let turned = output.current_transform().transform_size(mode.size);
+        let size = (turned.w.max(0) as u32, turned.h.max(0) as u32);
         if self
             .wallpaper
             .screens

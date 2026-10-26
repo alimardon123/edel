@@ -89,7 +89,7 @@ The Workspaces page (M5.2q): how many there are, their names and the apps that o
 
 ## Displays: `[displays.NAME]`
 
-Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; the desktop follows these at once (M4.6). Settings' Displays page (M5.7a) lists the screens the compositor reports and draws them side by side; a scale of 100, 125, 150, 175 or 200 percent, a resolution from the screen's own list, a position and an on switch each write one of these keys, and a choice that is what the screen would get anyway (its preferred resolution, the scale worked out from its size) is taken out of the file, never written. `edel-settings --page displays` opens the app on that page. The last screen that is on cannot be turned off from the page.
+Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; the desktop follows these at once (M4.6). Settings' Displays page (M5.7a) lists the screens the compositor reports and draws them side by side; a scale of 100, 125, 150, 175 or 200 percent, a resolution from the screen's own list, a rotation of 0, 90, 180 or 270 degrees (M9.8: the picture turns, the layout takes the turned size, and touchscreens and graphics tablets follow it), a position and an on switch each write one of these keys, and a choice that is what the screen would get anyway (its preferred resolution, the scale worked out from its size) is taken out of the file, never written. `edel-settings --page displays` opens the app on that page. The last screen that is on cannot be turned off from the page.
 
 | Key | Value | From |
 |---|---|---|
@@ -98,7 +98,7 @@ Each screen by its connector's name, such as `eDP-1` for a laptop's own screen; 
 | `displays.*.resolution` | `WIDTHxHEIGHT`, such as `"1920x1080"`; missing is the screen's own | M4.6 |
 | `displays.*.refresh_rate` | a number of Hz, such as `60`; missing is the resolution's best | M4.6 |
 | `displays.*.enabled` | `true` or `false` | M4.6 |
-| `displays.*.rotation` | `0`, `90`, `180` or `270` | M9.8 |
+| `displays.*.rotation` | `0`, `90`, `180` or `270`; missing is `0` | M9.8 |
 
 ## Sound: `[sound]`
 
@@ -359,7 +359,7 @@ This page has no key in the file.
 | `displays.*.resolution` | The resolution of this screen as WIDTHxHEIGHT, such as 1920x1080. | each screen's own | hardware |
 | `displays.*.refresh_rate` | How many times a second this screen redraws, such as 60. | the resolution's best | hardware |
 | `displays.*.enabled` | Whether this screen is on; a screen that is off shows nothing. | `true` | hardware |
-| `displays.*.rotation` | How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet. | each screen's own | hardware |
+| `displays.*.rotation` | How far this screen's picture is turned: 0, 90, 180 or 270 degrees. | `0` | hardware |
 
 ### `sound`
 

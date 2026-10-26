@@ -672,11 +672,13 @@ impl Gpu {
                 .iter()
                 .position(|c| *c == s.connector)
         });
-        state.apply_scales();
+        state.apply_scales_and_turns();
         let sizes: Vec<_> = lit
             .iter()
             .map(|s| {
                 let mode = s.output.current_mode().map(|m| m.size).unwrap_or_default();
+                // A turned screen is laid out at its turned size (M9.8).
+                let mode = s.output.current_transform().transform_size(mode);
                 let size = mode
                     .to_f64()
                     .to_logical(s.output.current_scale().fractional_scale())
@@ -743,6 +745,7 @@ impl Gpu {
                 | connector::Interface::DSI
         );
         let (w, h) = mode.size();
+        crate::outputs::turnable(&output);
         crate::outputs::set_auto_scale(
             &output,
             auto_scale(

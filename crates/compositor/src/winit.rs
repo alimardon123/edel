@@ -63,7 +63,7 @@ pub fn open(
     );
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
-    state.apply_scales();
+    state.apply_scales_and_turns();
     state.outputs_changed();
     // From inside the loop, so a program that cannot start ends it.
     let (later, socket) = (handle.clone(), state.socket.clone());

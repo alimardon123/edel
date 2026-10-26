@@ -5,7 +5,7 @@
 //! one line in [`policies`]. The types here are plain data, so policies
 //! are tested without a display.
 
-use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
+use smithay::utils::{Logical, Physical, Point, Rectangle, Size, Transform};
 
 use crate::tiling::{Style, Tiling};
 
@@ -557,6 +557,37 @@ pub fn snap_scale(scale: f64) -> f64 {
     f64::from(scale_120(scale)) / 120.0
 }
 
+/// `displays.NAME.rotation` (M9.8) as the screen's transform: 90, 180 and
+/// 270 degrees turn it, any other value leaves it as it is.
+pub fn turned(degrees: Option<u32>) -> Transform {
+    match degrees {
+        Some(90) => Transform::_90,
+        Some(180) => Transform::_180,
+        Some(270) => Transform::_270,
+        _ => Transform::Normal,
+    }
+}
+
+/// The size of the glass of a screen turned by `turn` and laid out at
+/// `size`: what an absolute device (a touchscreen, a graphics tablet)
+/// spans, as the glass keeps its own way up when the picture turns (M9.8).
+pub fn glass<N: smithay::utils::Coordinate>(
+    turn: Transform,
+    size: Size<N, Logical>,
+) -> Size<N, Logical> {
+    turn.transform_size(size)
+}
+
+/// Where `at`, a point on the glass of a screen turned by `turn`, falls in
+/// the screen's turned layout (M9.8).
+pub fn on_turned(
+    turn: Transform,
+    at: Point<f64, Logical>,
+    glass: Size<f64, Logical>,
+) -> Point<f64, Logical> {
+    turn.transform_point_in(at, &glass)
+}
+
 /// `displays.NAME.resolution` and `refresh_rate` read: `1920x1080` or `1920x1080@60` (Hz, which
 /// may have decimals).
 pub fn parse_mode(text: &str) -> Option<(i32, i32, Option<f64>)> {
@@ -989,5 +1020,42 @@ mod tests {
             Gaps::from_tokens(&edel::tokens::Tokens::built_in()),
             Gaps::uniform(8)
         );
+    }
+
+    #[test]
+    fn a_screen_turns_only_by_the_quarter() {
+        assert_eq!(turned(Some(90)), Transform::_90);
+        assert_eq!(turned(Some(270)), Transform::_270);
+        assert_eq!(turned(Some(45)), Transform::Normal);
+        assert_eq!(turned(None), Transform::Normal);
+    }
+
+    #[test]
+    fn a_touch_lands_where_the_turned_picture_drew() {
+        // A 1280x800 screen turned 90 degrees is laid out 800 wide and 1280
+        // tall. What is drawn at a point lands in the buffer where the
+        // renderer puts it (smithay turns by the inverse); a touch there must
+        // come back to the same point.
+        let size = Size::<f64, Logical>::from((800.0, 1280.0));
+        for turn in [
+            Transform::Normal,
+            Transform::_90,
+            Transform::_180,
+            Transform::_270,
+        ] {
+            let on = glass(turn, size);
+            for drawn in [(0.0, 0.0), (100.0, 40.0), (799.0, 1279.0)] {
+                let drawn = Point::<f64, Logical>::from(drawn);
+                let on_glass = turn
+                    .invert()
+                    .transform_rect_in(Rectangle::new(drawn, (0.0, 0.0).into()), &size)
+                    .loc;
+                let back = on_turned(turn, on_glass, on);
+                assert!(
+                    (back.x - drawn.x).abs() < 1e-9 && (back.y - drawn.y).abs() < 1e-9,
+                    "{turn:?}: {drawn:?} came back as {back:?}"
+                );
+            }
+        }
     }
 }
