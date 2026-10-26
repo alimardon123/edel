@@ -1127,14 +1127,15 @@ commands() {
 			as_ci nmcli radio wifi on >/dev/null 2>&1
 			say "network_auth ci=$ci_status nobody=$nobody_status, ci said: $(tr '\n' ' ' </tmp/network-ci.log), nobody said: $(tr '\n' ' ' </tmp/network-nobody.log)"
 			;;
-		# Wi-Fi join (the network case): mac80211_hwsim makes three radios,
-		# hostapd one access point on each of the last two, edel-psk with
-		# WPA2 (WPA-PSK) and edel-sae with WPA3 (SAE), each with busybox's
-		# udhcpd for an address and a firewall rule letting its DHCP in,
-		# taken out after; NetworkManager leaves the two alone and joins
-		# from the first, through edel::network::join as ci
-		# (edel-testclient --wifi-join), with a wrong password first. Then
-		# the machine is left as found.
+		# Wi-Fi join (the network case): mac80211_hwsim makes three radios;
+		# the last two move into a network namespace of their own, so
+		# NetworkManager and wpa_supplicant never see them and the firewall
+		# never sees their DHCP, and hostapd makes one access point on each
+		# there, edel-psk with WPA2 (WPA-PSK) and edel-sae with WPA3 (SAE),
+		# each started once the one before is enabled, with busybox's udhcpd
+		# for an address. NetworkManager joins from the first radio, through
+		# edel::network::join as ci (edel-testclient --wifi-join), with a
+		# wrong password first. Then the machine is left as found.
 		'wifi join')
 			modprobe mac80211_hwsim radios=3 >/tmp/wifi.log 2>&1
 			i=0
@@ -1144,6 +1145,8 @@ commands() {
 			done
 			set -- $(ls -d /sys/class/net/*/phy80211 2>/dev/null | cut -d/ -f5 | sort)
 			station=$1
+			ip netns add edel-ap >>/tmp/wifi.log 2>&1
+			ip netns exec edel-ap ip link set lo up
 			n=1
 			for ap in "$2" "$3"; do
 				case $n in
@@ -1151,14 +1154,20 @@ commands() {
 				2) ssid=edel-sae keys='wpa_key_mgmt=SAE
 ieee80211w=2' channel=6 ;;
 				esac
-				nmcli device set "$ap" managed no >>/tmp/wifi.log 2>&1
-				ip addr add "10.42.$n.1/24" dev "$ap"
-				printf '%s\n' "interface=$ap" driver=nl80211 "ssid=$ssid" hw_mode=g "channel=$channel" wpa=2 "$keys" rsn_pairwise=CCMP wpa_passphrase=edel-ci-pass >"/tmp/hostapd-$n.conf"
-				hostapd -B -P "/tmp/hostapd-$n.pid" "/tmp/hostapd-$n.conf" >>/tmp/wifi.log 2>&1
+				iw phy "$(cat "/sys/class/net/$ap/phy80211/name")" set netns name edel-ap >>/tmp/wifi.log 2>&1
+				ip netns exec edel-ap ip addr add "10.42.$n.1/24" dev "$ap" >>/tmp/wifi.log 2>&1
+				printf '%s\n' "interface=$ap" driver=nl80211 ctrl_interface=/tmp/hostapd-ctrl "ssid=$ssid" hw_mode=g "channel=$channel" wpa=2 "$keys" rsn_pairwise=CCMP wpa_passphrase=edel-ci-pass >"/tmp/hostapd-$n.conf"
+				ip netns exec edel-ap hostapd -B -P "/tmp/hostapd-$n.pid" "/tmp/hostapd-$n.conf" >>/tmp/wifi.log 2>&1
+				i=0
+				until ip netns exec edel-ap hostapd_cli -p /tmp/hostapd-ctrl -i "$ap" status 2>/dev/null | grep -q '^state=ENABLED'; do
+					i=$((i + 1))
+					[ "$i" -lt 50 ] || break
+					sleep 0.2
+				done
+				echo "$ssid on $ap: $(ip netns exec edel-ap hostapd_cli -p /tmp/hostapd-ctrl -i "$ap" status 2>&1 | grep '^state=')" >>/tmp/wifi.log
 				printf '%s\n' "interface $ap" "start 10.42.$n.10" "end 10.42.$n.20" "pidfile /tmp/udhcpd-$n.pid" "lease_file /tmp/udhcpd-$n.leases" >"/tmp/udhcpd-$n.conf"
 				: >"/tmp/udhcpd-$n.leases"
-				udhcpd "/tmp/udhcpd-$n.conf" >>/tmp/wifi.log 2>&1
-				nft insert rule inet edel input iifname "$ap" udp dport 67 accept comment '"ci-wifi"'
+				ip netns exec edel-ap udhcpd "/tmp/udhcpd-$n.conf" >>/tmp/wifi.log 2>&1
 				n=$((n + 1))
 			done
 			i=0
@@ -1177,12 +1186,12 @@ ieee80211w=2' channel=6 ;;
 			for pid in /tmp/hostapd-*.pid /tmp/udhcpd-*.pid; do
 				kill "$(cat "$pid")" 2>/dev/null
 			done
-			nft -a list chain inet edel input | sed -n 's/.*comment "ci-wifi" # handle \([0-9]*\)$/\1/p' | while read -r handle; do
-				nft delete rule inet edel input handle "$handle"
-			done
+			sleep 1
+			# The radios go back to the machine's own namespace with it.
+			ip netns del edel-ap >>/tmp/wifi.log 2>&1
 			sleep 1
 			rmmod mac80211_hwsim >>/tmp/wifi.log 2>&1
-			say "wifi_left radios $(ls -d /sys/class/net/*/phy80211 2>/dev/null | wc -l), rules $(nft list chain inet edel input | grep -c ci-wifi), log: $(tr '\n' ' ' </tmp/wifi.log)"
+			say "wifi_left radios $(ls -d /sys/class/net/*/phy80211 2>/dev/null | wc -l), namespaces $(ip netns list 2>/dev/null | grep -c edel-ap), log: $(tr '\n' ' ' </tmp/wifi.log)"
 			;;
 		'bluetooth status')
 			out=$(as_ci timeout 10 bluetoothctl list 2>&1)
