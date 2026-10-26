@@ -2,8 +2,8 @@
 //! module and one line each. A widget says what it shows now, from what
 //! shell-ui knows ([`Live`]), how wide it is and how it draws, and what a
 //! click or a scroll on it does (M5.2c); the panel lays them out from the
-//! preset and draws again only when what one shows changes. Code that talks to an OS
-//! feature lives in `src/features/NAME.rs`, and its widget's line carries
+//! preset and draws again only when what one shows changes. A widget that talks to an
+//! OS feature has its own module, and its line carries
 //! `needs: Some("NAME")`: on a machine without
 //! `/usr/share/edel/features/NAME.toml` the widget is skipped with a log
 //! line (ADR-008). Its role and label are what screen readers say of it

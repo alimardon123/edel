@@ -81,7 +81,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | The plan | `docs/ROADMAP.md` | every session |
 | How we work | the CLAUDE.md files | every session |
 
-M5.27 moves what is written twice today to its owner and adds the check; M5.25 does it first for the settings file and the names. A fact with no owner gets one before anyone writes it a second time.
+M5.27 moves what is written twice today to its owner and adds the check, `ci/one-place.sh`, for the kinds of fact with a cheap pattern (Edel OS's places, colours and the Alpine branch); the other owners hold by their readers' tests, and a new kind with a cheap pattern gets its line in the check in the PR that adds it; M5.25 does it first for the settings file and the names. A fact with no owner gets one before anyone writes it a second time.
 
 ## Options Considered
 
