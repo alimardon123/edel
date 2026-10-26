@@ -1,0 +1,46 @@
+#!/bin/sh
+# Gives the devices the gaming rule tags edel-seat (the controllers, their
+# hidraw and USB devices and /dev/uinput) to the person whose session is
+# at the screen, and to nobody else (roadmap M8.37). Without logind,
+# nothing else would: group seat held them before, so on a machine
+# several people share, a program one person left running could type
+# into another's session through /dev/uinput.
+#
+# Two callers. greetd's PAM file runs it through pam_exec as root when a
+# session opens and when it closes (PAM_TYPE, PAM_USER): the session's
+# person is written to the seat file, or taken out, and udev is asked to
+# look at the tagged devices again. udev's rule runs `edel-seat device
+# NODE` for each tagged device as it appears or changes, after it has
+# made the node root's with mode 600, and this gives the node to the
+# person the seat file names, if any.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+# Edel OS's places, written by edel::places (M5.27).
+. /usr/share/edel/places.sh
+
+if [ "$1" = device ]; then
+	[ -n "$2" ] || exit 0
+	owner=$(cat "$seat_owner" 2>/dev/null) || exit 0
+	[ -n "$owner" ] && chown "$owner" "$2"
+	exit 0
+fi
+
+# greetd's own account runs the greeter, which is nobody's session.
+[ "$PAM_USER" = greetd ] && exit 0
+[ -n "$PAM_USER" ] || exit 0
+case "$PAM_TYPE" in
+open_session)
+	printf '%s\n' "$PAM_USER" >"$seat_owner.new" && mv -f "$seat_owner.new" "$seat_owner" || exit 0
+	said="controllers given to $PAM_USER, whose session is at the screen"
+	;;
+close_session)
+	# A session that ends after another opened leaves the newer one's.
+	[ "$(cat "$seat_owner" 2>/dev/null)" = "$PAM_USER" ] || exit 0
+	rm -f "$seat_owner"
+	said="controllers taken back from $PAM_USER, whose session ended"
+	;;
+*) exit 0 ;;
+esac
+udevadm trigger --action=change --tag-match=edel-seat
+udevadm settle --timeout=5
+logger -t edel-seat "$said"
+exit 0

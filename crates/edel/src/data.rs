@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -168,10 +168,18 @@ fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
 fn replace_keeping_mode(path: &Path, text: &str) -> Result<()> {
     let meta = fs::metadata(path)?;
     let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    fs::write(&new, text)?;
-    fs::set_permissions(&new, meta.permissions())?;
+    // Private from the start, as it holds password hashes; one left by a
+    // cut is made again.
+    let _ = fs::remove_file(&new);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&new)?;
+    file.write_all(text.as_bytes())?;
     std::os::unix::fs::chown(&new, Some(meta.uid()), Some(meta.gid()))?;
-    fs::File::open(&new)?.sync_all()?;
+    fs::set_permissions(&new, meta.permissions())?;
+    file.sync_all()?;
     fs::rename(&new, path)?;
     if let Some(dir) = path.parent() {
         fs::File::open(dir)?.sync_all()?;

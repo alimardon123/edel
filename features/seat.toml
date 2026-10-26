@@ -1,10 +1,11 @@
 # Who may use the screen and input. features/seat/ holds edel-rundir,
 # which makes /run/edel/session at boot for the files the session leaves
 # for root (the compositor's health file, M4.8), and runs seatd under
-# supervise-daemon, which starts it again if it dies.
+# supervise-daemon, which starts it again if it dies. usr/libexec/edel-seat
+# gives the devices udev tags edel-seat to the person at the screen (M8.37).
 format = 1
 summary = "Seats: the screen and input for the person at the machine"
-why = "seatd hands the display and input devices to the compositor without logind; edel-rundir makes the session's directory for root, where the compositor, running as the person, leaves its health file for the boot guard."
+why = "seatd hands the display and input devices to the compositor without logind; edel-rundir makes the session's directory for root, where the compositor, running as the person, leaves its health file for the boot guard. edel-seat, which greetd's PAM file runs as a session opens and closes and udev runs for each device it tags edel-seat, gives the controllers and /dev/uinput to the person whose session is at the screen alone (M8.37): no logind, no service, one small script."
 packages = ["seatd", "seatd-openrc"]
 
 # The desktop's (M8.17): without a graphics card, seatd stays off.

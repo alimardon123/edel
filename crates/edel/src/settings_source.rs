@@ -124,7 +124,7 @@ pub fn local(location: &str) -> Result<Local> {
 /// and a file read as root shows its lines in a parse error, so
 /// `/etc/shadow` would have shown. None when not through doas: the file is
 /// read as it is, with the caller's own rights.
-fn read_as_caller(path: &Path) -> Result<Option<Vec<u8>>> {
+pub(crate) fn read_as_caller(path: &Path) -> Result<Option<Vec<u8>>> {
     let Ok(person) = std::env::var(places::AS_ROOT_USER) else {
         return Ok(None);
     };

@@ -196,6 +196,10 @@ pub const LIVE_USER: &str = "live";
 pub const LIVE_UID: u32 = 990;
 /// greetd's config with the live session (M3.6).
 pub const GREETD_LIVE: &str = run!("/greetd.toml");
+/// Who the session at the screen belongs to, the one person the
+/// controllers and `/dev/uinput` are given to (M8.37): written by
+/// `edel-seat` when greetd opens a session and taken out when it closes.
+pub const SEAT_OWNER: &str = run!("/seat");
 /// Where a seed stick or partition is mounted while it is read (M2.2).
 pub const SEED_MOUNT: &str = run!("/seed");
 /// Where the installer mounts the new disk's partitions (M2.4).
@@ -383,6 +387,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("screen_file", SCREEN.to_string()),
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
+        ("seat_owner", SEAT_OWNER.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
         ("addons_dir", ADDONS_DIR.to_string()),
         // The same folder on the data partition itself (M8.17c), for a

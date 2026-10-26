@@ -3,8 +3,8 @@
 # at once.
 format = 1
 summary = "CI only: log in to the compositor at once and measure it"
-why = "weston-presentation-shm times the frames the compositor presents, edel-testclient draws windows of known size and colour (M4.3), wayland-info lists the protocols the compositor offers (M4.6b), and xclock is an X11 app that draws no bar of its own (M4.7); the test service prints what it measured on the serial console. edel-testheader is one GTK 4 window with a header bar of its own, for the own-bars case (M6.16). gst-launch-1.0 with PipeWire's GStreamer source (gstreamer-tools, gst-plugin-pipewire) is the in-use case's camera app (M6.14b), watching the fake camera etc/pipewire/pipewire.conf.d/90-ci-camera.conf lets pw-cli make. hostapd and busybox-extras's udhcpd are the network case's Wi-Fi access points and their addresses, on radios mac80211_hwsim makes."
-packages = ["wayland-utils", "weston-clients", "xclock", "gstreamer-tools", "gst-plugin-pipewire", "hostapd", "busybox-extras"]
+why = "weston-presentation-shm times the frames the compositor presents, edel-testclient draws windows of known size and colour (M4.3), wayland-info lists the protocols the compositor offers (M4.6b), and xclock is an X11 app that draws no bar of its own (M4.7); the test service prints what it measured on the serial console. edel-testheader is one GTK 4 window with a header bar of its own, for the own-bars case (M6.16). gst-launch-1.0 with PipeWire's GStreamer source (gstreamer-tools, gst-plugin-pipewire) is the in-use case's camera app (M6.14b), watching the fake camera etc/pipewire/pipewire.conf.d/90-ci-camera.conf lets pw-cli make. hostapd and busybox-extras's udhcpd are the network case's Wi-Fi access points and their addresses, on radios mac80211_hwsim makes, which iw moves into a network namespace iproute2's ip makes, away from NetworkManager."
+packages = ["wayland-utils", "weston-clients", "xclock", "gstreamer-tools", "gst-plugin-pipewire", "hostapd", "busybox-extras", "iw", "iproute2"]
 programs = ["edel-testclient", "edel-testheader"]
 
 [services]

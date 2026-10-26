@@ -118,7 +118,9 @@ pub fn need(command: &Commands) -> Need {
         },
         Commands::Image { command } => match command {
             ImageCommands::Check { .. } | ImageCommands::Deps { .. } => Need::Anyone,
-            ImageCommands::Build(_) => Need::Admin,
+            // It writes a whole system as root from files and settings it
+            // is handed, so it can open the machine (review of 2026-10-25).
+            ImageCommands::Build(_) => Need::Password,
         },
         Commands::Theme { command } => match command {
             ThemeCommands::List => Need::Anyone,
@@ -586,7 +588,10 @@ mod tests {
                 &["edel", "image", "check", "images/edel.toml"],
                 Need::Anyone,
             ),
-            (&["edel", "image", "build", "images/edel.toml"], Need::Admin),
+            (
+                &["edel", "image", "build", "images/edel.toml"],
+                Need::Password,
+            ),
             (&["edel", "theme", "list"], Need::Anyone),
             (&["edel", "theme", "save", "mine"], Need::Admin),
             (&["edel", "theme", "export", "mine"], Need::Admin),

@@ -987,6 +987,14 @@ case_respawn() {
 	esac
 	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
 		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
+	# With ci's session ended, the controllers are nobody's (M8.37): greetd's
+	# PAM file ran edel-seat as the session closed, so ci's programs can no
+	# longer open /dev/uinput while someone else may log in.
+	asked=$(count 'DESKTOP-TEST: gaming_devices ')
+	guest 'gaming devices'
+	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput at the greeter"
+	[ "$(value gaming_devices | cut -d' ' -f1-3)" = 'root 600 refused' ] ||
+		fail "at the greeter, /dev/uinput is not root's alone with mode 600, refused to ci, as edel-seat makes it when ci's session closes: $(value gaming_devices)"
 	guest 'greeter places'
 	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
 		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
@@ -1043,6 +1051,11 @@ case_respawn() {
 	# exactly; startup login off takes the name out of the file.
 	wait_more 'edel-compositor: mapped window test-startup' "$started" 60 ||
 		fail "the app startup.apps names did not open after ci logged in again"
+	asked=$(count 'DESKTOP-TEST: gaming_devices ')
+	guest 'gaming devices'
+	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput after the login"
+	[ "$(value gaming_devices | cut -d' ' -f1-3)" = 'ci 600 writable' ] ||
+		fail "after ci logged in again, /dev/uinput is not ci's with mode 600, as edel-seat makes it when ci's session opens: $(value gaming_devices)"
 	closed=$(count 'edel-compositor: unmapped window test-startup')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window test-startup' "$closed" || fail "Super+Q did not close the startup window"
@@ -1083,7 +1096,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login; /dev/uinput was root's alone at the greeter, refused to ci, and ci's again after the login (M8.37)"
 }
 
 case_game_session() {
@@ -1787,7 +1800,7 @@ case_network() {
 		esac
 	done
 	case "$(value wifi_left)" in
-	"radios 0, rules 0, "*) ;;
+	"radios 0, namespaces 0, "*) ;;
 	*) fail "the Wi-Fi join should leave the machine as found: $(value wifi_left)" ;;
 	esac
 	i=0
@@ -9097,8 +9110,9 @@ profile_off() {
 }
 
 case_profiles() {
-	# First, the gaming feature's /dev/uinput and /dev/ntsync are the seat
-	# group's, mode 660, and ci may write them (M7.6b, M8.33), and the base
+	# First, the gaming feature's /dev/uinput is ci's, the person at the
+	# screen, mode 600 (M8.37), /dev/ntsync the seat group's, mode 660, ci
+	# may write both (M7.6b, M8.33), and the base
 	# allows 1048576 memory maps (M8.33). Then leave out what a profile brings
 	# (M7.6c): with gaming named and ci an admin, `edel settings diff` would
 	# install Steam; `apps.installed-=` writes it to system.profiles_without
@@ -9107,8 +9121,8 @@ case_profiles() {
 	asked=$(count 'DESKTOP-TEST: gaming_devices ')
 	guest 'gaming devices'
 	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput"
-	[ "$(value gaming_devices)" = 'seat 660 writable ntsync seat 660 writable maps 1048576' ] ||
-		fail "/dev/uinput and /dev/ntsync are not group seat's with mode 660, writable by ci, as the gaming add-on's rule and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
+	[ "$(value gaming_devices)" = 'ci 600 writable ntsync seat 660 writable maps 1048576' ] ||
+		fail "/dev/uinput is not ci's, the person at the screen, with mode 600 (M8.37), /dev/ntsync is not group seat's with mode 660, either not writable by ci, as the gaming add-on's rule, edel-seat and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
 	asked=$(count 'DESKTOP-TEST: profile_gaming ')
 	guest 'profile gaming'
 	wait_more 'DESKTOP-TEST: profile_gaming ' "$asked" || fail "the service did not name the gaming profile"
@@ -9138,7 +9152,7 @@ case_profiles() {
 	case "$reset" in
 	*Steam*) fail "system.profiles_without stayed after the profile was reset: $reset" ;;
 	esac
-	echo "PASS: /dev/uinput and /dev/ntsync were group seat's, mode 660, and ci could write them, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
+	echo "PASS: /dev/uinput was ci's, the person at the screen, mode 600, /dev/ntsync group seat's, mode 660, and ci could write both, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
 }
 
 case_office_fonts() {
@@ -9632,16 +9646,33 @@ if [ "$*" = live ]; then
 		done
 	}
 	# A blank disk beside the stick, which Settings' installer page
-	# installs on (M6.6a); zeros written to it stay holes.
+	# installs on (M6.6a); zeros written to it stay holes. 16 GB, so its
+	# data partition, beside two 4 GiB slots, holds the default apps and
+	# the desktop add-on, as a real disk does.
 	. ci/names.sh
 	target="$dir/target.img"
 	rm -f "$target"
-	truncate -s 10G "$target"
+	truncate -s 16G "$target"
 	# target_data: the installed disk's data partition (partition 4),
 	# copied to $dir/target-data.img for debugfs; false while there is none.
 	target_data() {
 		partition_out "$target" 4 "$dir/target-data.img" || return 1
 		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
+	}
+	# esp_id: the volume serial of the target's start-up partition, which
+	# each install's mkfs.vfat makes new. The installer writes that
+	# partition last (#500), so an install is done once the serial is new
+	# and the firmware's file, BOOTX64.EFI, has its size in its folder
+	# entry (bytes 28 to 31 of the 32 that begin with its 8.3 name).
+	esp_id() {
+		partition_out "$target" 1 "$dir/target-esp.img" 2>/dev/null || return 0
+		od -An -tx1 -j67 -N4 "$dir/target-esp.img" | tr -d ' \n'
+	}
+	esp_done() {
+		[ "$(esp_id)" != "$1" ] || return 1
+		at=$(grep -abo 'BOOTX64 EFI' "$dir/target-esp.img" | head -n 1 | cut -d: -f1)
+		[ -n "$at" ] || return 1
+		[ "$(od -An -tu4 -j$((at + 28)) -N4 "$dir/target-esp.img" | tr -d ' ')" -gt 0 ]
 	}
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
@@ -9853,9 +9884,11 @@ if [ "$*" = live ]; then
 	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
+	first_esp=$(esp_id)
 	press key ret
 	sleep 1
 	press key ret
+	install_began=$(date +%s)
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -9866,6 +9899,19 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	# The data partition comes before the default apps and the boot
+	# loader; the second install waits for this one to finish.
+	i=0
+	until esp_done "$first_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 90 ]; then
+			python3 ci/qmp.py screendump "$dir/install-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition on the blank disk but no boot loader within 900 s (install-failed.png)"
+		fi
+		sleep 10
+	done
+	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
@@ -9909,6 +9955,7 @@ if [ "$*" = live ]; then
 	# the plan, and the same disk is installed again from the file.
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	old_esp=$(esp_id)
 	cp out/install-file.img "$dir/install-file.img"
 	python3 ci/qmp.py plug filestick "$PWD/$dir/install-file.img"
 	sleep 5
@@ -9940,10 +9987,24 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	i=0
+	until esp_done "$old_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 90 ]; then
+			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition but no boot loader within 900 s (install-file-failed.png)"
+		fi
+		sleep 10
+	done
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-file-done.png"
 	stop_vm
 	target_data || fail "the disk installed from the file has no data partition"
+	# The default apps came along, so the machine has them offline.
+	case "$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/target-data.img" 2>&1)" in
+	*"File not found"* | '') stick_logs; fail "the disk installed from the file has no default apps: the installer's copy of them failed" ;;
+	esac
 	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
 	echo "$installed" | sed 's/^/  installed from the file: /'
 	echo "$installed" | grep -q '^# desktop-test.sh live (M6.6b)' || fail "the installed settings file lost the file's own comment"
