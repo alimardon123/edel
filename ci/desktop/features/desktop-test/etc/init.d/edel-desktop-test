@@ -1725,7 +1725,8 @@ ieee80211w=2' channel=6 ;;
 		# which 90-ci-camera.conf names) and a fake microphone (a null
 		# sink made a source) that pw-cli leaves behind it; gst-launch-1.0
 		# watching the camera; Test A recording the microphone from inside
-		# its sandbox, given PipeWire's socket as a sandboxed app is; the
+		# its sandbox, given PipeWire's socket as a sandboxed app is, or
+		# PulseAudio's (parecord); the
 		# graph pw-dump sees, for a failure; and ci's record of use.
 		'in use fakes')
 			as_ci "pw-cli create-node spa-node-factory '{ factory.name = videotestsrc node.name = edel-test-camera node.description = \"CI camera\" media.class = Video/Source media.role = Camera object.linger = true }'" </dev/null >/tmp/in-use-fakes.log 2>&1
@@ -1739,8 +1740,13 @@ ieee80211w=2' channel=6 ;;
 		'in use mic')
 			as_ci "flatpak run --filesystem=xdg-run/pipewire-0 --command=pw-record org.edel.TestA --target edel-test-mic /tmp/in-use.wav" </dev/null >/tmp/in-use-mic.log 2>&1 &
 			;;
+		# The same through PipeWire's PulseAudio server, as an app built
+		# on libpulse records: parecord, given the PulseAudio socket.
+		'in use mic pulse')
+			as_ci "flatpak run --socket=pulseaudio --command=parecord org.edel.TestA --device=edel-test-mic /tmp/in-use.wav" </dev/null >/tmp/in-use-mic.log 2>&1 &
+			;;
 		'in use mic stop')
-			pkill -f 'pw-record --target edel-test-mic'
+			pkill -f 'edel-test-mic /tmp/in-use.wav'
 			say "in_use_mic_stopped $? $(tr '\n' ';' </tmp/in-use-mic.log | cut -c1-500)"
 			;;
 		'in use mic never')
@@ -1756,7 +1762,7 @@ ieee80211w=2' channel=6 ;;
 			;;
 		'in use off')
 			pkill -f 'gst-launch-1.0 -q pipewiresrc'
-			pkill -f 'pw-record --target edel-test-mic'
+			pkill -f 'edel-test-mic /tmp/in-use.wav'
 			as_ci "pw-cli destroy edel-test-camera; pw-cli destroy edel-test-mic; edel settings reset apps.microphone" </dev/null >/dev/null 2>&1
 			say "in_use_off $?"
 			;;
