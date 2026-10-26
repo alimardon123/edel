@@ -521,6 +521,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.desktop == 'yes'
     runs-on: ubuntu-latest
+    # A part takes about 20 minutes and runs at most twice; each case also
+    # has its own limit (DESKTOP_CASE_LIMIT in ci/desktop-test.sh).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

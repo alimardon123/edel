@@ -6258,9 +6258,10 @@ case_touch() {
 }
 
 # touch_read WANT: the settings portal's touch-mode must read WANT (true or
-# false) within 10 tries a second apart.
+# false) within 10 tries a second apart. Its count is its own, not i,
+# which wait_more sets: a shared one would start again on every try.
 touch_read() {
-	i=0
+	tries=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: touch_mode ')
 		guest 'touch read'
@@ -6268,8 +6269,8 @@ touch_read() {
 		case "$(value touch_mode)" in
 		"(<$1>,)"*) return 0 ;;
 		esac
-		i=$((i + 1))
-		[ "$i" -lt 10 ] || touch_fail "the portal's touch-mode is not $1: $(value touch_mode)"
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || touch_fail "the portal's touch-mode is not $1: $(value touch_mode)"
 		sleep 1
 	done
 }
@@ -6277,14 +6278,14 @@ touch_read() {
 # touch_rows PATTERN: Settings' log, read through the test service, must
 # match PATTERN within 10 tries a second apart.
 touch_rows() {
-	i=0
+	tries=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: touch_log ')
 		guest 'touch log'
 		wait_more 'DESKTOP-TEST: touch_log ' "$asked" || return 1
 		value touch_log | sed 's/; tablet: .*//' | grep -qE "$1" && return 0
-		i=$((i + 1))
-		[ "$i" -lt 10 ] || return 1
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || return 1
 		sleep 1
 	done
 }
@@ -10291,8 +10292,18 @@ while ! grep -q 'edel login:' "$log" && [ "$i" -lt 60 ]; do
 	sleep 1
 	i=$((i + 1))
 done
+# A case that runs over DESKTOP_CASE_LIMIT seconds (900; the longest,
+# settings-tour, took 407 s on 2026-10-26) fails with its name, so a wait
+# that never ends cannot hold a part for hours: a timer sends this shell
+# USR1, whose trap fails the case once the command it is in returns (the
+# waits sleep a second or less at a time).
+case_limit=${DESKTOP_CASE_LIMIT:-900}
+trap 'fail "the case $c ran over $case_limit s, so it stopped there; the lines above say what it waited for"' USR1
 for c in "$@"; do
+	(sleep "$case_limit" && kill -USR1 $$) >/dev/null 2>&1 &
+	timer=$!
 	"case_$(echo "$c" | tr '-' '_')"
+	kill "$timer" 2>/dev/null || true
 	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
 	# has exited already.
 	echo "$c" >>"$dir/passed"

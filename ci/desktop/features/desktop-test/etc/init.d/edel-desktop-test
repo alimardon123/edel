@@ -1276,10 +1276,12 @@ ieee80211w=2' channel=6 ;;
 		'lid log') say "lid_log $(joined /tmp/lid.log 2>/dev/null)" ;;
 		# Touch mode (M9.6): edel-testclient --tablet-mode 10, as root, turns a
 		# 2-in-1's tablet-mode switch on for 10 s and off, its log in
-		# /tmp/tablet.log; Settings, open as ci, says how big its rows are in
-		# /tmp/touch.log; and what an app reads from the settings portal.
+		# /tmp/tablet.log; Settings, open as ci on the session's bus, where
+		# it reads the portal, says how big its rows are in /tmp/touch.log;
+		# and what an app reads from the settings portal.
 		'touch window')
-			as_ci edel-settings --page sound </dev/null >/tmp/touch.log 2>&1 &
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page sound" </dev/null >/tmp/touch.log 2>&1 &
 			;;
 		'tablet on')
 			modprobe uinput 2>/dev/null; edel-testclient --tablet-mode 10 </dev/null >/tmp/tablet.log 2>&1 &
