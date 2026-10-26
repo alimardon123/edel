@@ -22,7 +22,8 @@
 # more is the number with Firefox. Screenshots of each moment show whether
 # the desktop, the browser and the video really came; a number without its
 # picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
-# (idle), SYSTEM-SIZE-opened.png, SYSTEM-SIZE-firefox.png,
+# (idle), SYSTEM-SIZE-search.png (GNOME), SYSTEM-SIZE-opened.png,
+# SYSTEM-SIZE-firefox.png,
 # SYSTEM-SIZE.samples and a table line each in
 # results.md.
 set -eu
@@ -110,7 +111,7 @@ measure() {
 		-drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
 		-drive if=pflash,format=raw,file="$dir/vars.fd" \
 		-netdev user,id=net0 -device virtio-net-pci,netdev=net0,romfile= \
-		-device virtio-balloon-pci,id=balloon0 -device qemu-xhci,id=xhci \
+		-device virtio-balloon-pci,id=balloon0 -device qemu-xhci,id=xhci -device usb-tablet,bus=xhci.0 \
 		-qmp unix:"$QMP",server=on,wait=off -serial file:"$run.serial" \
 		$media &
 	qemu=$!
@@ -132,8 +133,8 @@ measure() {
 	# Super opens the launcher or GNOME's overview, "firefox" and Return
 	# start it, and the address bar takes the page. GNOME's live session
 	# may already show its overview, which Super would close, so Escape
-	# closes it first. Alt+F2's run dialog kept the command after Return
-	# and the keypad's Enter in every Fedora run, and Edel OS's Firefox
+	# closes it first, and Alt+F2's run dialog kept the command after
+	# Return and the keypad's Enter in every Fedora run. Edel OS's Firefox
 	# first shows a notice, which Tab and Return take.
 	case "$system" in
 	edel) ;;
@@ -147,6 +148,17 @@ measure() {
 	python3 ci/qmp.py type firefox || true
 	sleep 5
 	python3 ci/qmp.py key ret || true
+	# GNOME's overview kept its search after Return in every run, with
+	# Firefox as its one result in the middle at the top, so a click
+	# there opens it as a person's would.
+	case "$system" in
+	edel) ;;
+	*)
+		sleep 5
+		python3 ci/qmp.py screendump "$run-search.png" || true
+		python3 ci/qmp.py click 640 175 || true
+		;;
+	esac
 	sample 420
 	python3 ci/qmp.py screendump "$run-opened.png" || true
 	case "$system" in
