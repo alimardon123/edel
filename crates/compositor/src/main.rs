@@ -56,6 +56,7 @@ mod rounded;
 mod sandbox;
 mod screencopy;
 mod session;
+mod sharp;
 mod shellui;
 mod shortcuts;
 mod state;
