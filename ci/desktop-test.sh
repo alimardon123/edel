@@ -257,7 +257,7 @@
 #   own-presets edel preset save of Hive with the buttons on the left as
 #               mine, which leaves [layout] with preset = "mine" and nothing
 #               moved on screen; Classic and mine again; Settings' Layout
-#               page with mine after zen, kept as settings-own-presets.png;
+#               page with mine after tablet, kept as settings-own-presets.png;
 #               edel preset delete refused while mine is in use (M5.17)
 #   theme       edel theme save, export, delete and import round trip as
 #               root: a theme saved as mine is written under [themes],
@@ -4938,6 +4938,27 @@ case_presets() {
 		sleep 1
 	done
 	shot preset-zen 640 12 "$panel" >/dev/null || fail "Zen's bar is not at 640,12 in the panel's colour"
+	# Tablet (M9.4a): tiling side by side with every window's title bar,
+	# under one large bar along the top.
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now tablet')
+	guest 'preset tablet'
+	wait_more 'edel-shell-ui: follows the settings: the preset is now tablet' "$followed" ||
+		fail "edel settings set layout.preset=tablet was not followed by shell-ui"
+	i=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/tablet.now" <<-'EOF' && break
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+			bars = [w["title_bar"] for w in windows]
+			print(f"{len(windows)} windows, title bars {bars}")
+			sys.exit(0 if windows and all(bars) else 1)
+		EOF
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "under Tablet the windows should be tiled with their title bars: $(cat "$dir/tablet.now")"
+		sleep 1
+	done
+	shot preset-tablet 640 12 "$panel" >/dev/null || fail "Tablet's bar is not at 640,12 in the panel's colour"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -4946,9 +4967,9 @@ case_presets() {
 	wait_more 'edel-compositor: windows now floating' "$floated" || fail "back on Classic, the windows did not float"
 	shot preset-classic 640 790 "$panel" >/dev/null || fail "Classic's panel is not at 640,790 in the panel's colour"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+		echo "Presets (M5.4a, M9.4a): preset-hive.png, preset-zen.png, preset-tablet.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; Tablet (M9.4a) tiled them with their title bars under a large bar at 640,12, kept as preset-tablet.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_own_presets() {
@@ -4959,7 +4980,7 @@ case_own_presets() {
 	# compositor logs no preset but hive. Then Classic (its buttons go right,
 	# the buttons' key having moved into mine), mine again (Hive's bar on top,
 	# the buttons on the left), Settings' Layout page with a card per preset,
-	# mine after zen, kept as settings-own-presets.png. Super+Q closes it,
+	# mine after tablet, kept as settings-own-presets.png. Super+Q closes it,
 	# delete is refused while mine is in use and then deletes it, and the
 	# layout keys are reset for the cases after this one.
 	asked() {
@@ -5032,8 +5053,8 @@ case_own_presets() {
 		[ "$places" = none ] && sleep 1
 	done
 	case "$places" in
-	*" zen mine") ;;
-	*) fail "Settings' Layout page does not list mine after zen: $places" ;;
+	*" zen tablet mine") ;;
+	*) fail "Settings' Layout page does not list mine after tablet: $places" ;;
 	esac
 	python3 ci/qmp.py screendump "$dir/settings-own-presets.png"
 	closed=$(count 'edel-compositor: unmapped window Settings')
@@ -5053,7 +5074,7 @@ case_own_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Own presets (M5.17): settings-own-presets.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after zen, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
+	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after tablet, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
 }
 
 case_app_windows() {

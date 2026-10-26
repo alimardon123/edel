@@ -1403,6 +1403,9 @@ msgstr ""
 msgid "Zen"
 msgstr ""
 
+msgid "Tablet"
+msgstr ""
+
 msgid "this release has no preset {name}; the Classic preset is used"
 msgstr ""
 

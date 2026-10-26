@@ -6179,24 +6179,24 @@ version = "1.2"
 
     #[test]
     fn a_preset_this_release_lacks_is_refused_or_reported() {
-        let file = "format = 1\n[layout]\npreset = \"tablet\"\n";
+        let file = "format = 1\n[layout]\npreset = \"phone\"\n";
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
             [
-                "layout.preset: \"tablet\" is not a preset; choose classic, mac-like, windows-like, hive or zen"
+                "layout.preset: \"phone\" is not a preset; choose classic, mac-like, windows-like, hive, zen or tablet"
             ]
         );
-        let error = set("format = 1\n", "layout.preset", "tablet").unwrap_err();
+        let error = set("format = 1\n", "layout.preset", "phone").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("choose classic, mac-like, windows-like, hive or zen"),
+                .contains("choose classic, mac-like, windows-like, hive, zen or tablet"),
             "{error}"
         );
         // A name is read as written; the check names the preset it is not (M5.17).
         let read = read(file).unwrap();
-        assert_eq!(read.file.layout.preset.as_deref(), Some("tablet"));
+        assert_eq!(read.file.layout.preset.as_deref(), Some("phone"));
         assert!(read.problems.is_empty(), "{:?}", read.problems);
         let set_hive = set("format = 1\n", "layout.preset", "hive").unwrap();
         assert_eq!(set_hive, "format = 1\n\n[layout]\npreset = \"hive\"\n");
