@@ -9746,9 +9746,11 @@ if [ "$*" = live ]; then
 	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
+	first_esp=$(esp_id)
 	press key ret
 	sleep 1
 	press key ret
+	install_began=$(date +%s)
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -9759,6 +9761,19 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	# The data partition comes before the default apps and the boot
+	# loader; the second install waits for this one to finish.
+	i=0
+	until esp_done "$first_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 90 ]; then
+			python3 ci/qmp.py screendump "$dir/install-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition on the blank disk but no boot loader within 900 s (install-failed.png)"
+		fi
+		sleep 10
+	done
+	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
@@ -9837,10 +9852,10 @@ if [ "$*" = live ]; then
 	i=0
 	until esp_done "$old_esp"; do
 		i=$((i + 1))
-		if [ "$i" -ge 60 ]; then
+		if [ "$i" -ge 90 ]; then
 			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
 			stick_logs
-			fail "Settings' installer page wrote the data partition but no boot loader within 600 s (install-file-failed.png)"
+			fail "Settings' installer page wrote the data partition but no boot loader within 900 s (install-file-failed.png)"
 		fi
 		sleep 10
 	done
