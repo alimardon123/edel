@@ -1152,9 +1152,15 @@ case_game_session() {
 		fail "the middle of the screen is not the stand-in's #cc3333 in the game session"
 	# Super+L locks the screen over the game, as on the desktop, and ci's
 	# password unlocks it (game-session-lock.png).
+	# The lock's field takes keys once shell-ui has drawn it, which it
+	# logs with its places; under a game drawing every frame that came
+	# up to 300 frames after "screen locked", and the password typed
+	# before it was lost.
 	locked=$(count 'edel-shell-ui: screen locked, [0-9]+ screens')
+	placed=$(count 'edel-shell-ui: lock places ')
 	python3 ci/qmp.py key meta_l-l
 	wait_more 'edel-shell-ui: screen locked, [0-9]+ screens' "$locked" || fail "Super+L did not lock the screen in the game session"
+	wait_more 'edel-shell-ui: lock places ' "$placed" 30 || fail "shell-ui did not draw the lock in the game session"
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/game-session-lock.png"
 	unlocked=$(count 'edel-compositor: screen unlocked$')
