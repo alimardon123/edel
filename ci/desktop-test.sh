@@ -302,6 +302,9 @@
 #   rotation    displays.Virtual-1.rotation = 90 turns the screen, the panel
 #               along the glass's right edge, and the reset turns it back
 #               (M9.8)
+#   sharp       a fullscreen game drawn at half size through wp_viewporter is
+#               scaled two times pixel for pixel, its checkerboard sharp
+#               (M8.28)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -8905,6 +8908,32 @@ case_rotation() {
 	shot rotation-back 640 796 "$panel" >/dev/null ||
 		fail "after the reset the panel is not along the bottom again"
 	echo "PASS: displays.Virtual-1.rotation = 90 turned the screen at once, the panel along the glass's right edge (rotation.png), and the reset turned it back"
+}
+
+case_sharp() {
+	# Sharp scaling for games (M8.28): a fullscreen game in game mode (on
+	# in the VM, which has no battery) draws a checkerboard at half the
+	# screen's size, shown at full size through wp_viewporter. The
+	# compositor scales it two times pixel for pixel, so each white or
+	# black square is two by two of the screen's pixels with nothing
+	# blended between them (sharp.png); blurred, the squares would be grey.
+	sharp=$(count 'edel-compositor: game on Virtual-1 scaled sharply, 2 times')
+	guest 'sharp game'
+	wait_more 'edel-compositor: game on Virtual-1 scaled sharply, 2 times' "$sharp" 30 ||
+		fail "the compositor did not scale the half-size game sharply: $(tr -d '\r' <"$log" | grep -a 'scaled\|window sharp' | tail -n 3 | tr '\n' ' ')"
+	# Screen pixels 200 and 201 are one buffer pixel, (100, 75), black;
+	# 202 and 203 the next, white.
+	shot sharp 200 150 000000 >/dev/null || fail "200,150 is not the checkerboard's black (sharp.png)"
+	for at in 201:000000 202:ffffff 203:ffffff; do
+		x=${at%%:*} want=${at#*:}
+		got=$(python3 ci/qmp.py pixel "$dir/sharp.png" "$x" 150)
+		matches "$got" "$want" || fail "$x,150 is #$got, not #$want: the half-size game was not scaled pixel for pixel (sharp.png)"
+	done
+	smooth=$(count 'edel-compositor: pictures on Virtual-1 scaled smoothly again')
+	guest 'sharp close'
+	wait_more 'edel-compositor: pictures on Virtual-1 scaled smoothly again' "$smooth" ||
+		fail "the compositor did not go back to smooth scaling after the game closed"
+	echo "PASS: a game drawn at half the screen's size was scaled two times pixel for pixel, its checkerboard sharp (sharp.png), and smooth scaling came back when it closed"
 }
 
 # input_method_fail MESSAGE: the compositor's lines about the input method

@@ -267,6 +267,9 @@ impl Edel {
             return Vec::new();
         };
         let scale = output.current_scale().fractional_scale();
+        // Pixel for pixel for a game drawn at a whole fraction of the
+        // screen (M8.28), smoothly for everything else.
+        self.scale_for(renderer, output, scale);
         let now = self.animations.now();
         self.animations.prune(now);
         let mut elements: Vec<Drawn> = self

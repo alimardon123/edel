@@ -277,6 +277,13 @@ commands() {
 			as_ci edel-testclient --busy --fullscreen --app-id edel.test.game --size 300x200 --colour 9a5ac8 --title game </dev/null >/tmp/game.log 2>&1 &
 			;;
 		'game close') pkill -f 'edel-testclient --busy --fullscreen' ;;
+		# A game drawn at half the screen's size (M8.28): a fullscreen
+		# checkerboard of white and black, one buffer pixel to every two by
+		# two of the screen's, through wp_viewporter.
+		'sharp game')
+			as_ci edel-testclient --fullscreen --pixels 2 --colour ffffff --title sharp </dev/null >/tmp/sharp.log 2>&1 &
+			;;
+		'sharp close') pkill -f 'edel-testclient --fullscreen --pixels' ;;
 		'game report')
 			edel report >/tmp/game-report.toml 2>/dev/null
 			shown=$(awk '/^\[\[games\]\]/ { g = 1 } g && /^app = "edel.test.game"/ { a = 1 } a && /^frames = / { print $3; exit }' /tmp/game-report.toml)
