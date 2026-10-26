@@ -123,7 +123,9 @@ partition_in() {
 # main_image FILE: the gzipped desktop image (edel-x86_64.img.gz) of the
 # newest push to main, which CI keeps 14 days as the artifact
 # edel-try-x86_64 (docs/TRY-IT.md), into FILE; false when GH_TOKEN is
-# unset or none is kept. The upgrade test (M3.5) updates it until a
+# unset or none is kept. On a push to main the run's own build has kept
+# its artifact before the lanes start, so this run's (GITHUB_RUN_ID) is
+# passed over: it is no older than the build it would be updated to. The upgrade test (M3.5) updates it until a
 # preview exists, and desktop-memory.sh measures it.
 main_image() {
 	[ -n "${GH_TOKEN:-}" ] || return 1
@@ -131,9 +133,10 @@ main_image() {
 	main_id=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "$main_api?name=edel-try-x86_64&per_page=20" | python3 -c '
 import json, sys
 kept = [a for a in json.load(sys.stdin)["artifacts"]
-        if not a["expired"] and a["workflow_run"]["head_branch"] == "main"]
+        if not a["expired"] and a["workflow_run"]["head_branch"] == "main"
+        and str(a["workflow_run"]["id"]) != sys.argv[1]]
 kept.sort(key=lambda a: a["created_at"], reverse=True)
-print(kept[0]["id"] if kept else "")') || return 1
+print(kept[0]["id"] if kept else "")' "${GITHUB_RUN_ID:-}") || return 1
 	[ -n "$main_id" ] || return 1
 	curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -o "$1.zip" "$main_api/$main_id/zip" || return 1
 	python3 -c 'import sys, zipfile, shutil
