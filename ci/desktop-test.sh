@@ -987,6 +987,14 @@ case_respawn() {
 	esac
 	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
 		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
+	# With ci's session ended, the controllers are nobody's (M8.37): greetd's
+	# PAM file ran edel-seat as the session closed, so ci's programs can no
+	# longer open /dev/uinput while someone else may log in.
+	asked=$(count 'DESKTOP-TEST: gaming_devices ')
+	guest 'gaming devices'
+	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput at the greeter"
+	[ "$(value gaming_devices | cut -d' ' -f1-3)" = 'root 600 refused' ] ||
+		fail "at the greeter, /dev/uinput is not root's alone with mode 600, refused to ci, as edel-seat makes it when ci's session closes: $(value gaming_devices)"
 	guest 'greeter places'
 	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
 		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
@@ -1043,6 +1051,11 @@ case_respawn() {
 	# exactly; startup login off takes the name out of the file.
 	wait_more 'edel-compositor: mapped window test-startup' "$started" 60 ||
 		fail "the app startup.apps names did not open after ci logged in again"
+	asked=$(count 'DESKTOP-TEST: gaming_devices ')
+	guest 'gaming devices'
+	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput after the login"
+	[ "$(value gaming_devices | cut -d' ' -f1-3)" = 'ci 600 writable' ] ||
+		fail "after ci logged in again, /dev/uinput is not ci's with mode 600, as edel-seat makes it when ci's session opens: $(value gaming_devices)"
 	closed=$(count 'edel-compositor: unmapped window test-startup')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window test-startup' "$closed" || fail "Super+Q did not close the startup window"
@@ -1083,7 +1096,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login; /dev/uinput was root's alone at the greeter, refused to ci, and ci's again after the login (M8.37)"
 }
 
 case_game_session() {
@@ -9097,8 +9110,9 @@ profile_off() {
 }
 
 case_profiles() {
-	# First, the gaming feature's /dev/uinput and /dev/ntsync are the seat
-	# group's, mode 660, and ci may write them (M7.6b, M8.33), and the base
+	# First, the gaming feature's /dev/uinput is ci's, the person at the
+	# screen, mode 600 (M8.37), /dev/ntsync the seat group's, mode 660, ci
+	# may write both (M7.6b, M8.33), and the base
 	# allows 1048576 memory maps (M8.33). Then leave out what a profile brings
 	# (M7.6c): with gaming named and ci an admin, `edel settings diff` would
 	# install Steam; `apps.installed-=` writes it to system.profiles_without
@@ -9107,8 +9121,8 @@ case_profiles() {
 	asked=$(count 'DESKTOP-TEST: gaming_devices ')
 	guest 'gaming devices'
 	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput"
-	[ "$(value gaming_devices)" = 'seat 660 writable ntsync seat 660 writable maps 1048576' ] ||
-		fail "/dev/uinput and /dev/ntsync are not group seat's with mode 660, writable by ci, as the gaming add-on's rule and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
+	[ "$(value gaming_devices)" = 'ci 600 writable ntsync seat 660 writable maps 1048576' ] ||
+		fail "/dev/uinput is not ci's, the person at the screen, with mode 600 (M8.37), /dev/ntsync is not group seat's with mode 660, either not writable by ci, as the gaming add-on's rule, edel-seat and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
 	asked=$(count 'DESKTOP-TEST: profile_gaming ')
 	guest 'profile gaming'
 	wait_more 'DESKTOP-TEST: profile_gaming ' "$asked" || fail "the service did not name the gaming profile"
@@ -9138,7 +9152,7 @@ case_profiles() {
 	case "$reset" in
 	*Steam*) fail "system.profiles_without stayed after the profile was reset: $reset" ;;
 	esac
-	echo "PASS: /dev/uinput and /dev/ntsync were group seat's, mode 660, and ci could write them, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
+	echo "PASS: /dev/uinput was ci's, the person at the screen, mode 600, /dev/ntsync group seat's, mode 660, and ci could write both, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
 }
 
 case_office_fonts() {

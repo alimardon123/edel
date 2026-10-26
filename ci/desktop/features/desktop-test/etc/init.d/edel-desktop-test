@@ -1545,7 +1545,7 @@ ieee80211w=2' channel=6 ;;
 		# sync, /dev/ntsync, the same (M8.33); and the base's memory map
 		# limit.
 		'gaming devices')
-			say "gaming_devices $(stat -c '%G %a' /dev/uinput 2>&1) $(as_ci 'test -w /dev/uinput && echo writable || echo refused' 2>&1) ntsync $(stat -c '%G %a' /dev/ntsync 2>&1) $(as_ci 'test -w /dev/ntsync && echo writable || echo refused' 2>&1) maps $(cat /proc/sys/vm/max_map_count 2>&1)"
+			say "gaming_devices $(stat -c '%U %a' /dev/uinput 2>&1) $(as_ci 'test -w /dev/uinput && echo writable || echo refused' 2>&1) ntsync $(stat -c '%G %a' /dev/ntsync 2>&1) $(as_ci 'test -w /dev/ntsync && echo writable || echo refused' 2>&1) maps $(cat /proc/sys/vm/max_map_count 2>&1)"
 			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No

@@ -15,6 +15,7 @@ no_healthy_slot=/run/edel/no-healthy-slot
 screen_file=/run/edel/screen
 started_file=/run/edel/started
 greetd_live=/run/edel/greetd.toml
+seat_owner=/run/edel/seat
 last_fallback=/data/edel/last-fallback.toml
 addons_dir=/data/addons
 addons_dir_on_data=/addons
