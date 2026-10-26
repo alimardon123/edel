@@ -1171,11 +1171,22 @@ fn copy_default_apps(data: &Path) -> Result<()> {
         .spawn()
         .context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
     let stream = pack.stdout.take().context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
-    let unpacked = run(Command::new("tar")
+    // Not through `run`, which gives a program no input: the unpacking
+    // read nothing and stopped with code 1, so no install had its apps.
+    let unpacked = Command::new("tar")
         .arg("-C")
         .arg(&target)
         .args(["-xf", "-"])
-        .stdin(stream));
+        .stdin(stream)
+        .status()
+        .map_err(anyhow::Error::from)
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                bail!("tar -x: {status}")
+            }
+        });
     let packed = pack.wait()?;
     if let Err(e) = unpacked {
         // Half a copy only takes room: none at all is the same to Flatpak.
