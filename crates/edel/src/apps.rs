@@ -36,6 +36,13 @@ pub const INSTALLATION: &str = "edel";
 /// remote people see stays `flathub` in their own installation.
 pub const APPS_REMOTE: &str = "edel-apps";
 
+/// The languages the default apps' installation keeps translations for,
+/// as `flatpak config --set languages` takes them: English, the one
+/// language Edel OS itself is in until `po/` holds a translation. Unset,
+/// Flatpak keeps every language's, which made the runtimes' translations
+/// about 1.5 GB of the 4.5 GB installation (CI's stick, 2026-10-26).
+pub const LANGUAGES: &str = "en";
+
 /// The default apps of a slot (M6.2), as `edel image build` records them
 /// in `places::DEFAULT_APPS_LIST`: those the data partition's installation
 /// should hold, and those a release dropped, which stay for each person
