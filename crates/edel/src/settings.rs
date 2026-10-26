@@ -3495,7 +3495,7 @@ pub fn choices(key: &str) -> &'static [&'static str] {
         Some(Key {
             kind: Kind::Profiles,
             ..
-        }) => crate::profiles::NAMES,
+        }) => &crate::profiles::NAMES,
         _ => &[],
     }
 }
@@ -3808,12 +3808,10 @@ pub fn flag(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<bo
 /// with none, starting a file when there is none, through a rename so a
 /// reader never sees half a file: what Settings and the panel write with.
 pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
-    let text = fs::read_to_string(path).unwrap_or_else(|_| format!("format = {FORMAT}\n"));
-    let edited = match value {
-        Some(value) => set(&text, key, value)?,
-        None => unset(&text, key)?,
-    };
-    write_text(path, &edited)
+    edit(path, |text| match value {
+        Some(value) => set(text, key, value),
+        None => unset(text, key),
+    })
 }
 
 /// Sets or takes out several keys in the settings file at `path` in one
@@ -3822,23 +3820,86 @@ pub fn write(path: &Path, key: &str, value: Option<&str>) -> Result<()> {
 /// The Shortcuts page moves a chord and clears the action that held it this
 /// way (M5.13b).
 pub fn write_all(path: &Path, edits: &[(&str, Option<&str>)]) -> Result<()> {
-    let mut text = fs::read_to_string(path).unwrap_or_else(|_| format!("format = {FORMAT}\n"));
-    for (key, value) in edits {
-        text = match value {
-            Some(value) => set(&text, key, value)?,
-            None => unset(&text, key)?,
-        };
-    }
-    write_text(path, &text)
+    edit(path, |text| {
+        let mut text = text.to_string();
+        for (key, value) in edits {
+            text = match value {
+                Some(value) => set(&text, key, value)?,
+                None => unset(&text, key)?,
+            };
+        }
+        Ok(text)
+    })
 }
 
-/// Writes a settings file's whole text to `path` (its folder made first),
-/// through a file beside it that is synced and renamed over it, so a reader
-/// never sees half a file and a power cut leaves the old file or the new
-/// one. Every write of a settings file goes through it (ADR-010): the
-/// writers above, Settings' theme edits, `edel settings` and the installer.
-pub fn write_text(path: &Path, edited: &str) -> Result<()> {
-    if let Some(dir) = path.parent() {
+/// Changes the settings file at `path` with `change`, which gets its text
+/// ([`text_to_edit`]) and gives the new one, all of it while holding the
+/// file's lock, so two writers at once (Settings, the panel, the overview,
+/// `edel settings set`) each see the other's change rather than one
+/// losing it (the whole-system review of 2026-10-25).
+pub fn edit(path: &Path, change: impl FnOnce(&str) -> Result<String>) -> Result<()> {
+    let _held = hold(path)?;
+    let text = text_to_edit(path)?;
+    let edited = change(&text)?;
+    if edited == text && path.exists() {
+        return Ok(());
+    }
+    replace_text(path, &edited)
+}
+
+/// The text a writer of the settings file at `path` starts from: the
+/// file's, or the format line alone when there is none or it is blank. A
+/// file that is there but cannot be read (a byte that is not UTF-8, a disk
+/// error) is refused, never replaced by one holding only the new line.
+pub fn text_to_edit(path: &Path) -> Result<String> {
+    match fs::read_to_string(path) {
+        Ok(text) if !is_blank(&text) => Ok(text),
+        Ok(_) => Ok(format!("format = {FORMAT}\n")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(format!("format = {FORMAT}\n")),
+        Err(e) => Err(e).with_context(|| not_replaced(path)),
+    }
+}
+
+/// Whether a settings file's text sets nothing: empty, or only blank lines
+/// and comments, as a first write cut short by a power cut leaves it.
+fn is_blank(text: &str) -> bool {
+    text.lines()
+        .map(str::trim)
+        .all(|line| line.is_empty() || line.starts_with('#'))
+}
+
+/// `could not read PATH, so it was left as it was`: why a writer refused.
+fn not_replaced(path: &Path) -> String {
+    trf(
+        "could not read {path}, so it was left as it was; fix or move it, then try again",
+        &[("path", &path.display().to_string())],
+    )
+}
+
+/// How long a writer waits for another's write of the same file to end,
+/// which takes milliseconds, before it says so rather than freeze a panel.
+const HOLD_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// How old a lock is when its writer is taken to have died (a power cut, a
+/// killed process), so the next writer takes it over.
+const HOLD_STALE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The lock of a settings file, held from a writer's read to its rename;
+/// taken out when dropped.
+struct Held(PathBuf);
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+/// The lock every writer of the settings file at `path` holds from its read
+/// to its rename: a file beside it, made only if it is not there
+/// (`create_new`), so one writer at a time has it, and there only while a
+/// write lasts. Its folder is made first.
+fn hold(path: &Path) -> Result<Held> {
+    if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         fs::create_dir_all(dir).with_context(|| {
             trf(
                 "could not make {path}",
@@ -3846,13 +3907,96 @@ pub fn write_text(path: &Path, edited: &str) -> Result<()> {
             )
         })?;
     }
-    let new = PathBuf::from(format!("{}.edel-new", path.display()));
+    let lock = PathBuf::from(format!("{}.edel-lock", path.display()));
+    let start = std::time::Instant::now();
+    loop {
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock)
+        {
+            Ok(_) => return Ok(Held(lock)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let stale = fs::metadata(&lock)
+                    .and_then(|meta| meta.modified())
+                    .ok()
+                    .and_then(|made| made.elapsed().ok())
+                    .is_some_and(|age| age > HOLD_STALE);
+                if stale {
+                    let _ = fs::remove_file(&lock);
+                } else if start.elapsed() < HOLD_WAIT {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                } else {
+                    bail!(
+                        "{}",
+                        trf(
+                            "another program is still changing {path}; try again",
+                            &[("path", &path.display().to_string())]
+                        )
+                    );
+                }
+            }
+            Err(e) => {
+                return Err(e).with_context(|| {
+                    trf(
+                        "could not write {path}",
+                        &[("path", &path.display().to_string())],
+                    )
+                });
+            }
+        }
+    }
+}
+
+/// Writes a settings file's whole text to `path` (its folder made first),
+/// through a file beside it that is synced and renamed over it, so a reader
+/// never sees half a file and a power cut leaves the old file or the new
+/// one. Every write of a settings file goes through it (ADR-010): the
+/// writers above, Settings' theme edits, `edel settings` and the installer.
+/// It holds the file's lock as [`edit`] does; a writer that read the file
+/// itself is refused when the file there cannot be read.
+pub fn write_text(path: &Path, edited: &str) -> Result<()> {
+    let _held = hold(path)?;
+    replace_text(path, edited)
+}
+
+/// [`write_text`] for a writer that holds the lock. A file that is there
+/// and cannot be read is kept; a blank or missing one gets the format line
+/// before the new text when that has none, so the file stays readable; a
+/// file that is a link (a dotfiles manager's) is written where it points,
+/// so the link stays.
+fn replace_text(path: &Path, edited: &str) -> Result<()> {
+    let target = match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
+        }
+        _ => path.to_path_buf(),
+    };
+    let blank = match fs::read_to_string(&target) {
+        Ok(text) => is_blank(&text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => true,
+        Err(e) => return Err(e).with_context(|| not_replaced(path)),
+    };
+    let no_format = edited
+        .parse::<DocumentMut>()
+        .is_ok_and(|doc| !doc.contains_key("format"));
+    let edited = match blank && no_format {
+        true => format!("format = {FORMAT}\n{edited}"),
+        false => edited.to_string(),
+    };
+    // Each writer's own new file, so even one that took a dead writer's
+    // lock never writes into another's.
+    let new = PathBuf::from(format!(
+        "{}.edel-new-{}",
+        target.display(),
+        std::process::id()
+    ));
     let written = fs::File::create(&new)
         .and_then(|mut file| {
             std::io::Write::write_all(&mut file, edited.as_bytes())?;
             file.sync_all()
         })
-        .and_then(|()| fs::rename(&new, path));
+        .and_then(|()| fs::rename(&new, &target));
     // A full disk stops the write halfway (M8.11): the file kept as it was,
     // and the half-written one taken out, not left to fill the disk more.
     if written.is_err() {
@@ -4117,13 +4261,38 @@ pub fn edit_list(text: &str, key: &str, value: &str, add: bool) -> Result<String
     let default = crate::addon_state::running_default();
     #[cfg(not(feature = "os"))]
     let default: Vec<String> = Vec::new();
-    let text = &with_default_list(text, key, &default)?;
+    #[cfg(feature = "os")]
+    let packs = crate::addon_state::packs(&default);
+    #[cfg(not(feature = "os"))]
+    let packs: Vec<String> = Vec::new();
+    edit_list_with(text, key, value, add, &default, &packs)
+}
+
+/// [`edit_list`] with the slot's default add-ons and the hardware packs
+/// among them given. A pack follows the machine's hardware, so it is never
+/// written into the file's own list: taking one out writes it to
+/// [`WITHOUT`], as for an item a profile brings.
+fn edit_list_with(
+    text: &str,
+    key: &str,
+    value: &str,
+    add: bool,
+    default: &[String],
+    packs: &[String],
+) -> Result<String> {
+    let kept: Vec<String> = default
+        .iter()
+        .filter(|name| !packs.contains(name))
+        .cloned()
+        .collect();
+    let text = &with_default_list(text, key, &kept)?;
     let item = list_item(value);
+    let pack = key == "addons.installed" && packs.contains(&item);
     let file = (key != WITHOUT)
         .then(|| read(text).ok())
         .flatten()
         .map(|read| read.file)
-        .filter(|file| crate::profiles::brings(file, key, &item));
+        .filter(|file| pack || crate::profiles::brings(file, key, &item));
     let Some(file) = file else {
         return edit_own_list(text, key, value, add);
     };
@@ -4241,6 +4410,62 @@ fn edit_own_list(text: &str, key: &str, value: &str, add: bool) -> Result<String
 /// the user and takes back what the key gave, such as admin.
 pub fn unset(text: &str, key: &str) -> Result<String> {
     unset_all(text, &[key])
+}
+
+/// `text` with every line of `over` whose key `takes` accepts laid over
+/// it, as readers lay a person's file over the machine's: a value, a list
+/// or a list of tables replaces the one at the same key, and a table is
+/// walked key by key. Everything else in `text`, its comments and keys this
+/// release does not know included, stays as it is. What `edel settings
+/// export` writes a person's own settings into the machine's with.
+pub fn lay_over(text: &str, over: &str, takes: impl Fn(&str) -> bool) -> Result<String> {
+    let parse = |text: &str| {
+        text.parse::<DocumentMut>()
+            .map_err(|e: toml_edit::TomlError| mistake(text, e.span(), e.message()))
+    };
+    let mut doc = parse(text)?;
+    let over = parse(over)?;
+    let mut leaves = Vec::new();
+    leaves_of(over.as_table(), &mut Vec::new(), &mut leaves);
+    for (path, item) in leaves {
+        let key = path.join(".");
+        if key == "format" || !takes(&key) {
+            continue;
+        }
+        let (last, parents) = path.split_last().expect("a leaf has a key");
+        let mut table = doc.as_table_mut();
+        for (i, part) in parents.iter().enumerate() {
+            let fresh = || {
+                let mut new = toml_edit::Table::new();
+                new.set_implicit(i + 1 < parents.len());
+                toml_edit::Item::Table(new)
+            };
+            let entry = table.entry(part).or_insert_with(fresh);
+            if !entry.is_table() {
+                *entry = fresh();
+            }
+            table = entry.as_table_mut().expect("made a table above");
+        }
+        table.insert(last, item.clone());
+    }
+    Ok(doc.to_string())
+}
+
+/// Each key of `table` below `path` that holds no table of its own, with
+/// its item, in the file's order.
+fn leaves_of<'a>(
+    table: &'a toml_edit::Table,
+    path: &mut Vec<String>,
+    leaves: &mut Vec<(Vec<String>, &'a toml_edit::Item)>,
+) {
+    for (key, item) in table.iter() {
+        path.push(key.to_string());
+        match item.as_table() {
+            Some(inner) => leaves_of(inner, path, leaves),
+            None => leaves.push((path.clone(), item)),
+        }
+        path.pop();
+    }
 }
 
 /// `edel settings reset KEY...` on a file's text: removes each key the
@@ -5298,11 +5523,119 @@ mod tests {
         assert!(!from.exists() && !versioned(&from, FORMAT).exists());
         assert_eq!(fs::read_to_string(&to).unwrap(), "format = 99\n");
         assert!(versioned(&to, FORMAT).exists());
-        assert!(
-            !dir.join(format!("{}.edel-new", crate::places::SETTINGS))
-                .exists()
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            2,
+            "only the file and its older format"
         );
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_hardware_pack_is_never_written_into_the_add_ons_list() {
+        let default = vec!["desktop".to_string(), "wifi-realtek".to_string()];
+        let packs = vec!["wifi-realtek".to_string()];
+        let key = "addons.installed";
+        let added =
+            edit_list_with("format = 1\n", key, "\"printing\"", true, &default, &packs).unwrap();
+        let file = read(&added).unwrap().file;
+        assert_eq!(
+            file.addons.installed,
+            Some(vec!["desktop".to_string(), "printing".to_string()])
+        );
+        // Taking the pack out leaves it out, as for what a profile brings.
+        let out = edit_list_with(&added, key, "\"wifi-realtek\"", false, &default, &packs).unwrap();
+        let file = read(&out).unwrap().file;
+        assert_eq!(file.system.profiles_without, Some(packs.clone()));
+        let back = edit_list_with(&out, key, "\"wifi-realtek\"", true, &default, &packs).unwrap();
+        assert_eq!(read(&back).unwrap().file.system.profiles_without, None);
+    }
+
+    #[test]
+    fn a_writer_keeps_a_file_it_cannot_read_and_mends_a_blank_one() {
+        let dir = std::env::temp_dir().join(format!("edel-unread-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(crate::places::SETTINGS);
+        // A byte that is not UTF-8: every setting would have gone.
+        let odd = b"format = 1\n[layout]\npreset = \"hive\" # caf\xe9\n";
+        fs::write(&path, odd).unwrap();
+        let refused = write(&path, "appearance.mode", Some("\"dark\"")).unwrap_err();
+        assert!(
+            format!("{refused:#}").contains("left as it was"),
+            "{refused:#}"
+        );
+        assert!(write_text(&path, "format = 1\n").is_err());
+        assert_eq!(fs::read(&path).unwrap(), odd);
+        // A blank file, as a cut first write leaves it, gets its format line.
+        fs::write(&path, "\n").unwrap();
+        write(&path, "appearance.mode", Some("\"dark\"")).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(read(&text).is_ok(), "{text}");
+        fs::write(&path, "").unwrap();
+        write_text(&path, "[appearance]\nmode = \"light\"\n").unwrap();
+        assert!(read(&fs::read_to_string(&path).unwrap()).is_ok());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_settings_file_that_is_a_link_stays_a_link() {
+        let dir = std::env::temp_dir().join(format!("edel-link-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("dotfiles")).unwrap();
+        let real = dir.join("dotfiles").join(crate::places::SETTINGS);
+        fs::write(&real, "format = 1\n").unwrap();
+        let path = dir.join(crate::places::SETTINGS);
+        std::os::unix::fs::symlink(&real, &path).unwrap();
+        write(&path, "appearance.mode", Some("\"dark\"")).unwrap();
+        assert!(
+            fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(fs::read_to_string(&real).unwrap().contains("dark"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn two_writers_at_once_both_keep_their_change() {
+        let dir = std::env::temp_dir().join(format!("edel-race-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(crate::places::SETTINGS);
+        let writers: Vec<_> = (0..8)
+            .map(|i| {
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    let app = format!("\"org.example.App{i}\"");
+                    edit(&path, |text| edit_list(text, "startup.apps", &app, true)).unwrap();
+                })
+            })
+            .collect();
+        for writer in writers {
+            writer.join().unwrap();
+        }
+        let file = read(&fs::read_to_string(&path).unwrap()).unwrap().file;
+        assert_eq!(file.startup.apps.map(|apps| apps.len()), Some(8));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn the_person_s_lines_are_laid_over_the_machine_s_and_the_rest_kept() {
+        let machine = "format = 1\n# kept\nfuture.key = 3\n[network]\nhostname = \"lab\"\n[layout]\npreset = \"hive\"\n";
+        let person = "format = 1\n[layout]\npreset = \"mac-like\"\n[appearance]\nmode = \"dark\"\n[network]\nhostname = \"mine\"\n";
+        let follows = |key: &str| key.starts_with("layout.") || key.starts_with("appearance.");
+        let laid = lay_over(machine, person, follows).unwrap();
+        assert!(
+            laid.contains("# kept") && laid.contains("future.key = 3"),
+            "{laid}"
+        );
+        let doc: DocumentMut = laid.parse().unwrap();
+        assert_eq!(doc["layout"]["preset"].as_str(), Some("mac-like"));
+        assert_eq!(doc["appearance"]["mode"].as_str(), Some("dark"));
+        // A machine key in the person's file is not theirs to give.
+        assert_eq!(doc["network"]["hostname"].as_str(), Some("lab"));
     }
 
     #[test]
@@ -5314,7 +5647,11 @@ mod tests {
         let path = dir.join(crate::places::SETTINGS);
         fs::create_dir_all(&path).unwrap();
         assert!(write_text(&path, "hostname = \"lab\"\n").is_err());
-        assert!(!path.with_extension("toml.edel-new").exists());
+        assert_eq!(
+            fs::read_dir(&dir).unwrap().count(),
+            1,
+            "no new file, no lock"
+        );
         assert!(path.is_dir());
         fs::remove_dir_all(&dir).unwrap();
     }

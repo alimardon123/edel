@@ -1,7 +1,8 @@
 //! Work too slow for a frame (the whole-system review of 2026-10-25):
 //! `Edel::off_loop` runs it on a thread of its own and its answer back on
 //! the event loop, so reading, fitting and blurring a picture never holds
-//! a frame. The wallpaper and the overview's backdrop use it.
+//! a frame. The wallpaper, the overview's backdrop and the title bars'
+//! app list use it.
 
 use std::thread;
 
@@ -22,7 +23,10 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
         }
     });
     match inserted {
-        Ok(_) => state.off_loop = Some(sender),
+        Ok(_) => {
+            state.app_icons.answer_on(sender.clone());
+            state.off_loop = Some(sender);
+        }
         Err(e) => eprintln!("edel-compositor: slow work runs in the frame: {e}"),
     }
 }

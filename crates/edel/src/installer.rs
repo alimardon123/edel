@@ -87,9 +87,18 @@ fn encrypt_data(
 /// standard input when there is no terminal.
 fn ask_passphrase() -> Result<Password> {
     if !io::stdin().is_terminal() {
-        return privilege::read_password_line(io::stdin().lock()).context(tr(
+        let line = privilege::read_password_line(io::stdin().lock()).context(tr(
             "could not read the data's passphrase from standard input; give it on one line",
-        ));
+        ))?;
+        if line.letters() == 0 {
+            bail!(
+                "{}",
+                tr(
+                    "no passphrase for the data on standard input, so nothing was changed; give it on one line, run edel install in a terminal, or leave out --encrypt"
+                )
+            );
+        }
+        return Ok(line);
     }
     loop {
         let first = privilege::read_secret(tr("Passphrase for the data: "))?;
@@ -111,6 +120,16 @@ const HEAD: u64 = 4096;
 /// What is said when the plan was shown and nobody could confirm it.
 const NO_ANSWER: &str = n_(
     "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes",
+);
+
+/// Why a laptop's data stays plain: its password cannot be typed at the
+/// start's prompt.
+const NOT_TYPABLE: &str = n_(
+    "the data is not encrypted, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type",
+);
+/// What an encrypted install without a password asks once confirmed.
+const PASSPHRASE_ASKED: &str = n_(
+    "a passphrase for the data is asked once the plan is confirmed (or read as one line of standard input)",
 );
 
 /// Exit code when the plan was shown but nobody could confirm it.
@@ -143,6 +162,42 @@ fn partition_name(disk: &str, number: u32) -> String {
     } else {
         format!("{disk}{number}")
     }
+}
+
+/// Whether a part of disk `name` is in use: mounted (`mounts`, as
+/// `/proc/mounts` reads), swapped on (`swaps`, as `/proc/swaps`), or held
+/// open below something else (an unlocked encrypted partition, a RAID),
+/// which `sys`'s `holders` folders list and neither file names.
+fn in_use(sys: &Path, mounts: &str, swaps: &str, name: &str) -> bool {
+    let ours = |device: &str| {
+        device
+            .strip_prefix("/dev/")
+            .and_then(|d| d.strip_prefix(name))
+            .is_some_and(|rest| {
+                let number = rest
+                    .strip_prefix('p')
+                    .filter(|_| name.ends_with(|c: char| c.is_ascii_digit()))
+                    .unwrap_or(rest);
+                rest.is_empty()
+                    || (!number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+            })
+    };
+    let listed = |text: &str| {
+        text.lines()
+            .filter_map(|l| l.split_whitespace().next())
+            .any(ours)
+    };
+    let block = sys.join("class/block");
+    let held = |part: &str| {
+        fs::read_dir(block.join(part).join("holders")).is_ok_and(|mut d| d.next().is_some())
+    };
+    let parts = fs::read_dir(sys.join("block").join(name))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|p| ours(&format!("/dev/{p}")));
+    listed(mounts) || listed(swaps) || held(name) || parts.into_iter().any(|p| held(&p))
 }
 
 fn read_number(path: &Path) -> Result<u64> {
@@ -623,14 +678,12 @@ fn install_on(
         );
     }
     let mounts = fs::read_to_string("/proc/mounts")?;
-    if mounts
-        .lines()
-        .any(|l| l.starts_with(&format!("/dev/{name}")))
-    {
+    let swaps = fs::read_to_string("/proc/swaps").unwrap_or_default();
+    if in_use(Path::new("/sys"), &mounts, &swaps, name) {
         bail!(
             "{}",
             trf(
-                "/dev/{name} is in use, as one of its parts is open (in Files, say); eject it there, or choose another disk; nothing was changed",
+                "/dev/{name} is in use, as one of its parts is open (in Files, say, or unlocked, or used for swap); eject or close it there, or choose another disk; nothing was changed",
                 &[("name", name)]
             )
         );
@@ -666,6 +719,25 @@ fn install_on(
         edel::services::screen_now(),
         data.given,
     );
+    // The person's password is the data's passphrase (one to remember);
+    // a console types only plain letters for sure at the start. Settled
+    // here, so the plan says what the install then does.
+    let (encrypted, why_plain, passphrase) = match (encrypted, data.password) {
+        (false, _) => (false, why_plain, None),
+        (true, Some(clear)) if edel::install::typable(clear.text().unwrap_or_default()) => {
+            (true, None, Some(clear))
+        }
+        (true, Some(_)) if data.asked == Encrypt::Default => (false, Some(NOT_TYPABLE), None),
+        (true, Some(_)) => bail!(
+            "{}",
+            tr(
+                "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
+            )
+        ),
+        // A plan reads no password, so one given is not here yet.
+        (true, None) if data.given => (true, None, None),
+        (true, None) => (true, Some(PASSPHRASE_ASKED), None),
+    };
     let plan = Plan {
         disk: describe(name)?,
         slot_mib: SLOT_MIB.max(running_mib),
@@ -720,31 +792,12 @@ fn install_on(
             )
         );
     }
-    // The person's password is the data's passphrase (one to remember);
-    // a console types only plain letters for sure at the start.
-    let passphrase = match (encrypted, data.password) {
-        (false, _) => None,
-        (true, Some(clear)) if crate::crypt::typable(clear.text().unwrap_or_default()) => {
-            Some(clear)
-        }
-        (true, Some(_)) if data.asked == Encrypt::Default => {
-            println!(
-                "edel install: {}",
-                tr(
-                    "the data is not encrypted after all, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type"
-                )
-            );
-            None
-        }
-        (true, Some(_)) => bail!(
-            "{}",
-            tr(
-                "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt"
-            )
-        ),
-        (true, None) => {
+    // A passphrase of its own when the install gives no password.
+    let passphrase = match passphrase {
+        Some(clear) => Some(clear),
+        None if encrypted => {
             let typed = ask_passphrase()?;
-            if !crate::crypt::typable(typed.text().unwrap_or_default()) {
+            if !edel::install::typable(typed.text().unwrap_or_default()) {
                 bail!(
                     "{}",
                     tr(
@@ -754,6 +807,7 @@ fn install_on(
             }
             Some(typed)
         }
+        None => None,
     };
     let _lock = Lock::take("install", "edel install")?;
     // Every failure once the disk is touched ends with what to do.
@@ -957,38 +1011,6 @@ fn write(
     }
     half.done();
 
-    println!("edel install: {}", tr("writing the boot loader"));
-    run(Command::new("mkfs.vfat")
-        .args(["-F", "32", "-n", ESP_LABEL])
-        .arg(part(1)))
-    .with_context(|| {
-        trf(
-            "could not format the start-up partition {part}",
-            &[("part", &part(1).display().to_string())],
-        )
-    })?;
-    {
-        let esp = Mounted::new(
-            &part(1),
-            &Path::new(edel::places::INSTALL_DIR).join("esp"),
-            &["-t", "vfat", "-o", "iocharset=iso8859-1"],
-        )?;
-        let (_, efi_name) = boot::efi_target(std::env::consts::ARCH)?;
-        let boot_dir = esp.0.join("EFI/BOOT");
-        let edel_dir = esp.0.join(GRUB_PREFIX.trim_start_matches('/'));
-        fs::create_dir_all(&boot_dir).with_context(|| could_not_write(Path::new(&boot_dir)))?;
-        fs::create_dir_all(&edel_dir).with_context(|| could_not_write(Path::new(&edel_dir)))?;
-        let slot_dir = Path::new(SLOT_DIR);
-        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))
-            .with_context(|| could_not_write(Path::new(&boot_dir.join(efi_name))))?;
-        for file in ["grub.cfg", "loader.toml"] {
-            fs::copy(slot_dir.join(file), edel_dir.join(file))
-                .with_context(|| could_not_write(Path::new(&edel_dir.join(file))))?;
-        }
-        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())
-            .with_context(|| could_not_write(Path::new(&edel_dir.join("grubenv"))))?;
-    }
-
     println!("edel install: {}", tr("creating the data partition"));
     // Before the mount below, so the unmount comes first.
     let mut _opened = None;
@@ -1066,8 +1088,51 @@ fn write(
             &fs::read_to_string(system_file).unwrap_or_default(),
             &data.0,
         );
-        copy_default_apps(&data.0)?;
+        // Without them the machine still starts, and the first edel
+        // update brings them, so a copy that fails (a data partition too
+        // small for them, say) never stops the install before its boot
+        // loader.
+        if let Err(e) = copy_default_apps(&data.0) {
+            println!("edel install: {e:#}");
+        }
     }
+    // The boot loader last, so the firmware starts only a disk the
+    // install finished: one cut before here has no start-up partition
+    // and is never taken for a machine that will not start.
+    println!("edel install: {}", tr("writing the boot loader"));
+    run(Command::new("mkfs.vfat")
+        .args(["-F", "32", "-n", ESP_LABEL])
+        .arg(part(1)))
+    .with_context(|| {
+        trf(
+            "could not format the start-up partition {part}",
+            &[("part", &part(1).display().to_string())],
+        )
+    })?;
+    {
+        let esp = Mounted::new(
+            &part(1),
+            &Path::new(edel::places::INSTALL_DIR).join("esp"),
+            &["-t", "vfat", "-o", "iocharset=iso8859-1"],
+        )?;
+        let (_, efi_name) = boot::efi_target(std::env::consts::ARCH)?;
+        let boot_dir = esp.0.join("EFI/BOOT");
+        let edel_dir = esp.0.join(GRUB_PREFIX.trim_start_matches('/'));
+        fs::create_dir_all(&boot_dir).with_context(|| could_not_write(Path::new(&boot_dir)))?;
+        fs::create_dir_all(&edel_dir).with_context(|| could_not_write(Path::new(&edel_dir)))?;
+        let slot_dir = Path::new(SLOT_DIR);
+        for file in ["grub.cfg", "loader.toml"] {
+            fs::copy(slot_dir.join(file), edel_dir.join(file))
+                .with_context(|| could_not_write(Path::new(&edel_dir.join(file))))?;
+        }
+        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())
+            .with_context(|| could_not_write(Path::new(&edel_dir.join("grubenv"))))?;
+        // The firmware's file last, once what it reads is on the disk.
+        run(&mut Command::new("sync")).with_context(|| could_not_write(&edel_dir))?;
+        fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))
+            .with_context(|| could_not_write(Path::new(&boot_dir.join(efi_name))))?;
+    }
+
     run(&mut Command::new("sync")).with_context(|| {
         trf(
             "could not finish writing {part}",
@@ -1106,12 +1171,34 @@ fn copy_default_apps(data: &Path) -> Result<()> {
         .spawn()
         .context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
     let stream = pack.stdout.take().context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
-    run(Command::new("tar")
+    // Not through `run`, which gives a program no input: the unpacking
+    // read nothing and stopped with code 1, so no install had its apps.
+    let unpacked = Command::new("tar")
         .arg("-C")
         .arg(&target)
         .args(["-xf", "-"])
-        .stdin(stream))?;
+        .stdin(stream)
+        .status()
+        .map_err(anyhow::Error::from)
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                bail!("tar -x: {status}")
+            }
+        });
     let packed = pack.wait()?;
+    if let Err(e) = unpacked {
+        // Half a copy only takes room: none at all is the same to Flatpak.
+        let _ = fs::remove_dir_all(&target);
+        bail!(
+            "{}",
+            trf(
+                "could not copy the default apps onto the new disk ({error}), perhaps for want of room; the system is installed without them, and they come with the first edel update",
+                &[("error", &format!("{e:#}"))]
+            )
+        );
+    }
     if !packed.success() {
         bail!(
             "{}",
@@ -1400,6 +1487,51 @@ fn count_down(device: &str, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_disk_mounted_swapped_or_held_is_in_use() {
+        let sys = std::env::temp_dir().join(format!("edel-in-use-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&sys);
+        for dir in [
+            "block/sdb/sdb1",
+            "block/sdb/sdb4",
+            "class/block/sdb1/holders",
+            "class/block/sdb4/holders",
+            "block/nvme0n1/nvme0n1p2",
+            "class/block/nvme0n1p2/holders",
+        ] {
+            fs::create_dir_all(sys.join(dir)).unwrap();
+        }
+        let none = "";
+        assert!(!in_use(&sys, "/dev/sda2 / ext4 ro 0 0\n", none, "sdb"));
+        assert!(in_use(
+            &sys,
+            "/dev/sdb1 /media/x vfat rw 0 0\n",
+            none,
+            "sdb"
+        ));
+        assert!(!in_use(
+            &sys,
+            "/dev/sdbb1 /media/x vfat rw 0 0\n",
+            none,
+            "sdb"
+        ));
+        let swaps = "Filename Type Size Used Priority\n/dev/sdb3 partition 1024 0 -2\n";
+        assert!(in_use(&sys, none, swaps, "sdb"));
+        assert!(!in_use(&sys, none, none, "sdb"));
+        fs::create_dir_all(sys.join("class/block/sdb4/holders/dm-0")).unwrap();
+        assert!(in_use(&sys, none, none, "sdb"));
+        assert!(in_use(
+            &sys,
+            "/dev/nvme0n1p2 /x ext4 rw 0 0\n",
+            none,
+            "nvme0n1"
+        ));
+        assert!(!in_use(&sys, none, none, "nvme0n1"));
+        fs::create_dir_all(sys.join("class/block/nvme0n1p2/holders/dm-1")).unwrap();
+        assert!(in_use(&sys, none, none, "nvme0n1"));
+        fs::remove_dir_all(&sys).unwrap();
+    }
 
     #[test]
     fn laptops_and_screens_are_encrypted_when_the_install_gives_a_password() {

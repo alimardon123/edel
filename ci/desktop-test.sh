@@ -9529,16 +9529,33 @@ if [ "$*" = live ]; then
 		done
 	}
 	# A blank disk beside the stick, which Settings' installer page
-	# installs on (M6.6a); zeros written to it stay holes.
+	# installs on (M6.6a); zeros written to it stay holes. 16 GB, so its
+	# data partition, beside two 4 GiB slots, holds the default apps and
+	# the desktop add-on, as a real disk does.
 	. ci/names.sh
 	target="$dir/target.img"
 	rm -f "$target"
-	truncate -s 10G "$target"
+	truncate -s 16G "$target"
 	# target_data: the installed disk's data partition (partition 4),
 	# copied to $dir/target-data.img for debugfs; false while there is none.
 	target_data() {
 		partition_out "$target" 4 "$dir/target-data.img" || return 1
 		e2fsck -fy "$dir/target-data.img" >/dev/null 2>&1 || true
+	}
+	# esp_id: the volume serial of the target's start-up partition, which
+	# each install's mkfs.vfat makes new. The installer writes that
+	# partition last (#500), so an install is done once the serial is new
+	# and the firmware's file, BOOTX64.EFI, has its size in its folder
+	# entry (bytes 28 to 31 of the 32 that begin with its 8.3 name).
+	esp_id() {
+		partition_out "$target" 1 "$dir/target-esp.img" 2>/dev/null || return 0
+		od -An -tx1 -j67 -N4 "$dir/target-esp.img" | tr -d ' \n'
+	}
+	esp_done() {
+		[ "$(esp_id)" != "$1" ] || return 1
+		at=$(grep -abo 'BOOTX64 EFI' "$dir/target-esp.img" | head -n 1 | cut -d: -f1)
+		[ -n "$at" ] || return 1
+		[ "$(od -An -tu4 -j$((at + 28)) -N4 "$dir/target-esp.img" | tr -d ' ')" -gt 0 ]
 	}
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
@@ -9750,9 +9767,11 @@ if [ "$*" = live ]; then
 	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
+	first_esp=$(esp_id)
 	press key ret
 	sleep 1
 	press key ret
+	install_began=$(date +%s)
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -9763,6 +9782,19 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	# The data partition comes before the default apps and the boot
+	# loader; the second install waits for this one to finish.
+	i=0
+	until esp_done "$first_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 90 ]; then
+			python3 ci/qmp.py screendump "$dir/install-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition on the blank disk but no boot loader within 900 s (install-failed.png)"
+		fi
+		sleep 10
+	done
+	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
@@ -9806,6 +9838,7 @@ if [ "$*" = live ]; then
 	# the plan, and the same disk is installed again from the file.
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	old_esp=$(esp_id)
 	cp out/install-file.img "$dir/install-file.img"
 	python3 ci/qmp.py plug filestick "$PWD/$dir/install-file.img"
 	sleep 5
@@ -9837,10 +9870,24 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	i=0
+	until esp_done "$old_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 90 ]; then
+			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition but no boot loader within 900 s (install-file-failed.png)"
+		fi
+		sleep 10
+	done
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-file-done.png"
 	stop_vm
 	target_data || fail "the disk installed from the file has no data partition"
+	# The default apps came along, so the machine has them offline.
+	case "$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/target-data.img" 2>&1)" in
+	*"File not found"* | '') stick_logs; fail "the disk installed from the file has no default apps: the installer's copy of them failed" ;;
+	esac
 	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
 	echo "$installed" | sed 's/^/  installed from the file: /'
 	echo "$installed" | grep -q '^# desktop-test.sh live (M6.6b)' || fail "the installed settings file lost the file's own comment"

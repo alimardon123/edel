@@ -21,7 +21,7 @@
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
@@ -257,10 +257,14 @@ pub fn command_line(args: &[String]) -> String {
     format!("{WPCTL} {}", args.join(" "))
 }
 
+/// How long `wpctl` may take: a sound system that takes the connection
+/// and then does not answer must never hang the panel or a page.
+const WPCTL_TIME: Duration = Duration::from_secs(5);
+
 /// Runs `wpctl` with `args`, giving what it printed.
 fn wpctl(args: &[String]) -> Result<String> {
-    let out = match Command::new(WPCTL).args(args).output() {
-        Ok(out) => out,
+    let done = match crate::tool::run(WPCTL, args, WPCTL_TIME) {
+        Ok(done) => done,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
             "{}",
             trf(
@@ -276,21 +280,31 @@ fn wpctl(args: &[String]) -> Result<String> {
             )
         ),
     };
-    if !out.status.success() {
+    if done.timed_out {
+        bail!(
+            "{}",
+            trf(
+                "{command} did not answer within {seconds} s; the sound system runs in your session and may be stuck, so log in again if it stays so",
+                &[
+                    ("command", &command_line(args)),
+                    ("seconds", &WPCTL_TIME.as_secs().to_string())
+                ]
+            )
+        );
+    }
+    if !done.ok() {
         // `wpctl` says why on standard error; "Failed to connect to
         // PipeWire" is the usual one, when the session's sound system is not
         // running.
-        let said = String::from_utf8_lossy(&out.stderr);
-        let said = said.trim();
         bail!(
             "{}",
             trf(
                 "{command} failed: {said}; the sound system runs in your session, so log in again if it is not running",
-                &[("command", &command_line(args)), ("said", said)]
+                &[("command", &command_line(args)), ("said", done.err.trim())]
             )
         );
     }
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    Ok(done.out)
 }
 
 /// The devices PipeWire lists now.
