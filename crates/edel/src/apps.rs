@@ -43,6 +43,23 @@ pub const APPS_REMOTE: &str = "edel-apps";
 /// about 1.5 GB of the 4.5 GB installation (CI's stick, 2026-10-26).
 pub const LANGUAGES: &str = "en";
 
+/// The languages a machine's default apps keep translations for, as
+/// `flatpak config --set languages` takes them: [`LANGUAGES`] and the
+/// language of each of `chosen`, the `region.language` values of the
+/// machine and its people (`de_DE.UTF-8` gives `de`, as Flatpak splits
+/// its translations by language), each once, in order (`en;de`).
+pub fn languages_for<'a>(chosen: impl IntoIterator<Item = &'a str>) -> String {
+    let mut kept: Vec<&str> = vec![LANGUAGES];
+    for value in chosen {
+        let language = value.split(['_', '.', '@']).next().unwrap_or("").trim();
+        let plain = !language.is_empty() && language.chars().all(|c| c.is_ascii_lowercase());
+        if plain && !kept.contains(&language) {
+            kept.push(language);
+        }
+    }
+    kept.join(";")
+}
+
 /// The default apps of a slot (M6.2), as `edel image build` records them
 /// in `places::DEFAULT_APPS_LIST`: those the data partition's installation
 /// should hold, and those a release dropped, which stay for each person
@@ -545,6 +562,15 @@ pub fn of_window<'a>(apps: &'a [App], app_id: &str) -> Option<&'a App> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn the_default_apps_keep_english_and_each_chosen_language() {
+        assert_eq!(languages_for([]), "en");
+        assert_eq!(
+            languages_for(["de_DE.UTF-8", "en_GB.UTF-8", "pt_BR.UTF-8", "de_AT.UTF-8"]),
+            "en;de;pt"
+        );
+        assert_eq!(languages_for(["C", "POSIX", "", "uz_UZ@cyrillic"]), "en;uz");
+    }
 
     const FOOT: &str = "[Desktop Entry]\nType=Application\nExec=foot\nIcon=foot\nTerminal=false\nCategories=System;TerminalEmulator;\nKeywords=shell;prompt;command;commandline;\nName=Foot\nGenericName=Terminal\n\n[Desktop Action new]\nName=Other\nExec=other\n";
 
