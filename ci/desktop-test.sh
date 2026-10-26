@@ -10292,8 +10292,18 @@ while ! grep -q 'edel login:' "$log" && [ "$i" -lt 60 ]; do
 	sleep 1
 	i=$((i + 1))
 done
+# A case that runs over DESKTOP_CASE_LIMIT seconds (900; the longest,
+# settings-tour, took 407 s on 2026-10-26) fails with its name, so a wait
+# that never ends cannot hold a part for hours: a timer sends this shell
+# USR1, whose trap fails the case once the command it is in returns (the
+# waits sleep a second or less at a time).
+case_limit=${DESKTOP_CASE_LIMIT:-900}
+trap 'fail "the case $c ran over $case_limit s, so it stopped there; the lines above say what it waited for"' USR1
 for c in "$@"; do
+	(sleep "$case_limit" && kill -USR1 $$) >/dev/null 2>&1 &
+	timer=$!
 	"case_$(echo "$c" | tr '-' '_')"
+	kill "$timer" 2>/dev/null || true
 	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
 	# has exited already.
 	echo "$c" >>"$dir/passed"
