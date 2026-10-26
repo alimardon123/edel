@@ -253,7 +253,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-group {{ background-color: {card}; border: 1px solid {line}; border-radius: {rw}px; }}
 .edel-row {{ padding: 6px 14px; min-height: 34px; }}
 .edel-touch .edel-row {{ padding: 8px 16px; min-height: {target}px; }}
-.edel-touch .edel-pages > row {{ min-height: {target}px; margin-bottom: 4px; }}
+.edel-touch .edel-pages > row:not(.edel-heading) {{ min-height: {target}px; margin-bottom: 4px; }}
 .edel-row + .edel-row {{ border-top: 1px solid {line}; }}
 .edel-row-subtitle {{ color: {muted}; font-size: {tiny}px; }}
 .edel-row-subtitle.edel-error {{ color: {error}; margin-top: 0; }}
