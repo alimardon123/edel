@@ -6275,15 +6275,17 @@ touch_read() {
 	done
 }
 
-# touch_rows PATTERN: Settings' log, read through the test service, must
-# match PATTERN within 10 tries a second apart.
+# touch_rows PATTERN: Settings' latest `rows sized` line, read through the
+# test service (its log's lines joined by `|`), must match PATTERN within
+# 10 tries a second apart.
 touch_rows() {
 	tries=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: touch_log ')
 		guest 'touch log'
 		wait_more 'DESKTOP-TEST: touch_log ' "$asked" || return 1
-		value touch_log | sed 's/; tablet: .*//' | grep -qE "$1" && return 0
+		value touch_log | sed 's/; tablet: .*//' | tr '|' '\n' | sed 's/ *$//' |
+			grep 'rows sized' | tail -n 1 | grep -qE "$1" && return 0
 		tries=$((tries + 1))
 		[ "$tries" -lt 10 ] || return 1
 		sleep 1
