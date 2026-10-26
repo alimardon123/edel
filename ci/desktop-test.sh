@@ -9746,6 +9746,7 @@ if [ "$*" = live ]; then
 	press key ret
 	sleep 20
 	python3 ci/qmp.py screendump "$dir/install-plan.png"
+	first_esp=$(esp_id)
 	press key ret
 	sleep 1
 	press key ret
@@ -9756,6 +9757,18 @@ if [ "$*" = live ]; then
 			python3 ci/qmp.py screendump "$dir/install-failed.png"
 			stick_logs
 			fail "Settings' installer page did not install on the blank disk within 600 s (install-page.png, install-plan.png, install-failed.png)"
+		fi
+		sleep 10
+	done
+	# The data partition comes before the default apps and the boot
+	# loader; the second install waits for this one to finish.
+	i=0
+	until esp_done "$first_esp"; do
+		i=$((i + 1))
+		if [ "$i" -ge 90 ]; then
+			python3 ci/qmp.py screendump "$dir/install-failed.png"
+			stick_logs
+			fail "Settings' installer page wrote the data partition on the blank disk but no boot loader within 900 s (install-failed.png)"
 		fi
 		sleep 10
 	done
@@ -9837,10 +9850,10 @@ if [ "$*" = live ]; then
 	i=0
 	until esp_done "$old_esp"; do
 		i=$((i + 1))
-		if [ "$i" -ge 60 ]; then
+		if [ "$i" -ge 90 ]; then
 			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
 			stick_logs
-			fail "Settings' installer page wrote the data partition but no boot loader within 600 s (install-file-failed.png)"
+			fail "Settings' installer page wrote the data partition but no boot loader within 900 s (install-file-failed.png)"
 		fi
 		sleep 10
 	done
