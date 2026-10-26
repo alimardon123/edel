@@ -9,6 +9,9 @@ name: Desktop memory
 # runners only when someone wants the numbers.
 on:
   workflow_dispatch:
+  # Only while this PR proves the change; taken out before it merges.
+  pull_request:
+    paths: [ci/desktop-memory.sh]
 
 permissions:
   contents: read
