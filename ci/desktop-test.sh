@@ -9750,6 +9750,7 @@ if [ "$*" = live ]; then
 	press key ret
 	sleep 1
 	press key ret
+	install_began=$(date +%s)
 	i=0
 	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
 		i=$((i + 1))
@@ -9772,6 +9773,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
