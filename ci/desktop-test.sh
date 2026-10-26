@@ -299,6 +299,9 @@
 #               uinput on for 10 s as root: the settings portal's touch-mode
 #               reads true, then false, and Settings sizes its rows for
 #               touch and back (M9.6)
+#   rotation    displays.Virtual-1.rotation = 90 turns the screen, the panel
+#               along the glass's right edge, and the reset turns it back
+#               (M9.8)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -8880,6 +8883,28 @@ case_scale() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" ||
 		fail "resetting displays.Virtual-1.scale did not bring scale 1 back"
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
+}
+
+case_rotation() {
+	# A screen on its side (M9.8): displays.Virtual-1.rotation = 90 turns
+	# the 1280x800 screen's picture, which the layout takes as 800x1280, so
+	# the panel along its bottom lies along the glass's right edge in the
+	# screendump, which is the glass's way up. Kept as rotation.png.
+	panel=$(token panel)
+	guest 'rotation 90'
+	wait_for 'DESKTOP-TEST: ran rotation 90: 0' ||
+		fail "edel settings set displays.Virtual-1.rotation=90 did not run in the VM"
+	wait_for 'edel-compositor: output Virtual-1 turned 90 degrees' ||
+		fail "the compositor did not turn Virtual-1 as displays.Virtual-1.rotation = 90 says"
+	got=$(shot rotation 1276 400 "$panel") ||
+		fail "with the screen turned, 1276,400, the glass's right edge, is #$got, not the panel's #$panel"
+	turned=$(count 'edel-compositor: output Virtual-1 turned 0 degrees')
+	guest 'rotation default'
+	wait_more 'edel-compositor: output Virtual-1 turned 0 degrees' "$turned" ||
+		fail "resetting displays.Virtual-1.rotation did not turn the screen back"
+	shot rotation-back 640 796 "$panel" >/dev/null ||
+		fail "after the reset the panel is not along the bottom again"
+	echo "PASS: displays.Virtual-1.rotation = 90 turned the screen at once, the panel along the glass's right edge (rotation.png), and the reset turned it back"
 }
 
 # input_method_fail MESSAGE: the compositor's lines about the input method

@@ -64,14 +64,19 @@ struct ScreenRows {
     sizes: Vec<String>,
     scale: Rc<widgets::Segments>,
     scales: Vec<f64>,
+    rotation: Rc<widgets::Segments>,
     x: gtk::SpinButton,
     y: gtk::SpinButton,
     on: gtk::Switch,
     resolution_row: widgets::Row,
     scale_row: widgets::Row,
+    rotation_row: widgets::Row,
     position_row: widgets::Row,
     on_row: widgets::Row,
 }
+
+/// The turns a screen takes, in degrees, as `displays.*.rotation` lists them.
+const TURNS: [u32; 4] = [0, 90, 180, 270];
 
 fn key(name: &str, field: &str) -> String {
     format!("displays.{name}.{field}")
@@ -207,6 +212,15 @@ impl Ui {
         );
         let scale_row = widgets::row(&group, rows::title("displays.*.scale"), &scale.widget());
 
+        // Turned, for a screen on its side or a 2-in-1 (M9.8).
+        let rotation =
+            widgets::Segments::new(&TURNS.iter().map(|d| format!("{d}°")).collect::<Vec<_>>());
+        let rotation_row = widgets::row(
+            &group,
+            rows::title("displays.*.rotation"),
+            &rotation.widget(),
+        );
+
         let sizes = screens::mode_choices(screen);
         let labels: Vec<String> = if sizes.is_empty() {
             vec![tr("Automatic").to_string()]
@@ -258,11 +272,13 @@ impl Ui {
             sizes,
             scale,
             scales,
+            rotation,
             x,
             y,
             on,
             resolution_row,
             scale_row,
+            rotation_row,
             position_row,
             on_row,
         };
@@ -316,6 +332,15 @@ impl Ui {
                 )
             }));
 
+        let rotation = rs.rotation.clone();
+        rs.rotation
+            .connect_changed(self.on_change(&rs.name, move |name, _, files| {
+                let Some(degrees) = TURNS.get(rotation.selected()) else {
+                    return Ok(());
+                };
+                files.choose_over(&key(name, "rotation"), &degrees.to_string(), Some("0"))
+            }));
+
         for spin in [&rs.x, &rs.y] {
             let (x, y) = (rs.x.clone(), rs.y.clone());
             let changed = self.on_change(&rs.name, move |name, _, files| {
@@ -345,6 +370,7 @@ impl Ui {
         let fields = [
             ("resolution", &rs.resolution_row),
             ("scale", &rs.scale_row),
+            ("rotation", &rs.rotation_row),
             ("position", &rs.position_row),
             ("enabled", &rs.on_row),
         ];
@@ -383,6 +409,7 @@ fn current(screen: &Screen, field: &str) -> String {
     match field {
         "resolution" => screen.mode.clone().unwrap_or_default(),
         "scale" => screens::scale_value(screen.scale),
+        "rotation" => screen.rotation.to_string(),
         "position" => {
             let place = screen.place.unwrap_or(screens::Place {
                 x: 0,
@@ -428,6 +455,12 @@ fn show(rows: &ScreenRows, screen: &Screen, files: &Files) {
         .position(|s| screens::same(*s, screen.scale))
         .unwrap_or(0);
     rows.scale.set_selected(at);
+    rows.rotation.set_selected(
+        TURNS
+            .iter()
+            .position(|d| *d == screen.rotation)
+            .unwrap_or(0),
+    );
     let (px, py) = place.map_or((0, 0), |p| (p.x, p.y));
     rows.x.set_value(px as f64);
     rows.y.set_value(py as f64);
@@ -465,13 +498,18 @@ fn show(rows: &ScreenRows, screen: &Screen, files: &Files) {
         screen
             .mode
             .as_deref()
-            .and_then(|m| screens::logical(m, screen.scale))
+            .and_then(|m| screens::logical(m, screen.scale, screen.rotation))
             .map_or_else(String::new, |(w, h)| {
                 trf(
                     "Looks like {width} x {height}",
                     &[("width", &w.to_string()), ("height", &h.to_string())],
                 )
             }),
+    );
+    set(
+        &rows.rotation_row,
+        "rotation",
+        tr("Turn the picture for a screen on its side").to_string(),
     );
     set(
         &rows.position_row,

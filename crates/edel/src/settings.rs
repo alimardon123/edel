@@ -886,14 +886,12 @@ pub const KEYS: &[Key] = &[
             retired: None,
         },
     ),
-    later(
+    now(
         "displays.*.rotation",
         Kind::WholeOf(&[0, 90, 180, 270]),
         Help {
-            help: n_(
-                "How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet.",
-            ),
-            default: "each screen's own",
+            help: n_("How far this screen's picture is turned: 0, 90, 180 or 270 degrees."),
+            default: "0",
             from: DecidedBy::Hardware,
             belongs: Belongs::Device,
             retired: None,

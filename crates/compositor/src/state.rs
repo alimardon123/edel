@@ -675,7 +675,7 @@ impl Edel {
         self.follow_game_mode(new.game_mode);
         self.arm_sun();
         self.restyle();
-        let rescaled = self.apply_scales();
+        let rescaled = self.apply_scales_and_turns();
         if old.workspace_names != new.workspace_names {
             self.desks.set_names(new.names());
             self.announce_workspaces();

@@ -536,6 +536,9 @@ msgstr ""
 msgid "Looks like {width} x {height}"
 msgstr ""
 
+msgid "Turn the picture for a screen on its side"
+msgstr ""
+
 msgid "Where this screen's top left corner lies in the layout"
 msgstr ""
 
@@ -1455,6 +1458,9 @@ msgid "Resolution"
 msgstr ""
 
 msgid "Scale"
+msgstr ""
+
+msgid "Rotation"
 msgstr ""
 
 msgid "Position"

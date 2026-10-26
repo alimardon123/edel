@@ -1880,7 +1880,7 @@ msgstr ""
 msgid "Whether this screen is on; a screen that is off shows nothing."
 msgstr ""
 
-msgid "How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet."
+msgid "How far this screen's picture is turned: 0, 90, 180 or 270 degrees."
 msgstr ""
 
 msgid "The theme in use: a built-in one (edel, aurora, earth or ocean) or one of your own."

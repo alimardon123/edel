@@ -29,6 +29,8 @@ pub struct Screen {
     pub on: bool,
     /// The scale it has, or is asked to have.
     pub scale: f64,
+    /// How far it is turned, 0, 90, 180 or 270 degrees (M9.8).
+    pub rotation: u32,
     /// The scale it gets when the files name none, as the compositor
     /// worked it out from the screen's size.
     pub auto_scale: Option<f64>,
@@ -87,6 +89,7 @@ pub fn list(state: Option<&str>, files: &BTreeMap<String, Display>) -> Vec<Scree
             Some(Screen {
                 on: own.and_then(|d| d.enabled).unwrap_or(true),
                 scale: own.and_then(|d| d.scale).unwrap_or(state_scale),
+                rotation: own.and_then(|d| d.rotation).unwrap_or(0),
                 auto_scale: float(o, "auto_scale"),
                 // What the files ask for, until the compositor has done it.
                 mode: own.and_then(|d| d.resolution.clone()).or(text(o, "mode")),
@@ -131,6 +134,7 @@ pub fn list(state: Option<&str>, files: &BTreeMap<String, Display>) -> Vec<Scree
             lit: false,
             on: d.enabled.unwrap_or(true),
             scale: d.scale.unwrap_or(1.0),
+            rotation: d.rotation.unwrap_or(0),
             auto_scale: None,
             mode: d.resolution.clone(),
             modes: Vec::new(),
@@ -219,10 +223,12 @@ pub fn arrange(screens: &[Screen], width: f64, height: f64, pad: f64) -> Vec<Opt
 
 /// The logical size of a mode at a scale, as the compositor divides it:
 /// `1920x1080` at 1.5 is 1280 by 720.
-pub fn logical(mode: &str, scale: f64) -> Option<(i64, i64)> {
+pub fn logical(mode: &str, scale: f64, rotation: u32) -> Option<(i64, i64)> {
     let (w, h) = mode.split_once('x')?;
     let (w, h): (f64, f64) = (w.parse().ok()?, h.parse().ok()?);
-    Some(((w / scale).round() as i64, (h / scale).round() as i64))
+    let (w, h) = ((w / scale).round() as i64, (h / scale).round() as i64);
+    // A screen turned a quarter is laid out on its side (M9.8).
+    Some(if rotation % 180 == 90 { (h, w) } else { (w, h) })
 }
 
 /// How many screens are on, so the last one is never turned off.
@@ -394,8 +400,9 @@ modes = ["1920x1200", "1280x800", "1024x768"]
 
     #[test]
     fn a_mode_at_a_scale_is_the_logical_size() {
-        assert_eq!(logical("1920x1080", 1.5), Some((1280, 720)));
-        assert_eq!(logical("1280x800", 2.0), Some((640, 400)));
-        assert_eq!(logical("wide", 1.0), None);
+        assert_eq!(logical("1920x1080", 1.5, 0), Some((1280, 720)));
+        assert_eq!(logical("1280x800", 2.0, 180), Some((640, 400)));
+        assert_eq!(logical("1280x800", 1.0, 90), Some((800, 1280)));
+        assert_eq!(logical("wide", 1.0, 0), None);
     }
 }

@@ -458,6 +458,9 @@ commands() {
 		# 3.5 makes the 1280 px screen 366 logical px wide, Compact (M5.8b).
 		'scale 3.5') edel settings set displays.Virtual-1.scale=3.5 ;;
 		'scale default') edel settings reset displays.Virtual-1.scale ;;
+		# A screen on its side (M9.8).
+		'rotation 90') edel settings set displays.Virtual-1.rotation=90 ;;
+		'rotation default') edel settings reset displays.Virtual-1.rotation ;;
 		'screen 2 off') edel settings set displays.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
