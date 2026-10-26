@@ -25,6 +25,7 @@ mod def;
 mod default_apps;
 mod deps;
 mod device_key;
+mod feature_table;
 mod first_boot;
 mod grubenv;
 mod guard;

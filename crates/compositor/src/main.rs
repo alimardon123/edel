@@ -136,7 +136,8 @@ fn main() -> ExitCode {
 /// never fatal (ADR-008).
 /// Sends what the compositor and everything it starts write, on standard
 /// output and error, to the person's session log, after moving the log
-/// of the session before aside; says where on the way.
+/// of the session before aside, and keeps it under
+/// `edel::session_log::MOST_BYTES`; says where on the way.
 fn session_log() {
     let Some(dir) = edel::places::person_state_dir() else {
         eprintln!(
@@ -163,6 +164,22 @@ fn session_log() {
         return;
     }
     eprintln!("edel-compositor: the session started");
+    // A thread looks at the log's size once a minute and keeps it small.
+    let watched = std::thread::Builder::new()
+        .name("log size".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(edel::session_log::LOOK_EVERY);
+                if let Err(e) = edel::session_log::keep_small(&file) {
+                    eprintln!(
+                        "edel-compositor: warning: could not keep the session's log small: {e}"
+                    );
+                }
+            }
+        });
+    if let Err(e) = watched {
+        eprintln!("edel-compositor: warning: the session's log may grow without end: {e}");
+    }
     if badly {
         eprintln!(
             "edel-compositor: warning: the session before ended without closing; its log is {}",

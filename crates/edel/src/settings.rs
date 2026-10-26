@@ -3495,7 +3495,7 @@ pub fn choices(key: &str) -> &'static [&'static str] {
         Some(Key {
             kind: Kind::Profiles,
             ..
-        }) => crate::profiles::NAMES,
+        }) => &crate::profiles::NAMES,
         _ => &[],
     }
 }
