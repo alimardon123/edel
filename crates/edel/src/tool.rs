@@ -35,12 +35,35 @@ impl Done {
 /// error is the system's, such as `NotFound` for a program that is not
 /// installed.
 pub fn run(program: &str, args: &[String], time: Duration) -> std::io::Result<Done> {
+    run_with(program, args, None, time)
+}
+
+/// [`run`] with `input` on the program's standard input, then closed: how
+/// a secret reaches a program without showing in its arguments, which
+/// every process on the machine can read in `/proc`.
+pub fn run_with(
+    program: &str,
+    args: &[String],
+    input: Option<&str>,
+    time: Duration,
+) -> std::io::Result<Done> {
     let mut child = Command::new(program)
         .args(args)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()?;
+    // Written on a thread, so a program that reads nothing never blocks us.
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        let input = input.to_string();
+        std::thread::spawn(move || {
+            let _ = std::io::Write::write_all(&mut stdin, input.as_bytes());
+        });
+    }
     // Read both pipes while it runs, so a chatty program never fills one
     // and waits for us.
     let reader = |pipe: Option<Box<dyn Read + Send>>| {
@@ -141,6 +164,24 @@ mod tests {
         assert_eq!(done.out, "out\n");
         assert_eq!(done.err, "trouble\n");
         assert!(sh("true", Duration::from_secs(5)).ok());
+    }
+
+    #[test]
+    fn a_secret_goes_in_on_the_input_and_never_in_the_arguments() {
+        let args = [
+            "-c".to_string(),
+            "read line; echo \"got $line\"".to_string(),
+        ];
+        let done = run_with("sh", &args, Some("secret one\n"), Duration::from_secs(5)).unwrap();
+        assert_eq!(done.out, "got secret one\n");
+        // A program that reads nothing still ends.
+        let done = run_with(
+            "sh",
+            &["-c".into(), "true".into()],
+            Some("x\n"),
+            Duration::from_secs(5),
+        );
+        assert!(done.unwrap().ok());
     }
 
     #[test]

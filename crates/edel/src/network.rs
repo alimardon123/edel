@@ -368,8 +368,14 @@ pub fn parse_details(text: &str) -> Vec<Detail> {
 
 /// `nmcli` with `args`, giving what it printed, or why it could not.
 fn nmcli(args: &[String], time: Duration) -> Result<String> {
+    nmcli_with(args, None, time)
+}
+
+/// [`nmcli`] with `input` on its standard input, which `--ask` reads a
+/// password from.
+fn nmcli_with(args: &[String], input: Option<&str>, time: Duration) -> Result<String> {
     let line = tool::command_line(NMCLI, &hidden(args));
-    let done = match tool::run(NMCLI, args, time) {
+    let done = match tool::run_with(NMCLI, args, input, time) {
         Ok(done) => done,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
             "{}",
@@ -454,12 +460,15 @@ pub fn radios_args(on: bool) -> Vec<String> {
     words(&["radio", "all", if on { "on" } else { "off" }])
 }
 
-/// The arguments that join the Wi-Fi network `ssid`, with `password` when
-/// it is a new one that asks for it.
-pub fn join_args(ssid: &str, password: Option<&str>) -> Vec<String> {
+/// The arguments that join the new Wi-Fi network `ssid`; one that `asks`
+/// for a password gets `--ask`, so nmcli reads it from its input (the
+/// keyboard, when the line is typed), never from its arguments, which
+/// every process on the machine can read (the whole-system review of
+/// 2026-10-25).
+pub fn join_args(ssid: &str, asks: bool) -> Vec<String> {
     let mut args = words(&["device", "wifi", "connect", ssid]);
-    if let Some(password) = password {
-        args.extend(words(&["password", password]));
+    if asks {
+        args.insert(0, "--ask".into());
     }
     args
 }
@@ -571,12 +580,12 @@ pub fn set_radios(on: bool) -> Result<()> {
 /// with `password` when it asks for one. A new network that could not be
 /// joined is not kept, so a wrong password leaves nothing behind.
 pub fn join(ssid: &str, saved: bool, password: Option<&str>) -> Result<()> {
-    let args = if saved {
-        up_args(ssid)
-    } else {
-        join_args(ssid, password)
+    let (args, input) = match (saved, password) {
+        (true, _) => (up_args(ssid), None),
+        (false, Some(password)) => (join_args(ssid, true), Some(format!("{password}\n"))),
+        (false, None) => (join_args(ssid, false), None),
     };
-    match nmcli(&args, JOIN_TIME) {
+    match nmcli_with(&args, input.as_deref(), JOIN_TIME) {
         Ok(_) => Ok(()),
         Err(e) => {
             if !saved {
@@ -875,16 +884,17 @@ mod tests {
         assert_eq!(radio_args(false), ["radio", "wifi", "off"]);
         assert_eq!(radios_args(false), ["radio", "all", "off"]);
         assert_eq!(radios_args(true), ["radio", "all", "on"]);
+        // The password is asked for, never in the line itself.
         assert_eq!(
-            command_line(&join_args("Cafe Guest", Some("secret one"))),
-            "nmcli device wifi connect 'Cafe Guest' password 'secret one'"
+            command_line(&join_args("Cafe Guest", true)),
+            "nmcli --ask device wifi connect 'Cafe Guest'"
         );
         assert_eq!(
-            command_line(&hidden(&join_args("Cafe Guest", Some("secret one")))),
-            "nmcli device wifi connect 'Cafe Guest' password PASSWORD"
+            command_line(&hidden(&words(&["connect", "x", "password", "secret one"]))),
+            "nmcli connect x password PASSWORD"
         );
         assert_eq!(
-            join_args("Open Air", None),
+            join_args("Open Air", false),
             ["device", "wifi", "connect", "Open Air"]
         );
         assert_eq!(
