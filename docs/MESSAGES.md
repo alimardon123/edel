@@ -13,7 +13,7 @@ One line when it fits; the cause chain after it, most specific last, only when i
 | Instead of | Write |
 |---|---|
 | `Error: EACCES` | `could not write /data/edel/settings.toml: permission denied; edel settings set services.ssh=true changes the system, so it needs an administrator: doas edel settings set services.ssh=true` |
-| `invalid value` | `layout.preset: "hiv" is not a preset; did you mean hive? The presets are classic, mac-like, windows-like, hive and zen` |
+| `invalid value` | `layout.preset: "hiv" is not a preset; did you mean hive? The presets are classic, mac-like, windows-like, hive, zen and tablet` |
 | `failed` | `the desktop did not start: no screen answered; it starts once one is plugged in` |
 
 ## How lines look
