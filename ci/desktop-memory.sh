@@ -22,7 +22,7 @@
 # more is the number with Firefox. Screenshots of each moment show whether
 # the desktop, the browser and the video really came; a number without its
 # picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
-# (idle), SYSTEM-SIZE-search.png (GNOME), SYSTEM-SIZE-opened.png,
+# (idle), SYSTEM-SIZE-opened.png,
 # SYSTEM-SIZE-firefox.png,
 # SYSTEM-SIZE.samples and a table line each in
 # results.md.
@@ -129,35 +129,24 @@ measure() {
 	}
 	sample 300
 	python3 ci/qmp.py screendump "$run.png" || true
-	# Firefox, the way a person opens it, the same keys on every system:
-	# Super opens the launcher or GNOME's overview, "firefox" and Return
-	# start it, and the address bar takes the page. GNOME's live session
-	# may already show its overview, which Super would close, so Escape
-	# closes it first, and Alt+F2's run dialog kept the command after
-	# Return and the keypad's Enter in every Fedora run. Edel OS's Firefox
-	# first shows a notice, which Tab and Return take.
+	# Firefox, the way a person opens it. Edel OS: Super opens the
+	# launcher, "firefox" and Return start it. GNOME's live sessions lost
+	# those keys: Alt+F2's run dialog and the overview's search kept
+	# Firefox after Return in every Fedora run, and once the overview
+	# took no letters at all, so a click on Firefox's icon opens it there:
+	# the dash at the bottom of Fedora's overview, which its live session
+	# shows at start, and the dock on Ubuntu's left edge, beside its
+	# welcome window.
 	case "$system" in
-	edel) ;;
-	*)
-		python3 ci/qmp.py key esc || true
-		sleep 2
-		;;
-	esac
-	python3 ci/qmp.py key meta_l || true
-	sleep 3
-	python3 ci/qmp.py type firefox || true
-	sleep 5
-	python3 ci/qmp.py key ret || true
-	# GNOME's overview kept its search after Return in every run, with
-	# Firefox as its one result in the middle at the top, so a click
-	# there opens it as a person's would.
-	case "$system" in
-	edel) ;;
-	*)
+	edel)
+		python3 ci/qmp.py key meta_l || true
+		sleep 3
+		python3 ci/qmp.py type firefox || true
 		sleep 5
-		python3 ci/qmp.py screendump "$run-search.png" || true
-		python3 ci/qmp.py click 640 175 || true
+		python3 ci/qmp.py key ret || true
 		;;
+	fedora) python3 ci/qmp.py click 480 737 || true ;;
+	ubuntu) python3 ci/qmp.py click 33 128 || true ;;
 	esac
 	sample 420
 	python3 ci/qmp.py screendump "$run-opened.png" || true
