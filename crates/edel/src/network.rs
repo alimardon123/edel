@@ -368,8 +368,15 @@ pub fn parse_details(text: &str) -> Vec<Detail> {
 
 /// `nmcli` with `args`, giving what it printed, or why it could not.
 fn nmcli(args: &[String], time: Duration) -> Result<String> {
+    nmcli_with(args, None, time)
+}
+
+/// [`nmcli`] with `input` on its standard input: how a password reaches
+/// NetworkManager without showing in an argument list, which every
+/// process on the machine can read in `/proc` while `nmcli` runs.
+fn nmcli_with(args: &[String], input: Option<&str>, time: Duration) -> Result<String> {
     let line = tool::command_line(NMCLI, &hidden(args));
-    let done = match tool::run(NMCLI, args, time) {
+    let done = match tool::run_with(NMCLI, args, input, time) {
         Ok(done) => done,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => bail!(
             "{}",
@@ -455,13 +462,85 @@ pub fn radios_args(on: bool) -> Vec<String> {
 }
 
 /// The arguments that join the Wi-Fi network `ssid`, with `password` when
-/// it is a new one that asks for it.
+/// it is a new one that asks for it: the one line a person types, which
+/// Copy as command shows. [`join`] itself never puts a password in an
+/// argument list (see [`add_args`] and [`password_input`]).
 pub fn join_args(ssid: &str, password: Option<&str>) -> Vec<String> {
     let mut args = words(&["device", "wifi", "connect", ssid]);
     if let Some(password) = password {
         args.extend(words(&["password", password]));
     }
     args
+}
+
+/// The `key-mgmt` NetworkManager needs for a network whose security, as
+/// `nmcli device wifi list` shows it, is `security`: `wpa-psk` for WPA1 or
+/// WPA2, with or without WPA3 beside them, `sae` for WPA3 alone, and none
+/// for WEP, a company sign-in (802.1X) or anything else a password alone
+/// cannot join.
+pub fn key_mgmt(security: &str) -> Option<&'static str> {
+    let has = |word: &str| security.split_whitespace().any(|w| w == word);
+    if has("802.1X") {
+        None
+    } else if has("WPA1") || has("WPA2") {
+        Some("wpa-psk")
+    } else if has("WPA3") {
+        Some("sae")
+    } else {
+        None
+    }
+}
+
+/// The arguments that make a new Wi-Fi connection `ssid` with `key_mgmt`
+/// and no password yet, not joined by itself until [`join`] has joined it
+/// once.
+pub fn add_args(ssid: &str, key_mgmt: &str) -> Vec<String> {
+    words(&[
+        "connection",
+        "add",
+        "type",
+        "wifi",
+        "con-name",
+        ssid,
+        "ssid",
+        ssid,
+        "connection.autoconnect",
+        "no",
+        "802-11-wireless-security.key-mgmt",
+        key_mgmt,
+    ])
+}
+
+/// The arguments that open the connection `name` in `nmcli`'s editor,
+/// which reads [`password_input`] on its standard input.
+pub fn edit_args(name: &str) -> Vec<String> {
+    words(&["connection", "edit", "id", name])
+}
+
+/// What `nmcli connection edit` reads to keep `password` in the
+/// connection, or none when it is not one a WPA network takes: 8 to 63
+/// characters a keyboard types, or 64 hexadecimal digits, on one line.
+pub fn password_input(password: &str) -> Option<String> {
+    let typed = (8..=63).contains(&password.chars().count())
+        && password.chars().all(|c| c == ' ' || c.is_ascii_graphic());
+    let hex = password.len() == 64 && password.chars().all(|c| c.is_ascii_hexdigit());
+    // The editor trims a value, so a space at either end would be lost.
+    let trimmed = password.trim() == password;
+    ((typed || hex) && trimmed)
+        .then(|| format!("set 802-11-wireless-security.psk {password}\nsave persistent\nquit\n"))
+}
+
+/// The arguments that let NetworkManager join `name` by itself from now
+/// on.
+pub fn autoconnect_args(name: &str) -> Vec<String> {
+    words(&[
+        "connection",
+        "modify",
+        "id",
+        name,
+        "connection.autoconnect",
+        "yes",
+    ])
 }
 
 /// The arguments that join a connection the machine remembers.
@@ -570,40 +649,90 @@ pub fn set_radios(on: bool) -> Result<()> {
 /// Joins the Wi-Fi network `ssid`: a remembered one by its name, a new one
 /// with `password` when it asks for one. A new network that could not be
 /// joined is not kept, so a wrong password leaves nothing behind.
+/// The password goes to `nmcli connection edit` on its standard input,
+/// never in an argument list: `nmcli device wifi connect` takes it only
+/// as an argument, and `nmcli --ask` waits 90 s on a wrong one for a
+/// second answer nobody gives.
 pub fn join(ssid: &str, saved: bool, password: Option<&str>) -> Result<()> {
-    let args = if saved {
-        up_args(ssid)
-    } else {
-        join_args(ssid, password)
-    };
-    match nmcli(&args, JOIN_TIME) {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            if !saved {
-                let _ = forget(ssid);
-            }
-            let text = format!("{e:#}");
-            if text.contains("Secrets were required") || text.contains("secrets were required") {
-                bail!(
-                    "{}",
-                    trf(
-                        "the password for {ssid} was missing or wrong; try again with the right one",
-                        &[("ssid", ssid)]
-                    )
-                );
-            }
-            if text.contains("No network with SSID") {
-                bail!(
-                    "{}",
-                    trf(
-                        "{ssid} is not in range now; move closer and try again",
-                        &[("ssid", ssid)]
-                    )
-                );
-            }
-            Err(e)
-        }
+    if saved {
+        return nmcli(&up_args(ssid), JOIN_TIME)
+            .map(drop)
+            .map_err(|e| said_plainly(ssid, e));
     }
+    let Some(password) = password else {
+        return nmcli(&join_args(ssid, None), JOIN_TIME)
+            .map(drop)
+            .map_err(|e| {
+                let _ = forget(ssid);
+                said_plainly(ssid, e)
+            });
+    };
+    let list = nmcli(
+        &words(&["-t", "-f", "SSID,SECURITY", "device", "wifi", "list"]),
+        READ_TIME,
+    )?;
+    let Some(security) = list.lines().find_map(|line| match fields(line).as_slice() {
+        [name, security] if name == ssid => Some(security.clone()),
+        _ => None,
+    }) else {
+        bail!(
+            "{}",
+            trf(
+                "{ssid} is not in range now; move closer and try again",
+                &[("ssid", ssid)]
+            )
+        );
+    };
+    let Some(key_mgmt) = key_mgmt(&security) else {
+        bail!(
+            "{}",
+            trf(
+                "{ssid} asks for a sign-in other than a WPA password ({security}), which Edel OS cannot join yet",
+                &[("ssid", ssid), ("security", &security)]
+            )
+        );
+    };
+    let Some(input) = password_input(password) else {
+        bail!(
+            "{}",
+            trf(
+                "the password for {ssid} should be 8 to 63 letters, digits or signs, with no space at either end; try again with the right one",
+                &[("ssid", ssid)]
+            )
+        );
+    };
+    nmcli(&add_args(ssid, key_mgmt), READ_TIME)?;
+    let joined = nmcli_with(&edit_args(ssid), Some(&input), READ_TIME)
+        .and_then(|_| nmcli(&up_args(ssid), JOIN_TIME))
+        .and_then(|_| nmcli(&autoconnect_args(ssid), READ_TIME));
+    joined.map(drop).map_err(|e| {
+        let _ = forget(ssid);
+        said_plainly(ssid, e)
+    })
+}
+
+/// A failed join in the words that tell what to do.
+fn said_plainly(ssid: &str, e: anyhow::Error) -> anyhow::Error {
+    let text = format!("{e:#}");
+    if text.contains("Secrets were required") || text.contains("secrets were required") {
+        return anyhow::anyhow!(
+            "{}",
+            trf(
+                "the password for {ssid} was missing or wrong; try again with the right one",
+                &[("ssid", ssid)]
+            )
+        );
+    }
+    if text.contains("No network with SSID") {
+        return anyhow::anyhow!(
+            "{}",
+            trf(
+                "{ssid} is not in range now; move closer and try again",
+                &[("ssid", ssid)]
+            )
+        );
+    }
+    e
 }
 
 /// Makes the machine forget a connection and its password.
@@ -868,6 +997,49 @@ mod tests {
         assert_eq!(details[0].dns, ["10.0.2.3", "1.1.1.1"]);
         assert!(details[1].addresses.is_empty() && details[1].gateway.is_none());
         assert!(parse_details("IP4.ADDRESS[1]:1.2.3.4/8\n").is_empty());
+    }
+
+    #[test]
+    fn a_new_network_is_added_with_its_key_management() {
+        assert_eq!(key_mgmt("WPA2"), Some("wpa-psk"));
+        assert_eq!(key_mgmt("WPA1 WPA2"), Some("wpa-psk"));
+        assert_eq!(key_mgmt("WPA2 WPA3"), Some("wpa-psk"));
+        assert_eq!(key_mgmt("WPA3"), Some("sae"));
+        assert_eq!(key_mgmt("WPA2 802.1X"), None);
+        assert_eq!(key_mgmt("WEP"), None);
+        assert_eq!(key_mgmt(""), None);
+        assert_eq!(
+            command_line(&add_args("Cafe Guest", "sae")),
+            "nmcli connection add type wifi con-name 'Cafe Guest' ssid 'Cafe Guest' connection.autoconnect no 802-11-wireless-security.key-mgmt sae"
+        );
+        assert_eq!(
+            command_line(&edit_args("Cafe Guest")),
+            "nmcli connection edit id 'Cafe Guest'"
+        );
+        assert_eq!(
+            command_line(&autoconnect_args("Home")),
+            "nmcli connection modify id Home connection.autoconnect yes"
+        );
+    }
+
+    #[test]
+    fn a_password_goes_on_the_editors_input_only_when_wpa_takes_it() {
+        assert_eq!(
+            password_input("secret one").as_deref(),
+            Some("set 802-11-wireless-security.psk secret one\nsave persistent\nquit\n")
+        );
+        assert!(password_input(&"a".repeat(63)).is_some());
+        assert!(password_input(&"0f".repeat(32)).is_some());
+        // Too short, too long, a second line, or a space the editor trims.
+        for wrong in [
+            "seven77",
+            &"z".repeat(64),
+            "two\nlines here",
+            " spaced out",
+            "tab\there!",
+        ] {
+            assert!(password_input(wrong).is_none(), "{wrong:?}");
+        }
     }
 
     #[test]

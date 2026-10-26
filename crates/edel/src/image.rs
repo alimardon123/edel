@@ -106,6 +106,11 @@ pub fn is_version(version: &str) -> bool {
             .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// How many times the build fetches a file from the network before it
+/// fails, and how long it waits between tries.
+const FETCH_TRIES: u32 = 3;
+const FETCH_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 impl Build<'_> {
     pub fn run(&self) -> Result<()> {
         let def = self.def;
@@ -732,8 +737,21 @@ impl Build<'_> {
         if !self.runner.dry_run {
             fs::create_dir_all(file.parent().unwrap_or(root))?;
         }
-        self.runner
-            .run(Command::new("wget").args(["-q", "-O"]).arg(&file).arg(url))?;
+        // A connection Flathub resets once fails no build (CI's run of
+        // 2026-10-25): three tries, five seconds apart.
+        for left in (0..FETCH_TRIES).rev() {
+            match self
+                .runner
+                .run(Command::new("wget").args(["-q", "-O"]).arg(&file).arg(url))
+            {
+                Ok(_) => break,
+                Err(err) if left == 0 => return Err(err),
+                Err(err) => {
+                    eprintln!("edel image: {err:#}; trying again");
+                    std::thread::sleep(FETCH_WAIT);
+                }
+            }
+        }
         if self.runner.dry_run {
             return Ok(());
         }
