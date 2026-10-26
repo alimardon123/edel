@@ -1,8 +1,9 @@
 //! `--lid SECONDS` (roadmap M7.8): a lid switch on a uinput device, shut
 //! for SECONDS and opened again, as a laptop's lid reports itself. The
 //! compositor reads it through libinput like any switch, so the desktop
-//! test can close the lid of its VM without a lid. Run as root, as the
-//! device is `/dev/uinput`.
+//! test can close the lid of its VM without a lid. `--tablet-mode SECONDS`
+//! does the same with a 2-in-1's tablet-mode switch (M9.6), on for SECONDS
+//! and off again. Run as root, as the device is `/dev/uinput`.
 
 use anyhow::{Context, Result};
 use std::fs::{File, OpenOptions};
@@ -22,6 +23,37 @@ const EV_SYN: u16 = 0;
 const SYN_REPORT: u16 = 0;
 const EV_SW: u16 = 5;
 const SW_LID: u16 = 0;
+const SW_TABLET_MODE: u16 = 1;
+
+/// Which switch the device has.
+#[derive(Clone, Copy)]
+pub enum Switch {
+    Lid,
+    TabletMode,
+}
+
+impl Switch {
+    /// The kernel's code, the device's name, the flag's name, and what is
+    /// printed when it goes on and off.
+    fn of(self) -> (u16, &'static [u8], &'static str, &'static str, &'static str) {
+        match self {
+            Switch::Lid => (
+                SW_LID,
+                b"edel test lid",
+                "--lid",
+                "lid closed",
+                "lid opened",
+            ),
+            Switch::TabletMode => (
+                SW_TABLET_MODE,
+                b"edel test tablet mode",
+                "--tablet-mode",
+                "tablet mode on",
+                "tablet mode off",
+            ),
+        }
+    }
+}
 
 /// The kernel's `struct uinput_setup`, 92 bytes.
 #[repr(C)]
@@ -40,19 +72,22 @@ struct InputId {
     version: u16,
 }
 
-/// Shuts the lid for `seconds` (a number, as `--lid` takes it), then opens
-/// it, printing what it did, which the test service's log keeps.
-pub fn run(seconds: &str) -> Result<()> {
-    let seconds: u64 = seconds.parse().context("--lid is a number of seconds")?;
+/// Turns `which` on for `seconds` (a number, as `--lid` takes it), then
+/// off, printing what it did, which the test service's log keeps.
+pub fn run(seconds: &str, which: Switch) -> Result<()> {
+    let (code, device_name, flag, on, off) = which.of();
+    let seconds: u64 = seconds
+        .parse()
+        .with_context(|| format!("{flag} is a number of seconds"))?;
     let mut device = OpenOptions::new()
         .write(true)
         .open("/dev/uinput")
         .context("opening /dev/uinput (run as root, with the uinput module loaded)")?;
     let fd = device.as_raw_fd();
     ioctl(fd, UI_SET_EVBIT, EV_SW as libc::c_long)?;
-    ioctl(fd, UI_SET_SWBIT, SW_LID as libc::c_long)?;
+    ioctl(fd, UI_SET_SWBIT, code as libc::c_long)?;
     let mut name = [0u8; 80];
-    name[..b"edel test lid".len()].copy_from_slice(b"edel test lid");
+    name[..device_name.len()].copy_from_slice(device_name);
     let setup = UinputSetup {
         id: InputId {
             bustype: 0x06, // BUS_VIRTUAL
@@ -71,19 +106,19 @@ pub fn run(seconds: &str) -> Result<()> {
     ioctl(fd, UI_DEV_CREATE, 0)?;
     // udev and libinput take a new device a moment to notice.
     std::thread::sleep(Duration::from_secs(1));
-    switch(&mut device, 1)?;
-    println!("lid closed");
+    switch(&mut device, code, 1)?;
+    println!("{on}");
     std::thread::sleep(Duration::from_secs(seconds));
-    switch(&mut device, 0)?;
-    println!("lid opened");
+    switch(&mut device, code, 0)?;
+    println!("{off}");
     std::thread::sleep(Duration::from_secs(1));
     ioctl(fd, UI_DEV_DESTROY, 0)?;
     Ok(())
 }
 
-/// Sends the lid's state (1 shut, 0 open) and the report that ends it.
-fn switch(device: &mut File, value: i32) -> Result<()> {
-    event(device, EV_SW, SW_LID, value)?;
+/// Sends the switch's state (1 on, 0 off) and the report that ends it.
+fn switch(device: &mut File, code: u16, value: i32) -> Result<()> {
+    event(device, EV_SW, code, value)?;
     event(device, EV_SYN, SYN_REPORT, 0)
 }
 
@@ -137,6 +172,7 @@ mod tests {
 
     #[test]
     fn seconds_must_be_a_number() {
-        assert!(run("soon").is_err());
+        assert!(run("soon", Switch::Lid).is_err());
+        assert!(run("soon", Switch::TabletMode).is_err());
     }
 }

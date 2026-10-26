@@ -23,7 +23,8 @@
 //! screen, as an app does, and print what it answers (`portal.rs`, M6.3).
 //! `--lid SECONDS` draws nothing either: as root, it shuts a lid switch on
 //! uinput for SECONDS and opens it again, as a laptop's lid does
-//! (`lid.rs`, M7.8). `--location` draws nothing either: it asks the
+//! (`lid.rs`, M7.8); `--tablet-mode SECONDS` folds a 2-in-1 into tablet
+//! mode the same way (M9.6). `--location` draws nothing either: it asks the
 //! Location portal for the device's position and prints the first update
 //! (`portal.rs`, M6.14c), holding the session SECONDS more when given, so
 //! the in-use sign stays. `--recolour RRGGBB@FILE` draws the window in that
@@ -58,6 +59,7 @@
 //!     edel-testclient --screenshot
 //!     edel-testclient --screencast
 //!     edel-testclient --lid 8
+//!     edel-testclient --tablet-mode 8
 //!     edel-testclient --location
 //!     edel-testclient --location SECONDS
 //!     edel-testclient --clipboard
@@ -322,7 +324,8 @@ fn main() -> Result<()> {
         ["--mpris"] => return mpris::run(None),
         ["--screenshot"] => return portal::screenshot(),
         ["--screencast"] => return portal::screencast(),
-        ["--lid", seconds] => return lid::run(seconds),
+        ["--lid", seconds] => return lid::run(seconds, lid::Switch::Lid),
+        ["--tablet-mode", seconds] => return lid::run(seconds, lid::Switch::TabletMode),
         ["--location"] => return portal::location(0),
         ["--location", seconds] => {
             let seconds = seconds

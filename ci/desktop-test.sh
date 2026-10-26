@@ -295,6 +295,10 @@
 #               suspends the VM (QEMU reports it suspended), QMP's
 #               system_wakeup brings it back, the lid opens, and ci's password
 #               unlocks the screen; run after suspend (M7.8)
+#   touch       edel-testclient --tablet-mode turns a tablet-mode switch on
+#               uinput on for 10 s as root: the settings portal's touch-mode
+#               reads true, then false, and Settings sizes its rows for
+#               touch and back (M9.6)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -6154,6 +6158,72 @@ case_portal() {
 	echo "$accent" | grep -qE "^\\(<\\($want\\)>,\\)" ||
 		fail "the portal's accent is not the tokens' #$hex: $accent"
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
+}
+
+case_touch() {
+	# Touch mode (M9.6): a 2-in-1's tablet-mode switch on uinput, which
+	# edel-testclient --tablet-mode turns on as root for 10 s and off (the
+	# test service's `tablet on`). The compositor hears it and tells
+	# shell-ui, which tells apps through the settings portal: an app's
+	# ReadOne of io.github.alimardon123.edel touch-mode is true while the
+	# switch is on and false after, and Settings, open meanwhile, grows its
+	# rows for touch and back. Kept as touch.png, Settings in touch mode.
+	touch_read false
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'touch window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Sound page"
+	on=$(count 'edel-compositor: tablet mode on')
+	told=$(count 'edel-shell-ui: touch mode on told to apps')
+	off=$(count 'edel-shell-ui: touch mode off told to apps')
+	guest 'tablet on'
+	wait_more 'edel-compositor: tablet mode on' "$on" || touch_fail "the compositor did not hear the tablet-mode switch"
+	wait_more 'edel-shell-ui: touch mode on told to apps' "$told" || touch_fail "shell-ui did not tell apps touch mode is on"
+	touch_read true
+	touch_rows 'rows sized for touch$' || touch_fail "Settings did not size its rows for touch"
+	python3 ci/qmp.py screendump "$dir/touch.png"
+	wait_more 'edel-shell-ui: touch mode off told to apps' "$off" 20 || touch_fail "shell-ui did not tell apps touch mode is off when the switch went off"
+	touch_read false
+	touch_rows 'rows sized for a pointer$' || touch_fail "Settings did not size its rows for a pointer again"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: the tablet-mode switch turned touch mode on and off: the portal's io.github.alimardon123.edel touch-mode read true, then false, and Settings sized its rows for touch and back (touch.png); $(value touch_log)"
+}
+
+# touch_read WANT: the settings portal's touch-mode must read WANT (true or
+# false) within 10 tries a second apart.
+touch_read() {
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: touch_mode ')
+		guest 'touch read'
+		wait_more 'DESKTOP-TEST: touch_mode ' "$asked" || touch_fail "the service did not hear back from the portal"
+		case "$(value touch_mode)" in
+		"(<$1>,)"*) return 0 ;;
+		esac
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || touch_fail "the portal's touch-mode is not $1: $(value touch_mode)"
+		sleep 1
+	done
+}
+
+# touch_rows PATTERN: Settings' log, read through the test service, must
+# match PATTERN within 10 tries a second apart.
+touch_rows() {
+	i=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: touch_log ')
+		guest 'touch log'
+		wait_more 'DESKTOP-TEST: touch_log ' "$asked" || return 1
+		value touch_log | sed 's/; tablet: .*//' | grep -qE "$1" && return 0
+		i=$((i + 1))
+		[ "$i" -lt 10 ] || return 1
+		sleep 1
+	done
+}
+
+touch_fail() {
+	fail "$1; Settings and the test client said: $(value touch_log)"
 }
 
 case_own_bars() {

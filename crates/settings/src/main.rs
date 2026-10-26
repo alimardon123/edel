@@ -62,6 +62,7 @@ mod style;
 mod system;
 mod text;
 mod themes;
+mod touch;
 mod tray;
 mod unknown;
 mod updates;
@@ -860,6 +861,7 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
         })),
     ));
     window.add_controller(keys);
+    touch::follow(&window);
     window.present();
     // The pages' list takes the keyboard first, so the search field opens
     // quiet; it is a click away, or Ctrl+F.

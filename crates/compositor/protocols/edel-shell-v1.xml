@@ -191,6 +191,16 @@
       <arg name="closed" type="uint" summary="1 when the lid closed, 0 when it opened"/>
     </event>
 
+    <event name="touch_mode">
+      <description summary="touch mode went on or off">
+        The tablet-mode switch of a 2-in-1 changed (M9.6), as libinput
+        reports it: shell-ui says touch mode to apps through the settings
+        portal. Sent when it changes, and when shell-ui binds while it is
+        on.
+      </description>
+      <arg name="on" type="uint" summary="1 in touch mode, 0 when it is off"/>
+    </event>
+
     <event name="game_mode">
       <description summary="game mode went on or off">
         Game mode went on or off (M7.7), by Super+G or a change of
