@@ -602,6 +602,9 @@ msgstr ""
 msgid "could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"
 msgstr ""
 
+msgid "could not copy the default apps onto the new disk ({error}), perhaps for want of room; the system is installed without them, and they come with the first edel update"
+msgstr ""
+
 msgid "could not read the default apps in {path} ({status}); the system is installed, without them"
 msgstr ""
 

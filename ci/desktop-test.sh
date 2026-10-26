@@ -9508,11 +9508,13 @@ if [ "$*" = live ]; then
 		done
 	}
 	# A blank disk beside the stick, which Settings' installer page
-	# installs on (M6.6a); zeros written to it stay holes.
+	# installs on (M6.6a); zeros written to it stay holes. 16 GB, so its
+	# data partition, beside two 4 GiB slots, holds the default apps and
+	# the desktop add-on, as a real disk does.
 	. ci/names.sh
 	target="$dir/target.img"
 	rm -f "$target"
-	truncate -s 10G "$target"
+	truncate -s 16G "$target"
 	# target_data: the installed disk's data partition (partition 4),
 	# copied to $dir/target-data.img for debugfs; false while there is none.
 	target_data() {
@@ -9846,6 +9848,10 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py screendump "$dir/install-file-done.png"
 	stop_vm
 	target_data || fail "the disk installed from the file has no data partition"
+	# The default apps came along, so the machine has them offline.
+	case "$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/target-data.img" 2>&1)" in
+	*"File not found"* | '') stick_logs; fail "the disk installed from the file has no default apps: the installer's copy of them failed" ;;
+	esac
 	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
 	echo "$installed" | sed 's/^/  installed from the file: /'
 	echo "$installed" | grep -q '^# desktop-test.sh live (M6.6b)' || fail "the installed settings file lost the file's own comment"
