@@ -99,6 +99,35 @@ median() {
 		awk '{ v[NR] = $1 } END { if (NR == 0) print "none"; else print v[int((NR + 1) / 2)] }'
 }
 
+# firefox_icon PNG: prints where Firefox's icon is on the screenshot PNG,
+# as "X Y", or nothing: the 48 px square holding the most of both its
+# orange flame and its purple globe, which no other icon in GNOME's
+# dash or dock has together.
+firefox_icon() {
+	python3 - "$1" <<-'EOF'
+		import sys
+		sys.path.insert(0, "ci")
+		import qmp
+		width, height, rows = qmp.read_png(sys.argv[1])
+		cells = {}
+		for y in range(height):
+		    for x in range(width):
+		        r, g, b = rows[y][x]
+		        orange = r > 220 and 90 < g < 200 and b < 90
+		        purple = 70 < r < 190 and g < 90 and b > 170
+		        if orange or purple:
+		            c = cells.setdefault((x // 48, y // 48), [0, 0, 0, 0, 0])
+		            c[0] += orange
+		            c[1] += purple
+		            c[2] += x
+		            c[3] += y
+		            c[4] += 1
+		best = max(cells.values(), key=lambda c: min(c[0], c[1]), default=None)
+		if best and min(best[0], best[1]) >= 50:
+		    print(best[2] // best[4], best[3] // best[4])
+	EOF
+}
+
 # measure MIB: one run at MIB of memory.
 measure() {
 	size=$1 run=$dir/$system-$1
@@ -133,10 +162,10 @@ measure() {
 	# launcher, "firefox" and Return start it. GNOME's live sessions lost
 	# those keys: Alt+F2's run dialog and the overview's search kept
 	# Firefox after Return in every Fedora run, and once the overview
-	# took no letters at all, so a click on Firefox's icon opens it there:
-	# the dash at the bottom of Fedora's overview, which its live session
-	# shows at start, and the dock on Ubuntu's left edge, beside its
-	# welcome window.
+	# took no letters at all, so a click on Firefox's icon opens it there,
+	# found on the screen as its place moves with the apps running: in
+	# Ubuntu's dock, or the dash of Fedora's overview, which Super shows
+	# when the live session has not.
 	case "$system" in
 	edel)
 		python3 ci/qmp.py key meta_l || true
@@ -145,8 +174,18 @@ measure() {
 		sleep 5
 		python3 ci/qmp.py key ret || true
 		;;
-	fedora) python3 ci/qmp.py click 480 737 || true ;;
-	ubuntu) python3 ci/qmp.py click 33 128 || true ;;
+	*)
+		at=$(firefox_icon "$run.png" || true)
+		if [ -z "$at" ]; then
+			python3 ci/qmp.py key meta_l || true
+			sleep 3
+			python3 ci/qmp.py screendump "$run-overview.png" || true
+			at=$(firefox_icon "$run-overview.png" || true)
+		fi
+		echo "$system $size: Firefox's icon at ${at:-nowhere}"
+		# shellcheck disable=SC2086 # at holds X and Y
+		[ -z "$at" ] || python3 ci/qmp.py click $at || true
+		;;
 	esac
 	sample 420
 	python3 ci/qmp.py screendump "$run-opened.png" || true
