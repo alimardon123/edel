@@ -498,7 +498,7 @@ fn row(ui: &Rc<Ui>, network: &Wifi, device: Option<String>) {
     } else if network.saved {
         network::up_args(&network.ssid)
     } else {
-        network::join_args(&network.ssid, network.secured)
+        network::join_args(&network.ssid, network.secured.then_some("PASSWORD"))
     };
     row.copy.connect_clicked(move |button| {
         button.clipboard().set_text(&network::command_line(&line));
