@@ -6258,9 +6258,10 @@ case_touch() {
 }
 
 # touch_read WANT: the settings portal's touch-mode must read WANT (true or
-# false) within 10 tries a second apart.
+# false) within 10 tries a second apart. Its count is its own, not i,
+# which wait_more sets: a shared one would start again on every try.
 touch_read() {
-	i=0
+	tries=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: touch_mode ')
 		guest 'touch read'
@@ -6268,8 +6269,8 @@ touch_read() {
 		case "$(value touch_mode)" in
 		"(<$1>,)"*) return 0 ;;
 		esac
-		i=$((i + 1))
-		[ "$i" -lt 10 ] || touch_fail "the portal's touch-mode is not $1: $(value touch_mode)"
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || touch_fail "the portal's touch-mode is not $1: $(value touch_mode)"
 		sleep 1
 	done
 }
@@ -6277,14 +6278,14 @@ touch_read() {
 # touch_rows PATTERN: Settings' log, read through the test service, must
 # match PATTERN within 10 tries a second apart.
 touch_rows() {
-	i=0
+	tries=0
 	while :; do
 		asked=$(count 'DESKTOP-TEST: touch_log ')
 		guest 'touch log'
 		wait_more 'DESKTOP-TEST: touch_log ' "$asked" || return 1
 		value touch_log | sed 's/; tablet: .*//' | grep -qE "$1" && return 0
-		i=$((i + 1))
-		[ "$i" -lt 10 ] || return 1
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || return 1
 		sleep 1
 	done
 }
