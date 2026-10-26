@@ -12,7 +12,8 @@
 //! It keeps the translations of the languages the machine and its people
 //! chose (`region.language`) besides English, the one the image carries:
 //! `languages` fetches them once that set changes, at each `edel update`
-//! and from the hourly `edel update --automatic` whatever it is set to.
+//! and from the hourly `edel update --automatic` whatever it is set to,
+//! never while a game plays or over a metered connection.
 //! A failure here never fails the system's update; it is said and tried
 //! again at the next `edel update`.
 
@@ -225,20 +226,26 @@ fn wanted_languages(accounts: &[Account]) -> String {
     edel::apps::languages_for(chosen.iter().map(String::as_str))
 }
 
+/// The languages to set in the installation, when they differ from what
+/// it keeps; none when they do not or there is no installation.
+fn languages_to_set(accounts: &[Account]) -> Option<String> {
+    if !Path::new(DEFAULT_APPS).is_dir() {
+        return None;
+    }
+    let wanted = wanted_languages(accounts);
+    let now = listed(flatpak().args(["config", "--get", "languages"]));
+    (now.first() != Some(&wanted)).then_some(wanted)
+}
+
 /// Keeps the translations of `accounts`' languages in the installation:
 /// when the set differs from the installation's, sets it, and with
 /// `fetch` downloads the translations of the runtimes and apps there
 /// (their `.Locale` extensions) at once. False when nothing changed or
 /// there is no installation.
 pub fn languages(accounts: &[Account], fetch: bool) -> Result<bool> {
-    if !Path::new(DEFAULT_APPS).is_dir() {
+    let Some(wanted) = languages_to_set(accounts) else {
         return Ok(false);
-    }
-    let wanted = wanted_languages(accounts);
-    let now = listed(flatpak().args(["config", "--get", "languages"]));
-    if now.first().map(String::as_str) == Some(wanted.as_str()) {
-        return Ok(false);
-    }
+    };
     run(flatpak().args(["config", "--set", "languages", &wanted]))?;
     if fetch {
         let locales: Vec<String> = listed(flatpak().args(["list", "--runtime", "--columns=ref"]))
@@ -257,12 +264,34 @@ pub fn languages(accounts: &[Account], fetch: bool) -> Result<bool> {
 /// The languages step of the hourly `edel update --automatic`: the
 /// translations a newly chosen language needs, fetched within the hour
 /// whatever `updates.automatic` says, as choosing the language asked for
-/// them. Said on one line; a failure is said and tried again next hour.
+/// them, but never while a game plays (M7.7c) or over a metered
+/// connection: then the next hour tries again. Said on one line; a
+/// failure is said and tried again next hour.
 pub fn follow_languages() {
     let Ok(passwd) = fs::read_to_string("/etc/passwd") else {
         return;
     };
     let accounts = machine::accounts(&passwd);
+    if languages_to_set(&accounts).is_none() {
+        return;
+    }
+    let waits = if crate::shell::playing_now() {
+        Some(tr("a game is playing"))
+    } else if edel::network::metered() {
+        Some(tr("the connection is metered"))
+    } else {
+        None
+    };
+    if let Some(why) = waits {
+        println!(
+            "edel update: {}",
+            trf(
+                "the default apps' translations for the languages chosen wait, as {why}; the next hour tries again",
+                &[("why", why)]
+            )
+        );
+        return;
+    }
     match languages(&accounts, true) {
         Ok(true) => println!(
             "edel update: {}",
