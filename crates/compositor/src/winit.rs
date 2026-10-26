@@ -170,9 +170,11 @@ fn draw(window: &mut Window, state: &mut Edel) {
     // too (M5.11b).
     state.dirty = state.animations.running();
     let now = window.started.elapsed();
+    // Under the lock no window draws, as on a real screen (`drm.rs`).
+    let locked = state.is_locked();
     for w in state.space.elements() {
         // Behind a game, a window draws again once it is visible (M7.7c).
-        if state.behind_game(w) {
+        if locked || state.behind_game(w) {
             continue;
         }
         w.send_frame(&window.output, now, Some(Duration::ZERO), |_, _| {

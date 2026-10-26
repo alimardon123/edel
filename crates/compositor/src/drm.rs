@@ -893,10 +893,15 @@ impl Gpu {
             // so the windows on this screen are told to draw by where they
             // are rather than by what the last frame showed (M5.2j-b4).
             let live = state.overview_is_live();
+            // Under the lock nothing but the lock is shown, so no window
+            // draws until the screen is unlocked: a game left running
+            // would otherwise draw every frame for nobody, slowing the
+            // lock's own drawing and its password field.
+            let locked = state.is_locked();
             for window in state.space.elements() {
                 // Behind a game, a window draws again once it is visible
                 // (M7.7c).
-                if state.behind_game(window) {
+                if locked || state.behind_game(window) {
                     continue;
                 }
                 if live {
