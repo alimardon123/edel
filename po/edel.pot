@@ -1247,10 +1247,16 @@ msgstr ""
 msgid "could not read the state of the network from nmcli, which printed {text:?}"
 msgstr ""
 
-msgid "the password for {ssid} was missing or wrong; try again with the right one"
+msgid "{ssid} is not in range now; move closer and try again"
 msgstr ""
 
-msgid "{ssid} is not in range now; move closer and try again"
+msgid "{ssid} asks for a sign-in other than a WPA password ({security}), which Edel OS cannot join yet"
+msgstr ""
+
+msgid "the password for {ssid} should be 8 to 63 letters, digits or signs, with no space at either end; try again with the right one"
+msgstr ""
+
+msgid "the password for {ssid} was missing or wrong; try again with the right one"
 msgstr ""
 
 msgid "there is no panel {panel}"
