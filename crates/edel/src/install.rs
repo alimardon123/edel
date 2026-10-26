@@ -460,11 +460,23 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
 pub fn file_in(dir: &Path) -> Option<(std::path::PathBuf, String)> {
     for inner in [dir.to_path_buf(), dir.join("EFI/edel")] {
         let path = crate::places::found(&crate::places::settings_in(&inner));
-        if let Ok(text) = fs::read_to_string(&path) {
+        if let Some(text) = read_inside(dir, &path) {
             return Some((path, text));
         }
     }
     None
+}
+
+/// The text of the plain file at `path` when it lies inside `top`, links
+/// followed: on a disk somebody plugged in, a link may name any file of
+/// this machine, such as its password hashes, which root reads for nobody.
+pub fn read_inside(top: &Path, path: &Path) -> Option<String> {
+    let top = fs::canonicalize(top).ok()?;
+    let real = fs::canonicalize(path).ok()?;
+    if !real.starts_with(&top) || !fs::metadata(&real).ok()?.is_file() {
+        return None;
+    }
+    fs::read_to_string(&real).ok()
 }
 
 /// A TOML basic string.
@@ -599,6 +611,14 @@ pub fn hostname_answer(value: &str) -> Result<String, String> {
     }
 }
 
+/// Whether a passphrase can be typed at a console in any layout: printable
+/// ASCII only, since a console map gives no other letters for sure. The
+/// data's passphrase is the person's password, so Settings' installer
+/// page refuses an encrypted install with any other (M8.2).
+pub fn typable(passphrase: &str) -> bool {
+    !passphrase.is_empty() && passphrase.bytes().all(|b| (0x20..0x7f).contains(&b))
+}
+
 /// Whether an install onto a computer of `form` (`form_factor`) encrypts
 /// its data unless asked otherwise (M8.2): laptops and computers with a
 /// screen do, as they are the ones lost or left; a virtual machine or a
@@ -685,12 +705,14 @@ pub fn from_a_stick() -> bool {
         .is_some_and(|disk| running_from_stick(sys, &disk))
 }
 
-/// A disk the installer page offers: its name, such as `sda`, and how
-/// people know it, its model and size.
+/// A disk the installer page offers: its name, such as `sda`, how people
+/// know it, its model and size, and its serial number where it reports
+/// one, which tells two sticks of one model apart.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiskChoice {
     pub name: String,
     pub title: String,
+    pub serial: Option<String>,
 }
 
 /// The disks Settings' installer page offers, read from `sys` (`/sys`, or
@@ -731,7 +753,16 @@ pub fn disk_choices(sys: &Path, running: Option<&str>) -> Vec<DiskChoice> {
                 ),
                 None => trf("{size} disk", &[("size", &capacity)]),
             };
-            (sectors > 0).then_some(DiskChoice { name, title })
+            let serial = ["device/serial", "device/wwid", "wwid"]
+                .iter()
+                .find_map(|f| fs::read_to_string(block.join(f)).ok())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            (sectors > 0).then_some(DiskChoice {
+                name,
+                title,
+                serial,
+            })
         })
         .collect()
 }
@@ -777,6 +808,14 @@ pub fn list_entry(disk: &Disk, removable: bool, running: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_printable_ascii_is_typable_at_a_console() {
+        assert!(typable("edel-ci-tty 42!"));
+        assert!(!typable("grüße"));
+        assert!(!typable(""));
+        assert!(!typable("tab\there"));
+    }
 
     #[test]
     fn a_removable_disk_edel_install_wrote_is_no_stick() {
@@ -1088,10 +1127,12 @@ mod tests {
                 DiskChoice {
                     name: "nvme0n1".into(),
                     title: "Samsung SSD 980 · 512 GB".into(),
+                    serial: None,
                 },
                 DiskChoice {
                     name: "sdb".into(),
                     title: "4.1 GB disk".into(),
+                    serial: None,
                 },
             ],
             "the computer's own disk first, then another stick; the running stick and the CD drive are not offered"
@@ -1189,5 +1230,28 @@ mod tests {
         fs::write(&top, "format = 1\n# top\n").unwrap();
         assert_eq!(file_in(&dir).unwrap().0, top);
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_link_out_of_a_plugged_in_disk_is_not_read() {
+        let dir = std::env::temp_dir().join(format!("edel-read-inside-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("disk")).unwrap();
+        fs::write(dir.join("secret"), "hash").unwrap();
+        fs::write(dir.join("disk/own.toml"), "format = 1\n").unwrap();
+        std::os::unix::fs::symlink(dir.join("secret"), dir.join("disk/out.toml")).unwrap();
+        std::os::unix::fs::symlink("own.toml", dir.join("disk/in.toml")).unwrap();
+        let disk = dir.join("disk");
+        assert_eq!(
+            read_inside(&disk, &disk.join("own.toml")).as_deref(),
+            Some("format = 1\n")
+        );
+        assert_eq!(
+            read_inside(&disk, &disk.join("in.toml")).as_deref(),
+            Some("format = 1\n")
+        );
+        assert_eq!(read_inside(&disk, &disk.join("out.toml")), None);
+        assert_eq!(read_inside(&disk, &disk), None, "a folder is no file");
+        fs::remove_dir_all(dir).unwrap();
     }
 }

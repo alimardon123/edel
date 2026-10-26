@@ -242,7 +242,7 @@ fn sessions(people: &[session_log::Person]) -> Vec<Session> {
                 person: person.name.clone(),
                 path: path.display().to_string(),
                 ended: session_log::ended(&text),
-                last_lines: session_log::tail(&text, session_log::LAST_LINES),
+                last_lines: private(&session_log::tail(&text, session_log::LAST_LINES)),
             });
         }
     }
@@ -526,6 +526,60 @@ fn memory_in_use_mib(meminfo: &str) -> Option<u64> {
     Some(field("MemTotal:")?.saturating_sub(field("MemAvailable:")?) / 1024)
 }
 
+/// `text` without what locates a person: every hardware address (a Wi-Fi
+/// access point's is a street address to the services that map them, the
+/// location feature's own among them) and every network's name, which the
+/// kernel's and wpa_supplicant's lines carry. A report is meant to be
+/// pasted into a public issue.
+fn private(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if is_mac(&bytes[i..]) && (i == 0 || !bytes[i - 1].is_ascii_hexdigit()) {
+            out.push_str("xx:xx:xx:xx:xx:xx");
+            i += 17;
+            continue;
+        }
+        if let Some(name) = ssid_at(&bytes[i..]) {
+            out.push_str(&text[i..i + name.0]);
+            out.push_str("(SSID)");
+            i += name.0 + name.1;
+            continue;
+        }
+        let c = text[i..].chars().next().unwrap_or(' ');
+        out.push(c);
+        i += c.len_utf8().max(1);
+    }
+    out
+}
+
+/// Whether `b` starts with six pairs of hex digits joined by colons and
+/// no seventh.
+fn is_mac(b: &[u8]) -> bool {
+    b.len() >= 17
+        && (0..6).all(|n| b[n * 3].is_ascii_hexdigit() && b[n * 3 + 1].is_ascii_hexdigit())
+        && (0..5).all(|n| b[n * 3 + 2] == b':')
+        && b.get(17)
+            .is_none_or(|c| !c.is_ascii_hexdigit() && *c != b':')
+}
+
+/// At `ssid='Name'`, `SSID "Name"` and the like: how many bytes come before
+/// the name (the word, the sign and the quote) and how long the name is.
+fn ssid_at(b: &[u8]) -> Option<(usize, usize)> {
+    if b.len() < 6 || !b[..4].eq_ignore_ascii_case(b"ssid") {
+        return None;
+    }
+    let mut at = 4;
+    while at < b.len() && (b[at] == b'=' || b[at] == b' ' || b[at] == b':') {
+        at += 1;
+    }
+    let quote = *b.get(at).filter(|q| **q == b'\'' || **q == b'"')?;
+    let start = at + 1;
+    let length = b[start..].iter().position(|c| *c == quote || *c == b'\n')?;
+    (b.get(start + length) == Some(&quote)).then_some((start, length))
+}
+
 fn render(report: &Report) -> Result<String> {
     Ok(toml::to_string(report)?)
 }
@@ -556,11 +610,11 @@ pub fn report(esp: bool, battery: Option<u64>) -> Result<()> {
             &fs::read_to_string("/proc/meminfo").unwrap_or_default(),
         )
         .unwrap_or(0),
-        dmesg,
-        system_log: session_log::tail(
+        dmesg: private(&dmesg),
+        system_log: private(&session_log::tail(
             &fs::read_to_string(places::SYSTEM_LOG).unwrap_or_default(),
             session_log::LAST_LINES,
-        ),
+        )),
         pci: pci_devices(Path::new("/sys/bus/pci/devices")),
         missing_firmware: missing,
         missing_script: missing_script_now(),
@@ -604,6 +658,27 @@ pub fn report(esp: bool, battery: Option<u64>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_report_names_no_access_point_and_no_network() {
+        let dmesg = "[ 12.1] wlan0: authenticate with aa:bb:cc:dd:ee:ff (local address=11:22:33:44:55:66)\n";
+        let said = private(dmesg);
+        assert_eq!(
+            said,
+            "[ 12.1] wlan0: authenticate with xx:xx:xx:xx:xx:xx (local address=xx:xx:xx:xx:xx:xx)\n"
+        );
+        let log = "wpa_supplicant[9]: wlan0: SME: Trying to authenticate with 00:11:22:33:44:55 (SSID='Home Net 5G' freq=5180 MHz)\nNetworkManager: <info> device (wlan0): Activation: starting connection ssid \"Ali's\"\n";
+        let said = private(log);
+        assert!(said.contains("(SSID='(SSID)' freq"), "{said}");
+        assert!(said.contains("ssid \"(SSID)\""), "{said}");
+        assert!(!said.contains("Home") && !said.contains("00:11"), "{said}");
+        // Times and other numbers stay as they are.
+        assert_eq!(
+            private("12:34:56 up, 0a:1b:2c:3d:4e"),
+            "12:34:56 up, 0a:1b:2c:3d:4e"
+        );
+        assert_eq!(private("ssid ünïcode"), "ssid ünïcode");
+    }
 
     #[test]
     fn reads_pci_devices_and_their_drivers() {

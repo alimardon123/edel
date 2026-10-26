@@ -1897,8 +1897,9 @@ fn write_edit(
 }
 
 /// [`write_edit`] for the settings file `machine`, the machine's or a
-/// person's own (M6.11). A person's takes no lock: the lock lives in
-/// `/run/edel`, which only root writes; the write is the same rename.
+/// person's own (M6.11). A person's takes no lock in `/run/edel`, which
+/// only root writes; both hold the file's own lock across the read, the
+/// change and the rename (`settings::edit`).
 fn write_edit_at(
     command: &str,
     machine: &Path,
@@ -1919,10 +1920,8 @@ fn write_edit_at(
             newer = Some(format);
         }
     }
-    let text = match fs::read_to_string(&path) {
-        Ok(text) => text,
-        Err(_) if newer.is_none() => format!("format = {}\n", settings::FORMAT),
-        Err(_) => bail!(
+    if newer.is_some() && !path.exists() {
+        bail!(
             "{}",
             trf(
                 "{path} is format {format}, newer than this release, and there is no {older} beside it to change",
@@ -1932,32 +1931,37 @@ fn write_edit_at(
                     ("older", &path.display().to_string())
                 ]
             )
-        ),
-    };
-    let edited = change(&text).map_err(|e| settings::named(e, &path, true))?;
-    // A change of root's ssh keys is the one a person must confirm (M6.5).
-    if privilege::root_keys_change(&text, &edited) {
-        privilege::confirm("changing root's ssh keys")?;
-    }
-    for problem in settings::read(&edited)?.problems {
-        println!(
-            "{command}: {}",
-            trf(
-                "kept, not used by this release: {problem}",
-                &[("problem", &problem.to_string())]
-            )
         );
     }
-    // A person who is no administrator is refused with the command to run
-    // instead, as io_failure says it.
-    settings::write_text(&path, &edited).map_err(|err| {
-        match err.root_cause().downcast_ref::<std::io::Error>() {
+    // The read, the change and the rename hold the file's lock, so a
+    // panel's or Settings' write at the same moment is not lost (the
+    // whole-system review of 2026-10-25). A person who is no administrator
+    // is refused with the command to run instead, as io_failure says it.
+    settings::edit(&path, |text| {
+        let edited = change(text).map_err(|e| settings::named(e, &path, true))?;
+        // A change of root's ssh keys is the one a person must confirm (M6.5).
+        if privilege::root_keys_change(text, &edited) {
+            privilege::confirm("changing root's ssh keys")?;
+        }
+        for problem in settings::read(&edited)?.problems {
+            println!(
+                "{command}: {}",
+                trf(
+                    "kept, not used by this release: {problem}",
+                    &[("problem", &problem.to_string())]
+                )
+            );
+        }
+        Ok(edited)
+    })
+    .map_err(
+        |err| match err.root_cause().downcast_ref::<std::io::Error>() {
             Some(io) if io.kind() == std::io::ErrorKind::PermissionDenied => {
                 io_failure(std::io::Error::from(io.kind()), &could_not_write(&path))
             }
             _ => err,
-        }
-    })?;
+        },
+    )?;
     let desktop = keys.iter().all(|k| desktop_follows(k));
     let next_login = keys.contains(&settings::LOW_LATENCY);
     // The boot's apply runs the offline sections (ab-boot's edel-settings);
@@ -2149,7 +2153,8 @@ fn edit_person_as(
 /// shortcut keys (M4.5, M4.6, M5.5c, M5.13a), the clipboard history (M7.13),
 /// the apps the apps widget pins (M5.31d), notifications (M5.9b), default and
 /// startup apps (M6.10), the language, keyboard and input method (M5.24a,
-/// M5.21a), low latency (M7.6b), and own themes and presets; `edel settings
+/// M5.21a), low latency (M7.6b), the power rules but the battery's charge
+/// limit (M7.16), and own themes and presets; `edel settings
 /// apply` applies the rest, from the machine's file.
 fn desktop_follows(key: &str) -> bool {
     key == panel_edit::PINNED
@@ -2159,9 +2164,12 @@ fn desktop_follows(key: &str) -> bool {
             "region.keyboard",
             "region.input_method",
             "location.enabled",
-            "power.saver",
         ]
         .contains(&key)
+        // shell-ui reads the person's power rules over the machine's, as the
+        // Power page writes them; only the battery's charge limit is the
+        // machine's (the whole-system review of 2026-10-25).
+        || (key.starts_with("power.") && key != settings::BATTERY_CARE)
         || [
             "layout.",
             "panels.",
@@ -2816,7 +2824,7 @@ fn find_by_label(label: &str) -> Option<PathBuf> {
 /// not loaded yet, so mount cannot guess it.
 fn read_from(device: &Path, inner: &Path, fs: Option<&str>) -> Option<String> {
     let Some(text) = with_mounted(device, fs, false, |dir| {
-        fs::read_to_string(places::found(&places::settings_in(&dir.join(inner)))).ok()
+        edel::install::read_inside(dir, &places::found(&places::settings_in(&dir.join(inner))))
     }) else {
         eprintln!(
             "warning: {}",
@@ -2852,8 +2860,11 @@ pub(crate) fn with_mounted<T>(
         cmd.status().is_ok_and(|s| s.success())
     };
     let mounted = match fs {
-        Some(kind) => mount(kind, "ro,iocharset=iso8859-1"),
-        None => mount("vfat", "ro,iocharset=iso8859-1") || mount("auto", "ro"),
+        Some(kind) => mount(kind, "ro,nosuid,nodev,noexec,iocharset=iso8859-1"),
+        None => {
+            mount("vfat", "ro,nosuid,nodev,noexec,iocharset=iso8859-1")
+                || mount("auto", "ro,nosuid,nodev,noexec")
+        }
     };
     if !mounted {
         return None;
@@ -2874,13 +2885,16 @@ pub const EXPORT_HEADER: &str = "\
 ";
 
 /// `edel settings export`: prints this machine as a settings file. It
-/// starts from the machine's file and replaces what apply owns with what
-/// the machine has, writing no defaults (ADR-008).
+/// starts from the machine's file as it is, its comments and keys this
+/// release does not know kept, lays the person's own settings over it
+/// (their look, layout, panels and shortcuts, as the desktop reads them),
+/// and replaces what apply owns with what the machine has, writing no
+/// defaults (ADR-008; the whole-system review of 2026-10-25).
 pub fn export() -> Result<()> {
     let machine = machine_file();
-    let mut file = match settings::read_on_machine(&machine) {
-        Ok(read) => read.file,
-        Err(_) if !machine.exists() => SettingsFile::default(),
+    let text = match settings::read_on_machine(&machine) {
+        Ok(_) => machine_text(&machine)?,
+        Err(_) if !machine.exists() => format!("format = {}\n", settings::FORMAT),
         Err(err) => {
             eprintln!(
                 "warning: {}",
@@ -2889,9 +2903,15 @@ pub fn export() -> Result<()> {
                     &[("why", &format!("{err:#}"))]
                 )
             );
-            SettingsFile::default()
+            format!("format = {}\n", settings::FORMAT)
         }
     };
+    let person = export_person();
+    let text = match &person {
+        Some((_, own)) => settings::lay_over(&text, own, desktop_follows)?,
+        None => text,
+    };
+    let mut file = SettingsFile::default();
     let hostname = Path::new(ETC_UPPER)
         .join("hostname")
         .exists()
@@ -2908,9 +2928,17 @@ pub fn export() -> Result<()> {
     );
     // The zone this machine's own link names (`region.timezone`).
     file.region.timezone = own_timezone();
-    // Only edel install reads [install]; export never writes it (M7.3).
-    file.install = Default::default();
-    print!("{EXPORT_HEADER}\n{}", toml::to_string(&file)?);
+    print!("{EXPORT_HEADER}");
+    if let Some((name, _)) = &person {
+        println!(
+            "# {}",
+            trf(
+                "The look, layout, panels and shortcuts are {name}'s own.",
+                &[("name", name)]
+            )
+        );
+    }
+    print!("\n{}", described(&text, &file)?);
     let changed = changed_files(Path::new(ETC_UPPER), Path::new("/etc"));
     if !changed.is_empty() {
         println!(
@@ -2959,6 +2987,91 @@ pub(crate) fn changed_files(dir: &Path, shown: &Path) -> Vec<String> {
     }
     found.sort();
     found
+}
+
+/// The text of the machine's settings file this release reads: the file's
+/// own, or the older format's beside a newer one (`settings::versioned`).
+fn machine_text(machine: &Path) -> Result<String> {
+    let text = fs::read_to_string(machine).with_context(|| could_not_read(machine))?;
+    match settings::format(&text) {
+        Ok(format) if format > settings::FORMAT => {
+            let older = settings::versioned(machine, settings::FORMAT);
+            fs::read_to_string(&older).with_context(|| could_not_read(&older))
+        }
+        _ => Ok(text),
+    }
+}
+
+/// The person whose own settings export includes, with their file's text:
+/// the person running it, or under doas the one who ran doas, their file
+/// read only as they could read it themselves (`settings_source`). None
+/// for root itself, or with no file of their own.
+fn export_person() -> Option<(String, String)> {
+    if !is_root() {
+        let text = fs::read_to_string(person_file()?).ok()?;
+        let name = std::env::var("USER").unwrap_or_else(|_| tr("this person").to_string());
+        return Some((name, text));
+    }
+    let name = std::env::var(places::AS_ROOT_USER).ok()?;
+    let passwd = fs::read_to_string(edel::users::PASSWD).ok()?;
+    let account = accounts(&passwd).into_iter().find(|a| a.name == name)?;
+    let path = places::found(&places::person_settings_in(Path::new(&account.home)));
+    if !path.exists() {
+        return None;
+    }
+    match crate::settings_source::read_as_caller(&path) {
+        Ok(Some(bytes)) => Some((name, String::from_utf8(bytes).ok()?)),
+        _ => {
+            eprintln!(
+                "warning: {}",
+                trf(
+                    "could not read {path} as {name}, so the export leaves out their own settings",
+                    &[("path", &path.display().to_string()), ("name", &name)]
+                )
+            );
+            None
+        }
+    }
+}
+
+/// `text` with what [`describe`] found put in place of what the file said
+/// about it: the people, the hostname, developer mode and the zone, and
+/// no `[install]`, which only edel install reads (M7.3). The rest of the
+/// file stays as it is.
+fn described(text: &str, file: &SettingsFile) -> Result<String> {
+    let mut doc: toml_edit::DocumentMut = text.parse()?;
+    let found: toml_edit::DocumentMut = toml::to_string(file)?.parse()?;
+    doc.remove("install");
+    doc.remove("users");
+    if let Some(users) = found.get("users") {
+        doc.insert("users", users.clone());
+    }
+    for (section, key) in [
+        ("network", "hostname"),
+        ("system", "developer_mode"),
+        ("region", "timezone"),
+    ] {
+        let value = found.get(section).and_then(|t| t.get(key)).cloned();
+        let there = doc.get(section).is_some_and(toml_edit::Item::is_table_like);
+        match value {
+            Some(value) => {
+                if !there {
+                    doc.insert(section, toml_edit::Item::Table(toml_edit::Table::new()));
+                }
+                doc[section][key] = value;
+            }
+            None if there => {
+                if let Some(table) = doc[section].as_table_like_mut() {
+                    table.remove(key);
+                }
+                if doc[section].as_table_like().is_some_and(|t| t.is_empty()) {
+                    doc.remove(section);
+                }
+            }
+            None => {}
+        }
+    }
+    Ok(doc.to_string())
 }
 
 /// Sets the keys apply owns in `file` from the machine: the hostname when
@@ -3077,6 +3190,28 @@ mod tests {
             ("network.hostname", Assign::Set, "lab-1")
         );
         assert!(split_assignment("network.hostname").is_err());
+    }
+
+    #[test]
+    fn export_keeps_the_file_s_own_lines_and_puts_what_the_machine_has_in() {
+        let text = "format = 1\n# my office\nfuture.key = 2\n[network]\nhostname = \"old\"\n[install]\ndisk = \"auto\"\n[users.bob]\nadmin = true\n[layout]\npreset = \"hive\"\n";
+        let mut file = SettingsFile::default();
+        file.users.insert("alice".into(), User::default());
+        file.region.timezone = Some("Europe/Berlin".into());
+        let out = described(text, &file).unwrap();
+        assert!(
+            out.contains("# my office") && out.contains("future.key = 2"),
+            "{out}"
+        );
+        let read = settings::read(&out).unwrap().file;
+        assert!(read.users.contains_key("alice") && !read.users.contains_key("bob"));
+        assert_eq!(read.network.hostname, None);
+        assert_eq!(read.region.timezone.as_deref(), Some("Europe/Berlin"));
+        assert_eq!(read.layout.preset.as_deref(), Some("hive"));
+        assert!(
+            !out.contains("[install]") && !out.contains("[network]"),
+            "{out}"
+        );
     }
 
     #[test]
@@ -3958,7 +4093,19 @@ mod tests {
         // The battery saver is the person's, which the quick settings tile
         // writes without a password; the battery's own setting is not.
         assert!(desktop_follows("power.saver"));
-        assert!(!desktop_follows("power.on_battery"));
+        // The Power page writes the person's file, so the command line does.
+        for key in [
+            settings::LID_CLOSE,
+            settings::POWER_BUTTON,
+            settings::LOCK_AFTER_MINUTES,
+            settings::SCREEN_OFF_MINUTES,
+            settings::SLEEP_AFTER_MINUTES,
+            settings::ON_BATTERY,
+            settings::GAME_MODE,
+        ] {
+            assert!(desktop_follows(key), "{key}");
+        }
+        assert!(!desktop_follows(settings::BATTERY_CARE));
         assert!(!desktop_follows("location.place"));
         assert!(!desktop_follows("location.online"));
         assert!(!desktop_follows("region.time_servers"));

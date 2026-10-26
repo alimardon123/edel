@@ -76,17 +76,51 @@ pub fn matching(
         .collect()
 }
 
+/// The hardware packs among `names`: the offered add-ons that serve a
+/// device (M8.17d). They follow the machine's hardware, so a settings file
+/// never lists them as its own (the whole-system review of 2026-10-25).
+pub fn packs(names: &[String]) -> Vec<String> {
+    let offered = offered_features_in(Path::new(places::OFFERED_ADDONS_DIR));
+    packs_among(names, &offered)
+}
+
+/// [`packs`] on given offered add-ons.
+pub fn packs_among(names: &[String], offered: &[(String, Feature)]) -> Vec<String> {
+    names
+        .iter()
+        .filter(|name| {
+            offered
+                .iter()
+                .any(|(offered, feature)| offered == *name && !feature.hardware.is_empty())
+        })
+        .cloned()
+        .collect()
+}
+
 /// The add-ons `file` names, its profiles' included (M7.6), and while the
 /// file sets no `addons.installed` of its own, the image's `default` first,
 /// less what `system.profiles_without` leaves out (M8.17c). Every reader
 /// of a machine's add-ons asks this, so the default is read in one place.
+/// The default's hardware packs for this machine come with a list of the
+/// file's own too, so a file copied to another machine brings that one's.
 pub fn installed(file: &SettingsFile, default: &[String]) -> Vec<String> {
+    installed_with(file, default, &packs(default))
+}
+
+/// [`installed`] with the default's hardware packs given.
+pub fn installed_with(file: &SettingsFile, default: &[String], packs: &[String]) -> Vec<String> {
     let own = file.addons.installed.is_some();
-    let named = crate::profiles::applied(file)
+    let mut named = crate::profiles::applied(file)
         .addons
         .installed
         .unwrap_or_default();
     if own {
+        let without = file.system.profiles_without.clone().unwrap_or_default();
+        for pack in packs {
+            if !without.contains(pack) && !named.contains(pack) {
+                named.push(pack.clone());
+            }
+        }
         return named;
     }
     let without = file.system.profiles_without.clone().unwrap_or_default();
@@ -466,6 +500,44 @@ mod tests {
             ),
             ["printing"]
         );
+    }
+
+    #[test]
+    fn a_machine_s_hardware_packs_come_with_a_list_of_the_file_s_own() {
+        let default = names(&["desktop", "wifi-realtek"]);
+        let packs = names(&["wifi-realtek"]);
+        // The file copied from another machine names its own list: this
+        // machine's Wi-Fi pack still comes, and once only.
+        let own = file("format = 1\n[addons]\ninstalled = [\"desktop\", \"printing\"]\n");
+        assert_eq!(
+            installed_with(&own, &default, &packs),
+            ["desktop", "printing", "wifi-realtek"]
+        );
+        let listed = file("format = 1\n[addons]\ninstalled = [\"wifi-realtek\"]\n");
+        assert_eq!(installed_with(&listed, &default, &packs), ["wifi-realtek"]);
+        // A pack the person took out stays out.
+        let without = file(
+            "format = 1\n[addons]\ninstalled = [\"desktop\"]\n[system]\nprofiles_without = [\"wifi-realtek\"]\n",
+        );
+        assert_eq!(installed_with(&without, &default, &packs), ["desktop"]);
+        let offered = vec![
+            (
+                "desktop".to_string(),
+                Feature {
+                    addon: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "wifi-realtek".to_string(),
+                Feature {
+                    addon: true,
+                    hardware: vec!["usb:v0BDAp*".into()],
+                    ..Default::default()
+                },
+            ),
+        ];
+        assert_eq!(packs_among(&default, &offered), packs);
     }
 
     fn names(list: &[&str]) -> Vec<String> {
