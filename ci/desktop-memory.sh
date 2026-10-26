@@ -128,42 +128,38 @@ measure() {
 	}
 	sample 300
 	python3 ci/qmp.py screendump "$run.png" || true
-	# Firefox, the way a person opens it on each system: GNOME's Alt+F2
-	# runs it with the page, as its search lost the keys to the welcome
-	# windows Ubuntu and Fedora open over a live session; Edel OS's
-	# launcher opens it, Tab and Return take Firefox's first-run notice,
-	# and the address bar the page.
+	# Firefox, the way a person opens it, the same keys on every system:
+	# Super opens the launcher or GNOME's overview, "firefox" and Return
+	# start it, and the address bar takes the page. GNOME's live session
+	# may already show its overview, which Super would close, so Escape
+	# closes it first. Alt+F2's run dialog kept the command after Return
+	# and the keypad's Enter in every Fedora run, and Edel OS's Firefox
+	# first shows a notice, which Tab and Return take.
+	case "$system" in
+	edel) ;;
+	*)
+		python3 ci/qmp.py key esc || true
+		sleep 2
+		;;
+	esac
+	python3 ci/qmp.py key meta_l || true
+	sleep 3
+	python3 ci/qmp.py type firefox || true
+	sleep 5
+	python3 ci/qmp.py key ret || true
+	sample 420
+	python3 ci/qmp.py screendump "$run-opened.png" || true
 	case "$system" in
 	edel)
-		python3 ci/qmp.py key meta_l || true
-		sleep 3
-		python3 ci/qmp.py type firefox || true
-		sleep 5
-		python3 ci/qmp.py key ret || true
-		sample 420
-		python3 ci/qmp.py screendump "$run-opened.png" || true
 		python3 ci/qmp.py key tab || true
 		sleep 1
 		python3 ci/qmp.py key ret || true
 		sleep 5
-		python3 ci/qmp.py key ctrl-l || true
-		sleep 2
-		python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
-		;;
-	*)
-		python3 ci/qmp.py key alt-f2 || true
-		sleep 5
-		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/' || true
-		# Return, then the keypad's Enter: GNOME's run dialog kept the
-		# command after Return alone in two runs.
-		sleep 2
-		python3 ci/qmp.py key ret || true
-		sleep 3
-		python3 ci/qmp.py key kp_enter || true
-		sample 420
-		python3 ci/qmp.py screendump "$run-opened.png" || true
 		;;
 	esac
+	python3 ci/qmp.py key ctrl-l || true
+	sleep 2
+	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
 	sample 540
 	python3 ci/qmp.py screendump "$run-firefox.png" || true
 	state=$(python3 ci/qmp.py status 2>/dev/null || echo stopped)
