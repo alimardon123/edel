@@ -1088,7 +1088,13 @@ fn write(
             &fs::read_to_string(system_file).unwrap_or_default(),
             &data.0,
         );
-        copy_default_apps(&data.0)?;
+        // Without them the machine still starts, and the first edel
+        // update brings them, so a copy that fails (a data partition too
+        // small for them, say) never stops the install before its boot
+        // loader.
+        if let Err(e) = copy_default_apps(&data.0) {
+            println!("edel install: {e:#}");
+        }
     }
     // The boot loader last, so the firmware starts only a disk the
     // install finished: one cut before here has no start-up partition
@@ -1165,12 +1171,23 @@ fn copy_default_apps(data: &Path) -> Result<()> {
         .spawn()
         .context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
     let stream = pack.stdout.take().context(tr("could not copy the default apps: the copying tool did not start; the system is installed without them, and they come with the first edel update"))?;
-    run(Command::new("tar")
+    let unpacked = run(Command::new("tar")
         .arg("-C")
         .arg(&target)
         .args(["-xf", "-"])
-        .stdin(stream))?;
+        .stdin(stream));
     let packed = pack.wait()?;
+    if let Err(e) = unpacked {
+        // Half a copy only takes room: none at all is the same to Flatpak.
+        let _ = fs::remove_dir_all(&target);
+        bail!(
+            "{}",
+            trf(
+                "could not copy the default apps onto the new disk ({error}), perhaps for want of room; the system is installed without them, and they come with the first edel update",
+                &[("error", &format!("{e:#}"))]
+            )
+        );
+    }
     if !packed.success() {
         bail!(
             "{}",
