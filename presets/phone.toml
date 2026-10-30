@@ -1,0 +1,36 @@
+# Phone (M9.4b): for a phone's screen, as the fifth round's phone picture
+# shows (docs/mockups/shell/phone.jpg). One window at a time fills the
+# screen, with no title bar, in the `full` tiling style; the bar along
+# the bottom brings another forward or opens the menu, until the gesture
+# bar and the card switcher come (M9.4c). A slim bar along the top holds
+# the clock at its start and the status pill at its end. Rows and buttons
+# grow to touch size while the machine is in tablet mode (M9.6). A person
+# who wants title bars back sets layout.title_bars, which wins over this
+# preset's.
+format = 1
+
+[windows]
+policy = "tiling"
+buttons = "right"
+title_bars = "never"
+tiling_style = "full"
+
+[workspaces]
+count = 4
+
+[launcher]
+style = "menu"
+
+[[panels]]
+edge = "top"
+size = "small"
+start = ["clock"]
+centre = []
+end = ["status"]
+
+[[panels]]
+edge = "bottom"
+size = "small"
+start = []
+centre = ["menu", "apps"]
+end = []

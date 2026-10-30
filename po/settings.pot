@@ -284,9 +284,6 @@ msgstr ""
 msgid "Game controller"
 msgstr ""
 
-msgid "Phone"
-msgstr ""
-
 msgid "Computer"
 msgstr ""
 
@@ -1749,6 +1746,9 @@ msgid "Split"
 msgstr ""
 
 msgid "Scroll"
+msgstr ""
+
+msgid "Full"
 msgstr ""
 
 msgid "Dot"
