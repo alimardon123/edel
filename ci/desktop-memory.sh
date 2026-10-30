@@ -18,8 +18,7 @@
 # desktop's idle number is the median of the last minute); then Firefox
 # opens on a page that plays a video served from this host, the way a
 # person opens it on each system (below), and the median of the last
-# minute of 240 s
-# more is the number with Firefox. Screenshots of each moment show whether
+# minute of 600 s more is the number with Firefox. Screenshots of each moment show whether
 # the desktop, the browser and the video really came; a number without its
 # picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
 # (idle), SYSTEM-SIZE-opened.png,
@@ -197,16 +196,24 @@ measure() {
 		sleep 5
 		;;
 	esac
+	# The page, typed into the address bar twice: GNOME's Firefox was
+	# not yet on the screen at 420 s in every run that clicked its icon,
+	# while memory showed it starting, so each system gets the same 600 s
+	# from the click, and the minute after it is the number.
 	python3 ci/qmp.py key ctrl-l || true
 	sleep 2
 	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
-	sample 540
+	sample 660
+	python3 ci/qmp.py key ctrl-l || true
+	sleep 2
+	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
+	sample 900
 	python3 ci/qmp.py screendump "$run-firefox.png" || true
 	state=$(python3 ci/qmp.py status 2>/dev/null || echo stopped)
 	kill "$qemu" 2>/dev/null || true
 	wait "$qemu" 2>/dev/null || true
 	idle=$(median "$run.samples" 240 305)
-	firefox=$(median "$run.samples" 480 545)
+	firefox=$(median "$run.samples" 840 905)
 	peak=$(awk '$2 != "none" { print $2 }' "$run.samples" | sort -n | tail -n 1)
 	echo "| $label | $size MiB | $idle | $firefox | ${peak:-none} | $state |" | tee -a "$dir/results.md"
 }
