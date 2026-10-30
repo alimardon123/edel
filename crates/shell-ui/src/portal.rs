@@ -437,6 +437,45 @@ impl Lockdown {
     }
 }
 
+/// Says touch mode to apps (M9.6, `docs/layout-guide.md`): stores
+/// `edel::touch::KEY` and sends `setting_changed` for it, when it changed.
+pub fn follow_touch(connection: &zbus::blocking::Connection, on: bool) {
+    let backend = match connection.object_server().interface::<_, Backend>(PATH) {
+        Ok(backend) => backend,
+        Err(e) => {
+            eprintln!("edel-shell-ui: {}", crate::messages::portal_not_said(e));
+            return;
+        }
+    };
+    let Ok(value) = OwnedValue::try_from(Value::from(on)) else {
+        return;
+    };
+    {
+        let mut backend = backend.get_mut();
+        let keys = backend
+            .settings
+            .entry(edel::touch::NAMESPACE.to_string())
+            .or_default();
+        if keys.get(edel::touch::KEY) == Some(&value) {
+            return;
+        }
+        keys.insert(edel::touch::KEY.to_string(), value);
+    }
+    let said = zbus::block_on(Backend::setting_changed(
+        backend.signal_emitter(),
+        edel::touch::NAMESPACE,
+        edel::touch::KEY,
+        Value::from(on),
+    ));
+    match said {
+        Ok(()) => eprintln!(
+            "edel-shell-ui: touch mode {} told to apps",
+            if on { "on" } else { "off" }
+        ),
+        Err(e) => eprintln!("edel-shell-ui: {}", crate::messages::portal_not_said(e)),
+    }
+}
+
 /// Tells the portal the Location switch changed (M6.14c): `off` says whether
 /// the person's `location.enabled` is false now. The property's changed
 /// signal goes out with it, and the value is set only when it differs.
@@ -547,9 +586,12 @@ pub fn serve(
     edits: channel::Sender<Edit>,
     location_off: bool,
 ) -> Option<zbus::blocking::Connection> {
-    let backend = Backend {
-        settings: settings(tokens, layout, high, icon_theme),
-    };
+    let mut values = settings(tokens, layout, high, icon_theme);
+    // Touch mode starts off; the compositor tells it when it is on (M9.6).
+    let mut touch = HashMap::new();
+    put(&mut touch, edel::touch::KEY, Value::from(false));
+    values.insert(edel::touch::NAMESPACE.to_string(), touch);
+    let backend = Backend { settings: values };
     let asking = Asking {
         edits: edits.clone(),
     };

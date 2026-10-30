@@ -23,7 +23,8 @@
 //! screen, as an app does, and print what it answers (`portal.rs`, M6.3).
 //! `--lid SECONDS` draws nothing either: as root, it shuts a lid switch on
 //! uinput for SECONDS and opens it again, as a laptop's lid does
-//! (`lid.rs`, M7.8). `--location` draws nothing either: it asks the
+//! (`lid.rs`, M7.8); `--tablet-mode SECONDS` folds a 2-in-1 into tablet
+//! mode the same way (M9.6). `--location` draws nothing either: it asks the
 //! Location portal for the device's position and prints the first update
 //! (`portal.rs`, M6.14c), holding the session SECONDS more when given, so
 //! the in-use sign stays. `--recolour RRGGBB@FILE` draws the window in that
@@ -37,7 +38,10 @@
 //! see whether a window the desktop hides still gets frames (M7.7c). With
 //! `--smooth N` it also asks for presentation feedback on each frame and
 //! prints one line once N intervals between presented frames are measured
-//! (`smooth.rs`, M7.7e). `--flash N` opens N windows one after another,
+//! (`smooth.rs`, M7.7e). `--pixels N` draws one buffer pixel for every N
+//! by N of the window's, in a checkerboard of its colour and black, shown
+//! at the window's size through wp_viewporter, as a game drawn below the
+//! screen's resolution is (`pixels.rs`, M8.28). `--flash N` opens N windows one after another,
 //! each closed before the compositor draws a frame of it, every other one
 //! before its first configure, as a splash screen or a dialog that closes
 //! at once does (M8.21, the other projects' bugs review), and prints
@@ -58,6 +62,7 @@
 //!     edel-testclient --screenshot
 //!     edel-testclient --screencast
 //!     edel-testclient --lid 8
+//!     edel-testclient --tablet-mode 8
 //!     edel-testclient --location
 //!     edel-testclient --location SECONDS
 //!     edel-testclient --clipboard
@@ -118,6 +123,9 @@ struct Args {
     sandboxed: bool,
     /// The file whose making asks the window forward (`activate.rs`).
     activate: Option<PathBuf>,
+    /// Window pixels to each buffer pixel (`pixels.rs`, M8.28); 1 draws
+    /// as usual.
+    pixels: u32,
 }
 
 /// `RRGGBB` as the bytes of a little-endian ARGB8888 pixel.
@@ -144,6 +152,7 @@ fn args() -> Result<Args> {
     let mut flash = None;
     let mut sandboxed = false;
     let mut activate = None;
+    let mut pixels = 1;
     let mut words = std::env::args().skip(1);
     while let Some(word) = words.next() {
         match word.as_str() {
@@ -195,6 +204,12 @@ fn args() -> Result<Args> {
                     _ => bail!("--smooth takes a number of frames, not {value}"),
                 }
             }
+            "--pixels" => {
+                pixels = match value.parse::<u32>() {
+                    Ok(n) if (1..=16).contains(&n) => n,
+                    _ => bail!("--pixels takes a number from 1 to 16, not {value}"),
+                }
+            }
             "--flash" => {
                 flash = match value.parse::<u32>() {
                     Ok(times) if times > 0 => Some(times),
@@ -209,7 +224,7 @@ fn args() -> Result<Args> {
                 })
             }
             _ => bail!(
-                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy, --smooth, --sandboxed, --activate and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
+                "unknown argument {word}; use --size, --colour, --recolour, --title, --app-id, --fullscreen, --lock-pointer, --inhibit-idle, --clipboard, --busy, --smooth, --pixels, --sandboxed, --activate and --layer, or --workspace, --toplevels, --globals, --security-context, --sni, --mpris or --location alone"
             ),
         }
     }
@@ -238,6 +253,7 @@ fn args() -> Result<Args> {
         flash,
         sandboxed,
         activate,
+        pixels,
     })
 }
 
@@ -282,6 +298,10 @@ struct Client {
     waiting: bool,
     /// `--smooth` (M7.7e): the presentation feedback it measures.
     smooth: Option<smooth::Smooth>,
+    /// `--pixels N` (M8.28): window pixels to each buffer pixel, and the
+    /// viewport that shows the smaller buffer at the window's size.
+    pixels: u32,
+    viewport: Option<smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport>,
 }
 
 /// The wake-up `--recolour`'s watch sends itself once the file exists: a
@@ -305,6 +325,7 @@ mod clipboard;
 mod hold;
 mod lid;
 mod mpris;
+mod pixels;
 mod portal;
 mod sandbox;
 mod smooth;
@@ -322,7 +343,8 @@ fn main() -> Result<()> {
         ["--mpris"] => return mpris::run(None),
         ["--screenshot"] => return portal::screenshot(),
         ["--screencast"] => return portal::screencast(),
-        ["--lid", seconds] => return lid::run(seconds),
+        ["--lid", seconds] => return lid::run(seconds, lid::Switch::Lid),
+        ["--tablet-mode", seconds] => return lid::run(seconds, lid::Switch::TabletMode),
         ["--location"] => return portal::location(0),
         ["--location", seconds] => {
             let seconds = seconds
@@ -383,6 +405,11 @@ fn main() -> Result<()> {
     } else {
         None
     };
+    let viewport = if args.pixels > 1 {
+        Some(pixels::bind(&globals, &qh, shown.wl_surface())?)
+    } else {
+        None
+    };
     let smooth = args
         .smooth
         .map(|want| smooth::bind(&globals, &qh, want))
@@ -408,6 +435,8 @@ fn main() -> Result<()> {
         frames: 0,
         waiting: false,
         smooth,
+        pixels: args.pixels,
+        viewport,
     };
     if let Some(times) = args.flash {
         let shell = XdgShell::bind(&globals, &qh).context("no xdg_wm_base")?;
@@ -511,12 +540,13 @@ impl Client {
     /// Draws one buffer. With `--busy` it also asks for the next frame
     /// callback before it commits, unless one is already on its way (M7.7c).
     fn draw(&mut self, qh: &QueueHandle<Self>) -> Result<()> {
-        let stride = self.width as i32 * 4;
+        let (width, height) = pixels::buffer_size(self.width, self.height, self.pixels);
+        let stride = width as i32 * 4;
         let (buffer, canvas) = self
             .pool
             .create_buffer(
-                self.width as i32,
-                self.height as i32,
+                width as i32,
+                height as i32,
                 stride,
                 // Opaque, as real apps say they are where they draw solid
                 // colour (an opaque region, or no alpha), so the
@@ -524,11 +554,18 @@ impl Client {
                 wl_shm::Format::Xrgb8888,
             )
             .context("creating a buffer")?;
-        for pixel in canvas.chunks_exact_mut(4) {
-            pixel.copy_from_slice(&self.pixel);
+        if self.pixels > 1 {
+            pixels::checker(canvas, width, self.pixel);
+        } else {
+            for pixel in canvas.chunks_exact_mut(4) {
+                pixel.copy_from_slice(&self.pixel);
+            }
         }
         let surface = self.shown.wl_surface();
-        surface.damage_buffer(0, 0, self.width as i32, self.height as i32);
+        if let Some(viewport) = &self.viewport {
+            viewport.set_destination(self.width as i32, self.height as i32);
+        }
+        surface.damage_buffer(0, 0, width as i32, height as i32);
         buffer.attach_to(surface).context("attaching the buffer")?;
         if self.busy && !self.waiting {
             surface.frame(qh, FrameCallbackData(surface.clone()));
