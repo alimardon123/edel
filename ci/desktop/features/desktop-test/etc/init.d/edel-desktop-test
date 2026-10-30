@@ -252,6 +252,8 @@ commands() {
 		# Zen (M5.18b): tiling in the split style with no title bars, from the
 		# preset alone; the case unsets the key again with preset default.
 		'preset zen') edel settings set layout.preset=zen ;;
+		# Tablet (M9.4a): tiling side by side under a large bar on top.
+		'preset tablet') edel settings set layout.preset=tablet ;;
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel settings set 'panels.list=[{ edge = "bottom", end = ["clock"] }]' ;;
@@ -277,6 +279,13 @@ commands() {
 			as_ci edel-testclient --busy --fullscreen --app-id edel.test.game --size 300x200 --colour 9a5ac8 --title game </dev/null >/tmp/game.log 2>&1 &
 			;;
 		'game close') pkill -f 'edel-testclient --busy --fullscreen' ;;
+		# A game drawn at half the screen's size (M8.28): a fullscreen
+		# checkerboard of white and black, one buffer pixel to every two by
+		# two of the screen's, through wp_viewporter.
+		'sharp game')
+			as_ci edel-testclient --fullscreen --pixels 2 --colour ffffff --title sharp </dev/null >/tmp/sharp.log 2>&1 &
+			;;
+		'sharp close') pkill -f 'edel-testclient --fullscreen --pixels' ;;
 		'game report')
 			edel report >/tmp/game-report.toml 2>/dev/null
 			shown=$(awk '/^\[\[games\]\]/ { g = 1 } g && /^app = "edel.test.game"/ { a = 1 } a && /^frames = / { print $3; exit }' /tmp/game-report.toml)
@@ -458,6 +467,9 @@ commands() {
 		# 3.5 makes the 1280 px screen 366 logical px wide, Compact (M5.8b).
 		'scale 3.5') edel settings set displays.Virtual-1.scale=3.5 ;;
 		'scale default') edel settings reset displays.Virtual-1.scale ;;
+		# A screen on its side (M9.8).
+		'rotation 90') edel settings set displays.Virtual-1.rotation=90 ;;
+		'rotation default') edel settings reset displays.Virtual-1.rotation ;;
 		'screen 2 off') edel settings set displays.Virtual-2.enabled=false ;;
 		# An X11 app (M4.7) on the compositor's X11 display, and then the
 		# memory of what it started.
@@ -1262,6 +1274,24 @@ ieee80211w=2' channel=6 ;;
 			modprobe uinput 2>/dev/null; edel-testclient --lid 8 </dev/null >/tmp/lid.log 2>&1 &
 			;;
 		'lid log') say "lid_log $(joined /tmp/lid.log 2>/dev/null)" ;;
+		# Touch mode (M9.6): edel-testclient --tablet-mode 10, as root, turns a
+		# 2-in-1's tablet-mode switch on for 10 s and off, its log in
+		# /tmp/tablet.log; Settings, open as ci on the session's bus, where
+		# it reads the portal, says how big its rows are in /tmp/touch.log;
+		# and what an app reads from the settings portal.
+		'touch window')
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' edel-settings --page sound" </dev/null >/tmp/touch.log 2>&1 &
+			;;
+		'tablet on')
+			modprobe uinput 2>/dev/null; edel-testclient --tablet-mode 10 </dev/null >/tmp/tablet.log 2>&1 &
+			;;
+		'touch read')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne io.github.alimardon123.edel touch-mode" </dev/null 2>&1 | tr '\n' ' ')
+			say "touch_mode $out"
+			;;
+		'touch log') say "touch_log $(joined /tmp/touch.log 2>/dev/null); tablet: $(joined /tmp/tablet.log 2>/dev/null)" ;;
 		# Power and Users (M5.8b): what upower lists as ci (`upower -e` must
 		# exit 0: QEMU has no battery, so it lists the display device and
 		# perhaps a power cable), whether upowerd runs, Settings on each page
@@ -1519,7 +1549,7 @@ ieee80211w=2' channel=6 ;;
 		# sync, /dev/ntsync, the same (M8.33); and the base's memory map
 		# limit.
 		'gaming devices')
-			say "gaming_devices $(stat -c '%G %a' /dev/uinput 2>&1) $(as_ci 'test -w /dev/uinput && echo writable || echo refused' 2>&1) ntsync $(stat -c '%G %a' /dev/ntsync 2>&1) $(as_ci 'test -w /dev/ntsync && echo writable || echo refused' 2>&1) maps $(cat /proc/sys/vm/max_map_count 2>&1)"
+			say "gaming_devices $(stat -c '%U %a' /dev/uinput 2>&1) $(as_ci 'test -w /dev/uinput && echo writable || echo refused' 2>&1) ntsync $(stat -c '%G %a' /dev/ntsync 2>&1) $(as_ci 'test -w /dev/ntsync && echo writable || echo refused' 2>&1) maps $(cat /proc/sys/vm/max_map_count 2>&1)"
 			;;
 		# Profiles leave out what a person takes away (M7.6c): gaming named,
 		# Steam taken out of the apps it brings, applied, then reset. No

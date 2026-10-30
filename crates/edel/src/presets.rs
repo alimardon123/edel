@@ -20,8 +20,8 @@ pub const FORMAT: i64 = 1;
 
 /// The presets this release has, by name, the default first, in the order
 /// Settings shows them and messages list them (ADR-002's: Classic,
-/// Mac-like, Windows-like, Hive, Zen, then Tablet and Phone as they
-/// come). A new one is a file under `presets/`, a line here and its name
+/// Mac-like, Windows-like, Hive, Zen, Tablet (M9.4a), then Phone as it
+/// comes). A new one is a file under `presets/`, a line here and its name
 /// in [`NAMES`], in the same order; its name must be in
 /// [`crate::settings::PRESETS`].
 pub const BUILT_IN: &[(&str, &str)] = &[
@@ -33,11 +33,19 @@ pub const BUILT_IN: &[(&str, &str)] = &[
     ),
     ("hive", include_str!("../../../presets/hive.toml")),
     ("zen", include_str!("../../../presets/zen.toml")),
+    ("tablet", include_str!("../../../presets/tablet.toml")),
 ];
 
 /// The names in [`BUILT_IN`]: what `layout.preset` may be on this release,
 /// so `edel settings check` and `set` refuse any other and list these.
-pub const NAMES: &[&str] = &["classic", "mac-like", "windows-like", "hive", "zen"];
+pub const NAMES: &[&str] = &[
+    "classic",
+    "mac-like",
+    "windows-like",
+    "hive",
+    "zen",
+    "tablet",
+];
 
 /// The preset a missing `layout.preset` means.
 pub const DEFAULT: &str = "classic";
@@ -636,6 +644,7 @@ pub fn title(name: &str) -> String {
         "windows-like" => tr(n_("Windows-like")).to_string(),
         "hive" => tr(n_("Hive")).to_string(),
         "zen" => tr(n_("Zen")).to_string(),
+        "tablet" => tr(n_("Tablet")).to_string(),
         _ => {
             let mut chars = name.chars();
             match chars.next() {
@@ -1362,6 +1371,26 @@ mod tests {
     }
 
     #[test]
+    fn tablet_tiles_side_by_side_with_title_bars_under_a_large_bar_on_top() {
+        // M9.4a: the fifth round's tablet picture, a touch screen's layout.
+        let (tablet, note) = named(Some("tablet"));
+        assert_eq!(note, None);
+        assert_eq!(tablet.windows.policy, Policy::Tiling);
+        assert_eq!(tablet.windows.title_bars, None, "close buttons stay");
+        assert_eq!(tablet.windows.tiling_style.as_deref(), Some("split"));
+        assert_eq!(tablet.workspaces.count, 4);
+        assert_eq!(tablet.panels.len(), 1);
+        let panel = &tablet.panels[0];
+        assert_eq!(panel.edge, Edge::Top);
+        assert_eq!(panel.size, Size::Large);
+        assert_eq!(panel.style, Style::Bar);
+        assert_eq!(panel.start, ["menu", "workspaces", "layout"]);
+        assert!(panel.centre.is_empty());
+        assert_eq!(panel.end, ["tray", "keyboard", "status", "clock"]);
+        assert_eq!(title("tablet"), "Tablet");
+    }
+
+    #[test]
     fn a_preset_reads_its_title_bars_and_tiling_style_and_refuses_the_rest() {
         let classic = BUILT_IN[0].1;
         let set = classic.replace(
@@ -1530,13 +1559,13 @@ mod tests {
 
     #[test]
     fn a_base_this_release_lacks_gives_classic_and_a_report() {
-        let text = "format = 1\n[layout]\npreset = \"old\"\n[presets.old]\npreset = \"tablet\"\nwindow_buttons = \"left\"\n";
+        let text = "format = 1\n[layout]\npreset = \"old\"\n[presets.old]\npreset = \"phone\"\nwindow_buttons = \"left\"\n";
         let read = settings::read(text).unwrap();
         assert!(
             read.problems
                 .iter()
                 .any(|p| p.key == "presets.old.preset"
-                    && p.message.contains("has no preset \"tablet\"")),
+                    && p.message.contains("has no preset \"phone\"")),
             "{:?}",
             read.problems
         );
@@ -1608,11 +1637,19 @@ mod tests {
         let names: Vec<&str> = rows.iter().map(|row| row.name.as_str()).collect();
         assert_eq!(
             names,
-            ["classic", "mac-like", "windows-like", "hive", "zen", "mine"]
+            [
+                "classic",
+                "mac-like",
+                "windows-like",
+                "hive",
+                "zen",
+                "tablet",
+                "mine"
+            ]
         );
-        assert!(rows[5].in_use && !rows[5].built_in);
-        assert_eq!(rows[5].title, "mine");
-        assert_eq!(rows[5].base, "hive");
+        assert!(rows[6].in_use && !rows[6].built_in);
+        assert_eq!(rows[6].title, "mine");
+        assert_eq!(rows[6].base, "hive");
         assert!(rows[0].built_in && !rows[0].in_use);
     }
 

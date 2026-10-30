@@ -160,6 +160,9 @@ pub struct Edel {
     /// Whether shell-ui says the battery saver is on (M8.31): drawing stays
     /// at the Lite tier while it is. Starts false.
     pub saver: bool,
+    /// Whether the tablet-mode switch of a 2-in-1 is on (M9.6), which
+    /// shell-ui tells apps as touch mode. Starts false.
+    pub tablet_mode: bool,
     /// Game mode (M7.7, `games.rs`).
     pub game: crate::games::Game,
     /// The timer for the sun's next change of scheme (M7.14, `sun.rs`).
@@ -398,6 +401,7 @@ impl Edel {
             screens_off: false,
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             saver: false,
+            tablet_mode: false,
             game: Default::default(),
             sun: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
@@ -671,7 +675,7 @@ impl Edel {
         self.follow_game_mode(new.game_mode);
         self.arm_sun();
         self.restyle();
-        let rescaled = self.apply_scales();
+        let rescaled = self.apply_scales_and_turns();
         if old.workspace_names != new.workspace_names {
             self.desks.set_names(new.names());
             self.announce_workspaces();

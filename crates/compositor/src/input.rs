@@ -266,8 +266,7 @@ impl Edel {
                 self.dirty = true;
             }
             InputEvent::PointerMotionAbsolute { event } => {
-                let area = self.output_area()?;
-                let location = event.position_transformed(area.size) + area.loc.to_f64();
+                let location = self.on_screen(&event)?;
                 let focus = self.pointer_over(location);
                 let pointer = self.seat.get_pointer()?;
                 pointer.motion(
@@ -378,8 +377,7 @@ impl Edel {
                 }
             }
             InputEvent::TabletToolAxis { event } => {
-                let area = self.output_area()?;
-                let at = event.position_transformed(area.size) + area.loc.to_f64();
+                let at = self.on_screen(&event)?;
                 let focus = self.pointer_over(at);
                 let tablets = self.seat.tablet_seat();
                 let tablet = tablets.get_tablet(&TabletDescriptor::from(&event.device()));
@@ -408,8 +406,7 @@ impl Edel {
                 self.move_pointer(at, serial, event.time_msec());
             }
             InputEvent::TabletToolProximity { event } => {
-                let area = self.output_area()?;
-                let at = event.position_transformed(area.size) + area.loc.to_f64();
+                let at = self.on_screen(&event)?;
                 let tablets = self.seat.tablet_seat();
                 let display = self.display.clone();
                 let tool = tablets.add_tool::<Edel>(self, &display, &event.tool());
@@ -457,6 +454,15 @@ impl Edel {
                     if closed { "closed" } else { "opened" }
                 );
                 self.tell_lid(closed);
+            }
+            InputEvent::SwitchToggle { event } if event.switch() == Some(Switch::TabletMode) => {
+                let on = event.state() == SwitchState::On;
+                eprintln!(
+                    "edel-compositor: tablet mode {}",
+                    if on { "on" } else { "off" }
+                );
+                self.tablet_mode = on;
+                self.sync_shell();
             }
             _ => {}
         }
@@ -821,6 +827,19 @@ impl Edel {
     pub fn output_area(&self) -> Option<Rectangle<i32, Logical>> {
         let output = self.space.outputs().next()?;
         self.space.output_geometry(output)
+    }
+
+    /// Where an absolute device's event lands on the first screen, turned
+    /// as the screen is (M9.8), as the device spans the glass.
+    fn on_screen<B: InputBackend>(
+        &self,
+        event: &impl AbsolutePositionEvent<B>,
+    ) -> Option<Point<f64, Logical>> {
+        let area = self.output_area()?;
+        let turn = crate::outputs::turn(self.space.outputs().next()?);
+        let glass = edel_compositor::layout::glass(turn, area.size);
+        let at = event.position_transformed(glass);
+        Some(edel_compositor::layout::on_turned(turn, at, glass.to_f64()) + area.loc.to_f64())
     }
 
     /// Forgets `window` wherever input remembers it, once it is gone.

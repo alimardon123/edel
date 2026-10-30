@@ -177,7 +177,7 @@ fn read_output(
     texture: &mut GlesTexture,
     elements: &[Drawn],
     size: (i32, i32),
-    scale: f64,
+    (scale, turn): (f64, Transform),
     background: [f32; 4],
     cursor: bool,
 ) -> Result<GlesMapping, String> {
@@ -186,8 +186,7 @@ fn read_output(
         .iter()
         .filter(|e| cursor || !matches!(e.kind(), Kind::Cursor))
         .collect();
-    let mut damage =
-        OutputDamageTracker::new(Size::<i32, Physical>::from(size), scale, Transform::Normal);
+    let mut damage = OutputDamageTracker::new(Size::<i32, Physical>::from(size), scale, turn);
     let mut target = renderer
         .bind(texture)
         .map_err(|e| format!("binding the copy's texture: {e}"))?;
@@ -226,6 +225,9 @@ impl Edel {
         };
         let size = (mode.size.w, mode.size.h);
         let scale = output.current_scale().fractional_scale();
+        // The copy is the screen's own buffer, so a turned screen's picture
+        // is turned into it as it is onto the glass (M9.8).
+        let turn = crate::outputs::turn(output);
         let background = self.tokens.background.rgba();
         // The texture is kept for the next frame at the same size, so a
         // screen shared in a call allocates nothing per frame (the
@@ -245,9 +247,15 @@ impl Edel {
             let cursor = pending.overlay_cursor;
             if !readbacks.iter().any(|(c, _)| *c == cursor) {
                 let read = match &mut texture {
-                    Ok(texture) => {
-                        read_output(renderer, texture, elements, size, scale, background, cursor)
-                    }
+                    Ok(texture) => read_output(
+                        renderer,
+                        texture,
+                        elements,
+                        size,
+                        (scale, turn),
+                        background,
+                        cursor,
+                    ),
                     Err(why) => Err(why.clone()),
                 };
                 readbacks.push((cursor, read));
@@ -423,7 +431,23 @@ impl Edel {
                     w: buffer.0,
                     h: buffer.1,
                 },
-                Some(region) => buffer_area(region, (logical.size.w, logical.size.h), buffer)?,
+                Some(region) => {
+                    // The region is in the turned layout; the buffer is the
+                    // glass's way up (M9.8), as the renderer turns it.
+                    let turn = crate::outputs::turn(&output);
+                    let on = turn.invert().transform_rect_in(
+                        Rectangle::new((region.x, region.y).into(), (region.w, region.h).into()),
+                        &logical.size,
+                    );
+                    let glass = edel_compositor::layout::glass(turn, logical.size);
+                    let region = Area {
+                        x: on.loc.x,
+                        y: on.loc.y,
+                        w: on.size.w,
+                        h: on.size.h,
+                    };
+                    buffer_area(region, (glass.w, glass.h), buffer)?
+                }
             };
             Some((output, buffer, area))
         });

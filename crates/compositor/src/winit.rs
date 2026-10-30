@@ -63,7 +63,7 @@ pub fn open(
     );
     output.set_preferred(mode);
     state.space.map_output(&output, (0, 0));
-    state.apply_scales();
+    state.apply_scales_and_turns();
     state.outputs_changed();
     // From inside the loop, so a program that cannot start ends it.
     let (later, socket) = (handle.clone(), state.socket.clone());
@@ -170,9 +170,11 @@ fn draw(window: &mut Window, state: &mut Edel) {
     // too (M5.11b).
     state.dirty = state.animations.running();
     let now = window.started.elapsed();
+    // Under the lock no window draws, as on a real screen (`drm.rs`).
+    let locked = state.is_locked();
     for w in state.space.elements() {
         // Behind a game, a window draws again once it is visible (M7.7c).
-        if state.behind_game(w) {
+        if locked || state.behind_game(w) {
             continue;
         }
         w.send_frame(&window.output, now, Some(Duration::ZERO), |_, _| {
