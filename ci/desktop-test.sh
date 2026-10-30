@@ -299,6 +299,11 @@
 #               uinput on for 10 s as root: the settings portal's touch-mode
 #               reads true, then false, and Settings sizes its rows for
 #               touch and back (M9.6)
+#   taps        a touch screen on uinput (edel-testclient --taps) taps a
+#               window to focus it and taps two close buttons (M9.5)
+#   screen-keyboard  a tap on foot shows wvkbd along the bottom, a tap on
+#               one of its keys types into foot, and it hides when foot
+#               ends (M9.5)
 #   rotation    displays.Virtual-1.rotation = 90 turns the screen, the panel
 #               along the glass's right edge, and the reset turns it back
 #               (M9.8)
@@ -6314,6 +6319,68 @@ case_taps() {
 	echo "PASS: a touch screen's tap at $at focused tapa, and taps on tapa's and tapb's close buttons closed them; $(value taps_done)"
 }
 
+case_screen_keyboard() {
+	# The keyboard on the screen (M9.5): foot, waiting for one key, opens
+	# and gets the keyboard from the mouse, so no keyboard shows on the
+	# screen though foot asks for text; a tap on foot shows it (the
+	# compositor starts wvkbd-mobintl), a layer 260 px tall along the
+	# bottom (screen-keyboard.png); a tap on a key in its second row types
+	# one letter into foot, which ends with it, and the keyboard hides as
+	# no field asks any more.
+	opened=$(count 'edel-compositor: mapped window osk')
+	guest 'keyboard foot'
+	wait_more 'edel-compositor: mapped window osk' "$opened" 30 || fail "foot, titled osk, did not open"
+	sleep 2
+	! tr -d '\r' <"$log" | grep -aq 'edel-compositor: screen keyboard shown' ||
+		fail "the keyboard on the screen showed though nothing was tapped"
+	state_now || fail "the state file could not be read"
+	taps_place osk || fail "foot has no place of its own to tap: $(cat "$dir/taps.now")"
+	read -r x y w h at how <"$dir/taps.now"
+	tap "$at"
+	wait_for 'edel-compositor: screen keyboard shown' 30 ||
+		fail "a tap on foot at $at did not show the keyboard on the screen: $(tr -d '\r' <"$log" | grep -aE 'wvkbd|screen keyboard' | tail -n 5)"
+	tries=0
+	until state_now && keyboard_place; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || fail "no layer 260 px tall along the bottom: $(cat "$dir/keyboard.now")"
+		sleep 1
+	done
+	read -r kx ky kw kh <"$dir/keyboard.now"
+	python3 ci/qmp.py screendump "$dir/screen-keyboard.png"
+	key="$((kx + kw * 45 / 100)),$((ky + kh * 35 / 100))"
+	tap "$key"
+	tries=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: keyboard_typed ')
+		guest 'keyboard typed'
+		wait_more 'DESKTOP-TEST: keyboard_typed ' "$asked" || fail "the service did not say what foot kept"
+		case "$(value keyboard_typed)" in
+		' '[a-z0-9]*) break ;;
+		esac
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || fail "a tap on the keyboard at $key typed no letter into foot: $(value keyboard_typed)"
+		sleep 1
+	done
+	wait_for 'edel-compositor: screen keyboard hidden' 30 ||
+		fail "the keyboard on the screen stayed when foot, the field that asked, ended"
+	echo "PASS: foot opened without the keyboard on the screen, a tap on it at $at showed it, $kw x $kh at $kx,$ky (screen-keyboard.png), a tap at $key typed '$(value keyboard_typed | tr -d ' ')' into foot, and it hid when foot ended"
+}
+
+# keyboard_place: writes the keyboard on the screen's x, y, width and
+# height from the last state file, the layer 260 px tall along the
+# screen's bottom, into $dir/keyboard.now; fails when there is none.
+keyboard_place() {
+	python3 - "$dir/state-now.toml" >"$dir/keyboard.now" <<-'EOF'
+		import sys, tomllib
+		layers = tomllib.load(open(sys.argv[1], "rb")).get("layers", [])
+		mine = [l for l in layers if l["height"] == 260 and l["y"] + l["height"] == 800]
+		if not mine:
+		    print([(l["namespace"], l["x"], l["y"], l["width"], l["height"]) for l in layers])
+		    sys.exit(1)
+		print(mine[0]["x"], mine[0]["y"], mine[0]["width"], mine[0]["height"])
+	EOF
+}
+
 # tap X,Y: the touch screen taps there and the test waits until it has.
 tap() {
 	tapped=$(count 'DESKTOP-TEST: taps_done ')
@@ -9737,7 +9804,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps screen-keyboard respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
