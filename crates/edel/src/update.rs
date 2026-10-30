@@ -994,6 +994,7 @@ fn restart_now(screen: bool, window: Option<(u16, u16)>, minute: u16) -> Restart
 /// install from `location`, or an install and then a restart. Each thing
 /// it does is one line on its output and in the system log.
 pub fn automatic(location: Option<String>, accept: &crate::release::Accept) -> Result<()> {
+    crate::default_apps::follow_languages();
     let chosen = edel::settings::on_machine;
     let mode = Automatic::from_value(chosen("updates.automatic").as_deref());
     if mode == Automatic::Off {

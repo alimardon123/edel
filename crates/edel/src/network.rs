@@ -366,6 +366,24 @@ pub fn parse_details(text: &str) -> Vec<Detail> {
     details
 }
 
+/// Whether the text of `nmcli -g GENERAL.METERED device show`, one line
+/// per device (`yes`, `yes (guessed)`, `no`, `no (guessed)` or `unknown`),
+/// says a device the machine uses is metered, such as a phone's hotspot or
+/// a mobile plan: any `yes` counts, so downloads that can wait do.
+pub fn parse_metered(text: &str) -> bool {
+    text.lines().any(|line| line.trim().starts_with("yes"))
+}
+
+/// Whether the machine is online through a metered connection, as
+/// [`parse_metered`] reads NetworkManager; false without NetworkManager.
+pub fn metered() -> bool {
+    nmcli(
+        &words(&["-g", "GENERAL.METERED", "device", "show"]),
+        READ_TIME,
+    )
+    .is_ok_and(|text| parse_metered(&text))
+}
+
 /// `nmcli` with `args`, giving what it printed, or why it could not.
 fn nmcli(args: &[String], time: Duration) -> Result<String> {
     nmcli_with(args, None, time)
@@ -760,6 +778,14 @@ pub fn has_wifi_in(sys: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_metered_device_is_any_that_says_yes() {
+        assert!(parse_metered("no (guessed)\nyes (guessed)\nunknown\n"));
+        assert!(parse_metered("yes\n"));
+        assert!(!parse_metered("no\nunknown\nno (guessed)\n"));
+        assert!(!parse_metered(""));
+    }
 
     const WIFI: &str = "\
  :Cafe Guest:34:--

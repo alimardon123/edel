@@ -75,11 +75,21 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Name this month's package cache
+        id: apt
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Keep the Ubuntu packages this job installs
+        # ci/apt.sh installs from them, downloading only what changed.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/edel-apt
+          key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
+          restore-keys: apt-${{ github.job }}-
       - name: Install the libraries the compositor links
         # libxkbcommon for the keyboard; libudev, libinput, libgbm and
         # libseat for the GPU backend (M4.2b); GTK4 and libadwaita for
         # Settings (M5.6a). EGL is loaded at run time.
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev
+        run: sh ci/apt.sh libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev libgtk-4-dev libadwaita-1-dev
       - name: Keep the crates and their builds between runs
         # Keyed on Cargo.lock, as the other jobs' builds are (faster PRs,
         # 2026-10-17): a pull request reads main's, so only our own crates
@@ -168,9 +178,21 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         if: env.RUN == 'true'
+      - name: Name this month's package cache
+        if: env.RUN == 'true'
+        id: apt
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Keep the Ubuntu packages this job installs
+        if: env.RUN == 'true'
+        # ci/apt.sh installs from them, downloading only what changed.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/edel-apt
+          key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
+          restore-keys: apt-${{ github.job }}-
       - name: Install the libraries, Xvfb and Mesa's software renderer
         if: env.RUN == 'true'
-        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0
+        run: sh ci/apt.sh libxkbcommon-dev libudev-dev libinput-dev libgbm-dev libseat-dev xvfb imagemagick libegl1 libgl1-mesa-dri libxkbcommon-x11-0
       - name: Keep the desktop's build between runs
         if: env.RUN == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -295,8 +317,18 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Name this month's package cache
+        id: apt
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Keep the Ubuntu packages this job installs
+        # ci/apt.sh installs from them, downloading only what changed.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/edel-apt
+          key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
+          restore-keys: apt-${{ github.job }}-
       - name: Install QEMU and UEFI firmware
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf cpio zstd
+        run: sh ci/apt.sh qemu-system-x86 ovmf cpio zstd
 
       - name: Check the kernels and the initramfs of the bootable images
         run: sh ci/initramfs-check.sh
@@ -388,9 +420,11 @@ jobs:
             out/release
             out/channel
 
-      - name: Check the budgets and report image sizes
+      - name: Check the image sizes against their budgets and report them
+        # The budget boots run first in the system lane, so the lanes do
+        # not wait for them.
         if: always()
-        run: sh ci/sizes.sh
+        run: sh ci/sizes.sh sizes
 
       - name: Report package changes against the preview
         if: always()
@@ -465,10 +499,28 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Name this month's package cache
+        id: apt
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Keep the Ubuntu packages this job installs
+        # ci/apt.sh installs from them, downloading only what changed.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/edel-apt
+          key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
+          restore-keys: apt-${{ github.job }}-
       - name: Install QEMU and UEFI firmware
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
+        run: sh ci/apt.sh qemu-system-x86 ovmf
+
+      - name: Time three boots of the one image against their budgets
+        # Before the lane's tests, alone on this runner, so other VMs do not
+        # slow the boots it times; the lane still runs when a budget fails.
+        id: boots
+        if: matrix.lane == 'system'
+        run: sh ci/sizes.sh boots
 
       - name: Run the ${{ matrix.lane }} lane
+        if: success() || steps.boots.outcome == 'failure'
         # GH_TOKEN reads main's newest desktop image, which the upgrade test
         # (M3.5) updates until a preview is published.
         env:
@@ -578,8 +630,18 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Name this month's package cache
+        id: apt
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Keep the Ubuntu packages this job installs
+        # ci/apt.sh installs from them, downloading only what changed.
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/edel-apt
+          key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
+          restore-keys: apt-${{ github.job }}-
       - name: Install QEMU and UEFI firmware
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf
+        run: sh ci/apt.sh qemu-system-x86 ovmf
 
       # A failed case's part runs once more; a pass then names it flaky (M6.17).
       - name: Test part ${{ matrix.part }} of the desktop image on a virtual GPU
