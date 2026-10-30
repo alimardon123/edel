@@ -257,7 +257,7 @@
 #   own-presets edel preset save of Hive with the buttons on the left as
 #               mine, which leaves [layout] with preset = "mine" and nothing
 #               moved on screen; Classic and mine again; Settings' Layout
-#               page with mine after tablet, kept as settings-own-presets.png;
+#               page with mine after phone, kept as settings-own-presets.png;
 #               edel preset delete refused while mine is in use (M5.17)
 #   theme       edel theme save, export, delete and import round trip as
 #               root: a theme saved as mine is written under [themes],
@@ -4950,7 +4950,7 @@ case_presets() {
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "Zen did not bring shell-ui's bar to the top"
 	# Hive tiles too, so no policy switch is logged; the state file says it.
-	i=0
+	tries=0
 	while :; do
 		state_now || fail "the VM did not answer 'state now'"
 		python3 - "$dir/state-now.toml" >"$dir/zen.now" <<-'EOF' && break
@@ -4960,8 +4960,8 @@ case_presets() {
 			print(f"{len(windows)} windows, title bars {bars}")
 			sys.exit(0 if windows and not any(bars) else 1)
 		EOF
-		i=$((i + 1))
-		[ "$i" -lt 5 ] || fail "under Zen the windows should be tiled with no title bars: $(cat "$dir/zen.now")"
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "under Zen the windows should be tiled with no title bars: $(cat "$dir/zen.now")"
 		sleep 1
 	done
 	shot preset-zen 640 12 "$panel" >/dev/null || fail "Zen's bar is not at 640,12 in the panel's colour"
@@ -4971,7 +4971,7 @@ case_presets() {
 	guest 'preset tablet'
 	wait_more 'edel-shell-ui: follows the settings: the preset is now tablet' "$followed" ||
 		fail "edel settings set layout.preset=tablet was not followed by shell-ui"
-	i=0
+	tries=0
 	while :; do
 		state_now || fail "the VM did not answer 'state now'"
 		python3 - "$dir/state-now.toml" >"$dir/tablet.now" <<-'EOF' && break
@@ -4981,11 +4981,36 @@ case_presets() {
 			print(f"{len(windows)} windows, title bars {bars}")
 			sys.exit(0 if windows and all(bars) else 1)
 		EOF
-		i=$((i + 1))
-		[ "$i" -lt 5 ] || fail "under Tablet the windows should be tiled with their title bars: $(cat "$dir/tablet.now")"
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "under Tablet the windows should be tiled with their title bars: $(cat "$dir/tablet.now")"
 		sleep 1
 	done
 	shot preset-tablet 640 12 "$panel" >/dev/null || fail "Tablet's bar is not at 640,12 in the panel's colour"
+	# Phone (M9.4b): one window at a time, the whole area, with no title
+	# bar, between a slim bar on top and one along the bottom. Its count
+	# is its own, as state_now's waits set i.
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now phone')
+	guest 'preset phone'
+	wait_more 'edel-shell-ui: follows the settings: the preset is now phone' "$followed" ||
+		fail "edel settings set layout.preset=phone was not followed by shell-ui"
+	tries=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/phone.now" <<-'EOF' && break
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+			shown = [w["workspace"] for w in windows if w.get("focused")] or [1]
+			here = [w for w in windows if w["workspace"] == shown[0]]
+			places = {(w["x"], w["y"], w["width"], w["height"]) for w in here}
+			bars = [w["title_bar"] for w in windows]
+			print(f"{len(here)} windows on workspace {shown[0]} at {sorted(places)}, title bars {bars}")
+			sys.exit(0 if len(here) > 1 and len(places) == 1 and not any(bars) else 1)
+		EOF
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "under Phone every window should fill the same whole area with no title bar: $(cat "$dir/phone.now")"
+		sleep 1
+	done
+	shot preset-phone 640 12 "$panel" >/dev/null || fail "Phone's top bar is not at 640,12 in the panel's colour"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -4994,9 +5019,9 @@ case_presets() {
 	wait_more 'edel-compositor: windows now floating' "$floated" || fail "back on Classic, the windows did not float"
 	shot preset-classic 640 790 "$panel" >/dev/null || fail "Classic's panel is not at 640,790 in the panel's colour"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Presets (M5.4a, M9.4a): preset-hive.png, preset-zen.png, preset-tablet.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+		echo "Presets (M5.4a, M9.4a, M9.4b): preset-hive.png, preset-zen.png, preset-tablet.png, preset-phone.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; Tablet (M9.4a) tiled them with their title bars under a large bar at 640,12, kept as preset-tablet.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; Tablet (M9.4a) tiled them with their title bars under a large bar at 640,12, kept as preset-tablet.png; Phone (M9.4b) gave each window the same whole area with no title bar, $(cat "$dir/phone.now"), kept as preset-phone.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_own_presets() {
@@ -5007,7 +5032,7 @@ case_own_presets() {
 	# compositor logs no preset but hive. Then Classic (its buttons go right,
 	# the buttons' key having moved into mine), mine again (Hive's bar on top,
 	# the buttons on the left), Settings' Layout page with a card per preset,
-	# mine after tablet, kept as settings-own-presets.png. Super+Q closes it,
+	# mine after phone, kept as settings-own-presets.png. Super+Q closes it,
 	# delete is refused while mine is in use and then deletes it, and the
 	# layout keys are reset for the cases after this one.
 	asked() {
@@ -5080,8 +5105,8 @@ case_own_presets() {
 		[ "$places" = none ] && sleep 1
 	done
 	case "$places" in
-	*" zen tablet mine") ;;
-	*) fail "Settings' Layout page does not list mine after tablet: $places" ;;
+	*" zen tablet phone mine") ;;
+	*) fail "Settings' Layout page does not list mine after phone: $places" ;;
 	esac
 	python3 ci/qmp.py screendump "$dir/settings-own-presets.png"
 	closed=$(count 'edel-compositor: unmapped window Settings')
@@ -5101,7 +5126,7 @@ case_own_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Own presets (M5.17): settings-own-presets.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after tablet, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
+	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after phone, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
 }
 
 case_app_windows() {

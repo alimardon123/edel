@@ -254,6 +254,8 @@ commands() {
 		'preset zen') edel settings set layout.preset=zen ;;
 		# Tablet (M9.4a): tiling side by side under a large bar on top.
 		'preset tablet') edel settings set layout.preset=tablet ;;
+		# Phone (M9.4b): one window at a time, with no title bar.
+		'preset phone') edel settings set layout.preset=phone ;;
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel settings set 'panels.list=[{ edge = "bottom", end = ["clock"] }]' ;;

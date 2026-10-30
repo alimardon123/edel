@@ -6,7 +6,9 @@
 //! window fills the area. A new window joins the bottom of the stack, so
 //! the one being worked in stays put, and when the master closes the first
 //! of the stack takes its place. `split` is `split.rs`, `scroll` is
-//! `scroll.rs`. A window moved or
+//! `scroll.rs`. `full` (M9.4b, the Phone preset's) gives every window the
+//! whole area, so the one in front is all there is, as on a phone; the
+//! window list and the switcher bring another forward. A window moved or
 //! resized by a person goes back to its tile. Title bars stay in tiling.
 //! A style is one module and one line in [`Style`].
 
@@ -24,10 +26,11 @@ pub enum Style {
     Stack,
     Split,
     Scroll,
+    Full,
 }
 
 impl Style {
-    pub const ALL: [Style; 3] = [Style::Stack, Style::Split, Style::Scroll];
+    pub const ALL: [Style; 4] = [Style::Stack, Style::Split, Style::Scroll, Style::Full];
 
     /// The name the settings file and the log use.
     pub fn name(self) -> &'static str {
@@ -35,6 +38,7 @@ impl Style {
             Style::Stack => "stack",
             Style::Split => "split",
             Style::Scroll => "scroll",
+            Style::Full => "full",
         }
     }
 
@@ -130,6 +134,10 @@ impl<W: Clone + PartialEq> Tiling<W> {
                 .collect(),
             Style::Split => self.tree.places(area, self.gaps),
             Style::Scroll => self.strip.places(area, self.gaps),
+            Style::Full => {
+                let whole = tiles(1, area, self.gaps)[0];
+                self.windows.iter().map(|w| (w.clone(), whole)).collect()
+            }
         }
     }
 
@@ -334,7 +342,30 @@ mod tests {
         assert!(!tiling.swap(&1, &9));
         assert_eq!(Style::parse("split"), Some(Style::Split));
         assert_eq!(Style::parse("scroll"), Some(Style::Scroll));
+        assert_eq!(Style::parse("full"), Some(Style::Full));
         assert_eq!(Style::parse("spiral"), None);
+    }
+
+    /// `full` gives every window the whole area inside the gap, so the one
+    /// in front is all that shows, as on a phone.
+    #[test]
+    fn full_gives_every_window_the_whole_area() {
+        let mut tiling = Tiling::new(Gaps::uniform(8));
+        tiling.set_style(Style::Full);
+        assert_eq!(
+            tiling.open(1, Size::default(), screen()),
+            rect(8, 8, 1264, 784)
+        );
+        assert_eq!(
+            tiling.open(2, Size::default(), screen()),
+            rect(8, 8, 1264, 784)
+        );
+        assert_eq!(
+            tiling.arrange(screen()),
+            [(1, rect(8, 8, 1264, 784)), (2, rect(8, 8, 1264, 784))]
+        );
+        tiling.close(&1);
+        assert_eq!(tiling.arrange(screen()), [(2, rect(8, 8, 1264, 784))]);
     }
 
     /// The inner and outer gaps are their own: 4 from the edges, 12 between.

@@ -49,6 +49,7 @@ pub fn label(style: &str) -> String {
         "stack" => return tr("Stack").into(),
         "split" => return tr("Split").into(),
         "scroll" => return tr("Scroll").into(),
+        "full" => return tr("Full").into(),
         _ => {}
     }
     let mut chars = style.chars();
@@ -194,7 +195,12 @@ fn picture(pixmap: &mut Pixmap, style: &str, x: f32, y: f32, s: f32, tokens: &To
     let right = inner.0 + half + g;
     let tall = (inner.3 - g) / 2.0;
     let small = r / 2.0;
-    // Both: the main window on the left half.
+    // Full: one window fills the screen.
+    if style == "full" {
+        fill(pixmap, inner.0, inner.1, inner.2, inner.3, small, tile);
+        return;
+    }
+    // The others: the main window on the left half.
     fill(pixmap, inner.0, inner.1, half, inner.3, small, tile);
     match style {
         // Split: the right half halved, its lower half halved again.
@@ -234,7 +240,7 @@ mod tests {
 
     #[test]
     fn the_menu_offers_the_keys_styles_and_marks_the_one_in_use() {
-        assert_eq!(styles(), ["stack", "split", "scroll"]);
+        assert_eq!(styles(), ["stack", "split", "scroll", "full"]);
         assert_eq!(label("split"), "Split");
         let machine = "format = 1\n[layout]\ntiling_style = \"split\"\n";
         let person = "format = 1\n[layout]\ntiling_style = \"stack\"\n";
@@ -268,10 +274,10 @@ mod tests {
         let view = View { chosen: 1, lit: 2 };
         let (items, focus) = nodes(&view, &tokens);
         let names: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(names, ["Stack", "Split", "Scroll"]);
+        assert_eq!(names, ["Stack", "Split", "Scroll", "Full"]);
         assert!(items.iter().all(|i| i.role == Role::RadioButton));
         let on: Vec<Option<bool>> = items.iter().map(|i| i.toggled).collect();
-        assert_eq!(on, [Some(false), Some(true), Some(false)]);
+        assert_eq!(on, [Some(false), Some(true), Some(false), Some(false)]);
         assert_eq!(focus, Some(2), "the lit row holds the focus");
     }
 
@@ -283,9 +289,10 @@ mod tests {
         assert_eq!(row_at(PAD + 1.0, &tokens), Some(0));
         assert_eq!(row_at(PAD + row + 1.0, &tokens), Some(1));
         assert_eq!(row_at(PAD + 2.0 * row + 1.0, &tokens), Some(2));
-        assert_eq!(row_at(PAD + 3.0 * row + 1.0, &tokens), None);
+        assert_eq!(row_at(PAD + 3.0 * row + 1.0, &tokens), Some(3));
+        assert_eq!(row_at(PAD + 4.0 * row + 1.0, &tokens), None);
         let (w, h) = size(&tokens);
-        assert_eq!((w, h), (WIDTH, (2.0 * PAD + 3.0 * row) as u32));
+        assert_eq!((w, h), (WIDTH, (2.0 * PAD + 4.0 * row) as u32));
     }
 
     #[test]
