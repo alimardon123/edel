@@ -6282,6 +6282,72 @@ case_touch() {
 	echo "PASS: the tablet-mode switch turned touch mode on and off: the portal's io.github.alimardon123.edel touch-mode read true, then false, and Settings sized its rows for touch and back (touch.png); $(value touch_log)"
 }
 
+case_taps() {
+	# Touch screens (M9.5): a touch screen on uinput (edel-testclient
+	# --taps, the test service's `taps X,Y`) taps as a mouse clicks. Two
+	# test clients, tapa and tapb, open; a tap on a part of tapa that tapb
+	# does not cover focuses tapa, and a tap on each one's close button,
+	# the bar's rightmost 28 px, closes it, as the state file and the
+	# compositor's unmap lines show.
+	opened=$(count 'edel-compositor: mapped window tapb')
+	guest 'tap windows'
+	wait_more 'edel-compositor: mapped window tapb' "$opened" 30 || fail "the test clients tapa and tapb did not open"
+	state_now || fail "the state file could not be read"
+	taps_place tapa || fail "tapa has no place of its own to tap: $(cat "$dir/taps.now")"
+	read -r x y w h at how <"$dir/taps.now"
+	tap "$at"
+	tries=0
+	until state_now && taps_place tapa && [ "$(cut -d' ' -f6 "$dir/taps.now")" = focused ]; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "a tap at $at did not focus tapa: $(cat "$dir/taps.now")"
+		sleep 1
+	done
+	for name in tapa tapb; do
+		state_now || fail "the state file could not be read"
+		taps_place "$name" || fail "$name has no place: $(cat "$dir/taps.now")"
+		read -r x y w h spot how <"$dir/taps.now"
+		closed=$(count "edel-compositor: unmapped window $name")
+		tap "$((x + w - 13)),$((y - 14))"
+		wait_more "edel-compositor: unmapped window $name" "$closed" ||
+			fail "a tap on $name's close button at $((x + w - 13)),$((y - 14)) did not close it"
+	done
+	echo "PASS: a touch screen's tap at $at focused tapa, and taps on tapa's and tapb's close buttons closed them; $(value taps_done)"
+}
+
+# tap X,Y: the touch screen taps there and the test waits until it has.
+tap() {
+	tapped=$(count 'DESKTOP-TEST: taps_done ')
+	guest "taps $1"
+	wait_more 'DESKTOP-TEST: taps_done ' "$tapped" 30 || fail "the touch screen did not tap $1"
+	case "$(value taps_done)" in
+	"0 tapped $1"*) ;;
+	*) fail "the touch screen could not tap $1: $(value taps_done)" ;;
+	esac
+}
+
+# taps_place NAME: writes NAME's x, y, width and height from the last
+# state file (state_now), a point on it no other window covers as X,Y,
+# and focused or unfocused, into $dir/taps.now; fails when it has none.
+taps_place() {
+	python3 - "$dir/state-now.toml" "$1" >"$dir/taps.now" <<-'EOF'
+		import sys, tomllib
+		windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+		mine = [w for w in windows if w["title"] == sys.argv[2]]
+		if not mine:
+		    print(f"no window {sys.argv[2]} in {[w['title'] for w in windows]}")
+		    sys.exit(1)
+		me = mine[0]
+		others = [w for w in windows if w is not me and w["workspace"] == me["workspace"]]
+		def covered(x, y):
+		    return any(o["x"] <= x < o["x"] + o["width"] and o["y"] <= y < o["y"] + o["height"] for o in others)
+		spots = [(me["x"] + me["width"] * a // 4, me["y"] + me["height"] * b // 4) for a in (1, 2, 3) for b in (1, 2, 3)]
+		free = [s for s in spots if not covered(*s)]
+		at = f"{free[0][0]},{free[0][1]}" if free else "none"
+		print(me["x"], me["y"], me["width"], me["height"], at, "focused" if me["focused"] else "unfocused")
+		sys.exit(0 if free else 1)
+	EOF
+}
+
 # touch_read WANT: the settings portal's touch-mode must read WANT (true or
 # false) within 10 tries a second apart. Its count is its own, not i,
 # which wait_more sets: a shared one would start again on every try.
@@ -9671,7 +9737,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

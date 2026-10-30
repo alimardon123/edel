@@ -163,6 +163,9 @@ pub struct Edel {
     /// Whether the tablet-mode switch of a 2-in-1 is on (M9.6), which
     /// shell-ui tells apps as touch mode. Starts false.
     pub tablet_mode: bool,
+    /// The touch screen's finger that moves the pointer, while it is down
+    /// (M9.5).
+    pub touching: Option<smithay::backend::input::TouchSlot>,
     /// Game mode (M7.7, `games.rs`).
     pub game: crate::games::Game,
     /// The timer for the sun's next change of scheme (M7.14, `sun.rs`).
@@ -402,6 +405,7 @@ impl Edel {
             deadline: edel_compositor::effects::Deadline::new(edel_compositor::effects::Tier::Lite),
             saver: false,
             tablet_mode: false,
+            touching: None,
             game: Default::default(),
             sun: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
