@@ -43,6 +43,16 @@ pub const APPS_REMOTE: &str = "edel-apps";
 /// about 1.5 GB of the 4.5 GB installation (CI's stick, 2026-10-26).
 pub const LANGUAGES: &str = "en";
 
+/// The Mesa drivers the default apps' installation never fetches, as
+/// `flatpak mask` takes them: each freedesktop runtime asks for its Mesa
+/// twice, `org.freedesktop.Platform.GL.default` of `YY.08` and of
+/// `YY.08-extra`, the same Mesa with the video codecs too, and Flatpak uses
+/// the first one installed, so the plain one is masked and `-extra` alone
+/// is fetched: about 88 MiB less a runtime (CI's stick, 2026-10-26). A
+/// runtime named otherwise matches nothing and keeps both, which costs only
+/// room.
+pub const MESA_MASK: &str = "org.freedesktop.Platform.GL.default/*/*.08";
+
 /// The languages a machine's default apps keep translations for, as
 /// `flatpak config --set languages` takes them: [`LANGUAGES`] and the
 /// language of each of `chosen`, the `region.language` values of the
