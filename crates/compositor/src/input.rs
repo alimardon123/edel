@@ -289,56 +289,20 @@ impl Edel {
                 self.dirty = true;
             }
             InputEvent::PointerButton { event } => {
-                // Super held for a drag is no tap.
-                self.tap = None;
-                let pointer = self.seat.get_pointer()?;
-                let button = event.button_code();
-                let location = pointer.current_location();
-                let pressed = event.state() == ButtonState::Pressed;
-                // Locked, a click reaches the lock screen alone (M5.10).
-                if self.is_locked() {
-                    pointer.button(
-                        self,
-                        &ButtonEvent {
-                            button,
-                            state: event.state(),
-                            serial,
-                            time: event.time_msec(),
-                        },
-                    );
-                    pointer.frame(self);
-                    return None;
-                }
-                // The overview takes every click while it is open (M5.2j).
-                if self.overview.is_some() {
-                    if button == BUTTON_LEFT && pressed {
-                        self.overview_press(location);
-                    } else if button == BUTTON_LEFT {
-                        self.overview_release(location);
-                    }
-                    return None;
-                }
-                if pressed
-                    && !pointer.is_grabbed()
-                    && self.press(button, location, serial, event.time_msec())
-                {
-                    // The window never sees a click it did not get.
-                    return None;
-                }
-                if !pressed && button == BUTTON_LEFT {
-                    self.release(location);
-                }
-                pointer.button(
-                    self,
-                    &ButtonEvent {
-                        button,
-                        state: event.state(),
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-                pointer.frame(self);
+                self.button(
+                    event.button_code(),
+                    event.state(),
+                    serial,
+                    event.time_msec(),
+                )?;
             }
+            // A touch screen (M9.5): its first finger is the pointer, a tap
+            // a left click and a drag a drag, so every app, panel, title
+            // bar and the lock screen take it as they take a mouse.
+            InputEvent::TouchDown { event } => self.touch_down::<B>(&event, serial)?,
+            InputEvent::TouchMotion { event } => self.touch_motion::<B>(&event, serial)?,
+            InputEvent::TouchUp { event } => self.touch_up::<B>(&event, serial)?,
+            InputEvent::TouchCancel { event } => self.touch_cancel::<B>(&event, serial)?,
             InputEvent::PointerAxis { event } => {
                 self.tap = None;
                 self.scroll::<B>(event)
@@ -627,8 +591,65 @@ impl Edel {
         self.move_pointer(at, SERIAL_COUNTER.next_serial(), 0);
     }
 
+    /// A button pressed or released at the pointer: the mouse's, or the
+    /// left one for a touch screen's finger (M9.5).
+    pub(crate) fn button(
+        &mut self,
+        button: u32,
+        state: ButtonState,
+        serial: Serial,
+        time: u32,
+    ) -> Option<()> {
+        // Super held for a drag is no tap.
+        self.tap = None;
+        let pointer = self.seat.get_pointer()?;
+        let location = pointer.current_location();
+        let pressed = state == ButtonState::Pressed;
+        // Locked, a click reaches the lock screen alone (M5.10).
+        if self.is_locked() {
+            pointer.button(
+                self,
+                &ButtonEvent {
+                    button,
+                    state,
+                    serial,
+                    time,
+                },
+            );
+            pointer.frame(self);
+            return Some(());
+        }
+        // The overview takes every click while it is open (M5.2j).
+        if self.overview.is_some() {
+            if button == BUTTON_LEFT && pressed {
+                self.overview_press(location);
+            } else if button == BUTTON_LEFT {
+                self.overview_release(location);
+            }
+            return Some(());
+        }
+        if pressed && !pointer.is_grabbed() && self.press(button, location, serial, time) {
+            // The window never sees a click it did not get.
+            return Some(());
+        }
+        if !pressed && button == BUTTON_LEFT {
+            self.release(location);
+        }
+        pointer.button(
+            self,
+            &ButtonEvent {
+                button,
+                state,
+                serial,
+                time,
+            },
+        );
+        pointer.frame(self);
+        Some(())
+    }
+
     /// Moves the pointer to `at`, as a pen does on its way.
-    fn move_pointer(&mut self, at: Point<f64, Logical>, serial: Serial, time: u32) {
+    pub(crate) fn move_pointer(&mut self, at: Point<f64, Logical>, serial: Serial, time: u32) {
         let focus = self.pointer_over(at);
         if let Some(pointer) = self.seat.get_pointer() {
             pointer.motion(
@@ -831,7 +852,7 @@ impl Edel {
 
     /// Where an absolute device's event lands on the first screen, turned
     /// as the screen is (M9.8), as the device spans the glass.
-    fn on_screen<B: InputBackend>(
+    pub(crate) fn on_screen<B: InputBackend>(
         &self,
         event: &impl AbsolutePositionEvent<B>,
     ) -> Option<Point<f64, Logical>> {

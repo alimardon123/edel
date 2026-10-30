@@ -24,7 +24,8 @@
 //! `--lid SECONDS` draws nothing either: as root, it shuts a lid switch on
 //! uinput for SECONDS and opens it again, as a laptop's lid does
 //! (`lid.rs`, M7.8); `--tablet-mode SECONDS` folds a 2-in-1 into tablet
-//! mode the same way (M9.6). `--location` draws nothing either: it asks the
+//! mode the same way (M9.6), and `--taps "X,Y ..."` taps those points on a
+//! touch screen it makes the same way (`touch.rs`, M9.5). `--location` draws nothing either: it asks the
 //! Location portal for the device's position and prints the first update
 //! (`portal.rs`, M6.14c), holding the session SECONDS more when given, so
 //! the in-use sign stays. `--recolour RRGGBB@FILE` draws the window in that
@@ -63,6 +64,7 @@
 //!     edel-testclient --screencast
 //!     edel-testclient --lid 8
 //!     edel-testclient --tablet-mode 8
+//!     edel-testclient --taps "640,400 100,100"
 //!     edel-testclient --location
 //!     edel-testclient --location SECONDS
 //!     edel-testclient --clipboard
@@ -331,6 +333,8 @@ mod sandbox;
 mod smooth;
 mod sni;
 mod toplevels;
+mod touch;
+mod uinput;
 mod wifi;
 mod workspaces;
 
@@ -345,6 +349,7 @@ fn main() -> Result<()> {
         ["--screencast"] => return portal::screencast(),
         ["--lid", seconds] => return lid::run(seconds, lid::Switch::Lid),
         ["--tablet-mode", seconds] => return lid::run(seconds, lid::Switch::TabletMode),
+        ["--taps", points] => return touch::run(points),
         ["--location"] => return portal::location(0),
         ["--location", seconds] => {
             let seconds = seconds

@@ -532,7 +532,7 @@ jobs:
             cases: >-
               background floating titlebar tiling shape depth text cursor console pointer dmabuf outputs compositor
               panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick notify osd player
-              fallback switcher presets own-presets buttons styles scroll sandbox activation everyday scale rotation sharp touch
+              fallback switcher presets own-presets buttons styles scroll sandbox activation everyday scale rotation sharp touch taps
           - part: B
             cases: >-
               titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness frame-rate
