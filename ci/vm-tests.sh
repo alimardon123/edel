@@ -31,8 +31,8 @@
 #                                 builds' work/ folders)
 #   sh ci/vm-tests.sh unpack NAME that archive back into out/
 #
-# Budget boots are not here: sizes.sh measures them in the build job, alone,
-# so other VMs do not slow the boots it times.
+# Budget boots are not here: CI's system lane runs `sizes.sh boots` before
+# its tests, alone on its runner, so other VMs do not slow the boots it times.
 set -u
 
 # lane SCRIPT...: runs each ci/SCRIPT in order until one fails; a SCRIPT

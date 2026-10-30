@@ -420,9 +420,11 @@ jobs:
             out/release
             out/channel
 
-      - name: Check the budgets and report image sizes
+      - name: Check the image sizes against their budgets and report them
+        # The budget boots run first in the system lane, so the lanes do
+        # not wait for them.
         if: always()
-        run: sh ci/sizes.sh
+        run: sh ci/sizes.sh sizes
 
       - name: Report package changes against the preview
         if: always()
@@ -510,7 +512,15 @@ jobs:
       - name: Install QEMU and UEFI firmware
         run: sh ci/apt.sh qemu-system-x86 ovmf
 
+      - name: Time three boots of the one image against their budgets
+        # Before the lane's tests, alone on this runner, so other VMs do not
+        # slow the boots it times; the lane still runs when a budget fails.
+        id: boots
+        if: matrix.lane == 'system'
+        run: sh ci/sizes.sh boots
+
       - name: Run the ${{ matrix.lane }} lane
+        if: success() || steps.boots.outcome == 'failure'
         # GH_TOKEN reads main's newest desktop image, which the upgrade test
         # (M3.5) updates until a preview is published.
         env:
