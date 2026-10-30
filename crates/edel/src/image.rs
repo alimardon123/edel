@@ -804,6 +804,11 @@ impl Build<'_> {
         add.args(edel::apps::remote_add_args(&self.apps_from));
         add.arg(edel::apps::APPS_REMOTE).arg(&self.apps_from);
         self.runner.run(&mut add)?;
+        // Before anything is installed, and kept in the installation's
+        // own config, so later updates fetch no other language either.
+        let mut languages = flatpak();
+        languages.args(["config", "--set", "languages", edel::apps::LANGUAGES]);
+        self.runner.run(&mut languages)?;
         let mut install = flatpak();
         install
             .args(["install", "--noninteractive", "-y", edel::apps::APPS_REMOTE])

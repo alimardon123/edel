@@ -39,7 +39,7 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from the
 | `displays.*.resolution` | each screen's own | hardware |
 | `displays.*.refresh_rate` | the resolution's best | hardware |
 | `displays.*.enabled` | `true` | hardware |
-| `displays.*.rotation` | each screen's own | hardware |
+| `displays.*.rotation` | `0` | hardware |
 | `appearance.theme` | `"edel"` | release |
 | `appearance.wallpaper` | `"hills"` | release |
 | `appearance.wallpaper_dark` | the wallpaper's | release |

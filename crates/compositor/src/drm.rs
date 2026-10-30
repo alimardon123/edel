@@ -672,11 +672,13 @@ impl Gpu {
                 .iter()
                 .position(|c| *c == s.connector)
         });
-        state.apply_scales();
+        state.apply_scales_and_turns();
         let sizes: Vec<_> = lit
             .iter()
             .map(|s| {
                 let mode = s.output.current_mode().map(|m| m.size).unwrap_or_default();
+                // A turned screen is laid out at its turned size (M9.8).
+                let mode = s.output.current_transform().transform_size(mode);
                 let size = mode
                     .to_f64()
                     .to_logical(s.output.current_scale().fractional_scale())
@@ -743,6 +745,7 @@ impl Gpu {
                 | connector::Interface::DSI
         );
         let (w, h) = mode.size();
+        crate::outputs::turnable(&output);
         crate::outputs::set_auto_scale(
             &output,
             auto_scale(
@@ -890,10 +893,15 @@ impl Gpu {
             // so the windows on this screen are told to draw by where they
             // are rather than by what the last frame showed (M5.2j-b4).
             let live = state.overview_is_live();
+            // Under the lock nothing but the lock is shown, so no window
+            // draws until the screen is unlocked: a game left running
+            // would otherwise draw every frame for nobody, slowing the
+            // lock's own drawing and its password field.
+            let locked = state.is_locked();
             for window in state.space.elements() {
                 // Behind a game, a window draws again once it is visible
                 // (M7.7c).
-                if state.behind_game(window) {
+                if locked || state.behind_game(window) {
                     continue;
                 }
                 if live {

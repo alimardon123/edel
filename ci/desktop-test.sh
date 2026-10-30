@@ -257,7 +257,7 @@
 #   own-presets edel preset save of Hive with the buttons on the left as
 #               mine, which leaves [layout] with preset = "mine" and nothing
 #               moved on screen; Classic and mine again; Settings' Layout
-#               page with mine after zen, kept as settings-own-presets.png;
+#               page with mine after tablet, kept as settings-own-presets.png;
 #               edel preset delete refused while mine is in use (M5.17)
 #   theme       edel theme save, export, delete and import round trip as
 #               root: a theme saved as mine is written under [themes],
@@ -295,6 +295,16 @@
 #               suspends the VM (QEMU reports it suspended), QMP's
 #               system_wakeup brings it back, the lid opens, and ci's password
 #               unlocks the screen; run after suspend (M7.8)
+#   touch       edel-testclient --tablet-mode turns a tablet-mode switch on
+#               uinput on for 10 s as root: the settings portal's touch-mode
+#               reads true, then false, and Settings sizes its rows for
+#               touch and back (M9.6)
+#   rotation    displays.Virtual-1.rotation = 90 turns the screen, the panel
+#               along the glass's right edge, and the reset turns it back
+#               (M9.8)
+#   sharp       a fullscreen game drawn at half size through wp_viewporter is
+#               scaled two times pixel for pixel, its checkerboard sharp
+#               (M8.28)
 #   respawn     kill -9 edel-compositor ends the session, and greetd's
 #               greeter, our compositor, logs a new ready line within 5 s,
 #               picks the Lite tier itself under llvmpipe, and owns the
@@ -977,6 +987,14 @@ case_respawn() {
 	esac
 	shot greeter 640 790 "$(token lock_backdrop_deep)" >/dev/null ||
 		fail "the greeter at 640,790 is not the lock's #$(token lock_backdrop_deep)"
+	# With ci's session ended, the controllers are nobody's (M8.37): greetd's
+	# PAM file ran edel-seat as the session closed, so ci's programs can no
+	# longer open /dev/uinput while someone else may log in.
+	asked=$(count 'DESKTOP-TEST: gaming_devices ')
+	guest 'gaming devices'
+	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput at the greeter"
+	[ "$(value gaming_devices | cut -d' ' -f1-3)" = 'root 600 refused' ] ||
+		fail "at the greeter, /dev/uinput is not root's alone with mode 600, refused to ci, as edel-seat makes it when ci's session closes: $(value gaming_devices)"
 	guest 'greeter places'
 	wait_for 'DESKTOP-TEST: greeter.log .*greeter places ' 10 ||
 		fail "the greeter's log has no places line: $(tr -d '\r' <"$log" | grep -a 'DESKTOP-TEST: greete[rd].log ' | tail -n 60)"
@@ -1033,6 +1051,11 @@ case_respawn() {
 	# exactly; startup login off takes the name out of the file.
 	wait_more 'edel-compositor: mapped window test-startup' "$started" 60 ||
 		fail "the app startup.apps names did not open after ci logged in again"
+	asked=$(count 'DESKTOP-TEST: gaming_devices ')
+	guest 'gaming devices'
+	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput after the login"
+	[ "$(value gaming_devices | cut -d' ' -f1-3)" = 'ci 600 writable' ] ||
+		fail "after ci logged in again, /dev/uinput is not ci's with mode 600, as edel-seat makes it when ci's session opens: $(value gaming_devices)"
 	closed=$(count 'edel-compositor: unmapped window test-startup')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window test-startup' "$closed" || fail "Super+Q did not close the startup window"
@@ -1073,7 +1096,7 @@ case_respawn() {
 	EOF
 	[ "$logs" = 2 ] && [ "$ready" -ge 1 ] ||
 		fail "edel report holds $logs session logs, not 2, with $ready ready lines, not at least 1"
-	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login"
+	echo "PASS: kill -9 edel-compositor ended the session, greetd's greeter, our compositor, logged \"$(value greeter | sed 's/^edel-compositor: //')\" $seconds s later and showed shell-ui's greeter, which refused a wrong password, whose session chip chose CI other, so logging in there started CI other's session (ci's file in its runtime directory, the choice in the greeter's sessions file), and that session's compositor started again, whose log said the session before ended without closing; edel status pointed to that log, and edel report held both logs' last lines; the app startup.apps names, test-startup, opened after the login; /dev/uinput was root's alone at the greeter, refused to ci, and ci's again after the login (M8.37)"
 }
 
 case_game_session() {
@@ -4942,6 +4965,27 @@ case_presets() {
 		sleep 1
 	done
 	shot preset-zen 640 12 "$panel" >/dev/null || fail "Zen's bar is not at 640,12 in the panel's colour"
+	# Tablet (M9.4a): tiling side by side with every window's title bar,
+	# under one large bar along the top.
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now tablet')
+	guest 'preset tablet'
+	wait_more 'edel-shell-ui: follows the settings: the preset is now tablet' "$followed" ||
+		fail "edel settings set layout.preset=tablet was not followed by shell-ui"
+	i=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/tablet.now" <<-'EOF' && break
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+			bars = [w["title_bar"] for w in windows]
+			print(f"{len(windows)} windows, title bars {bars}")
+			sys.exit(0 if windows and all(bars) else 1)
+		EOF
+		i=$((i + 1))
+		[ "$i" -lt 5 ] || fail "under Tablet the windows should be tiled with their title bars: $(cat "$dir/tablet.now")"
+		sleep 1
+	done
+	shot preset-tablet 640 12 "$panel" >/dev/null || fail "Tablet's bar is not at 640,12 in the panel's colour"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -4950,9 +4994,9 @@ case_presets() {
 	wait_more 'edel-compositor: windows now floating' "$floated" || fail "back on Classic, the windows did not float"
 	shot preset-classic 640 790 "$panel" >/dev/null || fail "Classic's panel is not at 640,790 in the panel's colour"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Presets (M5.4a): preset-hive.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+		echo "Presets (M5.4a, M9.4a): preset-hive.png, preset-zen.png, preset-tablet.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; Tablet (M9.4a) tiled them with their title bars under a large bar at 640,12, kept as preset-tablet.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_own_presets() {
@@ -4963,7 +5007,7 @@ case_own_presets() {
 	# compositor logs no preset but hive. Then Classic (its buttons go right,
 	# the buttons' key having moved into mine), mine again (Hive's bar on top,
 	# the buttons on the left), Settings' Layout page with a card per preset,
-	# mine after zen, kept as settings-own-presets.png. Super+Q closes it,
+	# mine after tablet, kept as settings-own-presets.png. Super+Q closes it,
 	# delete is refused while mine is in use and then deletes it, and the
 	# layout keys are reset for the cases after this one.
 	asked() {
@@ -5036,8 +5080,8 @@ case_own_presets() {
 		[ "$places" = none ] && sleep 1
 	done
 	case "$places" in
-	*" zen mine") ;;
-	*) fail "Settings' Layout page does not list mine after zen: $places" ;;
+	*" zen tablet mine") ;;
+	*) fail "Settings' Layout page does not list mine after tablet: $places" ;;
 	esac
 	python3 ci/qmp.py screendump "$dir/settings-own-presets.png"
 	closed=$(count 'edel-compositor: unmapped window Settings')
@@ -5057,7 +5101,7 @@ case_own_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Own presets (M5.17): settings-own-presets.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after zen, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
+	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after tablet, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
 }
 
 case_app_windows() {
@@ -6181,6 +6225,75 @@ case_portal() {
 	echo "$accent" | grep -qE "^\\(<\\($want\\)>,\\)" ||
 		fail "the portal's accent is not the tokens' #$hex: $accent"
 	echo "PASS: an app asking xdg-desktop-portal heard shell-ui's answer: colour scheme $scheme and accent $accent"
+}
+
+case_touch() {
+	# Touch mode (M9.6): a 2-in-1's tablet-mode switch on uinput, which
+	# edel-testclient --tablet-mode turns on as root for 10 s and off (the
+	# test service's `tablet on`). The compositor hears it and tells
+	# shell-ui, which tells apps through the settings portal: an app's
+	# ReadOne of io.github.alimardon123.edel touch-mode is true while the
+	# switch is on and false after, and Settings, open meanwhile, grows its
+	# rows for touch and back. Kept as touch.png, Settings in touch mode.
+	touch_read false
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'touch window'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on its Sound page"
+	on=$(count 'edel-compositor: tablet mode on')
+	told=$(count 'edel-shell-ui: touch mode on told to apps')
+	off=$(count 'edel-shell-ui: touch mode off told to apps')
+	guest 'tablet on'
+	wait_more 'edel-compositor: tablet mode on' "$on" || touch_fail "the compositor did not hear the tablet-mode switch"
+	wait_more 'edel-shell-ui: touch mode on told to apps' "$told" || touch_fail "shell-ui did not tell apps touch mode is on"
+	touch_read true
+	touch_rows 'rows sized for touch$' || touch_fail "Settings did not size its rows for touch"
+	python3 ci/qmp.py screendump "$dir/touch.png"
+	wait_more 'edel-shell-ui: touch mode off told to apps' "$off" 20 || touch_fail "shell-ui did not tell apps touch mode is off when the switch went off"
+	touch_read false
+	touch_rows 'rows sized for a pointer$' || touch_fail "Settings did not size its rows for a pointer again"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: the tablet-mode switch turned touch mode on and off: the portal's io.github.alimardon123.edel touch-mode read true, then false, and Settings sized its rows for touch and back (touch.png); $(value touch_log)"
+}
+
+# touch_read WANT: the settings portal's touch-mode must read WANT (true or
+# false) within 10 tries a second apart. Its count is its own, not i,
+# which wait_more sets: a shared one would start again on every try.
+touch_read() {
+	tries=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: touch_mode ')
+		guest 'touch read'
+		wait_more 'DESKTOP-TEST: touch_mode ' "$asked" || touch_fail "the service did not hear back from the portal"
+		case "$(value touch_mode)" in
+		"(<$1>,)"*) return 0 ;;
+		esac
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || touch_fail "the portal's touch-mode is not $1: $(value touch_mode)"
+		sleep 1
+	done
+}
+
+# touch_rows PATTERN: Settings' latest `rows sized` line, read through the
+# test service (its log's lines joined by `|`), must match PATTERN within
+# 10 tries a second apart.
+touch_rows() {
+	tries=0
+	while :; do
+		asked=$(count 'DESKTOP-TEST: touch_log ')
+		guest 'touch log'
+		wait_more 'DESKTOP-TEST: touch_log ' "$asked" || return 1
+		value touch_log | sed 's/; tablet: .*//' | tr '|' '\n' | sed 's/ *$//' |
+			grep 'rows sized' | tail -n 1 | grep -qE "$1" && return 0
+		tries=$((tries + 1))
+		[ "$tries" -lt 10 ] || return 1
+		sleep 1
+	done
+}
+
+touch_fail() {
+	fail "$1; Settings and the test client said: $(value touch_log)"
 }
 
 case_own_bars() {
@@ -8839,6 +8952,54 @@ case_scale() {
 	echo "PASS: displays.Virtual-1.scale = 2 applied at once: a 640x400 screen and a title bar 56 pixels high; the reset brought scale 1 back"
 }
 
+case_rotation() {
+	# A screen on its side (M9.8): displays.Virtual-1.rotation = 90 turns
+	# the 1280x800 screen's picture, which the layout takes as 800x1280, so
+	# the panel along its bottom lies along the glass's right edge in the
+	# screendump, which is the glass's way up. Kept as rotation.png.
+	panel=$(token panel)
+	guest 'rotation 90'
+	wait_for 'DESKTOP-TEST: ran rotation 90: 0' ||
+		fail "edel settings set displays.Virtual-1.rotation=90 did not run in the VM"
+	wait_for 'edel-compositor: output Virtual-1 turned 90 degrees' ||
+		fail "the compositor did not turn Virtual-1 as displays.Virtual-1.rotation = 90 says"
+	got=$(shot rotation 1276 400 "$panel") ||
+		fail "with the screen turned, 1276,400, the glass's right edge, is #$got, not the panel's #$panel"
+	turned=$(count 'edel-compositor: output Virtual-1 turned 0 degrees')
+	guest 'rotation default'
+	wait_more 'edel-compositor: output Virtual-1 turned 0 degrees' "$turned" ||
+		fail "resetting displays.Virtual-1.rotation did not turn the screen back"
+	shot rotation-back 640 796 "$panel" >/dev/null ||
+		fail "after the reset the panel is not along the bottom again"
+	echo "PASS: displays.Virtual-1.rotation = 90 turned the screen at once, the panel along the glass's right edge (rotation.png), and the reset turned it back"
+}
+
+case_sharp() {
+	# Sharp scaling for games (M8.28): a fullscreen game in game mode (on
+	# in the VM, which has no battery) draws a checkerboard at half the
+	# screen's size, shown at full size through wp_viewporter. The
+	# compositor scales it two times pixel for pixel, so each white or
+	# black square is two by two of the screen's pixels with nothing
+	# blended between them (sharp.png); blurred, the squares would be grey.
+	sharp=$(count 'edel-compositor: game on Virtual-1 scaled sharply, 2 times')
+	guest 'sharp game'
+	wait_more 'edel-compositor: game on Virtual-1 scaled sharply, 2 times' "$sharp" 30 ||
+		fail "the compositor did not scale the half-size game sharply: $(tr -d '\r' <"$log" | grep -a 'scaled\|window sharp' | tail -n 3 | tr '\n' ' ')"
+	# Screen pixels 200 and 201 are one buffer pixel, (100, 75), black;
+	# 202 and 203 the next, white.
+	shot sharp 200 150 000000 >/dev/null || fail "200,150 is not the checkerboard's black (sharp.png)"
+	for at in 201:000000 202:ffffff 203:ffffff; do
+		x=${at%%:*} want=${at#*:}
+		got=$(python3 ci/qmp.py pixel "$dir/sharp.png" "$x" 150)
+		matches "$got" "$want" || fail "$x,150 is #$got, not #$want: the half-size game was not scaled pixel for pixel (sharp.png)"
+	done
+	smooth=$(count 'edel-compositor: pictures on Virtual-1 scaled smoothly again')
+	guest 'sharp close'
+	wait_more 'edel-compositor: pictures on Virtual-1 scaled smoothly again' "$smooth" ||
+		fail "the compositor did not go back to smooth scaling after the game closed"
+	echo "PASS: a game drawn at half the screen's size was scaled two times pixel for pixel, its checkerboard sharp (sharp.png), and smooth scaling came back when it closed"
+}
+
 # input_method_fail MESSAGE: the compositor's lines about the input method
 # and fcitx5's own errors and warnings,
 # then the failure.
@@ -9000,8 +9161,9 @@ profile_off() {
 }
 
 case_profiles() {
-	# First, the gaming feature's /dev/uinput and /dev/ntsync are the seat
-	# group's, mode 660, and ci may write them (M7.6b, M8.33), and the base
+	# First, the gaming feature's /dev/uinput is ci's, the person at the
+	# screen, mode 600 (M8.37), /dev/ntsync the seat group's, mode 660, ci
+	# may write both (M7.6b, M8.33), and the base
 	# allows 1048576 memory maps (M8.33). Then leave out what a profile brings
 	# (M7.6c): with gaming named and ci an admin, `edel settings diff` would
 	# install Steam; `apps.installed-=` writes it to system.profiles_without
@@ -9010,8 +9172,8 @@ case_profiles() {
 	asked=$(count 'DESKTOP-TEST: gaming_devices ')
 	guest 'gaming devices'
 	wait_more 'DESKTOP-TEST: gaming_devices ' "$asked" || fail "the service did not look at /dev/uinput"
-	[ "$(value gaming_devices)" = 'seat 660 writable ntsync seat 660 writable maps 1048576' ] ||
-		fail "/dev/uinput and /dev/ntsync are not group seat's with mode 660, writable by ci, as the gaming add-on's rule and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
+	[ "$(value gaming_devices)" = 'ci 600 writable ntsync seat 660 writable maps 1048576' ] ||
+		fail "/dev/uinput is not ci's, the person at the screen, with mode 600 (M8.37), /dev/ntsync is not group seat's with mode 660, either not writable by ci, as the gaming add-on's rule, edel-seat and modules-load.d file make them, or vm.max_map_count is not the base's 1048576 (usr/lib/sysctl.d/edel.conf): $(value gaming_devices)"
 	asked=$(count 'DESKTOP-TEST: profile_gaming ')
 	guest 'profile gaming'
 	wait_more 'DESKTOP-TEST: profile_gaming ' "$asked" || fail "the service did not name the gaming profile"
@@ -9041,7 +9203,7 @@ case_profiles() {
 	case "$reset" in
 	*Steam*) fail "system.profiles_without stayed after the profile was reset: $reset" ;;
 	esac
-	echo "PASS: /dev/uinput and /dev/ntsync were group seat's, mode 660, and ci could write them, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
+	echo "PASS: /dev/uinput was ci's, the person at the screen, mode 600, /dev/ntsync group seat's, mode 660, and ci could write both, and vm.max_map_count was 1048576; with gaming named, edel settings diff installed Steam; apps.installed-= wrote it to system.profiles_without, edel settings apply ended 0 and the diff no longer named it; resetting the profile took the key out with it"
 }
 
 case_office_fonts() {
@@ -10132,8 +10294,18 @@ while ! grep -q 'edel login:' "$log" && [ "$i" -lt 60 ]; do
 	sleep 1
 	i=$((i + 1))
 done
+# A case that runs over DESKTOP_CASE_LIMIT seconds (900; the longest,
+# settings-tour, took 407 s on 2026-10-26) fails with its name, so a wait
+# that never ends cannot hold a part for hours: a timer sends this shell
+# USR1, whose trap fails the case once the command it is in returns (the
+# waits sleep a second or less at a time).
+case_limit=${DESKTOP_CASE_LIMIT:-900}
+trap 'fail "the case $c ran over $case_limit s, so it stopped there; the lines above say what it waited for"' USR1
 for c in "$@"; do
+	(sleep "$case_limit" && kill -USR1 $$) >/dev/null 2>&1 &
+	timer=$!
 	"case_$(echo "$c" | tr '-' '_')"
+	kill "$timer" 2>/dev/null || true
 	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
 	# has exited already.
 	echo "$c" >>"$dir/passed"

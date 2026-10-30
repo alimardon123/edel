@@ -1,0 +1,28 @@
+# Tablet (M9.4a): for a touch screen with no keyboard at hand, as the
+# fifth round's tablet picture shows (docs/mockups/shell/tablet.jpg).
+# Windows tile from the start, side by side, each with its title bar and
+# close button, which the layout toggle, Super+Y or `layout.tiling` turns
+# back to floating. One large bar along the top, at touch height, holds
+# the menu button, the workspace buttons and the layout toggle at its
+# start, and the tray, the keyboard layout, the status pill and the clock
+# at its end. Rows and buttons grow to touch size by themselves while the
+# machine is in tablet mode (M9.6).
+format = 1
+
+[windows]
+policy = "tiling"
+buttons = "right"
+tiling_style = "split"
+
+[workspaces]
+count = 4
+
+[launcher]
+style = "menu"
+
+[[panels]]
+edge = "top"
+size = "large"
+start = ["menu", "workspaces", "layout"]
+centre = []
+end = ["tray", "keyboard", "status", "clock"]

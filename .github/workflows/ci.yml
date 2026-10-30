@@ -573,6 +573,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.desktop == 'yes'
     runs-on: ubuntu-latest
+    # A part takes about 20 minutes and runs at most twice; each case also
+    # has its own limit (DESKTOP_CASE_LIMIT in ci/desktop-test.sh).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -581,7 +584,7 @@ jobs:
             cases: >-
               background floating titlebar tiling shape depth text cursor console pointer dmabuf outputs compositor
               panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick notify osd player
-              fallback switcher presets own-presets buttons styles scroll sandbox activation everyday scale
+              fallback switcher presets own-presets buttons styles scroll sandbox activation everyday scale rotation sharp touch
           - part: B
             cases: >-
               titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness frame-rate

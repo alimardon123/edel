@@ -92,6 +92,7 @@ pub mod themes;
 pub mod timezones;
 pub mod tokens;
 pub mod tool;
+pub mod touch;
 pub mod users;
 pub mod version;
 pub mod wallpapers;

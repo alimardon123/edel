@@ -288,6 +288,10 @@ pub const ROWS: &[Row] = &[
         title: n_("Scale"),
     },
     Row {
+        key: "displays.*.rotation",
+        title: n_("Rotation"),
+    },
+    Row {
         key: "displays.*.position",
         title: n_("Position"),
     },
@@ -1037,7 +1041,10 @@ mod tests {
     #[test]
     fn the_displays_rows_are_found_by_search_and_belong_to_the_page() {
         let titles: Vec<&str> = on_page("displays").map(|r| r.title).collect();
-        assert_eq!(titles, ["Resolution", "Scale", "Position", "On"]);
+        assert_eq!(
+            titles,
+            ["Resolution", "Scale", "Rotation", "Position", "On"]
+        );
         assert_eq!(title("displays.*.scale"), "Scale");
     }
 

@@ -111,7 +111,12 @@ pack)
 	echo "packed lane $2: $(du -h "out/vm-$2.tar.zst" | cut -f1) for $paths"
 	;;
 unpack)
-	zstd -q -dc "out/vm-$2.tar.zst" | tar -xf -
+	# A download cut short leaves a short archive; stop here and say so,
+	# rather than booting a part of a disk and failing far from the cause.
+	zstd -q -dc "out/vm-$2.tar.zst" | tar -xf - || {
+		echo "FAIL: out/vm-$2.tar.zst did not unpack whole, so its download from the build job was cut short; run this job again"
+		exit 1
+	}
 	rm "out/vm-$2.tar.zst"
 	;;
 '')

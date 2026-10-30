@@ -236,6 +236,24 @@ msgstr ""
 msgid "could not keep the runtime {runtime} for a person's own apps"
 msgstr ""
 
+msgid "a game is playing"
+msgstr ""
+
+msgid "the connection is metered"
+msgstr ""
+
+msgid "the default apps' translations for the languages chosen wait, as {why}; the next hour tries again"
+msgstr ""
+
+msgid "fetched the default apps' translations for the languages chosen"
+msgstr ""
+
+msgid "could not fetch the default apps' translations for the languages chosen; the next hour tries again"
+msgstr ""
+
+msgid "keeping the translations of the languages chosen"
+msgstr ""
+
 msgid "installing the default apps {apps}"
 msgstr ""
 
@@ -1403,6 +1421,9 @@ msgstr ""
 msgid "Zen"
 msgstr ""
 
+msgid "Tablet"
+msgstr ""
+
 msgid "this release has no preset {name}; the Classic preset is used"
 msgstr ""
 
@@ -1904,7 +1925,7 @@ msgstr ""
 msgid "Whether this screen is on; a screen that is off shows nothing."
 msgstr ""
 
-msgid "How far this screen is turned: 0, 90, 180 or 270 degrees; this release does not act on it yet."
+msgid "How far this screen's picture is turned: 0, 90, 180 or 270 degrees."
 msgstr ""
 
 msgid "The theme in use: a built-in one (edel, aurora, earth or ocean) or one of your own."

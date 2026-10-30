@@ -9,6 +9,11 @@
 //! Apps never roll back with the system: Flatpak keeps their own history.
 //! It also takes out the runtimes no app uses any more, never one that a
 //! person's own app takes from this installation (M6.2a).
+//! It keeps the translations of the languages the machine and its people
+//! chose (`region.language`) besides English, the one the image carries:
+//! `languages` fetches them once that set changes, at each `edel update`
+//! and from the hourly `edel update --automatic` whatever it is set to,
+//! never while a game plays or over a metered connection.
 //! A failure here never fails the system's update; it is said and tried
 //! again at the next `edel update`.
 
@@ -203,6 +208,105 @@ fn tidy(keep: &[String]) -> Result<()> {
     result
 }
 
+/// The languages the machine and its people chose (`region.language`), as
+/// [`edel::apps::languages_for`] keeps them.
+fn wanted_languages(accounts: &[Account]) -> String {
+    let mut chosen: Vec<String> = edel::settings::on_machine("region.language")
+        .into_iter()
+        .collect();
+    for account in accounts
+        .iter()
+        .filter(|a| machine::is_person(a) && a.name != "root")
+    {
+        let file = edel::places::person_settings_in(Path::new(&account.home));
+        if let Ok(text) = fs::read_to_string(file) {
+            chosen.extend(edel::settings::chosen("region.language", None, Some(&text)));
+        }
+    }
+    edel::apps::languages_for(chosen.iter().map(String::as_str))
+}
+
+/// The languages to set in the installation, when they differ from what
+/// it keeps; none when they do not or there is no installation.
+fn languages_to_set(accounts: &[Account]) -> Option<String> {
+    if !Path::new(DEFAULT_APPS).is_dir() {
+        return None;
+    }
+    let wanted = wanted_languages(accounts);
+    let now = listed(flatpak().args(["config", "--get", "languages"]));
+    (now.first() != Some(&wanted)).then_some(wanted)
+}
+
+/// Keeps the translations of `accounts`' languages in the installation:
+/// when the set differs from the installation's, sets it, and with
+/// `fetch` downloads the translations of the runtimes and apps there
+/// (their `.Locale` extensions) at once. False when nothing changed or
+/// there is no installation.
+pub fn languages(accounts: &[Account], fetch: bool) -> Result<bool> {
+    let Some(wanted) = languages_to_set(accounts) else {
+        return Ok(false);
+    };
+    run(flatpak().args(["config", "--set", "languages", &wanted]))?;
+    if fetch {
+        let locales: Vec<String> = listed(flatpak().args(["list", "--runtime", "--columns=ref"]))
+            .into_iter()
+            .filter(|r| r.split('/').next().is_some_and(|n| n.ends_with(".Locale")))
+            .collect();
+        if !locales.is_empty() {
+            run(flatpak()
+                .args(["update", "--noninteractive", "-y"])
+                .args(&locales))?;
+        }
+    }
+    Ok(true)
+}
+
+/// The languages step of the hourly `edel update --automatic`: the
+/// translations a newly chosen language needs, fetched within the hour
+/// whatever `updates.automatic` says, as choosing the language asked for
+/// them, but never while a game plays (M7.7c) or over a metered
+/// connection: then the next hour tries again. Said on one line; a
+/// failure is said and tried again next hour.
+pub fn follow_languages() {
+    let Ok(passwd) = fs::read_to_string("/etc/passwd") else {
+        return;
+    };
+    let accounts = machine::accounts(&passwd);
+    if languages_to_set(&accounts).is_none() {
+        return;
+    }
+    let waits = if crate::shell::playing_now() {
+        Some(tr("a game is playing"))
+    } else if edel::network::metered() {
+        Some(tr("the connection is metered"))
+    } else {
+        None
+    };
+    if let Some(why) = waits {
+        println!(
+            "edel update: {}",
+            trf(
+                "the default apps' translations for the languages chosen wait, as {why}; the next hour tries again",
+                &[("why", why)]
+            )
+        );
+        return;
+    }
+    match languages(&accounts, true) {
+        Ok(true) => println!(
+            "edel update: {}",
+            tr("fetched the default apps' translations for the languages chosen")
+        ),
+        Ok(false) => {}
+        Err(err) => eprintln!(
+            "warning: {}: {err:#}",
+            tr(
+                "could not fetch the default apps' translations for the languages chosen; the next hour tries again"
+            )
+        ),
+    }
+}
+
 /// The address of the default apps' remote, from the installation.
 fn remote_url() -> Option<String> {
     let out = flatpak()
@@ -298,6 +402,13 @@ pub fn follow() -> Result<()> {
     }
     let used = used_by(&accounts, &list.flatpak_dropped);
     let mut failed = Vec::new();
+    // The languages first, so installing and updating below fetch their
+    // translations.
+    if let Err(err) = languages(&accounts, false) {
+        let said = tr("keeping the translations of the languages chosen");
+        println!("edel update: {said}");
+        failed.push(format!("{said}: {err:#}"));
+    }
     for step in plan(&list, &have, &used, &relied) {
         let (said, result) = match &step {
             Step::Install(ids) => (

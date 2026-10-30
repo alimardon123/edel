@@ -56,6 +56,8 @@ pub struct Told {
     playing: bool,
     /// Whether a game plays on some screen (M7.7b).
     game: bool,
+    /// Whether touch mode is on (M9.6).
+    touch: bool,
 }
 
 /// Offers `edel_shell_v1` to every client.
@@ -66,7 +68,8 @@ pub fn create_global(display: &DisplayHandle) {
 impl Edel {
     /// Tells each link the shown workspace's policy if it changed, and
     /// whether a game plays on every screen (M7.7c), so its timers stop
-    /// behind it, and on some screen (M7.7b), so it asks for full power.
+    /// behind it, and on some screen (M7.7b), so it asks for full power,
+    /// and whether touch mode is on (M9.6).
     pub fn sync_shell(&self) {
         let Ok(mut links) = self.links.0.try_borrow_mut() else {
             return;
@@ -75,6 +78,7 @@ impl Edel {
         let now = self.desks.layout().name();
         let playing = self.playing_everywhere();
         let game = self.playing();
+        let touch = self.tablet_mode;
         for (link, told) in links.iter_mut() {
             if told.policy != now {
                 link.policy(now.to_string());
@@ -87,6 +91,10 @@ impl Edel {
             if told.game != game {
                 link.game(u32::from(game));
                 told.game = game;
+            }
+            if told.touch != touch {
+                link.touch_mode(u32::from(touch));
+                told.touch = touch;
             }
         }
     }

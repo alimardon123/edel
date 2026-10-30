@@ -173,6 +173,8 @@ pub struct OutputSettings {
     pub mode: Option<String>,
     /// Off leaves the screen dark; absent or on uses it.
     pub enabled: Option<bool>,
+    /// How far it is turned, 0, 90, 180 or 270 degrees (M9.8); else 0.
+    pub rotation: Option<u32>,
 }
 
 impl Settings {
@@ -350,6 +352,9 @@ impl Settings {
                 }
                 if output.enabled.is_some() {
                     into.enabled = output.enabled;
+                }
+                if let Some(degrees) = output.rotation {
+                    into.rotation = Some(degrees);
                 }
             }
         }
@@ -769,7 +774,7 @@ mod tests {
         let machine = file(
             "format = 1\n[displays.HDMI-A-1]\nposition = [1920, 0]\nresolution = \"2560x1440\"\nrefresh_rate = 60\n",
         );
-        let person = file("format = 1\n[displays.HDMI-A-1]\nenabled = false\n");
+        let person = file("format = 1\n[displays.HDMI-A-1]\nenabled = false\nrotation = 90\n");
         let hdmi = &Settings::from_files(Some(&machine), Some(&person)).outputs["HDMI-A-1"];
         assert_eq!(hdmi.position, Some((1920, 0)));
         assert_eq!(hdmi.mode.as_deref(), Some("2560x1440@60"));
@@ -779,6 +784,7 @@ mod tests {
             "the person's key added to the machine's"
         );
         assert_eq!(hdmi.scale, None);
+        assert_eq!(hdmi.rotation, Some(90));
     }
 
     #[test]
