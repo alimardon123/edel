@@ -155,43 +155,14 @@ pub fn follow_input_method(handle: &LoopHandle<'static, Edel>, state: &mut Edel)
 /// compositor as its child and ended with it, but never started again:
 /// it runs as long as the setting asks for it.
 fn start_input_method(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
-    // fcitx5 types into Wayland apps, so it needs the desktop's socket,
-    // which session programs do not get. It gets no X display: connecting
-    // to one would start XWayland, which waits for an X11 app (M4.7).
-    let mut process = Command::new(INPUT_METHOD);
-    process
-        .envs(state.cursors.env())
-        .env("WAYLAND_DISPLAY", &state.socket)
-        .env_remove("DISPLAY")
-        .stdin(Stdio::null());
-    ends_with_us(&mut process);
-    let mut child = match process.spawn() {
-        Ok(child) => child,
-        Err(e) if e.kind() == ErrorKind::NotFound => {
-            eprintln!(
-                "edel-compositor: {}",
-                messages::input_method_missing(INPUT_METHOD)
-            );
-            return;
-        }
-        Err(e) => {
-            eprintln!(
-                "edel-compositor: {}",
-                messages::session_program_not_started(INPUT_METHOD, e)
-            );
-            return;
-        }
-    };
-    let pid = Pid::from_child(&child);
-    eprintln!(
-        "edel-compositor: started {INPUT_METHOD}, pid {}",
-        child.id()
-    );
     let asked = Arc::new(AtomicBool::new(false));
     let stopping = Arc::clone(&asked);
-    let (sender, receiver) = channel::channel::<Option<ExitStatus>>();
-    let inserted = handle.insert_source(receiver, move |event, _, state: &mut Edel| {
-        if let Event::Msg(status) = event {
+    let started = start_child(
+        handle,
+        state,
+        INPUT_METHOD,
+        &[],
+        move |state, pid, status| {
             if state
                 .services
                 .input_method
@@ -209,22 +180,64 @@ fn start_input_method(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
                     messages::input_method_ended(INPUT_METHOD, &how)
                 );
             }
+        },
+    );
+    match started {
+        Ok(pid) => state.services.input_method = Some(Input { pid, asked }),
+        Err(e) if e.kind() == ErrorKind::NotFound => eprintln!(
+            "edel-compositor: {}",
+            messages::input_method_missing(INPUT_METHOD)
+        ),
+        Err(e) => eprintln!(
+            "edel-compositor: {}",
+            messages::session_program_not_started(INPUT_METHOD, e)
+        ),
+    }
+}
+
+/// Starts `name` with `args` as one of the desktop's own helpers, the input
+/// method (M6.8) or the keyboard on the screen (M9.5): on the desktop's
+/// socket, which session programs do not get, with no X display (connecting
+/// to one would start XWayland, which waits for an X11 app, M4.7), as the
+/// compositor's child ended with it. Logs `started NAME, pid N`; `ended`
+/// runs on the loop when it ends, with its pid and how, none when that was
+/// lost.
+pub fn start_child(
+    handle: &LoopHandle<'static, Edel>,
+    state: &Edel,
+    name: &str,
+    args: &[String],
+    mut ended: impl FnMut(&mut Edel, Pid, Option<ExitStatus>) + 'static,
+) -> std::io::Result<Pid> {
+    let mut process = Command::new(name);
+    process
+        .args(args)
+        .envs(state.cursors.env())
+        .env("WAYLAND_DISPLAY", &state.socket)
+        .env_remove("DISPLAY")
+        .stdin(Stdio::null());
+    ends_with_us(&mut process);
+    let mut child = process.spawn()?;
+    let pid = Pid::from_child(&child);
+    eprintln!("edel-compositor: started {name}, pid {}", child.id());
+    let (sender, receiver) = channel::channel::<Option<ExitStatus>>();
+    let watched = handle.insert_source(receiver, move |event, _, state: &mut Edel| {
+        if let Event::Msg(status) = event {
+            ended(state, pid, status);
         }
     });
-    if let Err(e) = inserted {
-        eprintln!("edel-compositor: watching {INPUT_METHOD} failed: {e}");
-        return;
+    if let Err(e) = watched {
+        let _ = child.kill();
+        return Err(std::io::Error::other(format!(
+            "watching {name} failed: {e}"
+        )));
     }
-    let waiter = thread::Builder::new()
-        .name(format!("session-{INPUT_METHOD}"))
+    thread::Builder::new()
+        .name(format!("session-{name}"))
         .spawn(move || {
             let _ = sender.send(child.wait().ok());
-        });
-    if let Err(e) = waiter {
-        eprintln!("edel-compositor: waiting for {INPUT_METHOD} failed: {e}");
-        return;
-    }
-    state.services.input_method = Some(Input { pid, asked });
+        })?;
+    Ok(pid)
 }
 
 /// Asks the running input method to stop (SIGTERM); its end is logged when

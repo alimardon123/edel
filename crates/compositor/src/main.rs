@@ -54,6 +54,7 @@ mod program;
 mod render;
 mod rounded;
 mod sandbox;
+mod screen_keyboard;
 mod screencopy;
 mod session;
 mod sharp;

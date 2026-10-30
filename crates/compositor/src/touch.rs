@@ -30,6 +30,10 @@ impl Edel {
         let at = self.on_screen(event)?;
         self.touching = Some(event.slot());
         self.move_pointer(at, serial, event.time_msec());
+        // A window tapped may show the keyboard on the screen (M9.5).
+        if let crate::input::Under::Surface(_, surface, _) = self.under(at) {
+            self.screen_keyboard.tapped(surface);
+        }
         self.button(BUTTON_LEFT, ButtonState::Pressed, serial, event.time_msec())
     }
 

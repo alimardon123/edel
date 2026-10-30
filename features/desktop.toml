@@ -8,4 +8,4 @@
 format = 1
 summary = "The desktop: the Edel shell, Settings, graphics, sound, fonts and apps"
 addon = true
-features = ["graphics", "seat", "login", "fonts", "input-method", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "apps", "sound", "bluetooth", "power", "capture", "location"]
+features = ["graphics", "seat", "login", "fonts", "input-method", "screen-keyboard", "terminal", "compositor", "shell", "settings", "xwayland", "flatpak", "apps", "sound", "bluetooth", "power", "capture", "location"]
