@@ -18,11 +18,11 @@
 # desktop's idle number is the median of the last minute); then Firefox
 # opens on a page that plays a video served from this host, the way a
 # person opens it on each system (below), and the median of the last
-# minute of 240 s
-# more is the number with Firefox. Screenshots of each moment show whether
+# minute of 600 s more is the number with Firefox. Screenshots of each moment show whether
 # the desktop, the browser and the video really came; a number without its
 # picture is not a result. Results in out/desktop-memory/: SYSTEM-SIZE.png
-# (idle), SYSTEM-SIZE-opened.png, SYSTEM-SIZE-firefox.png,
+# (idle), SYSTEM-SIZE-opened.png,
+# SYSTEM-SIZE-firefox.png,
 # SYSTEM-SIZE.samples and a table line each in
 # results.md.
 set -eu
@@ -98,6 +98,35 @@ median() {
 		awk '{ v[NR] = $1 } END { if (NR == 0) print "none"; else print v[int((NR + 1) / 2)] }'
 }
 
+# firefox_icon PNG: prints where Firefox's icon is on the screenshot PNG,
+# as "X Y", or nothing: the 48 px square holding the most of both its
+# orange flame and its purple globe, which no other icon in GNOME's
+# dash or dock has together.
+firefox_icon() {
+	python3 - "$1" <<-'EOF'
+		import sys
+		sys.path.insert(0, "ci")
+		import qmp
+		width, height, rows = qmp.read_png(sys.argv[1])
+		cells = {}
+		for y in range(height):
+		    for x in range(width):
+		        r, g, b = rows[y][x]
+		        orange = r > 220 and 90 < g < 200 and b < 90
+		        purple = 70 < r < 190 and g < 90 and b > 170
+		        if orange or purple:
+		            c = cells.setdefault((x // 48, y // 48), [0, 0, 0, 0, 0])
+		            c[0] += orange
+		            c[1] += purple
+		            c[2] += x
+		            c[3] += y
+		            c[4] += 1
+		best = max(cells.values(), key=lambda c: min(c[0], c[1]), default=None)
+		if best and min(best[0], best[1]) >= 50:
+		    print(best[2] // best[4], best[3] // best[4])
+	EOF
+}
+
 # measure MIB: one run at MIB of memory.
 measure() {
 	size=$1 run=$dir/$system-$1
@@ -110,7 +139,7 @@ measure() {
 		-drive if=pflash,format=raw,readonly=on,file="$ovmf_code" \
 		-drive if=pflash,format=raw,file="$dir/vars.fd" \
 		-netdev user,id=net0 -device virtio-net-pci,netdev=net0,romfile= \
-		-device virtio-balloon-pci,id=balloon0 -device qemu-xhci,id=xhci \
+		-device virtio-balloon-pci,id=balloon0 -device qemu-xhci,id=xhci -device usb-tablet,bus=xhci.0 \
 		-qmp unix:"$QMP",server=on,wait=off -serial file:"$run.serial" \
 		$media &
 	qemu=$!
@@ -128,11 +157,14 @@ measure() {
 	}
 	sample 300
 	python3 ci/qmp.py screendump "$run.png" || true
-	# Firefox, the way a person opens it on each system: GNOME's Alt+F2
-	# runs it with the page, as its search lost the keys to the welcome
-	# windows Ubuntu and Fedora open over a live session; Edel OS's
-	# launcher opens it, Tab and Return take Firefox's first-run notice,
-	# and the address bar the page.
+	# Firefox, the way a person opens it. Edel OS: Super opens the
+	# launcher, "firefox" and Return start it. GNOME's live sessions lost
+	# those keys: Alt+F2's run dialog and the overview's search kept
+	# Firefox after Return in every Fedora run, and once the overview
+	# took no letters at all, so a click on Firefox's icon opens it there,
+	# found on the screen as its place moves with the apps running: in
+	# Ubuntu's dock, or the dash of Fedora's overview, which Super shows
+	# when the live session has not.
 	case "$system" in
 	edel)
 		python3 ci/qmp.py key meta_l || true
@@ -140,37 +172,48 @@ measure() {
 		python3 ci/qmp.py type firefox || true
 		sleep 5
 		python3 ci/qmp.py key ret || true
-		sample 420
-		python3 ci/qmp.py screendump "$run-opened.png" || true
+		;;
+	*)
+		at=$(firefox_icon "$run.png" || true)
+		if [ -z "$at" ]; then
+			python3 ci/qmp.py key meta_l || true
+			sleep 3
+			python3 ci/qmp.py screendump "$run-overview.png" || true
+			at=$(firefox_icon "$run-overview.png" || true)
+		fi
+		echo "$system $size: Firefox's icon at ${at:-nowhere}"
+		# shellcheck disable=SC2086 # at holds X and Y
+		[ -z "$at" ] || python3 ci/qmp.py click $at || true
+		;;
+	esac
+	sample 420
+	python3 ci/qmp.py screendump "$run-opened.png" || true
+	case "$system" in
+	edel)
 		python3 ci/qmp.py key tab || true
 		sleep 1
 		python3 ci/qmp.py key ret || true
 		sleep 5
-		python3 ci/qmp.py key ctrl-l || true
-		sleep 2
-		python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
-		;;
-	*)
-		python3 ci/qmp.py key alt-f2 || true
-		sleep 5
-		python3 ci/qmp.py type 'firefox http://10.0.2.2:8000/' || true
-		# Return, then the keypad's Enter: GNOME's run dialog kept the
-		# command after Return alone in two runs.
-		sleep 2
-		python3 ci/qmp.py key ret || true
-		sleep 3
-		python3 ci/qmp.py key kp_enter || true
-		sample 420
-		python3 ci/qmp.py screendump "$run-opened.png" || true
 		;;
 	esac
-	sample 540
+	# The page, typed into the address bar twice: GNOME's Firefox was
+	# not yet on the screen at 420 s in every run that clicked its icon,
+	# while memory showed it starting, so each system gets the same 600 s
+	# from the click, and the minute after it is the number.
+	python3 ci/qmp.py key ctrl-l || true
+	sleep 2
+	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
+	sample 660
+	python3 ci/qmp.py key ctrl-l || true
+	sleep 2
+	python3 ci/qmp.py type 'http://10.0.2.2:8000/\n' || true
+	sample 900
 	python3 ci/qmp.py screendump "$run-firefox.png" || true
 	state=$(python3 ci/qmp.py status 2>/dev/null || echo stopped)
 	kill "$qemu" 2>/dev/null || true
 	wait "$qemu" 2>/dev/null || true
 	idle=$(median "$run.samples" 240 305)
-	firefox=$(median "$run.samples" 480 545)
+	firefox=$(median "$run.samples" 840 905)
 	peak=$(awk '$2 != "none" { print $2 }' "$run.samples" | sort -n | tail -n 1)
 	echo "| $label | $size MiB | $idle | $firefox | ${peak:-none} | $state |" | tee -a "$dir/results.md"
 }
