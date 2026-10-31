@@ -931,6 +931,7 @@ impl Edel {
     pub fn outputs_changed(&mut self) {
         self.screens_changed_for_layers();
         self.settle_screens();
+        self.place_waiting();
         self.relayout();
         self.announce_workspaces();
     }
@@ -1249,83 +1250,107 @@ impl CompositorHandler for Edel {
             toplevel.send_configure();
             return;
         }
-        let drawn = has_buffer(surface);
-        // On the screen the pointer is on (M5.2g).
-        let Some((screen, area)) = self.pointer_screen() else {
-            return;
-        };
-        if drawn {
-            let window = self.unplaced.remove(i);
-            data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
-            let insets = self.insets(&window);
-            let size = insets.frame_size(window.geometry().size);
-            // An app with a rule (`workspaces.apps`, M5.2l) opens on
-            // its workspace; that workspace not shown, the window waits there,
-            // unmapped, and the person stays where they are.
-            let ruled = self
-                .settings
-                .app_workspace(&app_id(&window))
-                .and_then(|desk| {
-                    let opened = self
-                        .desks
-                        .open_on(desk, window.clone(), size, &screen, area)?;
-                    Some((desk, opened))
-                });
-            let frame = match ruled {
-                Some((desk, (_, false))) => {
-                    eprintln!(
-                        "edel-compositor: window {} opened on workspace {} (workspaces.apps)",
-                        title(&window),
-                        desk + 1
-                    );
-                    self.settle_dynamic();
-                    self.announce_workspaces();
-                    self.state_changed();
-                    return;
-                }
-                Some((_, (frame, true))) => frame,
-                None => self
-                    .desks
-                    .layout_on_mut(&screen)
-                    .open(window.clone(), size, &screen, area),
-            };
-            let place = insets.window(frame);
-            self.put(&window, frame);
-            self.animations.opened(&window);
-            eprintln!(
-                "edel-compositor: mapped window {} at {},{} {}x{}",
-                title(&window),
-                place.loc.x,
-                place.loc.y,
-                place.size.w,
-                place.size.h
-            );
-            // Which app a window belongs to, by its app id (M6.4): a web app
-            // is a browser window with an app id of its own.
-            let app = app_id(&window);
-            if !app.is_empty() {
-                eprintln!(
-                    "edel-compositor: window {} belongs to app {app}",
-                    title(&window)
-                );
-            }
-            self.focus(&window);
-            let maximize = std::mem::take(&mut data(&window).borrow_mut().maximize_when_placed);
-            if maximize {
-                self.maximize(&window);
-            }
-            // In a game session every window opens fullscreen (M8.26).
-            let fullscreen = std::mem::take(&mut data(&window).borrow_mut().fullscreen_when_placed)
-                || self.game_session();
-            if fullscreen {
-                self.fullscreen(&window, None);
-            }
-            if self.desks.layout_of(&window).rearranges() {
-                self.relayout();
-            }
-            self.settle_dynamic();
-            self.state_changed();
+        if has_buffer(surface) {
+            self.place(i);
         }
+    }
+}
+
+impl Edel {
+    /// Places the windows that drew while no screen was lit, once one is
+    /// (the architecture review of 2026-10-31): a monitor turned off can
+    /// say it was unplugged, and a window an app opened meanwhile drew its
+    /// first buffer and waits for a frame callback only a mapped window
+    /// gets, so it was never shown.
+    fn place_waiting(&mut self) {
+        while let Some(i) = self.unplaced.iter().position(|w| {
+            w.toplevel()
+                .is_some_and(|t| t.is_initial_configure_sent() && has_buffer(t.wl_surface()))
+        }) {
+            if !self.place(i) {
+                return;
+            }
+        }
+    }
+
+    /// Maps the window `unplaced[i]`, which has drawn: on the screen the
+    /// pointer is on (M5.2g), or on its workspace by a rule. False, and the
+    /// window left waiting, when no screen is lit.
+    fn place(&mut self, i: usize) -> bool {
+        let Some((screen, area)) = self.pointer_screen() else {
+            return false;
+        };
+        let window = self.unplaced.remove(i);
+        data(&window).borrow_mut().shape = Some((window.geometry().size, server_side(&window)));
+        let insets = self.insets(&window);
+        let size = insets.frame_size(window.geometry().size);
+        // An app with a rule (`workspaces.apps`, M5.2l) opens on
+        // its workspace; that workspace not shown, the window waits there,
+        // unmapped, and the person stays where they are.
+        let ruled = self
+            .settings
+            .app_workspace(&app_id(&window))
+            .and_then(|desk| {
+                let opened = self
+                    .desks
+                    .open_on(desk, window.clone(), size, &screen, area)?;
+                Some((desk, opened))
+            });
+        let frame = match ruled {
+            Some((desk, (_, false))) => {
+                eprintln!(
+                    "edel-compositor: window {} opened on workspace {} (workspaces.apps)",
+                    title(&window),
+                    desk + 1
+                );
+                self.settle_dynamic();
+                self.announce_workspaces();
+                self.state_changed();
+                return true;
+            }
+            Some((_, (frame, true))) => frame,
+            None => self
+                .desks
+                .layout_on_mut(&screen)
+                .open(window.clone(), size, &screen, area),
+        };
+        let place = insets.window(frame);
+        self.put(&window, frame);
+        self.animations.opened(&window);
+        eprintln!(
+            "edel-compositor: mapped window {} at {},{} {}x{}",
+            title(&window),
+            place.loc.x,
+            place.loc.y,
+            place.size.w,
+            place.size.h
+        );
+        // Which app a window belongs to, by its app id (M6.4): a web app
+        // is a browser window with an app id of its own.
+        let app = app_id(&window);
+        if !app.is_empty() {
+            eprintln!(
+                "edel-compositor: window {} belongs to app {app}",
+                title(&window)
+            );
+        }
+        self.focus(&window);
+        let maximize = std::mem::take(&mut data(&window).borrow_mut().maximize_when_placed);
+        if maximize {
+            self.maximize(&window);
+        }
+        // In a game session every window opens fullscreen (M8.26).
+        let fullscreen = std::mem::take(&mut data(&window).borrow_mut().fullscreen_when_placed)
+            || self.game_session();
+        if fullscreen {
+            self.fullscreen(&window, None);
+        }
+        if self.desks.layout_of(&window).rearranges() {
+            self.relayout();
+        }
+        self.settle_dynamic();
+        self.state_changed();
+        true
     }
 }
 

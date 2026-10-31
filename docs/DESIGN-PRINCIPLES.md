@@ -93,7 +93,7 @@ Developers, creative workers, gamers, office users and servers each get a setup 
 | A custom updater would be faster than an established one | Reliable over Instant | Use the established updater |
 | A gaming tweak speeds up desktops but drains phone batteries | Efficient over Powerful | It turns on only in game mode or on AC power |
 | A new feature is ready but sleep and wake broke on one device | Functional over everything below it | The release waits for the fix |
-| A server-only service would make the base bigger for everyone | Efficient and Scalable over Versatile | It goes in the server image only |
+| A server-only service would make the base bigger for everyone | Efficient and Scalable over Versatile | It goes in an add-on |
 | Someone asks for 15 new panel options | Simple over Versatile | Make it a preset instead |
 | A newer slot wrote a key the rollback slot does not know | Reliable over Simple | The boot reader keeps it, applies the rest and reports it; only checkers and writers refuse unknown keys (ADR-008) |
 

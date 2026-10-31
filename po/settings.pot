@@ -1778,6 +1778,9 @@ msgstr ""
 msgid "Check only"
 msgstr ""
 
+msgid "From the profile"
+msgstr ""
+
 msgid "Edel OS's choice"
 msgstr ""
 
@@ -1869,9 +1872,6 @@ msgid "Level"
 msgstr ""
 
 msgid "Music and recording"
-msgstr ""
-
-msgid "From the profile"
 msgstr ""
 
 msgid "This computer's sound needs firmware it does not have: {files}. Run edel report and send it with your issue, so the firmware can be added."
