@@ -10,7 +10,7 @@
 |---|---|
 | `edel update` | Install a newer Edel OS into the other slot from RELEASE, or from this machine's channel when none is named; it starts at the next restart, and falls back on its own if it fails |
 | `edel rollback` | Go back to the version in the other slot, the one before the last update; it starts at the next restart |
-| `edel factory-reset` | Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new |
+| `edel factory-reset` | Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new; encrypted data keeps its passphrase, so to give the computer away, install Edel OS on it from a stick instead |
 | `edel status` | Show whether the machine is up to date, its data encrypted and its firewall on, then the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong |
 | `edel platform` | platform: what apps can count on from this system, its platform level, kept by every later release |
 | `edel restart` | Restart this machine now: the system's own reboot, through doas when you are not root |
@@ -46,7 +46,7 @@ Go back to the version in the other slot, the one before the last update; it sta
 
 ## `edel factory-reset [OPTIONS]`
 
-Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new.
+Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new; encrypted data keeps its passphrase, so to give the computer away, install Edel OS on it from a stick instead.
 
 | | What it does |
 |---|---|

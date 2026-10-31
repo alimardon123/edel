@@ -160,7 +160,9 @@ enum Commands {
     Rollback,
     /// Erase every account, every person's files and this machine's
     /// settings, keeping the default apps and the version of Edel OS, and
-    /// restart into a first start: the machine as new
+    /// restart into a first start: the machine as new; encrypted data keeps
+    /// its passphrase, so to give the computer away, install Edel OS on it
+    /// from a stick instead
     FactoryReset {
         /// Erase without asking for the machine's name, for scripts
         #[arg(long)]
