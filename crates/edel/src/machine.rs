@@ -2649,9 +2649,35 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     // The keys a page has that nobody set: the value that applies and the
     // layer that decides it (M6.11), or nothing when no line says so.
     let preset = preset_in_use(&person, &machine);
+    let machine_text = fs::read_to_string(machine_file()).ok();
+    let person_text = places::person_settings()
+        .map(|p| places::found(&p))
+        .and_then(|p| fs::read_to_string(p).ok());
     for entry in settings::KEYS.iter().filter(|k| !k.path.contains('*')) {
         if wanted(entry.path) && !rows.iter().any(|row| row.key == entry.path) {
             let line = key_help::find(entry.path);
+            // A value a profile, a person's own preset or a theme gives, as
+            // the desktop applies it (the architecture review of 2026-10-31:
+            // a profile's value showed as the release's, an own preset's as
+            // Classic's).
+            // The person's file counts only for what the desktop follows, as above.
+            let person_text = person_text
+                .as_deref()
+                .filter(|_| desktop_follows(entry.path));
+            let machine_text = machine_text.as_deref();
+            if let Some(value) = settings::chosen(entry.path, machine_text, person_text) {
+                let from = match settings::source(entry.path, machine_text, person_text) {
+                    settings::Source::Profile(_) => tr("a profile").to_string(),
+                    _ => layer_label(line, &preset),
+                };
+                rows.push(Row {
+                    key: entry.path.to_string(),
+                    value: toml::Value::String(String::new()),
+                    from,
+                    default: Some(value),
+                });
+                continue;
+            }
             rows.push(Row {
                 key: entry.path.to_string(),
                 value: toml::Value::String(String::new()),
@@ -2672,13 +2698,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     let width = rows.iter().map(|row| row.key.len()).max().unwrap_or(0);
     // When the sun changes the scheme next, under auto at a place (M7.14),
     // read from the same two files the rows came from.
-    let sun = {
-        let machine_text = fs::read_to_string(machine_file()).ok();
-        let person_text = places::person_settings()
-            .map(|p| places::found(&p))
-            .and_then(|p| fs::read_to_string(p).ok());
-        edel::sun::scheme_of(machine_text.as_deref(), person_text.as_deref()).1
-    };
+    let sun = edel::sun::scheme_of(machine_text.as_deref(), person_text.as_deref()).1;
     for page in settings::PAGES {
         let mut mine: Vec<&Row> = rows
             .iter()
