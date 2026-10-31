@@ -14,10 +14,15 @@
 # for its first person on the console) and a virtio balloon device,
 # through which the guest's own kernel reports its memory. Nothing is
 # installed or changed inside any guest. The numbers: the download in
-# MiB; the seconds from QEMU's start to the console's first prompt
-# (Edel OS's "Username:", the others' "login:"); and memory in use
-# (MemTotal less MemAvailable, the number Edel OS's own budgets use), the
-# median of the minute after two minutes at that prompt. Results in
+# MiB; the system on disk in MiB (the root file system's used blocks,
+# read from the image before it starts; Alpine's virt image runs from
+# memory, so its whole image is its system); the seconds from QEMU's
+# start to the console's first prompt (Edel OS's "Username:", the
+# others' "login:"); memory in use (MemTotal less MemAvailable, the
+# number Edel OS's own budgets use), the median of the minute after two
+# minutes at that prompt; and the processor at idle over that minute, in
+# percent of one processor, read from the QEMU process's own time (so
+# QEMU's share, the same for every system, is in it). Results in
 # out/lightness/: SYSTEM.serial, SYSTEM.samples and a table line in
 # results.md.
 set -eu
@@ -44,6 +49,13 @@ mib() {
 	echo "$(($(stat -c %s "$1") / 1048576))"
 }
 
+# used FILE: the used MiB of the ext4 file system in FILE.
+used() {
+	dumpe2fs -h "$1" 2>/dev/null | awk -F: '
+		/^Block count/ { count = $2 } /^Free blocks/ { free = $2 } /^Block size/ { size = $2 }
+		END { if (size) print int((count - free) * size / 1048576); else print "none" }'
+}
+
 # The system's start medium: QEMU arguments in media, its name in label,
 # its download's size in download.
 case "$system" in
@@ -55,6 +67,7 @@ edel)
 	slot=$dir/slot.ext4
 	partition_out "$dir/edel.img" 2 "$slot"
 	label="Edel OS $(debugfs -R 'cat /usr/lib/os-release' "$slot" 2>/dev/null | sed -n 's/^VERSION_ID="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')"
+	on_disk=$(used "$slot")
 	rm -f "$slot"
 	media="-drive if=none,id=disk0,format=raw,file=$dir/edel.img,snapshot=on -device virtio-blk-pci,drive=disk0,bootindex=0"
 	prompt='Username:'
@@ -64,6 +77,7 @@ alpine)
 	[ -n "$file" ] || fail "no virt image named in $alpine/latest-releases.yaml"
 	fetch "$alpine/$file" "$dir/alpine.iso" "$(curl -fsS "$alpine/$file.sha256" | cut -d ' ' -f 1)" sha256sum
 	download=$(mib "$dir/alpine.iso")
+	on_disk=$download
 	label="Alpine $(echo "$file" | sed 's/^alpine-virt-\(.*\)-x86_64\.iso$/\1/') (virt)"
 	media="-drive if=none,id=cd,media=cdrom,readonly=on,file=$dir/alpine.iso -device ide-cd,drive=cd,bootindex=0"
 	prompt='login:'
@@ -72,6 +86,10 @@ debian)
 	file=debian-13-nocloud-amd64.qcow2
 	fetch "$debian/$file" "$dir/debian.qcow2" "$(curl -fsS "$debian/SHA512SUMS" | awk -v f="$file" '$2 == f { print $1 }')" sha512sum
 	download=$(mib "$dir/debian.qcow2")
+	qemu-img convert -O raw "$dir/debian.qcow2" "$dir/debian.raw"
+	partition_out "$dir/debian.raw" 1 "$dir/root.ext4"
+	on_disk=$(used "$dir/root.ext4")
+	rm -f "$dir/debian.raw" "$dir/root.ext4"
 	label="Debian 13 (nocloud)"
 	media="-drive if=none,id=disk0,format=qcow2,file=$dir/debian.qcow2,snapshot=on -device virtio-blk-pci,drive=disk0,bootindex=0"
 	prompt='login:'
@@ -80,10 +98,25 @@ debian)
 esac
 
 # median FILE FROM TO: the median in-use number of FILE's samples (lines
-# of "SECONDS IN_USE TOTAL") from second FROM to TO, or "none".
+# of "SECONDS TICKS IN_USE TOTAL") from second FROM to TO, or "none".
 median() {
-	awk -v from="$2" -v to="$3" '$1 >= from && $1 <= to && $2 != "none" { print $2 }' "$1" | sort -n |
+	awk -v from="$2" -v to="$3" '$1 >= from && $1 <= to && $3 != "none" { print $3 }' "$1" | sort -n |
 		awk '{ v[NR] = $1 } END { if (NR == 0) print "none"; else print v[int((NR + 1) / 2)] }'
+}
+
+# busy FILE FROM TO: the processor QEMU used from FILE's first sample at
+# or after second FROM to its last at or before TO, in percent of one
+# processor with one decimal, or "none".
+busy() {
+	awk -v from="$2" -v to="$3" -v hz="$(getconf CLK_TCK)" '
+		$1 >= from && $1 <= to { if (first == "") { first = $1; start = $2 } last = $1; end = $2 }
+		END { if (last > first) printf "%.1f\n", (end - start) / hz / (last - first) * 100; else print "none" }' "$1"
+}
+
+# ticks: the processor time QEMU used so far, in clock ticks (utime and
+# stime of /proc/PID/stat, read after the name, which may hold spaces).
+ticks() {
+	sed 's/^.*) //' "/proc/$qemu/stat" | awk '{ print $12 + $13 }'
 }
 
 run=$dir/$system
@@ -114,10 +147,11 @@ done
 at=$(date +%s)
 while [ $(($(date +%s) - at)) -lt 180 ]; do
 	sleep 10
-	echo "$(($(date +%s) - at)) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
+	echo "$(($(date +%s) - at)) $(ticks) $(python3 ci/qmp.py memory 2>/dev/null || echo none)" >>"$run.samples"
 done
 kill "$qemu" 2>/dev/null || true
 wait "$qemu" 2>/dev/null || true
 idle=$(median "$run.samples" 120 185)
-echo "| $label | $download | $boot | $idle |" | tee -a "$dir/results.md"
+cpu=$(busy "$run.samples" 120 185)
+echo "| $label | $download | $on_disk | $boot | $idle | $cpu |" | tee -a "$dir/results.md"
 rm -f "$dir/edel.img" "$dir/alpine.iso" "$dir/debian.qcow2"

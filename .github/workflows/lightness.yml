@@ -2,8 +2,9 @@ name: Lightness
 
 # How light Edel OS is beside Alpine and Debian (roadmap M10.7): each
 # system's server image booted from its own download in the same QEMU
-# machine, with no screen; its download, its seconds to the console's
-# first prompt and its memory in use at idle (ci/lightness.sh says how).
+# machine, with no screen; its download, its system on disk, its seconds
+# to the console's first prompt, and its memory in use and processor at
+# idle (ci/lightness.sh says how).
 # Started by hand from the Actions tab (Run workflow) and when a release
 # is published, never on a change, so it spends three runners only when
 # the numbers are wanted.
@@ -41,7 +42,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install QEMU and UEFI firmware
-        run: sh ci/apt.sh qemu-system-x86 ovmf
+        run: sh ci/apt.sh qemu-system-x86 qemu-utils ovmf
 
       - name: Measure ${{ matrix.system }}
         env:
@@ -51,10 +52,10 @@ jobs:
           {
             echo "### Lightness: ${{ matrix.system }}"
             echo
-            echo "One QEMU machine for every system: 1 GiB, 2 processors, UEFI, no screen. Memory is MemTotal less MemAvailable, in MiB, from the guest's virtio balloon driver, two minutes after the console's first prompt."
+            echo "One QEMU machine for every system: 1 GiB, 2 processors, UEFI, no screen. Memory is MemTotal less MemAvailable, in MiB, from the guest's virtio balloon driver, two minutes after the console's first prompt. On disk is the root file system's used space; Alpine's virt image runs from memory, so its whole image is its system. The processor at idle is the QEMU process's time over that minute, in percent of one processor, QEMU's own share included."
             echo
-            echo "| System | Download (MiB) | Seconds to the first prompt | Memory at idle (MiB) |"
-            echo "|---|---|---|---|"
+            echo "| System | Download (MiB) | On disk (MiB) | Seconds to the first prompt | Memory at idle (MiB) | Processor at idle (%) |"
+            echo "|---|---|---|---|---|---|"
             cat out/lightness/results.md
           } >>"$GITHUB_STEP_SUMMARY"
 
