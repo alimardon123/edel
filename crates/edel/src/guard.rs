@@ -520,7 +520,7 @@ fn confirm_when_free(watchdog: &mut Option<File>) -> Result<Vec<String>> {
     loop {
         match update::confirm_running() {
             Ok(lines) => return Ok(lines),
-            Err(_) if lock.exists() && !update::is_stale(lock) => {
+            Err(_) if update::is_held(lock) => {
                 tried_free = false;
                 if let Some(dog) = watchdog.as_mut() {
                     let _ = dog.write_all(b".");

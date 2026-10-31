@@ -50,19 +50,22 @@ msgstr ""
 msgid "Graphics"
 msgstr ""
 
+msgid "NVIDIA graphics"
+msgstr ""
+
 msgid "Storage"
 msgstr ""
 
 msgid "{n} GB"
 msgstr ""
 
+msgid " and "
+msgstr ""
+
 msgid "Intel graphics"
 msgstr ""
 
 msgid "AMD graphics"
-msgstr ""
-
-msgid "NVIDIA graphics"
 msgstr ""
 
 msgid "VMware graphics"

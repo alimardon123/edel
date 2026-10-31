@@ -43,6 +43,7 @@ pub mod bluetooth;
 pub mod draw;
 pub mod exit;
 pub mod features;
+pub mod files;
 #[cfg(feature = "os")]
 pub mod firmware;
 pub mod first_start;
@@ -63,6 +64,7 @@ pub mod languages;
 pub mod location;
 pub mod lock_screen;
 pub mod network;
+pub mod nvidia;
 pub mod panel_edit;
 pub mod password;
 #[cfg(feature = "pictures")]
