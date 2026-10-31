@@ -280,40 +280,29 @@ pub struct Buttons {
     pub maximize: bool,
 }
 
-/// The buttons the person's file over the machine's give (M6.16):
+/// The buttons the applied files give (M6.16), read from the merged file:
 /// `layout.window_buttons` for the side, else the preset's side, the preset
-/// being the one `layout.preset` names in the files, and each of
-/// `layout.close_button`, `minimize_button` and `maximize_button` unless a
-/// file sets it false. Each file's own preset is applied first
-/// ([`settings::in_use`]), as the compositor reads them.
-pub fn buttons_applying(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Buttons {
-    let machine = machine.map(settings::in_use);
-    let person = person.map(settings::in_use);
-    let (mut side, mut preset) = (None, None);
-    let mut shown = [true; 3];
-    for file in [machine.as_ref(), person.as_ref()].into_iter().flatten() {
-        if file.layout.preset.is_some() {
-            preset.clone_from(&file.layout.preset);
-        }
-        if let Some(chosen) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
-            side = Some(chosen);
-        }
-        for (value, index) in [
-            (file.layout.close_button, 0),
-            (file.layout.minimize_button, 1),
-            (file.layout.maximize_button, 2),
-        ] {
-            if let Some(value) = value {
-                shown[index] = value;
-            }
-        }
-    }
+/// being the one `layout.preset` names, and each of `layout.close_button`,
+/// `minimize_button` and `maximize_button` unless a file sets it false.
+/// Each file's own preset is applied first, as [`settings::Layers`] does.
+pub fn buttons_of(file: &SettingsFile) -> Buttons {
     Buttons {
-        side: side.unwrap_or_else(|| named(preset.as_deref()).0.windows.buttons),
-        close: shown[0],
-        minimize: shown[1],
-        maximize: shown[2],
+        side: file
+            .layout
+            .window_buttons
+            .as_deref()
+            .and_then(Side::parse)
+            .unwrap_or_else(|| named(file.layout.preset.as_deref()).0.windows.buttons),
+        close: file.layout.close_button.unwrap_or(true),
+        minimize: file.layout.minimize_button.unwrap_or(true),
+        maximize: file.layout.maximize_button.unwrap_or(true),
     }
+}
+
+/// [`buttons_of`] of the two files as the compositor reads them: the person's
+/// over the machine's, each as [`settings::Layers`] applies it (M6.16).
+pub fn buttons_applying(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Buttons {
+    buttons_of(settings::Layers::of(machine, person).merged())
 }
 
 /// The buttons in GNOME's `button-layout` form (M6.16), which GTK and

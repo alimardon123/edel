@@ -145,7 +145,7 @@ pub fn load_with(
 
 /// The tokens of `scheme` with the person's appearance from two settings
 /// files' texts (M5.12b1): the accent the person's file names, else the
-/// machine's; the colours laid over by [`settings::colours_over`]. A file
+/// machine's; the colours laid over by [`settings::Layers`]. A file
 /// that does not read counts as absent, and what is wrong in the tokens
 /// comes back as notes, as [`load_with`] gives them.
 pub fn load_from_files(
@@ -169,33 +169,35 @@ fn load_from_files_as(
 ) -> (Tokens, Vec<String>) {
     let ((machine, mut notes), (person, more)) = (read_file(machine), read_file(person));
     notes.extend(more);
-    let accent = accent_between(machine.as_ref(), person.as_ref());
-    let colours = settings::colours_over(
-        machine.as_ref().and_then(|f| f.appearance.colours.as_ref()),
-        person.as_ref().and_then(|f| f.appearance.colours.as_ref()),
+    let layers = settings::Layers::of(machine.as_ref(), person.as_ref());
+    let appearance = &layers.merged().appearance;
+    let (tokens, more) = load_with(
+        scheme,
+        appearance.accent.as_deref(),
+        appearance.colours.as_ref(),
+        from_wallpaper,
     );
-    let (tokens, more) = load_with(scheme, accent.as_deref(), colours.as_ref(), from_wallpaper);
     notes.extend(more);
     // High contrast (M6.9) comes after the person's accent and colours, so it
     // always wins over them.
-    let high = high.unwrap_or_else(|| high_contrast_between(machine.as_ref(), person.as_ref()));
+    let high = high.unwrap_or_else(|| high_contrast_of(appearance));
     let tokens = tokens.with_contrast(high, scheme);
-    let shape = Shape::between(machine.as_ref(), person.as_ref());
-    let (tokens, more) = tokens.with_shape(&shape);
+    let (tokens, more) = tokens.with_shape(&Shape::of(appearance));
     notes.extend(more);
-    let text = Text::between(machine.as_ref(), person.as_ref());
-    let (tokens, more) = tokens.with_text(&text);
+    let (tokens, more) = tokens.with_text(&Text::of(appearance));
     notes.extend(more);
-    let icons = IconSize::between(machine.as_ref(), person.as_ref());
+    let icons = IconSize::of(appearance);
     let (tokens, more) = tokens.with_icons(&icons);
     notes.extend(more);
     (tokens, notes)
 }
 
-/// A settings file's text read leniently; none when there is no text or
-/// the text is not a file this release reads (M5.12b1). The notes are the
-/// windows' shape values the reader left out, which the file's own check
-/// names too (M5.12b2): a whole number out of its range is dropped there.
+/// A settings file's text read leniently, as [`settings::read`] reads it
+/// (the file itself, not yet applied: [`settings::Layers`] applies it); none
+/// when there is no text or the text is not a file this release reads
+/// (M5.12b1). The notes are the windows' shape values the reader left out,
+/// which the file's own check names too (M5.12b2): a whole number out of
+/// its range is dropped there.
 fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
     let Some(text) = text else {
         return (None, Vec::new());
@@ -213,33 +215,34 @@ fn read_file(text: Option<&str>) -> (Option<SettingsFile>, Vec<String>) {
                 })
                 .map(ToString::to_string)
                 .collect();
-            // The theme in use applies under the file's own values (M5.12b6a).
-            (Some(crate::settings::in_use(&read.file)), notes)
+            (Some(read.file), notes)
         }
         Err(_) => (None, Vec::new()),
     }
 }
 
-/// Whether high contrast is on (M6.9): `appearance.contrast` is `high` in
-/// the person's file, else in the machine's. A person's `normal` wins over a
-/// machine's `high`, as the person's file is written with `normal` then.
+/// Whether high contrast is on (M6.9), as the person's applied appearance
+/// has it: `appearance.contrast` is `high` there. A person's `normal` wins
+/// over a machine's `high`, as the person's file is written with `normal`
+/// then.
+pub fn high_contrast_of(appearance: &Appearance) -> bool {
+    appearance.contrast.as_deref() == Some("high")
+}
+
+/// [`high_contrast_of`] of two settings files as [`settings::Layers`]
+/// applies them (M6.9).
 pub fn high_contrast_between(
     machine: Option<&SettingsFile>,
     person: Option<&SettingsFile>,
 ) -> bool {
-    person
-        .and_then(|file| file.appearance.contrast.clone())
-        .or_else(|| machine.and_then(|file| file.appearance.contrast.clone()))
-        .as_deref()
-        == Some("high")
+    high_contrast_of(&settings::Layers::of(machine, person).merged().appearance)
 }
 
 /// Whether high contrast is on (M6.9) in two settings files' texts, the
 /// person's over the machine's; a file that does not read counts as
 /// absent. The settings portal tells apps this as `contrast` (M6.18).
 pub fn high_contrast_in(machine: Option<&str>, person: Option<&str>) -> bool {
-    let ((machine, _), (person, _)) = (read_file(machine), read_file(person));
-    high_contrast_between(machine.as_ref(), person.as_ref())
+    high_contrast_of(&settings::Layers::read(machine, person).merged().appearance)
 }
 
 /// The apps' stylesheet (M6.18) from two settings files' texts: the
@@ -262,13 +265,6 @@ pub fn apps_css_on_this_machine() -> String {
     let machine = text_at(&crate::places::machine_settings());
     let person = crate::places::person_settings().and_then(|path| text_at(&path));
     apps_css_from_files(machine.as_deref(), person.as_deref())
-}
-
-/// The accent the person's file names, else the machine's (M5.12b1).
-fn accent_between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Option<String> {
-    person
-        .and_then(|file| file.appearance.accent.clone())
-        .or_else(|| machine.and_then(|file| file.appearance.accent.clone()))
 }
 
 /// The tokens of `scheme` as this machine's people see them (M5.12b1): the
@@ -304,21 +300,15 @@ fn text_at(path: &std::path::Path) -> Option<String> {
 /// for no picture, which leaves the release's accent.
 #[cfg(feature = "pictures")]
 fn wallpaper_accent(scheme: Scheme, machine: Option<&str>, person: Option<&str>) -> Option<Colour> {
-    let ((machine, _), (person, _)) = (read_file(machine), read_file(person));
-    if accent_between(machine.as_ref(), person.as_ref()).as_deref() != Some(WALLPAPER_ACCENT) {
+    let layers = settings::Layers::read(machine, person);
+    let appearance = &layers.merged().appearance;
+    if appearance.accent.as_deref() != Some(WALLPAPER_ACCENT) {
         return None;
     }
-    let over = |key: fn(&SettingsFile) -> Option<&String>| {
-        person
-            .as_ref()
-            .and_then(key)
-            .or_else(|| machine.as_ref().and_then(key))
-            .map(String::as_str)
-    };
     let dark = scheme == Scheme::Dark;
     let value = wallpapers::value_for(
-        over(|f| f.appearance.wallpaper.as_ref()),
-        over(|f| f.appearance.wallpaper_dark.as_ref()),
+        appearance.wallpaper.as_deref(),
+        appearance.wallpaper_dark.as_deref(),
         dark,
     );
     let panel = load(scheme).0;
@@ -1550,27 +1540,27 @@ pub struct Shape {
 }
 
 impl Shape {
-    /// Each value the person's settings file sets, else the machine's
-    /// (M5.12b2).
-    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Shape {
-        let over = |value: fn(&Appearance) -> Option<u32>| {
-            person
-                .and_then(|file| value(&file.appearance))
-                .or_else(|| machine.and_then(|file| value(&file.appearance)))
-        };
+    /// The shape the applied appearance sets (M5.12b2): each key it has.
+    pub fn of(appearance: &Appearance) -> Shape {
         Shape {
-            radius: over(|a| a.radius),
-            gaps: over(|a| a.gaps),
-            gaps_outer: over(|a| a.gaps_outer),
-            border_width: over(|a| a.border_width),
-            title_bar_height: over(|a| a.title_bar_height),
-            panel_opacity: over(|a| a.panel_opacity),
-            window_opacity: over(|a| a.window_opacity),
-            window_opacity_unfocused: over(|a| a.window_opacity_unfocused),
-            shadow_size: over(|a| a.shadow_size),
-            shadow_darkness: over(|a| a.shadow_darkness),
-            blur: over(|a| a.blur),
+            radius: appearance.radius,
+            gaps: appearance.gaps,
+            gaps_outer: appearance.gaps_outer,
+            border_width: appearance.border_width,
+            title_bar_height: appearance.title_bar_height,
+            panel_opacity: appearance.panel_opacity,
+            window_opacity: appearance.window_opacity,
+            window_opacity_unfocused: appearance.window_opacity_unfocused,
+            shadow_size: appearance.shadow_size,
+            shadow_darkness: appearance.shadow_darkness,
+            blur: appearance.blur,
         }
+    }
+
+    /// [`Shape::of`] of two settings files as [`settings::Layers`] applies
+    /// them (M5.12b2).
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Shape {
+        Shape::of(&settings::Layers::of(machine, person).merged().appearance)
     }
 }
 
@@ -1718,26 +1708,20 @@ pub struct Text {
 }
 
 impl Text {
-    /// Each value the person's settings file sets, else the machine's
-    /// (M5.12b5).
-    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Text {
+    /// The text the applied appearance sets (M5.12b5).
+    pub fn of(appearance: &Appearance) -> Text {
         Text {
-            font: over(machine, person, |a| a.font.clone()),
-            monospace_font: over(machine, person, |a| a.monospace_font.clone()),
-            text_size: over(machine, person, |a| a.text_size),
+            font: appearance.font.clone(),
+            monospace_font: appearance.monospace_font.clone(),
+            text_size: appearance.text_size,
         }
     }
-}
 
-/// The value of one appearance key: the person's file's, else the machine's.
-fn over<T>(
-    machine: Option<&SettingsFile>,
-    person: Option<&SettingsFile>,
-    value: fn(&Appearance) -> Option<T>,
-) -> Option<T> {
-    person
-        .and_then(|file| value(&file.appearance))
-        .or_else(|| machine.and_then(|file| value(&file.appearance)))
+    /// [`Text::of`] of two settings files as [`settings::Layers`] applies
+    /// them (M5.12b5).
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Text {
+        Text::of(&settings::Layers::of(machine, person).merged().appearance)
+    }
 }
 
 /// `family` trimmed if it names a font, else a note that the release's is
@@ -1810,11 +1794,17 @@ pub struct IconSize {
 }
 
 impl IconSize {
-    /// The percent the person's file sets, else the machine's.
-    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> IconSize {
+    /// The percent the applied appearance sets.
+    pub fn of(appearance: &Appearance) -> IconSize {
         IconSize {
-            percent: over(machine, person, |a| a.icon_size),
+            percent: appearance.icon_size,
         }
+    }
+
+    /// [`IconSize::of`] of two settings files as [`settings::Layers`]
+    /// applies them.
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> IconSize {
+        IconSize::of(&settings::Layers::of(machine, person).merged().appearance)
     }
 }
 
@@ -2014,6 +2004,21 @@ mod tests {
             .title_bar
             .hex();
         assert!(css[light_high..].contains(&format!("--headerbar-bg-color: {contrast};")));
+    }
+
+    /// Earth's radius (its theme's value, M5.12b6a) reaches the window shape
+    /// through the person's `appearance.theme`, as the desktop applies it, and
+    /// `Shape::of` gives the same as `Shape::between` (M5.12b2).
+    #[test]
+    fn the_person_theme_radius_reaches_the_shape() {
+        let person = "format = 1\n[appearance]\ntheme = \"earth\"\n";
+        let file = settings::read(person).unwrap().file;
+        assert_eq!(Shape::between(None, Some(&file)).radius, Some(12));
+        let layers = settings::Layers::read(None, Some(person));
+        assert_eq!(Shape::of(&layers.merged().appearance).radius, Some(12));
+        let own = "format = 1\n[appearance]\ntheme = \"earth\"\nradius = 4\n";
+        let file = settings::read(own).unwrap().file;
+        assert_eq!(Shape::between(None, Some(&file)).radius, Some(4));
     }
 
     /// High contrast is read from the person's file, else the machine's, as

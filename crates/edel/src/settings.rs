@@ -2485,40 +2485,23 @@ pub struct OwnTheme {
     pub values: Appearance,
 }
 
-/// `over`'s colours laid over `under`'s, name by name, in the shared table
-/// and in each scheme's own (M5.12b1); none when neither names one.
-fn merged(
-    under: Option<&BTreeMap<String, String>>,
-    over: Option<&BTreeMap<String, String>>,
-) -> Option<BTreeMap<String, String>> {
-    match (under, over) {
-        (None, None) => None,
-        (under, over) => {
-            let mut colours = under.cloned().unwrap_or_default();
-            colours.extend(
-                over.into_iter()
-                    .flatten()
-                    .map(|(n, v)| (n.clone(), v.clone())),
-            );
-            Some(colours)
-        }
-    }
-}
-
 /// The person's colours over the machine's (M5.12b1): each colour name
 /// the person sets wins, the others stay the machine's, in `both`, `light`
-/// and `dark` alike. None when neither file sets colours.
+/// and `dark` alike. None when neither file sets colours. A thin wrapper
+/// over [`Layers`], which lays the colour tables by name.
 pub fn colours_over(machine: Option<&Colours>, person: Option<&Colours>) -> Option<Colours> {
-    if machine.is_none() && person.is_none() {
-        return None;
-    }
-    let empty = Colours::default();
-    let (machine, person) = (machine.unwrap_or(&empty), person.unwrap_or(&empty));
-    Some(Colours {
-        both: merged(Some(&machine.both), Some(&person.both)).unwrap_or_default(),
-        light: merged(machine.light.as_ref(), person.light.as_ref()),
-        dark: merged(machine.dark.as_ref(), person.dark.as_ref()),
-    })
+    let file = |colours: Option<&Colours>| SettingsFile {
+        appearance: Appearance {
+            colours: colours.cloned(),
+            ..Appearance::default()
+        },
+        ..SettingsFile::default()
+    };
+    Layers::of(Some(&file(machine)), Some(&file(person)))
+        .merged()
+        .appearance
+        .colours
+        .clone()
 }
 
 /// The six keys of the windows' shape (M5.12b2), each a whole number in its
@@ -2671,18 +2654,20 @@ pub fn icon_theme_in(machine: Option<&str>, person: Option<&str>) -> String {
 }
 
 /// The desktop's widgets the machine's and the person's files choose (M8.21
-/// part 21j1): the person's list over the machine's, read leniently. A list
-/// that fails [`crate::lock_screen::check_desktop`] counts as none, so the
-/// desktop shows nothing rather than a half-read arrangement.
+/// part 21j1), as [`Layers`] gives them: the person's list over the
+/// machine's, a profile's, own preset's or theme's list counting too. A
+/// list that fails [`crate::lock_screen::check_desktop`] counts as none, so
+/// the desktop shows nothing rather than a half-read arrangement.
 pub fn desktop_widgets_in(
     machine: Option<&str>,
     person: Option<&str>,
 ) -> Vec<crate::lock_screen::Placed> {
-    let of = |text: Option<&str>| {
-        text.and_then(|t| read(t).ok())
-            .and_then(|read| read.file.appearance.widgets)
-    };
-    let parts = of(person).or_else(|| of(machine)).unwrap_or_default();
+    let parts = Layers::read(machine, person)
+        .merged()
+        .appearance
+        .widgets
+        .clone()
+        .unwrap_or_default();
     if crate::lock_screen::check_desktop(&parts).is_ok() {
         parts
     } else {
@@ -3498,12 +3483,31 @@ impl Layers {
     pub fn read(machine: Option<&str>, person: Option<&str>) -> Layers {
         let (machine, machine_raw) = read_one(machine);
         let (person, person_raw) = read_one(person);
+        Layers::build(machine, person, [person_raw, machine_raw])
+    }
+
+    /// Both files as [`read`] reads them, when a reader holds them already.
+    /// [`in_use`] is applied here; it is idempotent, so a file already applied
+    /// (a compositor's, say) gives the same values. The texts are not kept,
+    /// so [`Layers::source`] knows no line of either file: a reader that
+    /// needs where a value comes from calls [`Layers::read`].
+    pub fn of(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Layers {
+        Layers::build(
+            machine.cloned().unwrap_or_default(),
+            person.cloned().unwrap_or_default(),
+            [None, None],
+        )
+    }
+
+    /// The one construction of both readers: each file through [`in_use`],
+    /// then the person's over the machine's.
+    fn build(machine: SettingsFile, person: SettingsFile, raw: [Option<Table>; 2]) -> Layers {
         let applied = [in_use(&person), in_use(&machine)];
         let merged = over(&applied[0], &applied[1]);
         Layers {
             machine,
             person,
-            raw: [person_raw, machine_raw],
+            raw,
             applied,
             merged,
         }
@@ -3698,9 +3702,10 @@ pub fn value_at(part: &impl Serialize, path: &str) -> Option<Value> {
 /// The file as the desktop applies it (M5.17, M5.12b6a, M7.6): the
 /// profiles it names laid under its keys ([`crate::profiles::applied`]),
 /// then its own layout preset in use ([`crate::presets::applied`]), then
-/// its theme ([`crate::themes::themed`]). Every reader of a file's layout,
-/// appearance or power values calls this on each file it reads, before it
-/// reads (ADR-010); the writers never do, so they write the file as it is.
+/// its theme ([`crate::themes::themed`]). [`Layers`] calls this on each file
+/// a reader asks about, so readers take values through it (ADR-010); the
+/// writers never do, so they write the file as it is. It is idempotent: a
+/// file it has applied comes back as it is.
 pub fn in_use(file: &SettingsFile) -> SettingsFile {
     crate::themes::themed(&crate::presets::applied(&crate::profiles::applied(file)))
 }
@@ -3916,12 +3921,13 @@ pub const LOCATION_ENABLED: &str = "location.enabled";
 pub const LOW_LATENCY: &str = "sound.low_latency";
 
 /// Whether sound plays with little delay (M7.6b): the person's file over
-/// the machine's, each as [`in_use`] gives it, so a profile's line
-/// counts; off when neither says. The compositor and Settings both ask this.
+/// the machine's, as [`Layers`] applies them, so a profile's line counts;
+/// off when neither says. The compositor and Settings both ask this.
 pub fn low_latency(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> bool {
-    person
-        .and_then(|f| f.sound.low_latency)
-        .or_else(|| machine.and_then(|f| f.sound.low_latency))
+    Layers::of(machine, person)
+        .merged()
+        .sound
+        .low_latency
         .unwrap_or(false)
 }
 
@@ -6170,6 +6176,39 @@ mod tests {
                 assert_eq!(source(key, machine, person), layers.source(key), "{key}");
             }
         }
+    }
+
+    #[test]
+    fn layers_of_the_read_files_is_layers_read() {
+        let machine = "format = 1\n[appearance]\ntheme = \"earth\"\n[sound]\nlow_latency = true\n";
+        let person = "format = 1\n[layout]\npreset = \"hive\"\n[appearance]\nradius = 3\n";
+        let read = Layers::read(Some(machine), Some(person));
+        let of = Layers::of(
+            Some(&super::read(machine).unwrap().file),
+            Some(&super::read(person).unwrap().file),
+        );
+        assert_eq!(read.merged(), of.merged());
+        assert_eq!(read.machine(), of.machine());
+    }
+
+    #[test]
+    fn in_use_applies_each_file_once_whatever_the_file_names() {
+        // A profile, an own preset and a theme, all named by the one file.
+        let text = "format = 1\n[system]\nprofiles = [\"creative\"]\n[layout]\npreset = \"mine\"\n[presets.mine]\npreset = \"hive\"\ntiling = true\n[appearance]\ntheme = \"earth\"\n";
+        let file = super::read(text).unwrap().file;
+        let once = in_use(&file);
+        assert_eq!(in_use(&once), once);
+    }
+
+    #[test]
+    fn an_own_themes_widgets_reach_the_desktop_through_layers() {
+        let widgets = "widgets = [{ at = \"centre\", widget = \"clock\" }]";
+        let theme =
+            format!("format = 1\n[appearance]\ntheme = \"mine\"\n[themes.mine]\n{widgets}\n");
+        assert_eq!(desktop_widgets_in(None, Some(&theme)).len(), 1);
+        let plain = format!("format = 1\n[appearance]\n{widgets}\n");
+        assert_eq!(desktop_widgets_in(None, Some(&plain)).len(), 1);
+        assert!(desktop_widgets_in(None, None).is_empty());
     }
 
     #[test]
