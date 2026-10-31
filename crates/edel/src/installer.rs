@@ -127,7 +127,7 @@ const NO_ANSWER: &str = n_(
 /// Why a laptop's data stays plain: its password cannot be typed at the
 /// start's prompt.
 const NOT_TYPABLE: &str = n_(
-    "the data is not encrypted, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type",
+    "the data is not encrypted, as the password has letters other than a-z, A-Z, digits, spaces and signs, which the start's prompt may not be able to type",
 );
 /// What an encrypted install without a password asks once confirmed.
 const PASSPHRASE_ASKED: &str = n_(
@@ -733,7 +733,7 @@ fn install_on(
         (true, Some(_)) => bail!(
             "{}",
             tr(
-                "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
+                "the password has letters other than a-z, A-Z, digits, spaces and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
             )
         ),
         // A plan reads no password, so one given is not here yet.

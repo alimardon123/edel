@@ -14,7 +14,6 @@ use anyhow::{Context, Result};
 use toml_edit::{DocumentMut, Item, Table, value};
 
 use crate::machine;
-use crate::report;
 use crate::update::Disk;
 
 /// The account that logs in by itself.
@@ -60,7 +59,7 @@ pub fn live() -> Result<()> {
     let disk = Disk::find()?;
     let stick = edel::install::running_from_stick(sys, &disk.name);
     if !wants_live(stick, &fs::read_to_string("/etc/passwd")?) {
-        if report::is_removable(sys, &disk.name) {
+        if edel::install::is_removable(sys, &disk.name) {
             println!(
                 "edel boot live: {} is a removable disk Edel OS was installed on, not a stick, and people have accounts, so the greeter asks who logs in",
                 disk.name
