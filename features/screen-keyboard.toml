@@ -1,8 +1,0 @@
-# The keyboard on the screen (roadmap M9.5): wvkbd, which the compositor
-# shows when a field asks for text right after a finger tapped it, and
-# hides when no field asks or a real key is pressed (crates/compositor
-# screen_keyboard.rs). Nothing of it runs on a machine nobody taps.
-format = 1
-summary = "Keyboard on the screen: wvkbd, shown when a tapped field asks for text"
-why = "Typing on a tablet, a 2-in-1 folded flat or, later, a phone, which have no keys at hand. wvkbd's layout for phones and tablets is 0.7 MB installed and needs only cairo and pango, which the desktop has already; squeekboard, the other keyboard in Alpine, is 22 MB with GTK 3 and GNOME's desktop library, which nothing else here uses (principles Efficient and Simple). The compositor starts it at the first tap into a field and keeps it hidden between uses, so a laptop typed on with its own keyboard never runs it."
-packages = ["wvkbd-mobintl"]

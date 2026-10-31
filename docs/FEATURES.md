@@ -41,7 +41,6 @@ The table below is written from the files by a cargo test (`EDEL_WRITE_DOCS=1 ca
 | `orca` | Orca, the screen reader, with the eSpeak NG voice | `orca`, `speech-dispatcher`, `espeak-ng` | none | add-on over `desktop` |
 | `power` | Power: UPower reports the battery and whether the machine is plugged in | `dbus`, `dbus-openrc`, `polkit-noelogind-libs`, `upower` | dbus, upower | the `desktop` add-on |
 | `printing` | Printing and scanning: CUPS and SANE, with drivers for most printers and scanners | `cups`, `cups-openrc`, `cups-filters`, `sane-utils`, `sane-udev`, `sane-airscan`, `sane-backend-hpaio`, `sane-backend-pixma`, `sane-backend-genesys`, `sane-backend-epson2`, `sane-backend-epsonds`, `sane-backend-fujitsu`, `sane-backend-canon_dr`, `sane-backend-xerox_mfp`, `sane-backend-plustek`, `sane-backend-avision` | cupsd | add-on |
-| `screen-keyboard` | Keyboard on the screen: wvkbd, shown when a tapped field asks for text | `wvkbd-mobintl` | none | the `desktop` add-on |
 | `seat` | Seats: the screen and input for the person at the machine | `seatd`, `seatd-openrc` | edel-rundir; seatd | the `desktop` add-on |
 | `settings` | Settings: the layout, the look and the rest of the machine's settings | `gtk4.0`, `libadwaita`, `adwaita-icon-theme` | none | the `desktop` add-on |
 | `shell` | shell-ui: the panel, and later the launcher and quick settings | `at-spi2-core`, `gsettings-desktop-schemas`, `tzdata`, `xdg-desktop-portal` | none | the `desktop` add-on |
@@ -57,7 +56,7 @@ The table below is written from the files by a cargo test (`EDEL_WRITE_DOCS=1 ca
 | `wifi-realtek` | Realtek Wi-Fi: the firmware of the laptops' and dongles' chips | `linux-firmware-rtlwifi`, `linux-firmware-rtw88`, `linux-firmware-rtw89` | none | add-on, carried |
 | `xwayland` | X11 apps: XWayland, started when one connects | `xwayland`, `xwayland-satellite` | none | the `desktop` add-on |
 
-45 features.
+44 features.
 <!-- end of the features -->
 
 CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus and its test service; flatpak comes from the `flatpak` feature, M6.1) to the list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, wayland-utils for `wayland-info`, xclock for an X11 window, the program `edel-testclient`, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.

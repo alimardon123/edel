@@ -157,18 +157,6 @@ pub fn input_method_ended(name: &str, how: &str) -> String {
     )
 }
 
-/// The keyboard on the screen is not in this image (M9.5).
-pub fn screen_keyboard_missing(name: &str) -> String {
-    format!(
-        "{name} is not in this image, so no keyboard shows on the screen when a tapped field asks for text; the screen-keyboard feature brings it, and a real keyboard still types"
-    )
-}
-
-/// The keyboard on the screen ended by itself (M9.5).
-pub fn screen_keyboard_ended(name: &str, how: &str) -> String {
-    format!("{name} {how}; it starts again the next time a tapped field asks for text")
-}
-
 /// A screen cannot be lit.
 pub fn screen_dark(name: &str, why: impl Display) -> String {
     format!("output {name} stays dark: {why}; the other screens work")
@@ -509,8 +497,6 @@ mod tests {
             session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
             input_method_missing("fcitx5"),
             input_method_ended("fcitx5", "ended (exit status: 1)"),
-            screen_keyboard_missing("wvkbd-mobintl"),
-            screen_keyboard_ended("wvkbd-mobintl", "ended (exit status: 1)"),
             low_latency_missing(Path::new("/usr/share/edel/sound/low-latency.conf")),
             low_latency_not_linked(Path::new("/home/ci/.config/pipewire/x.conf"), "x"),
         ];

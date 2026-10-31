@@ -101,9 +101,6 @@ impl Edel {
         match event {
             InputEvent::Keyboard { event } => {
                 let pressed = event.state() == KeyState::Pressed;
-                // A real key: the keyboard on the screen is not needed (M9.5).
-                self.screen_keyboard.forget_tap();
-                self.hide_screen_keyboard();
                 // Every key down on the seat, this one included.
                 let down = event.count();
                 let mut tapped = None;
@@ -234,7 +231,6 @@ impl Edel {
                 }
             }
             InputEvent::PointerMotion { event } => {
-                self.screen_keyboard.forget_tap();
                 let pointer = self.seat.get_pointer()?;
                 let from = pointer.current_location();
                 let wanted = self.on_screens(from, from + event.delta())?;
@@ -270,7 +266,6 @@ impl Edel {
                 self.dirty = true;
             }
             InputEvent::PointerMotionAbsolute { event } => {
-                self.screen_keyboard.forget_tap();
                 let location = self.on_screen(&event)?;
                 let focus = self.pointer_over(location);
                 let pointer = self.seat.get_pointer()?;
@@ -294,7 +289,6 @@ impl Edel {
                 self.dirty = true;
             }
             InputEvent::PointerButton { event } => {
-                self.screen_keyboard.forget_tap();
                 self.button(
                     event.button_code(),
                     event.state(),

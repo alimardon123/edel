@@ -30,17 +30,7 @@ impl Edel {
         let at = self.on_screen(event)?;
         self.touching = Some(event.slot());
         self.move_pointer(at, serial, event.time_msec());
-        // A window tapped may show the keyboard on the screen (M9.5).
-        if let crate::input::Under::Surface(_, surface, _) = self.under(at) {
-            self.screen_keyboard.tapped(surface);
-        }
-        let pressed = self.button(BUTTON_LEFT, ButtonState::Pressed, serial, event.time_msec());
-        // The tap may have moved the focus to a field already asking for
-        // text, which says nothing more, so the keyboard follows now.
-        if let Some(handle) = self.handle.clone() {
-            self.follow_screen_keyboard(&handle);
-        }
-        pressed
+        self.button(BUTTON_LEFT, ButtonState::Pressed, serial, event.time_msec())
     }
 
     /// The pointer's finger moved: the pointer follows it, button held.

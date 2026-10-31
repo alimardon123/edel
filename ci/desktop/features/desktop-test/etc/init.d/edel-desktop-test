@@ -1301,14 +1301,6 @@ ieee80211w=2' channel=6 ;;
 			points=${command#taps }
 			(edel-testclient --taps "$points" </dev/null >/tmp/taps.log 2>&1; say "taps_done $? $(joined /tmp/taps.log)") &
 			;;
-		# The keyboard on the screen (M9.5): foot, titled osk, waiting for
-		# one key without a Return and keeping it in /tmp/osk-typed, and
-		# what it kept.
-		'keyboard foot')
-			rm -f /tmp/osk-typed
-			as_ci "foot --title osk --window-size-pixels=500x300 sh -c 'stty -icanon -echo; head -c 1 >/tmp/osk-typed'" </dev/null >/dev/null 2>&1 &
-			;;
-		'keyboard typed') say "keyboard_typed $(od -An -c /tmp/osk-typed 2>&1 | tr -s ' ')" ;;
 		'touch read')
 			bus=$(session_bus)
 			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.portal.Settings.ReadOne io.github.alimardon123.edel touch-mode" </dev/null 2>&1 | tr '\n' ' ')
