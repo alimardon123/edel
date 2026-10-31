@@ -119,8 +119,8 @@ for pack in out/*.graphics-nvidia.ext4.gz; do
 	if [ -z "$found" ]; then
 		echo "FAIL: $image's pack graphics-nvidia lacks nouveau (M8.39a)"
 		fail=1
-	elif ! grep -qs 'options nouveau config=NvGspRm=1' "$files"/root/lib/modprobe.d/nouveau.conf; then
-		echo "FAIL: $image's pack graphics-nvidia lacks lib/modprobe.d/nouveau.conf, which turns GSP on for Turing and Ampere (M8.39a)"
+	elif ! grep -qs 'options nouveau config=NvGspRm=1' "$files"/root/usr/lib/modprobe.d/nouveau.conf; then
+		echo "FAIL: $image's pack graphics-nvidia lacks usr/lib/modprobe.d/nouveau.conf, which turns GSP on for Turing and Ampere (M8.39a)"
 		fail=1
 	elif [ "$(echo "$gsp" | wc -w)" != 1 ]; then
 		echo "FAIL: $image's pack graphics-nvidia keeps GSP releases $gsp, one too many (M8.39a)"
