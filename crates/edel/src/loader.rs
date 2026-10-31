@@ -13,6 +13,7 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 use crate::release::{os_release_value, to_hex};
+use edel::places;
 
 /// Where a slot keeps the loader it was built with.
 pub const SLOT_DIR: &str = edel::places::SLOT_BOOT_DIR;
@@ -64,17 +65,20 @@ pub fn swap_file(src: &Path, dest: &Path) -> Result<()> {
 /// Installs the running slot's loader on the EFI system partition mounted
 /// at `esp` when its version differs. Returns a line to report, if any.
 pub fn update_esp(esp: &Path, slot: &Path, efi_name: &str) -> Result<Option<String>> {
-    let Some(version) = version_in(&slot.join("loader.toml")) else {
+    let Some(version) = version_in(&slot.join(places::LOADER_TOML)) else {
         return Ok(None);
     };
-    let on_esp = esp.join("EFI/edel/loader.toml");
+    let on_esp = places::on_esp(esp, places::LOADER_TOML);
     if version_in(&on_esp).as_deref() == Some(version.as_str()) {
         return Ok(None);
     }
     // The version file goes last, so it names a loader that is in place.
     swap_file(&slot.join(efi_name), &esp.join("EFI/BOOT").join(efi_name))?;
-    swap_file(&slot.join("grub.cfg"), &esp.join("EFI/edel/grub.cfg"))?;
-    swap_file(&slot.join("loader.toml"), &on_esp)?;
+    swap_file(
+        &slot.join(places::GRUB_CFG),
+        &places::on_esp(esp, places::GRUB_CFG),
+    )?;
+    swap_file(&slot.join(places::LOADER_TOML), &on_esp)?;
     Ok(Some(format!(
         "edel update: boot loader updated to {version}"
     )))
@@ -89,7 +93,7 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("slot")).unwrap();
         fs::create_dir_all(dir.join("esp/EFI/BOOT")).unwrap();
-        fs::create_dir_all(dir.join("esp/EFI/edel")).unwrap();
+        fs::create_dir_all(places::on_esp(&dir.join("esp"), "")).unwrap();
         dir
     }
 
@@ -120,9 +124,9 @@ mod tests {
         fs::write(slot.join("grub.cfg"), "cfg 2").unwrap();
         fs::write(slot.join("loader.toml"), loader_toml(b"grub 2", b"cfg 2")).unwrap();
         fs::write(esp.join("EFI/BOOT/BOOTX64.EFI"), "grub 1").unwrap();
-        fs::write(esp.join("EFI/edel/grubenv"), "env").unwrap();
+        fs::write(places::on_esp(&esp, places::GRUBENV), "env").unwrap();
         fs::write(
-            esp.join("EFI/edel/loader.toml"),
+            places::on_esp(&esp, places::LOADER_TOML),
             loader_toml(b"grub 1", b"cfg 1"),
         )
         .unwrap();
@@ -133,11 +137,11 @@ mod tests {
             "grub 2"
         );
         assert_eq!(
-            fs::read_to_string(esp.join("EFI/edel/grub.cfg")).unwrap(),
+            fs::read_to_string(places::on_esp(&esp, places::GRUB_CFG)).unwrap(),
             "cfg 2"
         );
         assert_eq!(
-            fs::read_to_string(esp.join("EFI/edel/grubenv")).unwrap(),
+            fs::read_to_string(places::on_esp(&esp, places::GRUBENV)).unwrap(),
             "env"
         );
         assert_eq!(update_esp(&esp, &slot, "BOOTX64.EFI").unwrap(), None);

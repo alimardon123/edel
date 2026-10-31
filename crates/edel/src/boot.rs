@@ -26,7 +26,7 @@
 
 use anyhow::{Result, bail};
 
-use crate::grubenv::Env;
+use crate::grubenv::{Env, Slot};
 use edel::places;
 
 /// File system label of the EFI system partition.
@@ -38,6 +38,9 @@ pub const DATA_LABEL: &str = "edel-data";
 /// The label of an encrypted data partition's LUKS2 header, apart from the
 /// file system's inside it.
 pub const CRYPT_LABEL: &str = "edel-crypt";
+/// The EFI system partition's GPT partition number, before the slots
+/// ([`Slot::partition`]).
+pub const ESP_PARTITION: u32 = 1;
 /// The data partition's GPT partition number.
 pub const DATA_PARTITION: u32 = 4;
 /// Size of the EFI system partition. Holds GRUB (about 1 MiB) with room to
@@ -68,8 +71,8 @@ pub const GRUB_MODULES: &[&str] = &[
     "configfile",
 ];
 
-/// The A/B slots: name and GPT partition number.
-const SLOTS: [(&str, u32); 2] = [("A", 2), ("B", 3)];
+/// The A/B slots: name and GPT partition number, owned by [`Slot`].
+const SLOTS: [(&str, u32); 2] = [("A", Slot::A.partition()), ("B", Slot::B.partition())];
 
 const ESP_TYPE: &str = "C12A7328-F81F-11D2-BA4B-00A0C93EC93B";
 const LINUX_TYPE: &str = "0FC63DAF-8483-4772-8E79-3D69D8477DE4";
@@ -200,7 +203,7 @@ set A_OK=0
 set A_TRY=0
 set B_OK=0
 set B_TRY=0
-load_env -f "$prefix/grubenv" ORDER A_OK A_TRY B_OK B_TRY
+load_env -f "$prefix/GRUBENV" ORDER A_OK A_TRY B_OK B_TRY
 
 # A start with no slot left with a try is a safe one (M7.1): the slot's
 # command line gets edel.safe, and the developer layer stays off.
@@ -248,7 +251,7 @@ if [ -z "$slot" ]; then
 	set edel_safe="SAFE_ARG"
 	echo "Edel OS: no slot has tries left; starting slot $slot anyway, safely"
 fi
-save_env -f "$prefix/grubenv" A_TRY B_TRY
+save_env -f "$prefix/GRUBENV" A_TRY B_TRY
 echo "Edel OS: starting slot $slot (A ok=$A_OK try=$A_TRY, B ok=$B_OK try=$B_TRY)"
 
 # Menu entries by number: GRUB 2.12 ignores an entry id in fallback. If the
@@ -262,7 +265,9 @@ else
 	if [ "$B_OK" = "1" ]; then set fallback=1; fi
 fi
 "#;
-    let mut cfg = cfg.replace("SAFE_ARG", SAFE_ARG);
+    let mut cfg = cfg
+        .replace("SAFE_ARG", SAFE_ARG)
+        .replace("GRUBENV", places::GRUBENV);
     let own = format!("{}/{SLOT_CFG}", places::SLOT_BOOT_DIR);
     let before: String = slot_cfg(kernel, modules, cmdline, microcode)
         .lines()

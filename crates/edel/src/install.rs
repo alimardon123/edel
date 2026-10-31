@@ -458,7 +458,7 @@ pub fn merged(text: &str, answers: &Answers) -> Result<String> {
 /// top, then in `EFI/edel` (where the stick's own seed is kept). Its path
 /// and text, when one is there.
 pub fn file_in(dir: &Path) -> Option<(std::path::PathBuf, String)> {
-    for inner in [dir.to_path_buf(), dir.join("EFI/edel")] {
+    for inner in [dir.to_path_buf(), crate::places::on_esp(dir, "")] {
         let path = crate::places::found(&crate::places::settings_in(&inner));
         if let Some(text) = read_inside(dir, &path) {
             return Some((path, text));

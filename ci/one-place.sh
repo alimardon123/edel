@@ -10,6 +10,9 @@
 #                     their own
 #   the Alpine branch the base feature (features/base.toml), which CI's
 #                     build container follows too
+#   the ESP's folder  /EFI/edel, owned by edel::places (ESP_DIR and
+#                     on_esp, with the files GRUB_CFG, GRUBENV and
+#                     LOADER_TOML), in Rust
 #
 # Comments, Markdown and Rust tests may name a fact; code may not.
 #
@@ -58,6 +61,7 @@ check() {
 	{
 		find_in "$root" "an Edel OS place" '/data/edel|/run/edel([^-]|$)|/usr/share/edel|/data/etc' 'crates/edel/src/places.rs' $rust
 		find_in "$root" "an Edel OS place" '/data/edel|/run/edel([^-]|$)|/usr/share/edel|/data/etc' 'ci/names.sh' $scripts
+		find_in "$root" "the ESP's folder" '"/?EFI/edel' 'crates/edel/src/places.rs' $rust
 		find_in "$root" "a colour" '"#[0-9a-fA-F]{6}' 'design/tokens.toml' $desktop
 		find_in "$root" "the Alpine branch" 'v3\.[0-9]+|alpine:3\.[0-9]+' 'features/base.toml' $rust $scripts
 	} >"$root/.one-place.out" 2>&1 || true
@@ -81,22 +85,23 @@ if [ "${1:-}" = --self-test ]; then
 	}
 	plant crates/shell-ui/src/main.rs 'const DATA: &str = "/data/edel";'
 	plant crates/compositor/src/frame.rs 'const RED: &str = "#ff0000";'
+	plant crates/edel/src/update.rs 'const ENV: &str = "EFI/edel/grubenv";'
 	printf '#!/bin/sh\ndocker run alpine:3.24 true\n' >"$copy/ci/new.sh"
 	out=$(check "$copy" || true)
 	ok=1
-	for want in 'shell-ui/src/main.rs.*an Edel OS place' 'compositor/src/frame.rs.*a colour' 'ci/new.sh.*the Alpine branch'; do
+	for want in 'shell-ui/src/main.rs.*an Edel OS place' 'compositor/src/frame.rs.*a colour' 'ci/new.sh.*the Alpine branch' "edel/src/update.rs.*the ESP's folder"; do
 		echo "$out" | grep -qE "$want" || {
 			echo "FAIL: the self-test planted $want and the check missed it"
 			ok=0
 		}
 	done
-	[ "$ok" = 1 ] && echo "PASS: the check caught a place in shell-ui, a colour in the compositor and the Alpine branch in a new script"
+	[ "$ok" = 1 ] && echo "PASS: the check caught a place in shell-ui, a colour in the compositor, the ESP's folder in the updater and the Alpine branch in a new script"
 	[ "$ok" = 1 ]
 	exit
 fi
 
 if check .; then
-	echo "PASS: every place, colour and the Alpine branch is written at its owner only"
+	echo "PASS: every place, colour, the ESP's folder and the Alpine branch is written at its owner only"
 else
 	exit 1
 fi
