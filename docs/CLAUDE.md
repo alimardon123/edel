@@ -1,6 +1,6 @@
 # Working in docs/
 
-Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) first. Copy the shape of [ADR-008](ADR-008-features-defaults-and-install.md) for a new ADR: it is the newest and most complete. ADR-001 to ADR-003 use an older first-person advisory voice ("What I would cut or defer"); do not copy it. The root CLAUDE.md style rules apply here, including its dash check before committing.
+Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCIPLES.md) first. Copy the shape of [ADR-012](ADR-012-hardware-that-works-out-of-the-box.md) for a new ADR: it is the newest. ADR-001 to ADR-003 use an older first-person advisory voice ("What I would cut or defer"); do not copy it. The root CLAUDE.md style rules apply here, including its dash check before committing.
 
 ## Every write-up
 
@@ -8,7 +8,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 - When Alimardon's wish drives a doc, say in Context when they asked and quote their words ("On 2026-10-02 they added that ...").
 - Cite decisions as "(ADR-006)" at the end of the clause and steps by id ("M5.12", "M7.2a"); link docs with relative links (`[roadmap](ROADMAP.md)`).
 - Name a fact by linking to its owner, or generate the text from it (ADR-010's one owner decision): prose says "the settings file", the tokens, the budgets, and never copies their values, so a change at the owner leaves no doc wrong.
-- Write for the docs site as well as for GitHub (M8.10a): link pages by relative path, never with a link that leaves `docs/` (the site holds only `docs/`; link to GitHub's copy for code), and keep `docs/index.md`, the front page, and `docs/guide/how-it-works.md` true when a step changes what they describe. `docs/guide/commands.md` and `docs/theme/tokens.css` are written by cargo tests; never edit them by hand.
+- Write for the docs site as well as for GitHub (M8.10a): link pages by relative path, never with a link that leaves `docs/` (the site holds only `docs/`; link to GitHub's copy for code), and keep `docs/index.md`, the front page, and `docs/guide/how-it-works.md` true when a step changes what they describe. The generated pages are listed in [writing the docs](guide/writing-docs.md#pages-written-for-you); never edit them by hand.
 - Hedge what you have not checked ("as far as I know"). A `## Sources` section, when there is one, goes just before `## Principles check` and ends with a line saying which claims come from general knowledge.
 
 ## ADRs
@@ -24,7 +24,7 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
   ```
 
   Use `**Supersedes:**` or `**Extends:**`, with a parenthetical saying what, instead of Related when that is the relation.
-- Status: give a new ADR `Proposed`. ADR-002 to ADR-008 all say Proposed, even where Alimardon decided parts; ADR-001 says "Superseded in part by ADR-002 (shell) and ADR-003 (base and releases)". None says Accepted. Change a Status only on Alimardon's own words.
+- Status: give a new ADR `Proposed`. ADR-002 to ADR-012 all say Proposed, even where Alimardon decided parts; ADR-001 says "Superseded in part by ADR-002 (shell) and ADR-003 (base and releases)". None says Accepted. Change a Status only on Alimardon's own words.
 - Sections, in order: `## Context`, `## Decision` (numbered `### 1. ...` subsections), `## Options Considered`, `## Consequences`, `## Action Items`, `## Principles check`.
   - Options Considered: a `| Option | Verdict |` table with lettered options ("A. ..."); the chosen verdict starts "**Recommended**", the others say why they were rejected. Name what is deliberately not built.
   - Consequences: bullets led by "**Easier:**", "**Harder:**" and "**Revisit:**", plus "**Cost:**" (lines, PRs) when useful.
@@ -59,9 +59,8 @@ Read [README.md](README.md) (the index) and [DESIGN-PRINCIPLES.md](DESIGN-PRINCI
 
 ## Index (README.md)
 
-Every new doc gets a line in `SUMMARY.md`, the docs site's table of contents (M8.10a; a page not listed there is not on the site, and `sh ci/site.sh build` checks every link and anchor between pages), and a row in the `| File | Topic | Status |` table in the same PR: DESIGN-PRINCIPLES.md first, ADRs in number order with the short id as link text (`[ADR-009](ADR-009-slug.md)`), then reviews by file name, ROADMAP.md last. Topic is a short phrase list; Status mirrors the doc's status line in short form, and the row changes when the status does.
+Every new doc gets a line in `SUMMARY.md`, the docs site's table of contents (M8.10a; a page not listed there is not on the site, and `sh ci/site.sh build` checks every link and anchor between pages), and, for a decision record (an ADR, a review or a spike), a row in the `| File | Topic | Status |` table in the same PR: DESIGN-PRINCIPLES.md first, ADRs in number order with the short id as link text (`[ADR-009](ADR-009-slug.md)`), then reviews by file name, ROADMAP.md last. Topic is a short phrase list; Status mirrors the doc's status line in short form, and the row changes when the status does.
 
-`FORMATS.md` exists since M1.6, `SPIKE-flatpak.md` since M1.9, `settings.md` since M2.1, and `TRY-IT.md` (also every release's notes) and `RELEASE.md` since M3.4, and `FEATURES.md` since M4.0, `MESSAGES.md` since 2026-10-06, `layout-guide.md` since M5.6c `INSTALL.md` since M6.6b `FLEET.md` since M7.3 and `platform-levels.md` since M8.8, `hardware.md` and `hardware/*.toml` since M8.1, `SECURITY.md` since M8.3, and `backports.md` (generated by `edel image deps`) and `download.md` since M8.10b; M2.1 added the system-file rules and M3.3b the slot size. Docs the roadmap will add, each in its step: `settings.md` generated from M6.11 on, `SHORTCUTS.md` (M5.13), the generated `defaults.md` (M6.11) and `REVIEW-zfs.md` (M11.9).
 
 ## The docs lane: keeping what a session reads short
 

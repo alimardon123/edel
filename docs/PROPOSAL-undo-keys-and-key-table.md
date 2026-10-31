@@ -5,7 +5,7 @@
 **Deciders:** Alimardon
 **Related:** the whole-system review of 2026-10-25 (its shell surfaces finding on the Undo bar and its architecture finding on keys), ADR-008 (keys), ADR-010 (one owner), [shortcuts](SHORTCUTS.md)
 
-Two review findings need a design choice before code, so this page gives the options and a recommendation for each. Alimardon took both recommendations on 2026-10-25; A and E are built, B follows in the UI lane.
+Two review findings need a design choice before code, so this page gives the options and a recommendation for each. Alimardon took both recommendations on 2026-10-25; A, B and E are built (B is `undo_desktop_edit` in [shortcuts](SHORTCUTS.md), #508).
 
 ## 1. Undo after Done, from the keyboard
 

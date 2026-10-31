@@ -12,7 +12,7 @@ These pages are plain Markdown files in the repository's `docs/` folder. [mdBook
 
 1. Write `docs/NAME.md`, or `docs/guide/NAME.md` for a guide page.
 2. Add one line for it to `docs/SUMMARY.md`, the site's table of contents, under the part it belongs to. A page not listed there is not on the site.
-3. Add a row for it to `docs/README.md` if it is a design document.
+3. If it is a decision record (an ADR, a review or a spike), add a row for it to `docs/README.md` too.
 
 ## See it while you write
 
@@ -31,6 +31,12 @@ Some pages are written from the one place that owns their facts, so they can nev
 | [Commands](commands.md) | `edel`'s own command table, `crates/edel/src/main.rs` | `EDEL_WRITE_DOCS=1 cargo test -p edel command_reference` |
 | [Keyboard shortcuts](../SHORTCUTS.md) | The shortcut table, `crates/edel/src/shortcuts.rs` | `EDEL_WRITE_DOCS=1 cargo test -p edel shortcuts` |
 | `docs/theme/tokens.css` | The design tokens, `design/tokens.toml` | `EDEL_WRITE_DOCS=1 cargo test -p edel site_css` |
+| [Features](../FEATURES.md), its table between the markers | The feature files, `features/*.toml` | `EDEL_WRITE_DOCS=1 cargo test -p edel feature_table` |
+| [Settings](../settings.md), the list of keys | The key table, `crates/edel/src/settings.rs` and `key_help.rs` | `EDEL_WRITE_DOCS=1 cargo test -p edel` |
+| [Defaults](../defaults.md) | The release's defaults, `crates/edel/src/settings.rs` | `EDEL_WRITE_DOCS=1 cargo test -p edel` |
+| [Hardware](../hardware.md), and `docs/hardware/*.toml` | The reports machines send | `EDEL_WRITE_DOCS=1 cargo test -p edel` |
+| [Backports](../backports.md) | The base's packages, `edel image deps` | `edel image deps` |
+| `po/*.pot` | The words the parts show, gathered from their source | `EDEL_WRITE_DOCS=1 cargo test -p edel` |
 
 ## The look
 

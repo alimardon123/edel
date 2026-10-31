@@ -925,6 +925,34 @@ mod tests {
     }
 
     #[test]
+    fn a_choice_against_a_profiles_value_is_written() {
+        // The gaming profile gives game mode "always": picking the release's
+        // "plugged-in" must write it, or the profile's value stays (the
+        // architecture review of 2026-10-31).
+        let dir = scratch("profile-choice");
+        let person = dir.join("person.toml");
+        let files = Files {
+            machine: dir.join("machine.toml"),
+            person: Some(person.clone()),
+        };
+        let machine = format!(
+            "format = {}\n[system]\nprofiles = [\"gaming\"]\n",
+            settings::FORMAT
+        );
+        std::fs::write(&files.machine, machine).unwrap();
+        assert!(matches!(
+            files.source("power.game_mode"),
+            settings::Source::Profile(_)
+        ));
+        files
+            .choose_over("power.game_mode", "plugged-in", Some("plugged-in"))
+            .unwrap();
+        let read = std::fs::read_to_string(&person).unwrap();
+        assert!(read.contains("game_mode = \"plugged-in\""), "{read}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_row_set_back_against_an_own_preset_writes_its_value() {
         // Classic with Tile windows on, saved as mine: turning the row off
         // must write tiling = false, as mine tiles without the line, and

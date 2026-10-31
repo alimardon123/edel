@@ -3444,16 +3444,21 @@ pub fn format(text: &str) -> Result<i64> {
 }
 
 /// Where a key's value comes from, in the order every reader resolves it
-/// (ADR-008): the person's own file, then the machine's, else the release
-/// decides. Settings shows it on each row (M5.6b), as `edel settings
-/// get` does.
+/// (ADR-008): the person's own file, then the machine's, then a profile
+/// either file names (M7.6), else the release decides. Settings shows it
+/// on each row (M5.6b), as `edel settings get` does.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Source {
     /// The person's own file sets it.
     Person(Value),
     /// The machine's file sets it, and the person's does not.
     Machine(Value),
-    /// Neither: the preset or the release decides.
+    /// Neither file sets it, and a profile one of them names gives it, as
+    /// [`in_use`] lays it under the file (the architecture review of
+    /// 2026-10-31: readers that skipped this showed a value the desktop
+    /// does not use).
+    Profile(Value),
+    /// None of those: the preset or the release decides.
     Release,
 }
 
@@ -3469,10 +3474,30 @@ pub fn source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source 
         }
         Some(value)
     };
+    // A profile's value, from the person's file and then the machine's.
+    // Most files name no profile, and then nothing more is parsed: this is
+    // asked at each drawing of a menu.
+    let profile = |text: Option<&str>| -> Option<Value> {
+        let text = text.filter(|text| text.contains("profiles"))?;
+        let file = read(text).ok()?.file;
+        if file
+            .system
+            .profiles
+            .as_deref()
+            .unwrap_or_default()
+            .is_empty()
+        {
+            return None;
+        }
+        value_at(&crate::profiles::applied(&file), key)
+    };
     match (find(person), find(machine)) {
         (Some(v), _) => Source::Person(v),
         (None, Some(v)) => Source::Machine(v),
-        (None, None) => Source::Release,
+        (None, None) => match profile(person).or_else(|| profile(machine)) {
+            Some(v) => Source::Profile(v),
+            None => Source::Release,
+        },
     }
 }
 
@@ -3538,7 +3563,7 @@ pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<
         return Some(value);
     }
     match source(key, machine, person) {
-        Source::Person(value) | Source::Machine(value) => match value {
+        Source::Person(value) | Source::Machine(value) | Source::Profile(value) => match value {
             Value::String(s) => Some(s),
             other => Some(other.to_string()),
         },
@@ -3764,7 +3789,7 @@ pub fn texts(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<V
         _ => None,
     };
     match source(key, machine, person) {
-        Source::Person(value) | Source::Machine(value) => list(value),
+        Source::Person(value) | Source::Machine(value) | Source::Profile(value) => list(value),
         Source::Release => None,
     }
 }
@@ -3797,7 +3822,9 @@ pub fn tray_value(list: &[String], machine: Option<&str>) -> Option<String> {
 /// when neither sets it, or what they say is not `true` or `false`.
 pub fn flag(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<bool> {
     match source(key, machine, person) {
-        Source::Person(Value::Boolean(on)) | Source::Machine(Value::Boolean(on)) => Some(on),
+        Source::Person(Value::Boolean(on))
+        | Source::Machine(Value::Boolean(on))
+        | Source::Profile(Value::Boolean(on)) => Some(on),
         _ => None,
     }
 }
@@ -5724,6 +5751,36 @@ mod tests {
         assert_eq!(source("panels.list", Some(machine), None), Source::Release);
         assert_eq!(
             source("layout.preset", Some("not toml ["), None),
+            Source::Release
+        );
+    }
+
+    #[test]
+    fn a_profile_gives_what_neither_file_sets_as_the_desktop_applies_it() {
+        // The architecture review of 2026-10-31: the desktop played games
+        // with game mode "always" from the gaming profile while Settings and
+        // `edel settings get` said "plugged-in", and picking "plugged-in"
+        // wrote nothing.
+        let machine = "format = 1\n[system]\nprofiles = [\"gaming\"]\n";
+        let applied = in_use(&read(machine).unwrap().file);
+        let given = value_at(&applied, "power.game_mode").expect("the gaming profile sets it");
+        assert_eq!(
+            source("power.game_mode", Some(machine), None),
+            Source::Profile(given.clone())
+        );
+        assert_eq!(
+            chosen("power.game_mode", Some(machine), None),
+            given.as_str().map(String::from)
+        );
+        // A file's own line wins over the profile.
+        let person = "format = 1\n[power]\ngame_mode = \"off\"\n";
+        assert_eq!(
+            source("power.game_mode", Some(machine), Some(person)),
+            Source::Person(Value::String("off".into()))
+        );
+        // A file naming no profile is as before.
+        assert_eq!(
+            source("power.game_mode", Some("format = 1\n"), None),
             Source::Release
         );
     }

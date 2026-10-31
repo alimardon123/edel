@@ -2908,8 +2908,10 @@ case_factory_reset() {
 		system_log
 		erase=$(value settings_system_log | sed -n 's/.*system group places erase \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 		[ -n "$erase" ] || erase=none
-		# Only a place wholly inside the window.
-		[ "$erase" != none ] && set -- $erase && [ $(($2 + $4)) -gt "$h" ] && erase=none
+		# Only a place whose middle, where the click lands, is inside the
+		# window: GTK scrolls a focused button at the page's end to within a
+		# pixel of the window's edge (615+26 in a 640 high window).
+		[ "$erase" != none ] && set -- $erase && [ $(($2 + $4 / 2)) -ge "$h" ] && erase=none
 	done
 	set -- $erase
 	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))

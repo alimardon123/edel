@@ -4,13 +4,12 @@ This page explains Edel OS from the bottom up: the disk, how updates go in and c
 
 ## One base, several images
 
-Every Edel OS machine runs the same base: Linux, Alpine Linux's small C library (musl), its tools (busybox) and its service manager (OpenRC), plus `edel`, our one tool. What differs between a container and a laptop is only which **features** an image adds on top.
+Every Edel OS machine runs the same base: Linux, Alpine Linux's small C library (musl), its tools (busybox) and its service manager (OpenRC), plus `edel`, our one tool. What differs between a container and a desktop is only which **features** an image adds on top.
 
 | Image | What it is for |
 |---|---|
 | Container | The base as a container image, to build servers and tools on |
-| VM | A server or a virtual machine, with a text console and ssh |
-| Desktop | Our desktop, with the kernel and firmware real laptops and desktops need; also the stick to try and install from |
+| Edel OS | One disk image for every machine: a server or a virtual machine with a text console and ssh, a computer with our desktop, with the kernel and firmware real laptops and desktops need, and the stick to try and install from. The desktop is an add-on the disk carries, so a server can leave it out |
 | Phone | Later (roadmap M9) |
 
 An image is a list of features, and a feature is one small file naming the packages, services and programs it brings and why ([Features and images](../FEATURES.md)). `edel image build` turns the list into an image. So adding Wi-Fi tools to every laptop, or dropping something from every server, is one line in one file.
@@ -60,7 +59,7 @@ tries left? ── yes ──► GRUB tries the new slot again
 the old slot starts again and switches the new one off
 ```
 
-`edel rollback` goes back by hand, and `edel status` shows both slots and their versions. The same path carries everything, the boot loader included and add-ons later (roadmap M7.2), so there is one way to update and one way back.
+`edel rollback` goes back by hand, and `edel status` shows both slots and their versions. The same path carries everything, the boot loader and the add-ons included, so there is one way to update and one way back.
 
 ## One file describes the machine
 
@@ -80,10 +79,10 @@ The desktop is two programs we write, both in Rust, and a few we reuse.
 | Part | What it does |
 |---|---|
 | **edel-compositor** | Draws every window and routes all input: floating and tiling windows per workspace, title bars with close, minimize and maximize, workspaces, keyboard shortcuts, every screen at its own scale, effects and animations that drop to a lighter tier when frames run late |
-| **edel-shell-ui** | Draws the panels and docks, the launcher, the window switcher and the workspace buttons, and tells apps the colour scheme and accent; the compositor starts it and starts it again if it stops |
-| **edel-settings** | Settings, the app for every setting: a sidebar of pages, with Layout (the presets and tiling), Displays (each screen's scale, resolution, place and whether it is on), Sound, Network (the wired connection and Wi-Fi), Bluetooth (pairing and connecting devices), Updates, System and About so far; a setting is one line of the person's settings file, which the desktop follows at once, and what the machine itself holds (the volume, Wi-Fi networks and their passwords, Bluetooth pairings) is shown and changed there too but never written to the file (M5.6, M5.8) |
+| **edel-shell-ui** | Draws the panels and docks, the launcher, the window switcher, the workspace buttons, quick settings, notifications, the tray, the lock screen and the greeter, and tells apps the colour scheme and accent; the compositor starts it and starts it again if it stops |
+| **edel-settings** | Settings, the app for every setting: a sidebar of pages, one for each part of the settings file (Layout, Displays, Sound, Network, Bluetooth, Updates and System among them, [the settings file](../settings.md) lists them all); a setting is one line of the person's settings file, which the desktop follows at once, and what the machine itself holds (the volume, Wi-Fi networks and their passwords, Bluetooth pairings) is shown and changed there too but never written to the file (M5.6, M5.8) |
 | greetd | Logs people in; its greeter runs on our compositor and comes back if a session ends |
-| Mesa, PipeWire, NetworkManager and BlueZ, and from roadmap M6 Flatpak | Graphics, sound, networks, Bluetooth and apps, reused as they are |
+| Mesa, PipeWire, NetworkManager, BlueZ and Flatpak | Graphics, sound, networks, Bluetooth and apps, reused as they are |
 
 **Layouts are presets.** One setting, `layout.preset`, switches the whole desktop between Classic (Cinnamon-like, the default), Mac-like, Windows-like, Hive (tiling), Zen (tiling without title bars), Tablet (tiling side by side under a large top bar, for a touch screen) and Phone (one window at a time, the whole screen, between two slim bars), live, with no restart ([Keyboard shortcuts](../SHORTCUTS.md) work the same in all of them).
 
