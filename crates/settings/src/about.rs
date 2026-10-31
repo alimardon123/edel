@@ -94,6 +94,7 @@ fn computer_rows(root: &Path) -> Vec<(&'static str, String)> {
     };
     let hostname = read("proc/sys/kernel/hostname").or_else(|| read("etc/hostname"));
     let (vendor, product) = (dmi("sys_vendor"), dmi("product_name"));
+    let (graphics, nvidia) = graphics(root);
     let mut rows = vec![
         (
             tr("Name"),
@@ -112,7 +113,8 @@ fn computer_rows(root: &Path) -> Vec<(&'static str, String)> {
                 .and_then(|m| memory_text(&m))
                 .unwrap_or_default(),
         ),
-        (tr("Graphics"), graphics(root).unwrap_or_default()),
+        (tr("Graphics"), graphics.unwrap_or_default()),
+        (tr("NVIDIA graphics"), nvidia.unwrap_or_default()),
         (tr("Storage"), storage()),
     ];
     rows.retain(|(_, value)| !value.is_empty());
@@ -212,11 +214,14 @@ fn memory_text(meminfo: &str) -> Option<String> {
     Some(trf("{n} GB", &[("n", &n)]))
 }
 
-/// The graphics: the first card's maker, from its PCI vendor, and its
-/// driver as the last word, `Intel graphics`.
-fn graphics(root: &Path) -> Option<String> {
-    let mut cards: Vec<_> = std::fs::read_dir(root.join("sys/class/drm"))
-        .ok()?
+/// The graphics: each card's maker, from its PCI vendor, or its driver,
+/// `Intel graphics and NVIDIA graphics` on a laptop with two; and, for an
+/// NVIDIA card, what it can do on the open driver (M8.39c).
+fn graphics(root: &Path) -> (Option<String>, Option<String>) {
+    let Ok(entries) = std::fs::read_dir(root.join("sys/class/drm")) else {
+        return (None, None);
+    };
+    let mut cards: Vec<_> = entries
         .filter_map(Result::ok)
         .filter(|e| {
             let name = e.file_name().to_string_lossy().to_string();
@@ -225,12 +230,42 @@ fn graphics(root: &Path) -> Option<String> {
         .map(|e| e.path().join("device"))
         .collect();
     cards.sort();
-    let card = cards.first()?;
-    let vendor = std::fs::read_to_string(card.join("vendor")).ok();
-    let driver = std::fs::read_link(card.join("driver"))
-        .ok()
-        .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()));
-    graphics_name(vendor.as_deref(), driver.as_deref())
+    let (mut names, mut nvidia) = (Vec::<String>::new(), None);
+    for card in &cards {
+        let read = |name: &str| std::fs::read_to_string(card.join(name)).unwrap_or_default();
+        let vendor = read("vendor");
+        let driver = std::fs::read_link(card.join("driver"))
+            .ok()
+            .and_then(|d| d.file_name().map(|n| n.to_string_lossy().to_string()));
+        if let Some(name) = graphics_name(
+            Some(&vendor).filter(|v| !v.is_empty()).map(|v| v.as_str()),
+            driver.as_deref(),
+        ) {
+            if !names.contains(&name) {
+                names.push(name);
+            }
+        }
+        if nvidia.is_none() {
+            nvidia = edel::nvidia::says(
+                &vendor,
+                &read("class"),
+                &read("device"),
+                driver.as_deref().unwrap_or("none"),
+            )
+            .map(|s| capitalised(&s));
+        }
+    }
+    let joined = (!names.is_empty()).then(|| names.join(tr(" and ")));
+    (joined, nvidia)
+}
+
+/// `text` with its first letter in capitals, for a sentence on its own.
+fn capitalised(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }
 
 /// A graphics card's name from its PCI vendor id (`0x8086`) or, for a
@@ -461,6 +496,35 @@ mod tests {
         );
         std::fs::remove_dir_all(&root).unwrap();
         std::fs::remove_dir_all(&bare).unwrap();
+    }
+
+    #[test]
+    fn a_laptop_with_two_cards_names_both_and_says_what_the_nvidia_one_can_do() {
+        let root = std::env::temp_dir().join(format!("edel-about-nvidia-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for (card, vendor, class, device) in [
+            ("card0", "0x8086", "0x030000", "0x9a49"),
+            ("card1", "0x10de", "0x030200", "0x2520"),
+        ] {
+            let dir = root.join("sys/class/drm").join(card).join("device");
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join("vendor"), format!("{vendor}\n")).unwrap();
+            std::fs::write(dir.join("class"), format!("{class}\n")).unwrap();
+            std::fs::write(dir.join("device"), format!("{device}\n")).unwrap();
+        }
+        let (names, nvidia) = graphics(&root);
+        assert_eq!(names.as_deref(), Some("Intel graphics and NVIDIA graphics"));
+        let nvidia = nvidia.unwrap();
+        assert!(
+            nvidia.starts_with("This NVIDIA card has no driver yet"),
+            "{nvidia}"
+        );
+        let rows = computer_rows(&root);
+        assert!(
+            rows.iter()
+                .any(|(t, v)| *t == "NVIDIA graphics" && *v == nvidia)
+        );
+        std::fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
