@@ -426,6 +426,8 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("share_dir", SHARE_DIR.to_string()),
         ("keys_dir", KEYS_DIR.to_string()),
         ("firewall_rules", FIREWALL_RULES.to_string()),
+        ("keyring_keys", KEYRING_KEYS.to_string()),
+        ("keyring_run", KEYRING_RUN.to_string()),
         ("esp_dir", ESP_DIR.to_string()),
         // Inside a person's home (M5.28a).
         ("home_session_log", format!("{STATE_IN_HOME}/{SESSION_LOG}")),

@@ -6338,7 +6338,7 @@ case_keyring() {
 	wait_more 'DESKTOP-TEST: keyring_store ' "$asked" 60 || fail "the service did not store a secret"
 	case "$(value keyring_store)" in
 	"0 "* | 0) ;;
-	*) fail "oo7-cli store failed as ci: $(value keyring_store)" ;;
+	*) fail "oo7-cli store failed as ci: $(value keyring_store); what was there: $(value keyring_diag)" ;;
 	esac
 	asked=$(count 'DESKTOP-TEST: keyring_running ')
 	guest 'keyring running'
