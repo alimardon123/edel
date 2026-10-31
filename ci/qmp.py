@@ -9,8 +9,6 @@ tests (roadmap M4.1, M4.4), with the Python standard library only.
                                  first screen for the next (M5.2g)
     qmp.py click X Y             move the pointer to pixel X, Y and click
     qmp.py rightclick X Y        the same with the right button (M5.16b)
-    qmp.py scroll X Y N          move the pointer to pixel X, Y and turn
-                                 the wheel N steps down (M8.38)
     qmp.py drag X Y TO_X TO_Y    press the left button at X, Y, move it to
                                  TO_X, TO_Y in steps and let go
     qmp.py key KEY...            press each chord, such as ctrl-alt-t or ret
@@ -182,13 +180,6 @@ def click(qmp, x, y, which="left"):
     button(qmp, False, which)
 
 
-def scroll(qmp, x, y, steps):
-    point(qmp, screen_size(qmp), x, y)
-    for _ in range(steps):
-        button(qmp, True, "wheel-down")
-        button(qmp, False, "wheel-down")
-
-
 def drag(qmp, x, y, to_x, to_y, steps=10):
     size = screen_size(qmp)
     point(qmp, size, x, y)
@@ -320,8 +311,6 @@ def main(argv):
         click(qmp, int(args[0]), int(args[1]))
     elif command == "rightclick":
         click(qmp, int(args[0]), int(args[1]), "right")
-    elif command == "scroll":
-        scroll(qmp, *map(int, args[:3]))
     elif command == "drag":
         drag(qmp, *map(int, args[:4]))
     elif command == "key":
