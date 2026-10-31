@@ -63,6 +63,7 @@ pub mod languages;
 pub mod location;
 pub mod lock_screen;
 pub mod network;
+pub mod nvidia;
 pub mod panel_edit;
 pub mod password;
 #[cfg(feature = "pictures")]

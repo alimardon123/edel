@@ -1277,6 +1277,18 @@ msgstr ""
 msgid "the password for {ssid} was missing or wrong; try again with the right one"
 msgstr ""
 
+msgid "this NVIDIA card has no driver yet; add NVIDIA graphics (graphics-nvidia) in Settings, Add-ons, or with edel settings set addons.installed+=graphics-nvidia, then restart"
+msgstr ""
+
+msgid "this NVIDIA card (GTX 16, RTX 20 or newer) runs at full speed on the open driver, with NVIDIA's GSP firmware"
+msgstr ""
+
+msgid "this NVIDIA card (GTX 750 to GTX 10 series) works but stays at its slowest clocks, as NVIDIA lets only its own driver raise them: fine for the desktop and video, slow for games"
+msgstr ""
+
+msgid "this NVIDIA card (GTX 700 series or older) gets the basics on the open driver: the screen, video and light 3D"
+msgstr ""
+
 msgid "there is no panel {panel}"
 msgstr ""
 
