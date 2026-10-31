@@ -33,6 +33,7 @@ The table below is written from the files by a cargo test (`EDEL_WRITE_DOCS=1 ca
 | `input-method` | Input method: fcitx5, started with the session when region.input_method asks for it | `fcitx5` | none | the `desktop` add-on |
 | `intel-laptop` | Intel laptops: Wi-Fi, Bluetooth, sound, cameras, sensors and the NPU | `linux-firmware-intel`, `sof-firmware` | none | add-on, carried |
 | `kernel` | The long-term kernel and the CPU microcode | `linux-lts`, `amd-ucode`, `intel-ucode`, `linux-firmware-none` | none | edel |
+| `keyring` | Keyring: oo7 keeps apps' passwords in the person's home, started only when an app asks and opened at login with no prompt | `oo7-server`, `oo7-portal` | none | the `desktop` add-on |
 | `laptop` | Real laptops: Intel's and AMD's graphics firmware, wired firmware, and the hardware report | `linux-firmware-amdgpu`, `linux-firmware-i915`, `linux-firmware-radeon`, `linux-firmware-rtl_nic`, `linux-firmware-xe` | edel-report | edel |
 | `location` | Location: GeoClue, started by D-Bus while an app asks, giving the place picked in Settings, and online only behind one switch | `geoclue`, `dbus-daemon-launch-helper` | none | the `desktop` add-on |
 | `login` | Login: greetd and its greeter, with a private runtime directory per session | `greetd`, `greetd-openrc`, `pam-rundir`, `zzz` | edel-live; greetd | the `desktop` add-on |
@@ -56,7 +57,7 @@ The table below is written from the files by a cargo test (`EDEL_WRITE_DOCS=1 ca
 | `wifi-realtek` | Realtek Wi-Fi: the firmware of the laptops' and dongles' chips | `linux-firmware-rtlwifi`, `linux-firmware-rtw88`, `linux-firmware-rtw89` | none | add-on, carried |
 | `xwayland` | X11 apps: XWayland, started when one connects | `xwayland`, `xwayland-satellite` | none | the `desktop` add-on |
 
-44 features.
+45 features.
 <!-- end of the features -->
 
 CI's Flatpak test adds `ci/flatpak/features/flatpak-test.toml` (dbus and its test service; flatpak comes from the `flatpak` feature, M6.1) to the list in `ci/flatpak/vm.toml`, and the desktop test adds `ci/desktop/features/desktop-test.toml` (weston-clients, wayland-utils for `wayland-info`, xclock for an X11 window, the program `edel-testclient`, its test service, an autologin of user ci in to the compositor) to the desktop's in `ci/desktop/vm.toml`.
