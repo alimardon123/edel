@@ -716,6 +716,12 @@ msgstr ""
 msgid "Edel OS is installed on {disk}. Restart, and take the stick out when the screen goes dark."
 msgstr ""
 
+msgid "Edel OS could not restart the computer. Restart it from the power menu."
+msgstr ""
+
+msgid "Edel OS could not restart the computer: {why}. Restart it from the power menu."
+msgstr ""
+
 msgid "The bars and docks along the screen's edges, and what they hold."
 msgstr ""
 
