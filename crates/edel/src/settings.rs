@@ -680,13 +680,13 @@ pub const KEYS: &[Key] = &[
             retired: None,
         },
     ),
-    // How tiling lays windows out (M5.16a, scroll M5.16c).
+    // How tiling lays windows out (M5.16a, scroll M5.16c, full M9.4b).
     now(
         "layout.tiling_style",
-        Kind::OneOf(&["stack", "split", "scroll"]),
+        Kind::OneOf(&["stack", "split", "scroll", "full"]),
         Help {
             help: n_(
-                "How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles).",
+                "How tiling lays windows out: stack, split (as Hyprland tiles), scroll (as niri tiles) or full (one window at a time, as on a phone).",
             ),
             default: "the preset's",
             from: DecidedBy::Preset,
@@ -6179,24 +6179,24 @@ version = "1.2"
 
     #[test]
     fn a_preset_this_release_lacks_is_refused_or_reported() {
-        let file = "format = 1\n[layout]\npreset = \"phone\"\n";
+        let file = "format = 1\n[layout]\npreset = \"watch\"\n";
         let lines = check(file).unwrap();
         assert_eq!(
             lines,
             [
-                "layout.preset: \"phone\" is not a preset; choose classic, mac-like, windows-like, hive, zen or tablet"
+                "layout.preset: \"watch\" is not a preset; choose classic, mac-like, windows-like, hive, zen, tablet or phone"
             ]
         );
-        let error = set("format = 1\n", "layout.preset", "phone").unwrap_err();
+        let error = set("format = 1\n", "layout.preset", "watch").unwrap_err();
         assert!(
             error
                 .to_string()
-                .contains("choose classic, mac-like, windows-like, hive, zen or tablet"),
+                .contains("choose classic, mac-like, windows-like, hive, zen, tablet or phone"),
             "{error}"
         );
         // A name is read as written; the check names the preset it is not (M5.17).
         let read = read(file).unwrap();
-        assert_eq!(read.file.layout.preset.as_deref(), Some("phone"));
+        assert_eq!(read.file.layout.preset.as_deref(), Some("watch"));
         assert!(read.problems.is_empty(), "{:?}", read.problems);
         let set_hive = set("format = 1\n", "layout.preset", "hive").unwrap();
         assert_eq!(set_hive, "format = 1\n\n[layout]\npreset = \"hive\"\n");

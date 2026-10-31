@@ -29,7 +29,9 @@
 #   sh ci/vm-tests.sh pack NAME   what archive NAME holds from out/ into
 #                                 out/vm-NAME.tar.zst (sparse, without the
 #                                 builds' work/ folders)
-#   sh ci/vm-tests.sh unpack NAME that archive back into out/
+#   sh ci/vm-tests.sh take NAME RUN  that archive from run RUN's artifact,
+#                                 checked against what was uploaded, unpacked
+#                                 back into out/
 #
 # Budget boots are not here: CI's system lane runs `sizes.sh boots` before
 # its tests, alone on its runner, so other VMs do not slow the boots it times.
@@ -110,14 +112,42 @@ pack)
 	sudo tar --sparse --exclude='out/*/work' -cf - $paths | zstd -q -T0 -1 -o "out/vm-$2.tar.zst"
 	echo "packed lane $2: $(du -h "out/vm-$2.tar.zst" | cut -f1) for $paths"
 	;;
-unpack)
-	# A download cut short leaves a short archive; stop here and say so,
-	# rather than booting a part of a disk and failing far from the cause.
-	zstd -q -dc "out/vm-$2.tar.zst" | tar -xf - || {
-		echo "FAIL: out/vm-$2.tar.zst did not unpack whole, so its download from the build job was cut short; run this job again"
+take)
+	# take NAME RUN: archive NAME from the artifact edel-vm-images-NAME of
+	# run RUN, through the REST API with GH_TOKEN. actions/download-artifact
+	# ended a few downloads early with no error (2026-10-30 and 31, 3 of
+	# about 57 lane jobs, the 2 to 6 GB archives), so this one resumes a
+	# download that stops, up to five times, and takes the archive only
+	# when its size and sha256 are those the build job uploaded.
+	api=https://api.github.com/repos/$GITHUB_REPOSITORY/actions
+	meta=$(curl -fsSL --retry 5 -H "Authorization: Bearer $GH_TOKEN" "$api/runs/$3/artifacts?name=edel-vm-images-$2" |
+		jq -r '.artifacts[0] | "\(.id) \(.size_in_bytes) \(.digest)"')
+	[ -n "$meta" ] && [ "$meta" != "null null null" ] || {
+		echo "FAIL: run $3 has no artifact edel-vm-images-$2"
 		exit 1
 	}
-	rm "out/vm-$2.tar.zst"
+	# shellcheck disable=SC2086
+	set -- "$2" $meta
+	zip=out/vm-$1.zip
+	mkdir -p out
+	rm -f "$zip"
+	n=0
+	while [ "$(stat -c %s "$zip" 2>/dev/null || echo 0)" != "$3" ] && [ "$n" -lt 5 ]; do
+		n=$((n + 1))
+		curl -fsSL -C - -H "Authorization: Bearer $GH_TOKEN" -o "$zip" "$api/artifacts/$2/zip" ||
+			echo "download $n of edel-vm-images-$1 stopped at $(stat -c %s "$zip" 2>/dev/null || echo 0) of $3 bytes; going on from there"
+	done
+	sum=$(sha256sum "$zip" | cut -d' ' -f1)
+	if [ "sha256:$sum" != "$4" ]; then
+		echo "FAIL: edel-vm-images-$1 came $(stat -c %s "$zip") bytes long with sha256 $sum after $n tries; the build job uploaded $3 bytes with $4"
+		exit 1
+	fi
+	echo "took edel-vm-images-$1: $3 bytes in $n tries, sha256 as uploaded"
+	unzip -p "$zip" "vm-$1.tar.zst" | zstd -q -dc | tar -xf - || {
+		echo "FAIL: edel-vm-images-$1 matched its sha256 yet did not unpack"
+		exit 1
+	}
+	rm "$zip"
 	;;
 '')
 	mkdir -p out

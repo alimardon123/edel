@@ -20,8 +20,8 @@ pub const FORMAT: i64 = 1;
 
 /// The presets this release has, by name, the default first, in the order
 /// Settings shows them and messages list them (ADR-002's: Classic,
-/// Mac-like, Windows-like, Hive, Zen, Tablet (M9.4a), then Phone as it
-/// comes). A new one is a file under `presets/`, a line here and its name
+/// Mac-like, Windows-like, Hive, Zen, Tablet (M9.4a) and Phone (M9.4b)).
+/// A new one is a file under `presets/`, a line here and its name
 /// in [`NAMES`], in the same order; its name must be in
 /// [`crate::settings::PRESETS`].
 pub const BUILT_IN: &[(&str, &str)] = &[
@@ -34,6 +34,7 @@ pub const BUILT_IN: &[(&str, &str)] = &[
     ("hive", include_str!("../../../presets/hive.toml")),
     ("zen", include_str!("../../../presets/zen.toml")),
     ("tablet", include_str!("../../../presets/tablet.toml")),
+    ("phone", include_str!("../../../presets/phone.toml")),
 ];
 
 /// The names in [`BUILT_IN`]: what `layout.preset` may be on this release,
@@ -45,6 +46,7 @@ pub const NAMES: &[&str] = &[
     "hive",
     "zen",
     "tablet",
+    "phone",
 ];
 
 /// The preset a missing `layout.preset` means.
@@ -645,6 +647,7 @@ pub fn title(name: &str) -> String {
         "hive" => tr(n_("Hive")).to_string(),
         "zen" => tr(n_("Zen")).to_string(),
         "tablet" => tr(n_("Tablet")).to_string(),
+        "phone" => tr(n_("Phone")).to_string(),
         _ => {
             let mut chars = name.chars();
             match chars.next() {
@@ -1391,6 +1394,24 @@ mod tests {
     }
 
     #[test]
+    fn phone_shows_one_window_at_a_time_with_no_title_bar_between_two_slim_bars() {
+        // M9.4b: the fifth round's phone picture.
+        let (phone, note) = named(Some("phone"));
+        assert_eq!(note, None);
+        assert_eq!(phone.windows.policy, Policy::Tiling);
+        assert_eq!(phone.windows.title_bars, Some(TitleBars::Never));
+        assert_eq!(phone.windows.tiling_style.as_deref(), Some("full"));
+        assert_eq!(phone.panels.len(), 2);
+        let (top, bottom) = (&phone.panels[0], &phone.panels[1]);
+        assert_eq!((top.edge, top.size), (Edge::Top, Size::Small));
+        assert_eq!(top.start, ["clock"]);
+        assert_eq!(top.end, ["status"]);
+        assert_eq!((bottom.edge, bottom.size), (Edge::Bottom, Size::Small));
+        assert_eq!(bottom.centre, ["menu", "apps"]);
+        assert_eq!(title("phone"), "Phone");
+    }
+
+    #[test]
     fn a_preset_reads_its_title_bars_and_tiling_style_and_refuses_the_rest() {
         let classic = BUILT_IN[0].1;
         let set = classic.replace(
@@ -1559,13 +1580,13 @@ mod tests {
 
     #[test]
     fn a_base_this_release_lacks_gives_classic_and_a_report() {
-        let text = "format = 1\n[layout]\npreset = \"old\"\n[presets.old]\npreset = \"phone\"\nwindow_buttons = \"left\"\n";
+        let text = "format = 1\n[layout]\npreset = \"old\"\n[presets.old]\npreset = \"watch\"\nwindow_buttons = \"left\"\n";
         let read = settings::read(text).unwrap();
         assert!(
             read.problems
                 .iter()
                 .any(|p| p.key == "presets.old.preset"
-                    && p.message.contains("has no preset \"phone\"")),
+                    && p.message.contains("has no preset \"watch\"")),
             "{:?}",
             read.problems
         );
@@ -1644,12 +1665,13 @@ mod tests {
                 "hive",
                 "zen",
                 "tablet",
+                "phone",
                 "mine"
             ]
         );
-        assert!(rows[6].in_use && !rows[6].built_in);
-        assert_eq!(rows[6].title, "mine");
-        assert_eq!(rows[6].base, "hive");
+        assert!(rows[7].in_use && !rows[7].built_in);
+        assert_eq!(rows[7].title, "mine");
+        assert_eq!(rows[7].base, "hive");
         assert!(rows[0].built_in && !rows[0].in_use);
     }
 

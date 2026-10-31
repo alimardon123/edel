@@ -85,7 +85,7 @@ The desktop is two programs we write, both in Rust, and a few we reuse.
 | greetd | Logs people in; its greeter runs on our compositor and comes back if a session ends |
 | Mesa, PipeWire, NetworkManager and BlueZ, and from roadmap M6 Flatpak | Graphics, sound, networks, Bluetooth and apps, reused as they are |
 
-**Layouts are presets.** One setting, `layout.preset`, switches the whole desktop between Classic (Cinnamon-like, the default), Mac-like, Windows-like, Hive (tiling), Zen (tiling without title bars) and Tablet (tiling side by side under a large top bar, for a touch screen), live, with no restart ([Keyboard shortcuts](../SHORTCUTS.md) work the same in all of them).
+**Layouts are presets.** One setting, `layout.preset`, switches the whole desktop between Classic (Cinnamon-like, the default), Mac-like, Windows-like, Hive (tiling), Zen (tiling without title bars), Tablet (tiling side by side under a large top bar, for a touch screen) and Phone (one window at a time, the whole screen, between two slim bars), live, with no restart ([Keyboard shortcuts](../SHORTCUTS.md) work the same in all of them).
 
 **One look, in one place.** Every colour, size, corner and the font come from one file of design tokens, `design/tokens.toml`, and the shell's icons are SVG files in `design/icons/`. The compositor, the panel, GTK apps and these pages all read them, so changing one token changes everything that shows it ([The look](../mockups/README.md)).
 

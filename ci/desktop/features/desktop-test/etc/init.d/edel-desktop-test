@@ -254,6 +254,8 @@ commands() {
 		'preset zen') edel settings set layout.preset=zen ;;
 		# Tablet (M9.4a): tiling side by side under a large bar on top.
 		'preset tablet') edel settings set layout.preset=tablet ;;
+		# Phone (M9.4b): one window at a time, with no title bar.
+		'preset phone') edel settings set layout.preset=phone ;;
 		'preset default') edel settings reset layout.preset ;;
 		# The panels as a setting (M5.4e): one panel with only the clock.
 		'panels clock') edel settings set 'panels.list=[{ edge = "bottom", end = ["clock"] }]' ;;
@@ -1285,6 +1287,19 @@ ieee80211w=2' channel=6 ;;
 			;;
 		'tablet on')
 			modprobe uinput 2>/dev/null; edel-testclient --tablet-mode 10 </dev/null >/tmp/tablet.log 2>&1 &
+			;;
+		# Taps (M9.5): two test clients to tap between, and a touch screen
+		# on uinput that taps the points given (edel-testclient --taps), its
+		# log in /tmp/taps.log, said when the taps are done.
+		'tap windows')
+			as_ci edel-testclient --size 300x200 --colour cc3333 --title tapa </dev/null >/dev/null 2>&1 &
+			sleep 1
+			as_ci edel-testclient --size 300x200 --colour 3366cc --title tapb </dev/null >/dev/null 2>&1 &
+			;;
+		'taps '*)
+			modprobe uinput 2>/dev/null
+			points=${command#taps }
+			(edel-testclient --taps "$points" </dev/null >/tmp/taps.log 2>&1; say "taps_done $? $(joined /tmp/taps.log)") &
 			;;
 		'touch read')
 			bus=$(session_bus)

@@ -1424,6 +1424,9 @@ msgstr ""
 msgid "Tablet"
 msgstr ""
 
+msgid "Phone"
+msgstr ""
+
 msgid "this release has no preset {name}; the Classic preset is used"
 msgstr ""
 
@@ -1904,7 +1907,7 @@ msgstr ""
 msgid "Whether each title bar shows its maximize button; a hidden button's room goes to the title."
 msgstr ""
 
-msgid "How tiling lays windows out: stack, split (as Hyprland tiles) or scroll (as niri tiles)."
+msgid "How tiling lays windows out: stack, split (as Hyprland tiles), scroll (as niri tiles) or full (one window at a time, as on a phone)."
 msgstr ""
 
 msgid "The panels along the screen's edges, each with its widgets, in place of the preset's."
