@@ -174,7 +174,7 @@ mod tests {
         let classic = chosen("classic", Scheme::Light);
         assert_eq!(why(&classic, &classic, &tokens, &tokens, None), None);
         // A preset this release lacks is Classic: no change.
-        let unknown = chosen("phone", Scheme::Light);
+        let unknown = chosen("watch", Scheme::Light);
         assert_eq!(why(&classic, &unknown, &tokens, &tokens, None), None);
         let mac = chosen("mac-like", Scheme::Dark);
         assert_eq!(

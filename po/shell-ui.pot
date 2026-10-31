@@ -632,6 +632,9 @@ msgstr ""
 msgid "Scroll"
 msgstr ""
 
+msgid "Full"
+msgstr ""
+
 msgid "Add-on {names} did not start"
 msgstr ""
 

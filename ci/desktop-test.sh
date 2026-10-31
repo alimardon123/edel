@@ -257,7 +257,7 @@
 #   own-presets edel preset save of Hive with the buttons on the left as
 #               mine, which leaves [layout] with preset = "mine" and nothing
 #               moved on screen; Classic and mine again; Settings' Layout
-#               page with mine after tablet, kept as settings-own-presets.png;
+#               page with mine after phone, kept as settings-own-presets.png;
 #               edel preset delete refused while mine is in use (M5.17)
 #   theme       edel theme save, export, delete and import round trip as
 #               root: a theme saved as mine is written under [themes],
@@ -4950,7 +4950,7 @@ case_presets() {
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "Zen did not bring shell-ui's bar to the top"
 	# Hive tiles too, so no policy switch is logged; the state file says it.
-	i=0
+	tries=0
 	while :; do
 		state_now || fail "the VM did not answer 'state now'"
 		python3 - "$dir/state-now.toml" >"$dir/zen.now" <<-'EOF' && break
@@ -4960,8 +4960,8 @@ case_presets() {
 			print(f"{len(windows)} windows, title bars {bars}")
 			sys.exit(0 if windows and not any(bars) else 1)
 		EOF
-		i=$((i + 1))
-		[ "$i" -lt 5 ] || fail "under Zen the windows should be tiled with no title bars: $(cat "$dir/zen.now")"
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "under Zen the windows should be tiled with no title bars: $(cat "$dir/zen.now")"
 		sleep 1
 	done
 	shot preset-zen 640 12 "$panel" >/dev/null || fail "Zen's bar is not at 640,12 in the panel's colour"
@@ -4971,7 +4971,7 @@ case_presets() {
 	guest 'preset tablet'
 	wait_more 'edel-shell-ui: follows the settings: the preset is now tablet' "$followed" ||
 		fail "edel settings set layout.preset=tablet was not followed by shell-ui"
-	i=0
+	tries=0
 	while :; do
 		state_now || fail "the VM did not answer 'state now'"
 		python3 - "$dir/state-now.toml" >"$dir/tablet.now" <<-'EOF' && break
@@ -4981,11 +4981,43 @@ case_presets() {
 			print(f"{len(windows)} windows, title bars {bars}")
 			sys.exit(0 if windows and all(bars) else 1)
 		EOF
-		i=$((i + 1))
-		[ "$i" -lt 5 ] || fail "under Tablet the windows should be tiled with their title bars: $(cat "$dir/tablet.now")"
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "under Tablet the windows should be tiled with their title bars: $(cat "$dir/tablet.now")"
 		sleep 1
 	done
 	shot preset-tablet 640 12 "$panel" >/dev/null || fail "Tablet's bar is not at 640,12 in the panel's colour"
+	# Phone (M9.4b): one window at a time, the whole area, with no title
+	# bar, between a slim bar on top and one along the bottom. Its count
+	# is its own, as state_now's waits set i.
+	followed=$(count 'edel-shell-ui: follows the settings: the preset is now phone')
+	guest 'preset phone'
+	wait_more 'edel-shell-ui: follows the settings: the preset is now phone' "$followed" ||
+		fail "edel settings set layout.preset=phone was not followed by shell-ui"
+	# A second window, keys, so two share the one whole area.
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open under Phone"
+	tries=0
+	while :; do
+		state_now || fail "the VM did not answer 'state now'"
+		python3 - "$dir/state-now.toml" >"$dir/phone.now" <<-'EOF' && break
+			import sys, tomllib
+			windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+			shown = [w["workspace"] for w in windows if w.get("focused")] or [1]
+			here = [w for w in windows if w["workspace"] == shown[0]]
+			places = {(w["x"], w["y"], w["width"], w["height"]) for w in here}
+			bars = [w["title_bar"] for w in windows]
+			print(f"{len(here)} windows on workspace {shown[0]} at {sorted(places)}, title bars {bars}")
+			sys.exit(0 if len(here) > 1 and len(places) == 1 and not any(bars) else 1)
+		EOF
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "under Phone every window should fill the same whole area with no title bar: $(cat "$dir/phone.now")"
+		sleep 1
+	done
+	shot preset-phone 640 12 "$panel" >/dev/null || fail "Phone's top bar is not at 640,12 in the panel's colour"
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close keys under Phone"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
@@ -4994,9 +5026,9 @@ case_presets() {
 	wait_more 'edel-compositor: windows now floating' "$floated" || fail "back on Classic, the windows did not float"
 	shot preset-classic 640 790 "$panel" >/dev/null || fail "Classic's panel is not at 640,790 in the panel's colour"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Presets (M5.4a, M9.4a): preset-hive.png, preset-zen.png, preset-tablet.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
+		echo "Presets (M5.4a, M9.4a, M9.4b): preset-hive.png, preset-zen.png, preset-tablet.png, preset-phone.png and preset-classic.png are in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; Tablet (M9.4a) tiled them with their title bars under a large bar at 640,12, kept as preset-tablet.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
+	echo "PASS: edel settings set layout.preset=hive gave shell-ui Hive's bar along the top and tiled the windows; Zen (M5.18b) tiled them with no title bars under a slim bar at 640,12, kept as preset-zen.png; Tablet (M9.4a) tiled them with their title bars under a large bar at 640,12, kept as preset-tablet.png; Phone (M9.4b) gave each window the same whole area with no title bar, $(cat "$dir/phone.now"), kept as preset-phone.png; and unsetting the preset brought back Classic's panel along the bottom and floating windows"
 }
 
 case_own_presets() {
@@ -5007,7 +5039,7 @@ case_own_presets() {
 	# compositor logs no preset but hive. Then Classic (its buttons go right,
 	# the buttons' key having moved into mine), mine again (Hive's bar on top,
 	# the buttons on the left), Settings' Layout page with a card per preset,
-	# mine after tablet, kept as settings-own-presets.png. Super+Q closes it,
+	# mine after phone, kept as settings-own-presets.png. Super+Q closes it,
 	# delete is refused while mine is in use and then deletes it, and the
 	# layout keys are reset for the cases after this one.
 	asked() {
@@ -5080,8 +5112,8 @@ case_own_presets() {
 		[ "$places" = none ] && sleep 1
 	done
 	case "$places" in
-	*" zen tablet mine") ;;
-	*) fail "Settings' Layout page does not list mine after tablet: $places" ;;
+	*" zen tablet phone mine") ;;
+	*) fail "Settings' Layout page does not list mine after phone: $places" ;;
 	esac
 	python3 ci/qmp.py screendump "$dir/settings-own-presets.png"
 	closed=$(count 'edel-compositor: unmapped window Settings')
@@ -5101,7 +5133,7 @@ case_own_presets() {
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		echo "Own presets (M5.17): settings-own-presets.png is in the edel-images artifact." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after tablet, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
+	echo "PASS: edel preset save mine wrote [presets.mine] from Hive with the buttons on the left and left [layout] as preset = \"mine\" with nothing moving on screen (Hive's bar stayed on top); Classic put the buttons on the right and mine again put Hive's bar and the left buttons back; Settings' Layout page logged a card per preset with mine after phone, kept as settings-own-presets.png; edel preset delete refused mine while it was in use, saying so, and deleted it once Classic was in use"
 }
 
 case_app_windows() {
@@ -6255,6 +6287,75 @@ case_touch() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: the tablet-mode switch turned touch mode on and off: the portal's io.github.alimardon123.edel touch-mode read true, then false, and Settings sized its rows for touch and back (touch.png); $(value touch_log)"
+}
+
+case_taps() {
+	# Touch screens (M9.5): a touch screen on uinput (edel-testclient
+	# --taps, the test service's `taps X,Y`) taps as a mouse clicks. Two
+	# test clients, tapa and tapb, open; a tap on a part of tapa that tapb
+	# does not cover focuses tapa, and a tap on each one's close button,
+	# the bar's rightmost 28 px, closes it, as the state file and the
+	# compositor's unmap lines show.
+	opened=$(count 'edel-compositor: mapped window tapb')
+	guest 'tap windows'
+	wait_more 'edel-compositor: mapped window tapb' "$opened" 30 || fail "the test clients tapa and tapb did not open"
+	state_now || fail "the state file could not be read"
+	taps_place tapa || fail "tapa has no place of its own to tap: $(cat "$dir/taps.now")"
+	read -r x y w h at how <"$dir/taps.now"
+	tap "$at"
+	tries=0
+	until state_now && taps_place tapa && [ "$(cut -d' ' -f6 "$dir/taps.now")" = focused ]; do
+		tries=$((tries + 1))
+		[ "$tries" -lt 5 ] || fail "a tap at $at did not focus tapa: $(cat "$dir/taps.now")"
+		sleep 1
+	done
+	for name in tapa tapb; do
+		state_now || fail "the state file could not be read"
+		taps_place "$name" || fail "$name has no place: $(cat "$dir/taps.now")"
+		read -r x y w h spot how <"$dir/taps.now"
+		closed=$(count "edel-compositor: unmapped window $name")
+		tap "$((x + w - 13)),$((y - 14))"
+		wait_more "edel-compositor: unmapped window $name" "$closed" ||
+			fail "a tap on $name's close button at $((x + w - 13)),$((y - 14)) did not close it"
+	done
+	echo "PASS: a touch screen's tap at $at focused tapa, and taps on tapa's and tapb's close buttons closed them; $(value taps_done)"
+}
+
+# tap X,Y: the touch screen taps there and the test waits until it has.
+tap() {
+	tapped=$(count 'DESKTOP-TEST: taps_done ')
+	guest "taps $1"
+	wait_more 'DESKTOP-TEST: taps_done ' "$tapped" 30 || fail "the touch screen did not tap $1"
+	case "$(value taps_done)" in
+	"0 tapped $1"*) ;;
+	*) fail "the touch screen could not tap $1: $(value taps_done)" ;;
+	esac
+}
+
+# taps_place NAME: writes NAME's x, y, width and height from the last
+# state file (state_now), a point on it no other window covers as X,Y,
+# and focused or unfocused, into $dir/taps.now; fails when it has none.
+taps_place() {
+	python3 - "$dir/state-now.toml" "$1" >"$dir/taps.now" <<-'EOF'
+		import sys, tomllib
+		windows = tomllib.load(open(sys.argv[1], "rb")).get("windows", [])
+		mine = [w for w in windows if w["title"] == sys.argv[2]]
+		if not mine:
+		    print(f"no window {sys.argv[2]} in {[w['title'] for w in windows]}")
+		    sys.exit(1)
+		me = mine[0]
+		others = [w for w in windows if w is not me and w["workspace"] == me["workspace"]]
+		# A window's title bar, 28 px above it, covers too.
+		def covered(x, y):
+		    return any(o["x"] <= x < o["x"] + o["width"] and o["y"] - 28 * o.get("title_bar", False) <= y < o["y"] + o["height"] for o in others)
+		# Every 8 px across the window, as a newer window cascades only
+		# 32 px over it and leaves just a strip along its top and left.
+		spots = [(me["x"] + a, me["y"] + b) for b in range(8, me["height"], 8) for a in range(8, me["width"], 8)]
+		free = [s for s in spots if not covered(*s)]
+		at = f"{free[0][0]},{free[0][1]}" if free else "none"
+		print(me["x"], me["y"], me["width"], me["height"], at, "focused" if me["focused"] else "unfocused")
+		sys.exit(0 if free else 1)
+	EOF
 }
 
 # touch_read WANT: the settings portal's touch-mode must read WANT (true or
@@ -8312,10 +8413,10 @@ case_styles() {
 		sleep 0.2
 	done
 	set -- $(value layers | grep -o 'edel-styles@[0-9]*,[0-9]*,[0-9]*x[0-9]*' | sed 's/edel-styles@//; s/[,x]/ /g')
-	# A row of 36 px for each style, stack, split and scroll, with 8 px
-	# round them, and the shadow's room, if the tier draws one, round the
-	# card.
-	room=$((($4 - 16 - 3 * 36) / 2))
+	# A row of 36 px for each style, stack, split, scroll and full, with
+	# 8 px round them, and the shadow's room, if the tier draws one, round
+	# the card.
+	room=$((($4 - 16 - 4 * 36) / 2))
 	mx=$(($1 + $3 / 2)) my=$(($2 + room + 8 + 36 + 18))
 	shot styles $((mx + 40)) $(($2 + room + 4)) "$panel" >/dev/null ||
 		fail "the styles menu at $1,$2 ${3}x$4 is not in the menus' #$panel"
@@ -9646,7 +9747,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
