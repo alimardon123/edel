@@ -162,7 +162,7 @@ test_side() {
 	while IFS= read -r path; do
 		[ -n "$path" ] || continue
 		case $path in
-		ci/boot-test.sh | ci/system-test.sh | ci/install-test.sh | ci/ab-test.sh | ci/apps-test.sh | ci/flatpak-test.sh | ci/fleet-test.sh | ci/server-test.sh | ci/upgrade-test.sh | ci/upgrade-test/* | ci/updates-test.sh | ci/developer-test.sh | ci/desktop-test.sh | ci/vm-tests.sh | ci/vm.sh | ci/budgets.sh | ci/budgets.toml | ci/qmp.py | ci/serial.py | ci/https-serve.py) ;;
+		ci/boot-test.sh | ci/system-test.sh | ci/install-test.sh | ci/ab-test.sh | ci/apps-test.sh | ci/flatpak-test.sh | ci/fleet-test.sh | ci/server-test.sh | ci/upgrade-test.sh | ci/upgrade-test/* | ci/updates-test.sh | ci/developer-test.sh | ci/desktop-test.sh | ci/dev-box-files.sh | ci/vm-tests.sh | ci/vm.sh | ci/budgets.sh | ci/budgets.toml | ci/qmp.py | ci/serial.py | ci/https-serve.py) ;;
 		*) [ "$(kind "$path")" = none ] || return 1 ;;
 		esac
 	done

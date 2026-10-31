@@ -21,7 +21,7 @@ The table below is written from the files by a cargo test (`EDEL_WRITE_DOCS=1 ca
 | `completion` | Tab completion: bash, which completes edel's commands, keys and values | `bash`, `bash-completion` | none | edel |
 | `compositor` | The compositor: windows on the screen, drawn with the GPU | `dbus`, `eudev-libs`, `libgcc`, `libinput-libs`, `libseat`, `libxkbcommon`, `mesa-gbm` | none | the `desktop` add-on |
 | `container` | The container image: busybox and apk, with no kernel or init | `alpine-baselayout`, `apk-tools`, `busybox`, `musl-utils` | none | container |
-| `containers` | Containers: Podman, rootless and without a daemon | `podman`, `crun`, `fuse-overlayfs` | cgroups | add-on |
+| `containers` | Containers: Podman, rootless and without a daemon, and a dev box for software not on Flathub | `podman`, `crun`, `fuse-overlayfs`, `distrobox` | cgroups | add-on |
 | `desktop` | The desktop: the Edel shell, Settings, graphics, sound, fonts and apps | its parts' | its parts' | add-on, carried |
 | `firewall` | A firewall: other computers reach only the services this machine has on | `nftables` | edel-firewall | edel |
 | `flatpak` | Flatpak: apps from Flathub, installed per person, and the portals apps ask for | `flatpak`, `bubblewrap`, `xdg-desktop-portal-gtk` | none | the `desktop` add-on |
