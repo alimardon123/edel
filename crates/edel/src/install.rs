@@ -695,6 +695,22 @@ pub fn running_from_stick(sys: &Path, name: &str) -> bool {
     )
 }
 
+/// The machine's name, as the person sees it in Settings, which a factory
+/// reset asks for (M8.38): `edel factory-reset` and Settings' Erase
+/// everything read it here, so both ask for the same name.
+pub fn machine_name() -> String {
+    fs::read_to_string("/etc/hostname")
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+/// Whether what was typed is the machine's `name`, a factory reset's
+/// confirmation: exact but for spaces round it, and never an empty name.
+pub fn is_machine_name(typed: &str, name: &str) -> bool {
+    !name.is_empty() && typed.trim() == name
+}
+
 /// Whether this system runs from a stick: Settings then shows its
 /// installer page, and the stick's live account may install (M6.6a).
 pub fn from_a_stick() -> bool {
