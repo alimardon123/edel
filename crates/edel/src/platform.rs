@@ -13,7 +13,10 @@ use crate::i18n::{tr, trf};
 use crate::version;
 
 /// The built-in levels, by number, in order from 1.
-const BUILT_IN: &[(u32, &str)] = &[(1, include_str!("../../../platform/level-1.toml"))];
+const BUILT_IN: &[(u32, &str)] = &[(
+    1,
+    include_str!(concat!(env!("EDEL_SOURCE"), "/platform/level-1.toml")),
+)];
 
 /// The level the images built now promise. A new level is a file, a line
 /// in [`BUILT_IN`] and this number raised with it; a level only rises.
