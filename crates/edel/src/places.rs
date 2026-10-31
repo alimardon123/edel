@@ -111,6 +111,10 @@ pub const FIRST_PASSWORDS: &str = data!("/edel/first-passwords");
 /// was installed, so a removable disk that holds it is no stick, which
 /// logs `live` in by itself and installs without a password (M6.17).
 pub const INSTALLED: &str = data!("/edel/installed");
+/// Each person's keyring key (M7.18), one file per person, root's alone:
+/// made once by `edel boot keyring` as their first session opens, and
+/// gone with the accounts in a factory reset.
+pub const KEYRING_KEYS: &str = data!("/edel/keyring");
 /// Kept on a stick that installed itself (M7.3): the disk's id under
 /// `/dev/disk/by-id/` and the date, so starting from the stick again in
 /// the same machine never installs twice.
@@ -157,6 +161,10 @@ pub const RELEASE_FROM: &str = data!("/edel/release-from.toml");
 pub const RUN_DIR: &str = run!("");
 /// What the person's session leaves for root (M4.8).
 pub const SESSION_DIR: &str = run!("/session");
+/// This boot's copies of the keyring keys of the people logged in (M7.18),
+/// one per user id, each readable by its person alone, taken out as the
+/// session closes.
+pub const KEYRING_RUN: &str = run!("/keyring");
 /// What the compositor shows: windows, layers, the effect tier (M4.3).
 pub const STATE_FILE: &str = run!("/session/state.toml");
 /// The desktop's health: the compositor's first frame (M4.8).
