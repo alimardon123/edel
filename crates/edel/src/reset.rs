@@ -179,19 +179,6 @@ pub fn erase_if_asked(root: &Path) -> bool {
     asked
 }
 
-/// Whether what was typed is the machine's name, the confirmation.
-fn confirmed(typed: &str, name: &str) -> bool {
-    !name.is_empty() && typed.trim() == name
-}
-
-/// The machine's name, as the person sees it in Settings.
-fn machine_name() -> String {
-    fs::read_to_string("/etc/hostname")
-        .unwrap_or_default()
-        .trim()
-        .to_string()
-}
-
 /// `edel factory-reset`: asks for the machine's name unless `yes`, then
 /// leaves the request and restarts, so the next start erases.
 pub fn factory_reset(yes: bool) -> Result<()> {
@@ -210,7 +197,7 @@ pub fn factory_reset(yes: bool) -> Result<()> {
         )
     );
     if !yes {
-        let name = machine_name();
+        let name = edel::install::machine_name();
         if name.is_empty() {
             bail!(
                 "{}",
@@ -227,7 +214,7 @@ pub fn factory_reset(yes: bool) -> Result<()> {
         io::stdout().flush()?;
         let mut typed = String::new();
         io::stdin().lock().read_line(&mut typed)?;
-        if !confirmed(&typed, &name) {
+        if !edel::install::is_machine_name(&typed, &name) {
             bail!(
                 "{}",
                 trf(
@@ -340,9 +327,9 @@ mod tests {
 
     #[test]
     fn asks_for_the_machine_s_exact_name() {
-        assert!(confirmed("office-pc\n", "office-pc"));
-        assert!(!confirmed("office", "office-pc"));
-        assert!(!confirmed("Office-PC", "office-pc"));
-        assert!(!confirmed("", ""));
+        assert!(edel::install::is_machine_name("office-pc\n", "office-pc"));
+        assert!(!edel::install::is_machine_name("office", "office-pc"));
+        assert!(!edel::install::is_machine_name("Office-PC", "office-pc"));
+        assert!(!edel::install::is_machine_name("", ""));
     }
 }
