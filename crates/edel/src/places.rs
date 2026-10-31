@@ -318,6 +318,21 @@ pub const SLOT_BOOT_DIR: &str = "/usr/lib/edel/boot";
 /// Edel OS's directory on the EFI system partition: GRUB, its counters and
 /// a seed settings file.
 pub const ESP_DIR: &str = "/EFI/edel";
+/// GRUB's config in [`ESP_DIR`], copied from the slot's [`SLOT_BOOT_DIR`].
+pub const GRUB_CFG: &str = "grub.cfg";
+/// GRUB's environment block in [`ESP_DIR`]: the slots' order and counters.
+pub const GRUBENV: &str = "grubenv";
+/// The boot loader's version file in [`ESP_DIR`] and the slot's boot
+/// folder, which says whether GRUB rides along with an update.
+pub const LOADER_TOML: &str = "loader.toml";
+
+/// `file` in [`ESP_DIR`] on the EFI system partition mounted at `esp`
+/// (`/boot/efi/EFI/edel/grubenv`), or [`ESP_DIR`] itself for an empty
+/// `file`.
+pub fn on_esp(esp: &Path, file: &str) -> PathBuf {
+    let dir = esp.join(ESP_DIR.trim_start_matches('/'));
+    if file.is_empty() { dir } else { dir.join(file) }
+}
 
 /// The desktop sessions installed, one `.desktop` file each, which the
 /// login screen offers (M5.10c3b). The standard place, not Edel OS's.

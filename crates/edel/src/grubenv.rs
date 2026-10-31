@@ -25,15 +25,13 @@ pub enum Slot {
 impl Slot {
     /// The slot on GPT partition `number`: 2 is A, 3 is B (see `boot.rs`).
     pub fn from_partition(number: u32) -> Option<Slot> {
-        match number {
-            2 => Some(Slot::A),
-            3 => Some(Slot::B),
-            _ => None,
-        }
+        [Slot::A, Slot::B]
+            .into_iter()
+            .find(|slot| slot.partition() == number)
     }
 
-    /// The GPT partition number of the slot.
-    pub fn partition(self) -> u32 {
+    /// The GPT partition number of the slot, the one place that says it.
+    pub const fn partition(self) -> u32 {
         match self {
             Slot::A => 2,
             Slot::B => 3,

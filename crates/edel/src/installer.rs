@@ -25,10 +25,12 @@ use edel::install::{
 use edel::password::Password;
 use edel::settings;
 
-use crate::boot::{self, DATA_LABEL, ESP_LABEL, GRUB_PREFIX, Layout};
+use crate::boot::{self, DATA_LABEL, ESP_LABEL, Layout};
+use crate::grubenv::Slot;
 use crate::loader::SLOT_DIR;
 use crate::privilege;
 use crate::update::{self, Lock, run};
+use edel::places;
 
 /// The external tools a real install runs, and the package each comes
 /// from; busybox's `mount`, `umount`, `blkid` and `tar` (which copies the
@@ -952,9 +954,10 @@ fn write(
         "edel install: {}",
         tr("copying the running system into slot A")
     );
-    let mut half = HalfCopy::new(part(2));
+    let slot_a = part(Slot::A.partition());
+    let mut half = HalfCopy::new(slot_a.clone());
     let mut from = File::open(slot).with_context(|| could_not_read(slot))?;
-    let mut to = fs::OpenOptions::new().write(true).open(part(2))?;
+    let mut to = fs::OpenOptions::new().write(true).open(&slot_a)?;
     // The first block, which holds the file system's UUID, goes last.
     from.seek(SeekFrom::Start(HEAD))?;
     to.seek(SeekFrom::Start(HEAD))?;
@@ -972,13 +975,13 @@ fn write(
     drop(to);
     // Byte for byte as the running slot, read back from the disk (M1.12).
     let length = running_mib * MIB;
-    run(Command::new("blockdev").arg("--flushbufs").arg(part(2))).with_context(|| {
+    run(Command::new("blockdev").arg("--flushbufs").arg(&slot_a)).with_context(|| {
         trf(
             "could not finish writing {part}",
-            &[("part", &part(2).display().to_string())],
+            &[("part", &slot_a.display().to_string())],
         )
     })?;
-    if update::hash_prefix(&part(2), length)? != update::hash_prefix(slot, length)? {
+    if update::hash_prefix(&slot_a, length)? != update::hash_prefix(slot, length)? {
         bail!(
             "{}",
             tr(
@@ -993,7 +996,7 @@ fn write(
             &[("mib", &running_mib.to_string())]
         )
     );
-    let status = Command::new("e2fsck").arg("-fn").arg(part(2)).status()?;
+    let status = Command::new("e2fsck").arg("-fn").arg(slot_a).status()?;
     if status.code() != Some(0) {
         bail!(
             "{}",
@@ -1026,8 +1029,8 @@ fn write(
                 .and_then(|read| read.file.region.keyboard)
                 .unwrap_or_default();
             let keymap = crate::crypt::keymap_for(&keyboard, |path| Path::new(path).exists());
-            crate::crypt::format(&part(4), passphrase, keymap.as_deref())?;
-            if !crate::crypt::open(&part(4), INSTALL_MAPPER, passphrase)? {
+            crate::crypt::format(&part(boot::DATA_PARTITION), passphrase, keymap.as_deref())?;
+            if !crate::crypt::open(&part(boot::DATA_PARTITION), INSTALL_MAPPER, passphrase)? {
                 bail!(
                     "{}",
                     tr(
@@ -1038,7 +1041,7 @@ fn write(
             _opened = Some(crate::crypt::Opened(INSTALL_MAPPER.to_string()));
             crate::crypt::mapper(INSTALL_MAPPER)
         }
-        None => part(4),
+        None => part(boot::DATA_PARTITION),
     };
     run(Command::new("mkfs.ext4")
         .args(["-q", "-L", DATA_LABEL])
@@ -1046,7 +1049,7 @@ fn write(
     .with_context(|| {
         trf(
             "could not format the data partition {part}",
-            &[("part", &part(4).display().to_string())],
+            &[("part", &part(boot::DATA_PARTITION).display().to_string())],
         )
     })?;
     {
@@ -1102,31 +1105,31 @@ fn write(
     println!("edel install: {}", tr("writing the boot loader"));
     run(Command::new("mkfs.vfat")
         .args(["-F", "32", "-n", ESP_LABEL])
-        .arg(part(1)))
+        .arg(part(boot::ESP_PARTITION)))
     .with_context(|| {
         trf(
             "could not format the start-up partition {part}",
-            &[("part", &part(1).display().to_string())],
+            &[("part", &part(boot::ESP_PARTITION).display().to_string())],
         )
     })?;
     {
         let esp = Mounted::new(
-            &part(1),
+            &part(boot::ESP_PARTITION),
             &Path::new(edel::places::INSTALL_DIR).join("esp"),
             &["-t", "vfat", "-o", "iocharset=iso8859-1"],
         )?;
         let (_, efi_name) = boot::efi_target(std::env::consts::ARCH)?;
         let boot_dir = esp.0.join("EFI/BOOT");
-        let edel_dir = esp.0.join(GRUB_PREFIX.trim_start_matches('/'));
+        let edel_dir = places::on_esp(&esp.0, "");
         fs::create_dir_all(&boot_dir).with_context(|| could_not_write(Path::new(&boot_dir)))?;
         fs::create_dir_all(&edel_dir).with_context(|| could_not_write(Path::new(&edel_dir)))?;
         let slot_dir = Path::new(SLOT_DIR);
-        for file in ["grub.cfg", "loader.toml"] {
+        for file in [places::GRUB_CFG, places::LOADER_TOML] {
             fs::copy(slot_dir.join(file), edel_dir.join(file))
                 .with_context(|| could_not_write(Path::new(&edel_dir.join(file))))?;
         }
-        fs::write(edel_dir.join("grubenv"), boot::initial_grubenv())
-            .with_context(|| could_not_write(Path::new(&edel_dir.join("grubenv"))))?;
+        fs::write(edel_dir.join(places::GRUBENV), boot::initial_grubenv())
+            .with_context(|| could_not_write(Path::new(&edel_dir.join(places::GRUBENV))))?;
         // The firmware's file last, once what it reads is on the disk.
         run(&mut Command::new("sync")).with_context(|| could_not_write(&edel_dir))?;
         fs::copy(slot_dir.join(efi_name), boot_dir.join(efi_name))

@@ -24,8 +24,6 @@ use edel::i18n::{tr, trf};
 const MIB: u64 = 1 << 20;
 /// Where edel keeps its runtime files; a tmpfs, so they vanish at reboot.
 const RUN_DIR: &str = edel::places::RUN_DIR;
-/// The environment block, relative to the EFI system partition.
-const ENV_FILE: &str = "EFI/edel/grubenv";
 
 /// A partition of the disk the system runs from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,7 +242,7 @@ impl Esp {
     fn mount(disk: &Disk) -> Result<Esp> {
         let dir = Path::new(RUN_DIR).join(format!("esp.{}", std::process::id()));
         fs::create_dir_all(&dir)?;
-        let dev = disk.device(1)?;
+        let dev = disk.device(crate::boot::ESP_PARTITION)?;
         // Name the character set: Alpine's virt kernel defaults to utf8 for
         // FAT but does not ship that module. dirsync writes every directory
         // change at once, so a rename in the loader swap never leaves an
@@ -268,7 +266,12 @@ impl Esp {
                 "{}",
                 trf(
                     "the EFI system partition has no {file}, so the slots cannot be read; this disk was not made by edel install, or it is damaged",
-                    &[("file", ENV_FILE)]
+                    &[(
+                        "file",
+                        &edel::places::on_esp(Path::new("/"), edel::places::GRUBENV)
+                            .display()
+                            .to_string(),
+                    )]
                 )
             );
         }
@@ -276,7 +279,7 @@ impl Esp {
     }
 
     fn env_path(&self) -> PathBuf {
-        self.dir.join(ENV_FILE)
+        edel::places::on_esp(&self.dir, edel::places::GRUBENV)
     }
 
     fn load(&self) -> Result<Env> {
