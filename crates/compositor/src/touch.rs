@@ -34,7 +34,13 @@ impl Edel {
         if let crate::input::Under::Surface(_, surface, _) = self.under(at) {
             self.screen_keyboard.tapped(surface);
         }
-        self.button(BUTTON_LEFT, ButtonState::Pressed, serial, event.time_msec())
+        let pressed = self.button(BUTTON_LEFT, ButtonState::Pressed, serial, event.time_msec());
+        // The tap may have moved the focus to a field already asking for
+        // text, which says nothing more, so the keyboard follows now.
+        if let Some(handle) = self.handle.clone() {
+            self.follow_screen_keyboard(&handle);
+        }
+        pressed
     }
 
     /// The pointer's finger moved: the pointer follows it, button held.
