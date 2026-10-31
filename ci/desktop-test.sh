@@ -4998,6 +4998,10 @@ case_presets() {
 	guest 'preset phone'
 	wait_more 'edel-shell-ui: follows the settings: the preset is now phone' "$followed" ||
 		fail "edel settings set layout.preset=phone was not followed by shell-ui"
+	# A second window, keys, so two share the one whole area.
+	opened=$(count 'edel-compositor: mapped window keys')
+	guest 'shortcut window'
+	wait_more 'edel-compositor: mapped window keys' "$opened" || fail "the test client keys did not open under Phone"
 	tries=0
 	while :; do
 		state_now || fail "the VM did not answer 'state now'"
@@ -5016,6 +5020,9 @@ case_presets() {
 		sleep 1
 	done
 	shot preset-phone 640 12 "$panel" >/dev/null || fail "Phone's top bar is not at 640,12 in the panel's colour"
+	closed=$(count 'edel-compositor: unmapped window keys')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window keys' "$closed" || fail "Super+Q did not close keys under Phone"
 	bottom=$(count 'edel-shell-ui: panel edel-panel along the bottom')
 	floated=$(count 'edel-compositor: windows now floating')
 	guest 'preset default'
