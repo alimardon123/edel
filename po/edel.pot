@@ -470,7 +470,7 @@ msgstr ""
 msgid "edel install: no terminal to confirm on and no --yes, so nothing was changed; run it in a terminal, or read the plan above and add --yes"
 msgstr ""
 
-msgid "the data is not encrypted, as the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type"
+msgid "the data is not encrypted, as the password has letters other than a-z, A-Z, digits, spaces and signs, which the start's prompt may not be able to type"
 msgstr ""
 
 msgid "a passphrase for the data is asked once the plan is confirmed (or read as one line of standard input)"
@@ -542,7 +542,7 @@ msgstr ""
 msgid "{path} has problems, so nothing was changed; fix these (edel settings check shows them again):"
 msgstr ""
 
-msgid "the password has letters other than a-z, A-Z, digits and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
+msgid "the password has letters other than a-z, A-Z, digits, spaces and signs, which the start's prompt may not be able to type, so it cannot encrypt the data; choose another, or leave out --encrypt; nothing was changed"
 msgstr ""
 
 msgid "this was only the plan; nothing was changed; leave out --plan to install"
