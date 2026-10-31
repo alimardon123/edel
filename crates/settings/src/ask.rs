@@ -6,7 +6,11 @@
 //! checks it before it changes anything. A wrong one keeps the dialog open
 //! and says so; any other result is given to the page once, and the
 //! dialog closes. CI reads the line `edel-settings: update asked, exit N`
-//! (and `rollback asked` for going back).
+//! (and `rollback asked` for going back). The System page's Erase
+//! everything (M8.38) uses it too, with what goes and what stays listed,
+//! the machine's name to type and its button in the problem colour, which
+//! waits until both are typed (`edel-settings: factory-reset ready
+//! true`).
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -31,6 +35,14 @@ pub struct Ask {
     pub button: &'static str,
     /// `edel`'s arguments, such as `["update"]`.
     pub args: &'static [&'static str],
+    /// Lines under the prompt, such as what goes and what stays (`n_`
+    /// marked); none for most.
+    pub detail: &'static [&'static str],
+    /// Whether the person types the machine's name too, as for a step
+    /// nobody can undo; the button waits for it and a password.
+    pub name: bool,
+    /// Whether the button is drawn in the problem colour, as a Delete is.
+    pub danger: bool,
 }
 
 /// What the dialog calls when the command starts running (`true`) and when
@@ -60,6 +72,31 @@ pub fn ask(
         .xalign(0.0)
         .wrap(true)
         .build();
+    let detail: Vec<gtk::Label> = what
+        .detail
+        .iter()
+        .map(|line| {
+            gtk::Label::builder()
+                .label(tr(line))
+                .xalign(0.0)
+                .wrap(true)
+                .css_classes(["edel-source"])
+                .build()
+        })
+        .collect();
+    // The machine's name, typed as `edel factory-reset` asks for it.
+    let machine = edel::install::machine_name();
+    let name = what.name.then(|| {
+        let label = gtk::Label::builder()
+            .label(trf(
+                "Type this computer's name, {name}",
+                &[("name", &machine)],
+            ))
+            .xalign(0.0)
+            .css_classes(["edel-source"])
+            .build();
+        (label, gtk::Entry::new())
+    });
     let who = gtk::Label::builder()
         .label(trf("Password for {user}", &[("user", &user)]))
         .xalign(0.0)
@@ -74,15 +111,56 @@ pub fn ask(
         .css_classes(["edel-error"])
         .build();
     let cancel = widgets::action(tr("Cancel"), false);
-    let run = widgets::action(tr(what.button), true);
+    let run = widgets::action(tr(what.button), !what.danger);
+    if what.danger {
+        run.add_css_class("edel-danger");
+    }
     let buttons = widgets::dialog_buttons(&[&cancel, &run]);
     let body = widgets::dialog_body(12);
     body.append(&prompt);
+    for line in &detail {
+        body.append(line);
+    }
+    if let Some((label, typed)) = &name {
+        body.append(label);
+        body.append(typed);
+    }
     body.append(&who);
     body.append(&entry);
     body.append(&status);
     body.append(&buttons);
     window.set_child(Some(&body));
+    // With a name to type, the button waits for it and a password.
+    let ready: Rc<dyn Fn() -> bool> = match &name {
+        Some((_, typed)) => {
+            let (typed, entry, machine) = (typed.clone(), entry.clone(), machine.clone());
+            Rc::new(move || {
+                edel::install::is_machine_name(&typed.text(), &machine) && !entry.text().is_empty()
+            })
+        }
+        None => Rc::new(|| true),
+    };
+    if let Some((_, typed)) = &name {
+        let follow = {
+            let (run, ready, command) = (
+                run.clone(),
+                ready.clone(),
+                what.args.first().copied().unwrap_or_default(),
+            );
+            let last = Rc::new(std::cell::Cell::new(None));
+            move || {
+                let now = ready();
+                run.set_sensitive(now);
+                if last.replace(Some(now)) != Some(now) {
+                    eprintln!("edel-settings: {command} ready {now}");
+                }
+            }
+        };
+        follow();
+        let again = follow.clone();
+        typed.connect_changed(move |_| again());
+        entry.connect_changed(move |_| follow());
+    }
 
     let done: Rc<RefCell<Option<Done>>> = Rc::new(RefCell::new(Some(Box::new(done))));
     let running: Rc<Running> = Rc::new(Box::new(running));
@@ -97,6 +175,9 @@ pub fn ask(
             running.clone(),
         );
         Rc::new(move || {
+            if !ready() {
+                return;
+            }
             // The entry's text is copied once, for the command, and the
             // entry is cleared at once.
             let password = entry.text().to_string();
@@ -120,6 +201,7 @@ pub fn ask(
                 running.clone(),
             );
             let args = what.args;
+            let ready = ready.clone();
             glib::spawn_future_local(async move {
                 let Ok(outcome) =
                     gio::spawn_blocking(move || cmd::edel_as_admin(args, password)).await
@@ -134,7 +216,7 @@ pub fn ask(
                     outcome.code.map_or("none".into(), |c| c.to_string())
                 );
                 entry.set_sensitive(true);
-                run.set_sensitive(true);
+                run.set_sensitive(ready());
                 cancel.set_sensitive(true);
                 if !outcome.ok && outcome.code == Some(i32::from(edel::exit::WRONG_PASSWORD)) {
                     running(false);
@@ -176,5 +258,8 @@ pub fn ask(
     }
     window.add_controller(keys);
     window.present();
-    entry.grab_focus();
+    match &name {
+        Some((_, typed)) => typed.grab_focus(),
+        None => entry.grab_focus(),
+    };
 }

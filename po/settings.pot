@@ -203,6 +203,9 @@ msgstr ""
 msgid "No app matches"
 msgstr ""
 
+msgid "Type this computer's name, {name}"
+msgstr ""
+
 msgid "Password for {user}"
 msgstr ""
 
@@ -2022,6 +2025,36 @@ msgid "Apply the file"
 msgstr ""
 
 msgid "Makes the file this machine's settings. Choose a file first to see what it changes."
+msgstr ""
+
+msgid "Erase everything"
+msgstr ""
+
+msgid "Erasing takes this computer back to new when it restarts. Nobody can undo it."
+msgstr ""
+
+msgid "Erase and restart"
+msgstr ""
+
+msgid "Goes: every account, every person's files, this computer's settings, developer mode's changes and the add-ons in use."
+msgstr ""
+
+msgid "Stays: the default apps and this version of Edel OS, so the computer starts as new, offline too, and can still roll back."
+msgstr ""
+
+msgid "Start again"
+msgstr ""
+
+msgid "Erase..."
+msgstr ""
+
+msgid "This computer runs from a stick, which keeps nothing to erase."
+msgstr ""
+
+msgid "Takes this computer back to new: every account, file and setting goes, the default apps stay."
+msgstr ""
+
+msgid "Erasing when the computer restarts..."
 msgstr ""
 
 msgid "For developers"

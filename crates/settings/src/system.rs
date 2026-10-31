@@ -22,6 +22,7 @@ use gtk::prelude::*;
 
 use edel::i18n::{n_, tr, trf};
 
+use crate::ask::{self, Ask};
 use crate::status;
 use crate::{actions, cmd, rows, widgets};
 
@@ -176,6 +177,9 @@ pub fn page() -> gtk::Widget {
     // The machine's profile (M7.6), after developer mode.
     crate::profiles::group(&content);
 
+    // Erase everything (M8.38), last, as the step nobody undoes.
+    erase(&content);
+
     let ui = Rc::new(Ui {
         page: page.clone(),
         export_out,
@@ -229,6 +233,129 @@ pub fn page() -> gtk::Widget {
         let _ = &keep;
     });
     page
+}
+
+/// Erase everything's dialog (M8.38): what goes and what stays, the
+/// machine's name and an administrator's password, then
+/// `edel factory-reset --yes`, which restarts the machine.
+const ERASE: Ask = Ask {
+    title: n_("Erase everything"),
+    prompt: n_("Erasing takes this computer back to new when it restarts. Nobody can undo it."),
+    button: n_("Erase and restart"),
+    args: actions::FACTORY_RESET.args,
+    detail: &[
+        n_(
+            "Goes: every account, every person's files, this computer's settings, developer mode's changes and the add-ons in use.",
+        ),
+        n_(
+            "Stays: the default apps and this version of Edel OS, so the computer starts as new, offline too, and can still roll back.",
+        ),
+    ],
+    name: true,
+    danger: true,
+};
+
+/// The Start again group (M8.38): one row, Erase everything, whose button
+/// in the problem colour opens [`ERASE`]. On a stick, which keeps nothing
+/// to erase, the row says so and its button waits. Copy as command copies
+/// `edel factory-reset`, which asks for the name itself. The button's
+/// place is logged for CI as `edel-settings: system group places erase
+/// X+Y+WxH`, once two frames agree.
+fn erase(content: &gtk::Box) {
+    widgets::heading(content, tr("Start again"));
+    let group = widgets::group(content);
+    let button = widgets::action(tr("Erase..."), false);
+    button.add_css_class("edel-danger");
+    let row = widgets::row(&group, tr("Erase everything"), button.upcast_ref());
+    row.reset.set_visible(false);
+    row.copy.connect_clicked(|button| {
+        let asks = &actions::FACTORY_RESET.args[..1];
+        button.clipboard().set_text(&cmd::line(asks));
+        widgets::copied(button);
+    });
+    if edel::install::from_a_stick() {
+        row.subtitle.set_label(tr(
+            "This computer runs from a stick, which keeps nothing to erase.",
+        ));
+        button.set_sensitive(false);
+    } else {
+        row.subtitle.set_label(tr(
+            "Takes this computer back to new: every account, file and setting goes, the default apps stay.",
+        ));
+    }
+    let out = widgets::output_row(&group);
+    button.connect_clicked(move |button| {
+        let (shown, out) = (button.clone(), out.clone());
+        let failed = out.clone();
+        ask::ask(
+            button.upcast_ref(),
+            &ERASE,
+            move |running| {
+                shown.set_sensitive(!running);
+                if running {
+                    widgets::say(&out, tr("Erasing when the computer restarts..."), false);
+                }
+            },
+            move |outcome| {
+                if !outcome.ok {
+                    widgets::say(&failed, &outcome.shown(), true);
+                }
+            },
+        );
+    });
+    log_erase_place(&group, button);
+}
+
+/// Logs where Erase... lies in the window for CI to click (logical pixels),
+/// as `edel-settings: system group places erase X+Y+WxH`, once two frames
+/// agree after the group is laid out, and again after each scroll of the
+/// page, as the row is at the page's end.
+fn log_erase_place(group: &gtk::Box, button: gtk::Button) {
+    let armed = Rc::new(Cell::new(false));
+    let arm = {
+        let (group, armed) = (group.clone(), armed.clone());
+        Rc::new(move || {
+            if armed.replace(true) {
+                return;
+            }
+            let (button, armed) = (button.clone(), armed.clone());
+            let last = RefCell::new(String::new());
+            group.add_tick_callback(move |group, _| {
+                let Some(window) = group.root().and_downcast::<gtk::Window>() else {
+                    return glib::ControlFlow::Continue;
+                };
+                if !group.is_mapped() || group.width() == 0 {
+                    return glib::ControlFlow::Continue;
+                }
+                let line = format!(
+                    "edel-settings: system group places erase {}",
+                    widgets::place(button.compute_bounds(&window)),
+                );
+                if last.replace(line.clone()) != line {
+                    return glib::ControlFlow::Continue;
+                }
+                eprintln!("{line}");
+                armed.set(false);
+                glib::ControlFlow::Break
+            });
+        })
+    };
+    arm();
+    // The page's scroll is there once the group is in it; it is followed
+    // from the first map on.
+    let hooked = Cell::new(false);
+    group.connect_map(move |group| {
+        if hooked.replace(true) {
+            return;
+        }
+        if let Some(scrolled) = group
+            .ancestor(gtk::ScrolledWindow::static_type())
+            .and_downcast::<gtk::ScrolledWindow>()
+        {
+            let arm = arm.clone();
+            scrolled.vadjustment().connect_value_changed(move |_| arm());
+        }
+    });
 }
 
 /// The Developer mode group (M7.1): a switch for `system.developer_mode`

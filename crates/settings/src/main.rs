@@ -798,7 +798,15 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
         .css_classes(["edel-sidebar"])
         .build();
     sidebar_box.append(&search);
-    sidebar_box.append(&list);
+    // The list scrolls under the search, so a window shorter than every
+    // group (640 px at first) still fits, and the page beside it scrolls
+    // to its own end instead of being cut off below the window.
+    let list_scroll = gtk::ScrolledWindow::builder()
+        .hscrollbar_policy(gtk::PolicyType::Never)
+        .vexpand(true)
+        .child(&list)
+        .build();
+    sidebar_box.append(&list_scroll);
     let sidebar = adw::NavigationPage::builder()
         .title(tr("Settings"))
         .child(&sidebar_box)
