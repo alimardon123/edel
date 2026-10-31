@@ -3212,9 +3212,6 @@ msgstr ""
 msgid "could not make the applications folder {path}"
 msgstr ""
 
-msgid "could not put {path} in place"
-msgstr ""
-
 msgid "no web app named {key}; edel web-app list shows yours"
 msgstr ""
 
