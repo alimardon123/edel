@@ -29,4 +29,4 @@ Start with the design principles, then the decisions in order. The principles go
 | [SPIKE-app-runtimes.md](SPIKE-app-runtimes.md) | Apps that carry everything but musl and the drivers, a Flatpak runtime built from Alpine, and Flathub, measured on an older and a newer base (M10.9, M10.10) | Spike |
 | [SPIKE-flatpak.md](SPIKE-flatpak.md) | Flatpak's glibc runtimes on the musl base: the verdict and what CI measured | Spike |
 
-The guide, the reference pages and the roadmap are in the docs site's table of contents, [SUMMARY.md](SUMMARY.md). The plan is [ROADMAP.md](ROADMAP.md), and [TRY-IT.md](TRY-IT.md) shows how to try Edel OS.
+The guide, the reference pages and the roadmap are in the docs site's table of contents, `SUMMARY.md` (the site's side bar). The plan is [ROADMAP.md](ROADMAP.md), and [TRY-IT.md](TRY-IT.md) shows how to try Edel OS.
