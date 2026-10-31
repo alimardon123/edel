@@ -235,6 +235,9 @@
 #               group logs appearance.acent as not understood, Remove at its
 #               place takes the line out, and the log then says nothing is
 #               left (M6.11)
+#   factory-reset  Settings' System page scrolled to Erase everything:
+#               its dialog's Erase waits for the computer's name and a
+#               password, and Escape closes it with nothing erased (M8.38)
 #   welcome     the Welcome (edel-settings --welcome, M6.12), full screen:
 #               its language, keyboard, layout and style pages each log where
 #               their buttons lie; Next on the first two writes nothing,
@@ -2869,6 +2872,84 @@ case_settings_unknown() {
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
 	echo "PASS: Settings opened on its System page and logged that it did not understand appearance.acent in ci's file; a click on Remove at $cx,$cy took the line out, and Settings then logged nothing not understood, with ci's file free of acent (settings-unknown.png)"
+}
+
+case_factory_reset() {
+	# Erase everything on Settings' System page (M8.38, part b): the page
+	# opens, the wheel takes it to its last group, and Erase... at the place
+	# the page logs opens the dialog of what goes and what stays. Its Erase
+	# button waits for the computer's name and a password, as the log's
+	# `factory-reset ready` lines say; Escape closes it and nothing is
+	# erased. Erase is never pressed here.
+	# system_log: a new reading of this Settings' log, never the last case's.
+	system_log() {
+		read_logs=$(count 'DESKTOP-TEST: settings_system_log ')
+		guest 'settings system log'
+		wait_more 'DESKTOP-TEST: settings_system_log ' "$read_logs" || fail "the service did not read Settings' log"
+	}
+	opened=$(count 'edel-compositor: mapped window Settings')
+	guest 'settings system'
+	wait_more 'edel-compositor: mapped window Settings' "$opened" 60 || fail "Settings did not open on the System page: $(value windows)"
+	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
+	set -- $place
+	x=$1 y=$2 w=$3 h=$4
+	sleep 2
+	python3 ci/qmp.py scroll $((x + w / 2)) $((y + h / 2)) 40
+	erase=none
+	i=0
+	while [ "$erase" = none ]; do
+		i=$((i + 1))
+		[ "$i" -lt 30 ] || fail "Settings did not log where Erase... lies once scrolled: $(value settings_system_log)"
+		sleep 1
+		system_log
+		erase=$(value settings_system_log | sed -n 's/.*system group places erase \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
+		[ -n "$erase" ] || erase=none
+		# Only a place inside the window, after the scroll has settled.
+		[ "$erase" != none ] && set -- $erase && [ $(($2 + $4)) -gt "$h" ] && erase=none
+	done
+	set -- $erase
+	cx=$((x + $1 + $3 / 2)) cy=$((y + $2 + $4 / 2))
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/factory-reset-row.png"
+	asked=$(count 'edel-compositor: mapped window Erase everything')
+	python3 ci/qmp.py click "$cx" "$cy"
+	wait_more 'edel-compositor: mapped window Erase everything' "$asked" || fail "a click on Erase... at $cx,$cy opened no Erase everything dialog: $(value windows)"
+	ready() {
+		system_log
+		value settings_system_log | sed -n 's/.*factory-reset ready \(true\|false\).*/\1/p'
+	}
+	# ready_is WANT WHAT: until the dialog's last ready line says WANT.
+	ready_is() {
+		i=0
+		until [ "$(ready)" = "$1" ]; do
+			i=$((i + 1))
+			[ "$i" -lt 10 ] || fail "Erase's ready was not $1 $2: $(value settings_system_log)"
+			sleep 1
+		done
+	}
+	ready_is false "as the dialog opened"
+	guest 'hostname'
+	wait_for 'DESKTOP-TEST: hostname ' || fail "the service did not read the computer's name"
+	name=$(value hostname)
+	sleep 1
+	python3 ci/qmp.py type "$name"
+	python3 ci/qmp.py screendump "$dir/factory-reset.png"
+	ready_is false "with the name alone"
+	python3 ci/qmp.py key tab
+	python3 ci/qmp.py type 'not-it'
+	ready_is true "with the name $name and a password"
+	python3 ci/qmp.py screendump "$dir/factory-reset-ready.png"
+	python3 ci/qmp.py key backspace backspace backspace backspace backspace backspace
+	ready_is false "once the password was taken out"
+	closed=$(count 'edel-compositor: unmapped window Erase everything')
+	python3 ci/qmp.py key esc
+	wait_more 'edel-compositor: unmapped window Erase everything' "$closed" || fail "Escape did not close the Erase everything dialog"
+	system_log
+	value settings_system_log | grep -q 'factory-reset asked' && fail "Settings ran edel factory-reset: $(value settings_system_log)"
+	closed=$(count 'edel-compositor: unmapped window Settings')
+	python3 ci/qmp.py key meta_l-q
+	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
+	echo "PASS: Settings' System page, scrolled to its end, logged Erase... at $cx,$cy; a click opened Erase everything, whose Erase waited for the computer's name ($name) and a password and for both again once the password went, and Escape closed it with nothing erased (factory-reset-row.png, factory-reset.png, factory-reset-ready.png)"
 }
 
 # welcome_window: the Welcome window's top left corner, wx and wy, once it
@@ -9747,7 +9828,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

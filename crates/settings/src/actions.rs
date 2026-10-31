@@ -110,6 +110,15 @@ pub const RESET_DEVELOPER: Action = Action {
     args: &["settings", "reset", "--yes", "system.developer_mode"],
 };
 
+/// The System page's Erase everything button (M8.38), which takes the
+/// machine back to new at its next start: its dialog asks for the
+/// machine's name and an administrator's password first, so `--yes` skips
+/// the command's own question for the name.
+pub const FACTORY_RESET: Action = Action {
+    page: "system",
+    args: &["factory-reset", "--yes"],
+};
+
 /// The Power page's Charge fully once button (M7.16e), which charges to 100
 /// percent once, for a trip, where battery care holds the charge at 80.
 pub const CHARGE_FULL: Action = Action {
@@ -133,6 +142,7 @@ pub const ACTIONS: &[&Action] = &[
     &IMPORT,
     &RESET,
     &RESET_DEVELOPER,
+    &FACTORY_RESET,
     &CHARGE_FULL,
     &SET,
     &APPLY,

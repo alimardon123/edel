@@ -475,23 +475,12 @@ jobs:
         run: echo "name=$(sh ci/vm-tests.sh archive ${{ matrix.lane }})" >> "$GITHUB_OUTPUT"
 
       - name: Take this lane's images
-        if: needs.changes.outputs.reuse == ''
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: edel-vm-images-${{ steps.archive.outputs.name }}
-          path: out
-
-      - name: Take this lane's images from the run that built them
-        if: needs.changes.outputs.reuse != ''
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: edel-vm-images-${{ steps.archive.outputs.name }}
-          path: out
-          run-id: ${{ needs.changes.outputs.reuse }}
-          github-token: ${{ github.token }}
-
-      - name: Unpack this lane's images
-        run: sh ci/vm-tests.sh unpack ${{ steps.archive.outputs.name }}
+        # From this run's build, or from the run that built them when a
+        # draft's lane run reuses them; checked and resumed by vm-tests.sh,
+        # as actions/download-artifact ended some downloads early unnoticed.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/vm-tests.sh take ${{ steps.archive.outputs.name }} ${{ needs.changes.outputs.reuse || github.run_id }}
 
       - name: Enable KVM
         run: |
@@ -589,7 +578,7 @@ jobs:
             cases: >-
               titlebar console one-screen taskbar app-windows dock pins panels panel-edit dockhide fullscreen clipboard smoothness frame-rate
               keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper
-              settings-theme settings-accent settings-shape settings-shortcuts settings-unknown welcome display
+              settings-theme settings-accent settings-shape settings-shortcuts settings-unknown factory-reset welcome display
               sound network firewall power updates portal own-bars capture tray game-session
           - part: C
             cases: >-

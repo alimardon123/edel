@@ -66,7 +66,9 @@ pub enum Decision {
 pub fn need(command: &Commands) -> Need {
     match command {
         Commands::Update { check: true, .. } => Need::Anyone,
-        Commands::Update { .. } | Commands::Rollback => Need::Password,
+        Commands::Update { .. } | Commands::Rollback | Commands::FactoryReset { .. } => {
+            Need::Password
+        }
         Commands::Install { plan: true, .. } | Commands::Install { list: true, .. } => Need::Anyone,
         // It mounts other disks, read-only, to read one file.
         Commands::Install {
@@ -516,6 +518,8 @@ mod tests {
             (&["edel", "update", "r.toml"], Need::Password),
             (&["edel", "update"], Need::Password),
             (&["edel", "rollback"], Need::Password),
+            (&["edel", "factory-reset"], Need::Password),
+            (&["edel", "factory-reset", "--yes"], Need::Password),
             (
                 &[
                     "edel",

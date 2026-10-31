@@ -39,6 +39,7 @@ mod machine;
 mod privilege;
 mod release;
 mod report;
+mod reset;
 mod run;
 mod settings_source;
 mod shell;
@@ -157,6 +158,14 @@ enum Commands {
     /// Go back to the version in the other slot, the one before the last
     /// update; it starts at the next restart
     Rollback,
+    /// Erase every account, every person's files and this machine's
+    /// settings, keeping the default apps and the version of Edel OS, and
+    /// restart into a first start: the machine as new
+    FactoryReset {
+        /// Erase without asking for the machine's name, for scripts
+        #[arg(long)]
+        yes: bool,
+    },
     /// Show whether the machine is up to date, its data encrypted and its
     /// firewall on, then the version running now and the one in the other
     /// slot, the desktop's effect tier while a session runs, and which log
@@ -701,6 +710,7 @@ impl Commands {
             Commands::Release { .. } => "release",
             Commands::Update { .. } => "update",
             Commands::Rollback => "rollback",
+            Commands::FactoryReset { .. } => "factory-reset",
             Commands::Status => "status",
             Commands::Platform { .. } => "platform",
             Commands::Restart => "restart",
@@ -987,6 +997,7 @@ fn run(command: Commands) -> Result<()> {
             }
         }
         Commands::Rollback => update::rollback(),
+        Commands::FactoryReset { yes } => reset::factory_reset(yes),
         Commands::Status => update::status(),
         Commands::Platform { command } => match command {
             PlatformCommands::Status => update::platform_status(),

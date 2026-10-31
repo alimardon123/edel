@@ -23,9 +23,10 @@ initramfs_mib = 22
 # `out/edel-x86_64.img.gz`, its slot, the add-ons it carries and the
 # default apps on its data partition, in MiB. 2155 MiB measured on `main`
 # on 2026-10-25 (the `edel-try-x86_64` download), and 2108.9 MiB in CI the
-# same day with M8.17e's smaller initramfs; the budget is that plus 2
-# percent, under main's, as the default apps from Flathub move it a little.
-stick_mib = 2150
+# same day with M8.17e's smaller initramfs. 1832.3 MiB in CI on 2026-10-30
+# once the default apps kept English translations alone; the budget is that
+# plus 2 percent, as the default apps from Flathub move it a little.
+stick_mib = 1870
 
 # The one image (images/edel.toml, M8.17) booted with no screen: CI's first
 # measurement on 2026-10-17 (1099 MiB, 4.34 s, 85 MiB) plus 20 percent. The

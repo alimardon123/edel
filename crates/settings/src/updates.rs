@@ -46,6 +46,9 @@ const INSTALL: Ask = Ask {
     prompt: n_("Installing changes the system, so Edel OS asks for your password."),
     button: n_("Install"),
     args: actions::UPDATE.args,
+    detail: &[],
+    name: false,
+    danger: false,
 };
 
 /// Go back, as the administrator (`edel rollback`), and its dialog (M6.5).
@@ -54,6 +57,9 @@ const GO_BACK: Ask = Ask {
     prompt: n_("Going back changes the system, so Edel OS asks for your password."),
     button: n_("Go back"),
     args: actions::ROLLBACK.args,
+    detail: &[],
+    name: false,
+    danger: false,
 };
 
 /// One line of `edel status`, as a row shows it.
