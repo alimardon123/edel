@@ -809,6 +809,11 @@ impl Build<'_> {
         let mut languages = flatpak();
         languages.args(["config", "--set", "languages", edel::apps::LANGUAGES]);
         self.runner.run(&mut languages)?;
+        // One Mesa driver a runtime, kept in the installation's config
+        // too, so updates on machines leave the plain one out as well.
+        let mut mesa = flatpak();
+        mesa.args(["mask", edel::apps::MESA_MASK]);
+        self.runner.run(&mut mesa)?;
         let mut install = flatpak();
         install
             .args(["install", "--noninteractive", "-y", edel::apps::APPS_REMOTE])

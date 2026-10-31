@@ -4,7 +4,8 @@
 # under /usr and a package apk added survive a restart; a service in the
 # layer that hangs uses up the last try, the next start is a safe one
 # (edel.safe) without the layer; a reset deletes the layer and turns it
-# off. The steps run inside the VM (ci/developer-test/files); this script
+# off; then a factory reset erases a person's file and a setting but
+# keeps the default apps and the add-ons (M8.38). The steps run inside the VM (ci/developer-test/files); this script
 # reads the verdict from the serial console. Snapshot mode keeps the
 # image as it was built. apk add needs Alpine's mirror from the VM.
 set -eu
@@ -27,8 +28,12 @@ if ! log_has 'Edel OS: no slot has tries left; starting slot A anyway, safely'; 
 	echo "FAIL: GRUB did not start safely once no slot had a try left"
 	exit 1
 fi
+if ! log_has 'the factory reset is done'; then
+	echo "FAIL: the start after edel factory-reset did not say the reset was done"
+	exit 1
+fi
 if [ "$found" = 1 ] && log_has 'DEVELOPER-TEST: PASS'; then
-	echo "PASS: developer mode keeps /usr changes and apk's packages, a safe start holds them back, and a reset deletes them (${waited}s)"
+	echo "PASS: developer mode keeps /usr changes and apk's packages, a safe start holds them back, and a reset deletes them; a factory reset erases a person's file and the settings, keeping the default apps and the add-ons (${waited}s)"
 else
 	echo "FAIL: see the serial log above"
 	exit 1
