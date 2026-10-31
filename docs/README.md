@@ -24,6 +24,7 @@ Start with the design principles, then the decisions in order. The principles go
 | [REVIEW-shells.md](REVIEW-shells.md) | What we take from Hyprland, niri, the Quickshell shells, GNOME, macOS and Windows 11 to look beautiful and feel instant, and what we skip | Review |
 | [REVIEW-postmarketos.md](REVIEW-postmarketos.md) | What we can learn from postmarketOS (now Nura) and its immutable Duranium | Review |
 | [REVIEW-project-2026-10-13.md](REVIEW-project-2026-10-13.md) | Edel OS itself, by four reviewers: the principles, the base and the desktop as independent parts, three dangers, the fixes (M6.17) | Review |
+| [REVIEW-apps-updates-2026-10-31.md](REVIEW-apps-updates-2026-10-31.md) | The app model's weak spots, apps on another base, app data across updates and devices, updating a server without a long restart, and 10 to 20 years of support | Review |
 | [REVIEW-signing-2026-10-25.md](REVIEW-signing-2026-10-25.md) | The narrow review before the first preview: the updater, the guard and the signing path, what was fixed and the settings that wait for Alimardon | Review |
 | [FEATURES.md](FEATURES.md) | How images are made of feature files: the features today, the file, format 2 definitions, the merge and its refusals, worked examples | Reference |
 | [platform-levels.md](platform-levels.md) | Platform levels: what apps can count on from every release of a level, how the build keeps it, `edel platform status` | Reference |
