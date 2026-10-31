@@ -151,7 +151,7 @@ allowed() {
 	crates/edel/src/release.rs) return 0 ;;
 	# Writes add-on images under /data/addons and their links; it reads the
 	# settings file only for the add-ons a machine wants (M7.2a).
-	crates/edel/src/addons.rs) return 0 ;;
+	crates/edel/src/addons/machine.rs) return 0 ;;
 	# Writes the disk it installs (partitions, the boot files, grubenv, the
 	# install marks and first passwords); the settings file it copies and
 	# the answers it asks go through edel::settings (M8.13's finding fixed).
