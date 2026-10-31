@@ -6324,15 +6324,14 @@ case_frame_rate() {
 }
 
 case_keyring() {
-	# The keyring (M7.18): oo7's daemon does not run before an app asks;
-	# a secret stored as ci through the Secret Service starts it, opened
-	# with no prompt by the key the login handed the session; stopped, the
-	# next ask starts it again with the same key, and the secret, kept in
-	# ci's home, reads back the same.
+	# The keyring (M7.18): the session starts oo7's daemon, opened with no
+	# prompt by the key the login handed it; a secret stored as ci through
+	# the Secret Service, the daemon stopped and started again as a login
+	# does, the secret, kept in ci's home, reads back the same.
 	asked=$(count 'DESKTOP-TEST: keyring_running ')
 	guest 'keyring running'
 	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
-	[ "$(value keyring_running)" = no ] || fail "oo7-daemon ran before any app asked for the keyring"
+	[ "$(value keyring_running)" = yes ] || fail "the session did not start oo7-daemon"
 	asked=$(count 'DESKTOP-TEST: keyring_store ')
 	guest 'keyring store'
 	wait_more 'DESKTOP-TEST: keyring_store ' "$asked" 60 || fail "the service did not store a secret"
@@ -6340,20 +6339,20 @@ case_keyring() {
 	"0 "* | 0) ;;
 	*) fail "oo7-cli store failed as ci: $(value keyring_store); what was there: $(value keyring_diag)" ;;
 	esac
-	asked=$(count 'DESKTOP-TEST: keyring_running ')
-	guest 'keyring running'
-	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
-	[ "$(value keyring_running)" = yes ] || fail "no oo7-daemon runs after a secret was stored"
 	asked=$(count 'DESKTOP-TEST: keyring_stopped ')
 	guest 'keyring stop'
 	wait_more 'DESKTOP-TEST: keyring_stopped ' "$asked" || fail "the service did not stop the keyring"
 	[ "$(value keyring_stopped)" = yes ] || fail "oo7-daemon did not stop"
+	asked=$(count 'DESKTOP-TEST: keyring_started ')
+	guest 'keyring start'
+	wait_more 'DESKTOP-TEST: keyring_started ' "$asked" 30 || fail "the service did not start the keyring again"
+	[ "$(value keyring_started)" = yes ] || fail "edel boot keyring did not start oo7-daemon again"
 	asked=$(count 'DESKTOP-TEST: keyring_lookup ')
 	guest 'keyring lookup'
 	wait_more 'DESKTOP-TEST: keyring_lookup ' "$asked" 60 || fail "the service did not read the secret back"
 	got=$(value keyring_lookup | sed 's/ *$//')
 	[ "$got" = edel-keyring-test ] || fail "the keyring, started again, did not give back the secret: $got"
-	echo "PASS: no keyring ran before an app asked; a secret stored as ci started oo7, opened with no prompt by the session's key, and after the daemon stopped, the next ask started it again and read the same secret back"
+	echo "PASS: the session started oo7, opened with no prompt by the session's key; a secret stored as ci read back the same after the daemon stopped and started again with that key"
 }
 
 case_portal() {
