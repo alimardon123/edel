@@ -225,9 +225,6 @@ const DOCK_FACE_SHARE: f32 = 0.07;
 const BADGE: f32 = 20.0;
 const BADGE_SIZE: f32 = 11.0;
 const BADGE_GAP: f32 = 8.0;
-/// The group of rows: its corners, a row's height, the room its labels and
-/// values keep from its edges, and the room an open control keeps inside it.
-const GROUP_RADIUS: f32 = 12.0;
 const ROW_H: f32 = 40.0;
 const GROUP_INSET: f32 = 12.0;
 const OPEN_INSET: f32 = 8.0;
@@ -240,7 +237,6 @@ const REMOVE_H: f32 = ROW_H;
 /// `FACE_TILE_GAP` between and the corners `FACE_RADIUS`.
 const FACE_TILE_H: f32 = 48.0;
 const FACE_TILE_GAP: f32 = 6.0;
-const FACE_RADIUS: f32 = 10.0;
 /// The faces are drawn at 9:41 in this weight, as the mockups' previews.
 const SAMPLE_TIME: (i8, i8, i8) = (9, 41, 0);
 const FACE_WEIGHT: u16 = 400;
@@ -1406,6 +1402,7 @@ fn draw_faces(
     row: &Row,
     ink: &edit_kit::Inks,
     text: &mut Text,
+    tokens: &Tokens,
     s: f32,
 ) {
     let now = chosen(&view.placed, Line::Face);
@@ -1421,7 +1418,15 @@ fn draw_faces(
             ..ink.text
         };
         let fill_colour = if on { ink.accent } else { unchosen };
-        fill(pixmap, x, y, w, h, FACE_RADIUS * s, fill_colour);
+        fill(
+            pixmap,
+            x,
+            y,
+            w,
+            h,
+            tokens.radius_window as f32 * s,
+            fill_colour,
+        );
         let colour = if on { ink.accent_text } else { ink.text };
         let clock_size = match face {
             Face::Analog => 34.0,
@@ -1511,7 +1516,7 @@ pub fn paint(
         // Docked in the right panel, the card is a side panel with no shadow.
         edit_kit::side_panel(pixmap, l.card, tokens, s);
     } else {
-        lock::lift(pixmap, l.card, edit_kit::SHEET_RADIUS, s, tokens);
+        lock::lift(pixmap, l.card, tokens.radius_sheet as f32, s, tokens);
         edit_kit::sheet(pixmap, l.card, tokens, Style::GLASS, s);
     }
     let size = tokens.panel_text_size as f32 * s;
@@ -1546,7 +1551,15 @@ pub fn paint(
         } else {
             ink.raised
         };
-        fill(pixmap, x, y, w, h, GROUP_RADIUS * s, group_fill);
+        fill(
+            pixmap,
+            x,
+            y,
+            w,
+            h,
+            tokens.radius_menu as f32 * s,
+            group_fill,
+        );
     }
     let first = l.rows.iter().position(|r| grouped(l, r.line));
     let last = l.rows.iter().rposition(|r| grouped(l, r.line));
@@ -1559,7 +1572,7 @@ pub fn paint(
             } else {
                 // The group's first and last rows take its corners, the lit
                 // row never sticks out of the group.
-                let r = GROUP_RADIUS * s;
+                let r = tokens.radius_menu as f32 * s;
                 let (top, bottom) = (Some(i) == first, Some(i) == last);
                 if top && bottom {
                     fill(pixmap, x, y, w, h, r, ink.lit);
@@ -1595,7 +1608,7 @@ pub fn paint(
             }
         }
         match row.line {
-            Line::Face if l.docked => draw_faces(pixmap, view, row, &ink, text, s),
+            Line::Face if l.docked => draw_faces(pixmap, view, row, &ink, text, tokens, s),
             Line::Hours if l.docked => {
                 if let Some(switch) = row.control {
                     let on = view.placed.hours.unwrap_or(lock_screen::DEFAULT_HOURS) == 24;

@@ -379,7 +379,7 @@ impl Shell {
         else {
             return;
         };
-        popup.set_cards(vec![banner::card(&layout)], &self.compositor);
+        popup.set_cards(vec![banner::card(&layout, &self.tokens)], &self.compositor);
         let side = match edge {
             Edge::Top => Anchor::TOP,
             Edge::Bottom => Anchor::BOTTOM,
@@ -665,7 +665,7 @@ impl Shell {
         let Some(mut popup) = Popup::new(self, CENTRE, size, most, scale, room) else {
             return;
         };
-        popup.set_cards(centre::cards(&layout), &self.compositor);
+        popup.set_cards(centre::cards(&layout, &self.tokens), &self.compositor);
         let side = match edge {
             Edge::Top => Anchor::TOP,
             Edge::Bottom => Anchor::BOTTOM,
@@ -775,7 +775,7 @@ impl Shell {
             return;
         };
         card.popup
-            .set_cards(centre::cards(&layout), &self.compositor);
+            .set_cards(centre::cards(&layout, &self.tokens), &self.compositor);
         // The list may have got shorter than where it starts.
         card.state.first = state.first.min(self.notifications.len().saturating_sub(1));
         if card.popup.size() != layout.size {

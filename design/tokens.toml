@@ -298,6 +298,22 @@ radius_menu = 12
 radius_control = 7
 # Small things inside a window: a sidebar's rows, a value's box (M5.6a).
 radius_small = 5
+# Tiles and pictures in the editors and the lock's looks.
+radius_tile = 14
+# Cards: the corner menu, the editors' stage and marks.
+radius_card = 16
+# The dock and the editors' previews and side panes.
+radius_dock = 18
+# A notification's card.
+radius_notice = 20
+# A banner.
+radius_banner = 22
+# The editors' sheet.
+radius_sheet = 24
+# The notification centre.
+radius_centre = 30
+# Quick settings' round buttons.
+radius_quick = 50
 # Apps' text (M5.6a), Settings first; headings are drawn larger from it.
 text = 13
 # A row in a menu or list: the launcher's apps, the window switcher's
