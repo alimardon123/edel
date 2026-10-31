@@ -183,183 +183,122 @@ impl Settings {
         // The title bars' buttons, one rule for the compositor and shell-ui's
         // apps (M6.16): the files' values over the preset's.
         let buttons = presets::buttons_applying(machine, person);
-        // Each file with the preset and theme in use applied, as the tokens
-        // read them (M5.12b6a, M5.17); the readers below see the values they give.
-        let machine = machine.map(edel::settings::in_use);
-        let person = person.map(edel::settings::in_use);
-        let (machine, person) = (machine.as_ref(), person.as_ref());
+        // The two files as the desktop applies them, laid into one (ADR-010):
+        // each key below is read once from it, the person's value over the
+        // machine's, with the preset and theme in use applied.
+        let layers = settings::Layers::of(machine, person);
+        let file = layers.merged();
         let mut settings = Settings {
-            low_latency: edel::settings::low_latency(machine, person),
-            shape: edel::tokens::Shape::between(machine, person),
-            text: edel::tokens::Text::between(machine, person),
-            icons: edel::tokens::IconSize::between(machine, person),
-            contrast: edel::tokens::high_contrast_between(machine, person),
+            low_latency: edel::settings::low_latency(None, Some(file)),
+            shape: edel::tokens::Shape::between(None, Some(file)),
+            text: edel::tokens::Text::between(None, Some(file)),
+            icons: edel::tokens::IconSize::between(None, Some(file)),
+            contrast: edel::tokens::high_contrast_between(None, Some(file)),
             window_buttons: buttons.side,
             buttons: Shown {
                 close: buttons.close,
                 minimize: buttons.minimize,
                 maximize: buttons.maximize,
             },
+            tiling: file.layout.tiling,
+            preset: file.layout.preset.clone(),
+            panels: file.panels.list.clone(),
             ..Settings::default()
         };
-        // The keys the files set, before the preset fills in the rest.
-        let mut title_bars = None;
-        let mut tiling_style = None;
-        let (mut scheme_mode, mut place) = (None, None);
-        for file in [machine, person].into_iter().flatten() {
-            if file.layout.tiling.is_some() {
-                settings.tiling = file.layout.tiling;
+        // A value a filter refuses is read as absent, the release's or the
+        // preset's (planned change a): a refused value of the person's no
+        // longer lets the machine's valid one through.
+        let title_bars = file.layout.title_bars.as_deref().and_then(TitleBars::parse);
+        let tiling_style = file.layout.tiling_style.as_deref().and_then(Style::parse);
+        let scheme_mode = file
+            .appearance
+            .mode
+            .clone()
+            .filter(|mode| Scheme::parse(mode).is_some());
+        settings.workspace_count = file
+            .workspaces
+            .count
+            .and_then(|count| usize::try_from(count).ok());
+        settings.dynamic_workspaces = file.workspaces.dynamic.unwrap_or(false);
+        settings.workspaces_per_screen = file.workspaces.per_screen.unwrap_or(false);
+        settings.workspace_names = file.workspaces.names.clone().unwrap_or_default();
+        settings.workspace_wallpapers = file.workspaces.wallpapers.clone().unwrap_or_default();
+        settings.overview_strip = file.workspaces.overview_strip.clone();
+        // The person's table replaces the machine's whole (merged); a number
+        // out of range is left out.
+        if let Some(apps) = &file.workspaces.apps {
+            settings.app_workspaces = apps
+                .iter()
+                .filter(|(_, n)| (1..=edel::presets::MOST_WORKSPACES as i64).contains(n))
+                .filter_map(|(app, n)| Some((app.clone(), usize::try_from(n - 1).ok()?)))
+                .collect();
+        }
+        settings.motion = file
+            .appearance
+            .animations
+            .as_deref()
+            .and_then(Motion::parse)
+            .unwrap_or_default();
+        settings.cursor_size = file
+            .appearance
+            .cursor_size
+            .filter(|s| in_range(edel::settings::CURSOR_SIZE, *s));
+        settings.cursor_theme = file
+            .appearance
+            .cursor_theme
+            .as_deref()
+            .filter(|t| !t.is_empty() && !t.contains('/'))
+            .map(str::to_string);
+        settings.icon_theme.clone_from(&file.appearance.icon_theme);
+        settings.animation_speed = file
+            .appearance
+            .animation_speed
+            .filter(|s| speed_in_range(*s));
+        settings.animation_curve = file
+            .appearance
+            .animation_curve
+            .as_deref()
+            .and_then(Curve::parse)
+            .unwrap_or_default();
+        settings.wallpaper.clone_from(&file.appearance.wallpaper);
+        settings
+            .wallpaper_dark
+            .clone_from(&file.appearance.wallpaper_dark);
+        settings.accent.clone_from(&file.appearance.accent);
+        settings.colours.clone_from(&file.appearance.colours);
+        settings.shortcuts.clone_from(&file.shortcuts);
+        settings.default_apps = edel::settings::default_app_roles(&file.default_apps)
+            .into_iter()
+            .map(|(role, id)| (role.to_string(), id.to_string()))
+            .collect();
+        settings.startup = file.startup.apps.clone().unwrap_or_default();
+        settings.keyboard.clone_from(&file.region.keyboard);
+        if let Some(when) = &file.power.game_mode {
+            settings.game_mode = When::parse(Some(when));
+        }
+        settings.input_method.clone_from(&file.region.input_method);
+        for (name, output) in &file.displays {
+            let into = settings.outputs.entry(name.clone()).or_default();
+            if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {
+                into.scale = Some(scale);
             }
-            if file.layout.preset.is_some() {
-                settings.preset.clone_from(&file.layout.preset);
-            }
-            if let Some(bars) = file.layout.title_bars.as_deref().and_then(TitleBars::parse) {
-                title_bars = Some(bars);
-            }
-            if file.panels.list.is_some() {
-                settings.panels.clone_from(&file.panels.list);
-            }
-            if let Some(style) = file.layout.tiling_style.as_deref().and_then(Style::parse) {
-                tiling_style = Some(style);
-            }
-            if let Some(count) = file.workspaces.count {
-                settings.workspace_count = usize::try_from(count).ok();
-            }
-            if let Some(dynamic) = file.workspaces.dynamic {
-                settings.dynamic_workspaces = dynamic;
-            }
-            if let Some(per_screen) = file.workspaces.per_screen {
-                settings.workspaces_per_screen = per_screen;
-            }
-            if let Some(names) = &file.workspaces.names {
-                settings.workspace_names.clone_from(names);
-            }
-            if let Some(wallpapers) = &file.workspaces.wallpapers {
-                settings.workspace_wallpapers.clone_from(wallpapers);
-            }
-            if file.workspaces.overview_strip.is_some() {
-                settings
-                    .overview_strip
-                    .clone_from(&file.workspaces.overview_strip);
-            }
-            if let Some(apps) = &file.workspaces.apps {
-                // The person's table replaces the machine's whole, as the
-                // other keys do; a number out of range is left out.
-                settings.app_workspaces = apps
-                    .iter()
-                    .filter(|(_, n)| (1..=edel::presets::MOST_WORKSPACES as i64).contains(n))
-                    .filter_map(|(app, n)| Some((app.clone(), usize::try_from(n - 1).ok()?)))
-                    .collect();
-            }
-            if let Some(motion) = file
-                .appearance
-                .animations
-                .as_deref()
-                .and_then(Motion::parse)
-            {
-                settings.motion = motion;
-            }
-            if let Some(size) = file
-                .appearance
-                .cursor_size
-                .filter(|s| in_range(edel::settings::CURSOR_SIZE, *s))
-            {
-                settings.cursor_size = Some(size);
-            }
-            if let Some(theme) = file
-                .appearance
-                .cursor_theme
-                .as_deref()
-                .filter(|t| !t.is_empty() && !t.contains('/'))
-            {
-                settings.cursor_theme = Some(theme.to_string());
-            }
-            if let Some(theme) = &file.appearance.icon_theme {
-                settings.icon_theme = Some(theme.clone());
-            }
-            if let Some(speed) = file
-                .appearance
-                .animation_speed
-                .filter(|s| speed_in_range(*s))
-            {
-                settings.animation_speed = Some(speed);
-            }
-            if let Some(curve) = file
-                .appearance
-                .animation_curve
-                .as_deref()
-                .and_then(Curve::parse)
-            {
-                settings.animation_curve = curve;
-            }
-            if file
-                .appearance
-                .mode
-                .as_deref()
-                .and_then(Scheme::parse)
-                .is_some()
-            {
-                scheme_mode.clone_from(&file.appearance.mode);
-            }
-            if file.location.place.is_some() {
-                place.clone_from(&file.location.place);
-            }
-            if file.appearance.wallpaper.is_some() {
-                settings.wallpaper.clone_from(&file.appearance.wallpaper);
-            }
-            if file.appearance.wallpaper_dark.is_some() {
-                settings
-                    .wallpaper_dark
-                    .clone_from(&file.appearance.wallpaper_dark);
-            }
-            if file.appearance.accent.is_some() {
-                settings.accent.clone_from(&file.appearance.accent);
-            }
-            settings.colours = edel::settings::colours_over(
-                settings.colours.as_ref(),
-                file.appearance.colours.as_ref(),
-            );
-            settings.shortcuts.extend(file.shortcuts.clone());
-            for (role, id) in edel::settings::default_app_roles(&file.default_apps) {
-                settings
-                    .default_apps
-                    .insert(role.to_string(), id.to_string());
-            }
-            if let Some(apps) = &file.startup.apps {
-                settings.startup.clone_from(apps);
-            }
-            if file.region.keyboard.is_some() {
-                settings.keyboard.clone_from(&file.region.keyboard);
-            }
-            if let Some(when) = &file.power.game_mode {
-                settings.game_mode = When::parse(Some(when));
-            }
-            if file.region.input_method.is_some() {
-                settings.input_method.clone_from(&file.region.input_method);
-            }
-            for (name, output) in &file.displays {
-                let into = settings.outputs.entry(name.clone()).or_default();
-                if let Some(scale) = output.scale.filter(|s| s.is_finite() && *s > 0.0) {
-                    into.scale = Some(scale);
+            if let Some([x, y]) = output.position {
+                if let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y)) {
+                    into.position = Some((x, y));
                 }
-                if let Some([x, y]) = output.position {
-                    if let (Ok(x), Ok(y)) = (i32::try_from(x), i32::try_from(y)) {
-                        into.position = Some((x, y));
-                    }
-                }
-                if let Some(mode) = output.mode() {
-                    into.mode = Some(mode);
-                }
-                if output.enabled.is_some() {
-                    into.enabled = output.enabled;
-                }
-                if let Some(degrees) = output.rotation {
-                    into.rotation = Some(degrees);
-                }
+            }
+            if let Some(mode) = output.mode() {
+                into.mode = Some(mode);
+            }
+            if output.enabled.is_some() {
+                into.enabled = output.enabled;
+            }
+            if let Some(degrees) = output.rotation {
+                into.rotation = Some(degrees);
             }
         }
         // Light or dark, by the one rule every part follows (M7.14).
-        let coordinates = edel::sun::place_coordinates(place.as_deref());
+        let coordinates = edel::sun::place_coordinates(file.location.place.as_deref());
         (settings.color_scheme, settings.next_scheme) =
             edel::sun::scheme_for(scheme_mode.as_deref(), coordinates, edel::sun::now());
         // One rule for both: the files, then the preset the files name, then
@@ -1003,5 +942,35 @@ mod tests {
         assert!(!Settings::from_files(Some(&creative), Some(&off)).low_latency);
         let on = file("format = 1\n[sound]\nlow_latency = true\n");
         assert!(Settings::from_files(None, Some(&on)).low_latency);
+    }
+
+    #[test]
+    fn a_refused_persons_value_is_the_releases_not_the_machines() {
+        // Planned change a: a value a compositor filter refuses is read as
+        // absent, so the machine's valid value behind it does not show through.
+        // The reader keeps a scale of 0 (a finite number) and the filter does
+        // not, so this is the case where the change shows; a cursor theme with
+        // a '/' the reader itself leaves out.
+        let machine = file("format = 1\n[displays.eDP-1]\nscale = 1.5\nposition = [0, 0]\n");
+        let person = file("format = 1\n[displays.eDP-1]\nscale = 0\nposition = [5000000000, 0]\n");
+        let both = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(both.outputs["eDP-1"].scale, None, "a scale of 0 is refused");
+        assert_eq!(
+            both.outputs["eDP-1"].position, None,
+            "a position past the screens' range is refused"
+        );
+        // The machine's values stand where the person sets nothing.
+        let alone = Settings::from_files(Some(&machine), None);
+        assert_eq!(alone.outputs["eDP-1"].scale, Some(1.5));
+        assert_eq!(alone.outputs["eDP-1"].position, Some((0, 0)));
+    }
+
+    #[test]
+    fn the_persons_workspace_apps_replace_the_machines_whole() {
+        let machine = file("format = 1\n[workspaces.apps]\n\"org.mozilla.firefox\" = 1\n");
+        let person = file("format = 1\n[workspaces.apps]\n\"org.gimp.GIMP\" = 2\n");
+        let both = Settings::from_files(Some(&machine), Some(&person));
+        assert_eq!(both.app_workspaces, [("org.gimp.GIMP".to_string(), 1)]);
+        assert_eq!(both.app_workspace("org.mozilla.firefox"), None);
     }
 }
