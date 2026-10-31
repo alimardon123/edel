@@ -6412,8 +6412,9 @@ taps_place() {
 		    sys.exit(1)
 		me = mine[0]
 		others = [w for w in windows if w is not me and w["workspace"] == me["workspace"]]
+		# A window's title bar, 28 px above it, covers too.
 		def covered(x, y):
-		    return any(o["x"] <= x < o["x"] + o["width"] and o["y"] <= y < o["y"] + o["height"] for o in others)
+		    return any(o["x"] <= x < o["x"] + o["width"] and o["y"] - 28 * o.get("title_bar", False) <= y < o["y"] + o["height"] for o in others)
 		# Every 8 px across the window, as a newer window cascades only
 		# 32 px over it and leaves just a strip along its top and left.
 		spots = [(me["x"] + a, me["y"] + b) for b in range(8, me["height"], 8) for a in range(8, me["width"], 8)]
