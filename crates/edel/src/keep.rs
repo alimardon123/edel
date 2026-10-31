@@ -16,7 +16,7 @@ use serde::Deserialize;
 /// A feature's `[[keep]]`: under `under` (a folder of the root, without a
 /// leading `/`), only the files `files` match stay. Of those `newest`
 /// matches, only the newest version of each stays: the highest number at
-/// the end of the name, and no higher than the driver `newest_by` (a
+/// the end of the name (of a dotted version, its first number), and no higher than the driver `newest_by` (a
 /// kernel module's name) says it can load, so a version newer than the
 /// kernel never takes the place of one it can use.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -89,21 +89,25 @@ pub fn matches(pattern: &str, name: &str) -> bool {
 /// A versioned file's family and version: `iwlwifi-so-a0-gf-a0-89.ucode.zst`
 /// is family `iwlwifi-so-a0-gf-a0` (with `.ucode`) at 89, and
 /// `iwlwifi-sc-a0-wh-b0-c103.ucode` at core version 103 of the `c` kind,
-/// which never mixes with plain numbers. Only the file's own name counts.
+/// which never mixes with plain numbers. A dotted version, as NVIDIA's
+/// `gsp-570.144.bin.zst` has, counts by its first number (family `gsp`
+/// with `.bin` at 570), so two releases of one major number both stay.
+/// Only the file's own name counts.
 pub fn version(path: &str) -> Option<(String, String, u32)> {
     let name = path.rsplit('/').next()?;
-    let stem_end = name.find('.').unwrap_or(name.len());
-    let (stem, ext) = name.split_at(stem_end);
+    let mut parts = name.split('.');
+    let stem = parts.next()?;
     let dash = stem.rfind('-')?;
     let tail = &stem[dash + 1..];
     let (kind, digits) = match tail.strip_prefix('c') {
         Some(d) => ("c", d),
         None => ("", tail),
     };
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    let numeric = |d: &str| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit());
+    if !numeric(digits) {
         return None;
     }
-    let ext = ext.split('.').nth(1).unwrap_or("");
+    let ext = parts.find(|part| !numeric(part)).unwrap_or("");
     let family = format!("{}{kind}.{ext}", &stem[..dash]);
     Some((family, kind.to_string(), digits.parse().ok()?))
 }
@@ -266,6 +270,45 @@ mod tests {
             Some(("iwlwifi-sc-a0-wh-b0c.ucode".into(), "c".into(), 103))
         );
         assert_eq!(version("intel/iwlwifi/iwlwifi-so-a0-gf-a0.pnvm.zst"), None);
+        assert_eq!(
+            version("nvidia/ga102/gsp/gsp-535.113.01.bin.zst"),
+            Some(("gsp.bin".into(), "".into(), 535))
+        );
+        assert_eq!(
+            version("nvidia/tu102/gsp/booter_load-570.144.bin"),
+            Some(("booter_load.bin".into(), "".into(), 570))
+        );
+    }
+
+    #[test]
+    fn of_nvidia_s_gsp_firmware_only_the_release_the_driver_loads_stays() {
+        let entries = [
+            file("nvidia/ga102/gsp/gsp-535.113.01.bin.zst"),
+            file("nvidia/ga102/gsp/gsp-570.144.bin.zst"),
+            link(
+                "nvidia/ad102/gsp/gsp-570.144.bin.zst",
+                "../../ga102/gsp/gsp-570.144.bin.zst",
+            ),
+            link(
+                "nvidia/ad102/gsp/gsp-535.113.01.bin.zst",
+                "../../ga102/gsp/gsp-535.113.01.bin.zst",
+            ),
+            file("nvidia/ga102/gr/sw_ctx.bin.zst"),
+        ];
+        let k = keep(&["nvidia/*/*/*"], &["nvidia/*/gsp/*"]);
+        let declared = vec![
+            "nvidia/ga102/gsp/gsp-535.113.01.bin".to_string(),
+            "nvidia/ga102/gsp/gsp-570.144.bin".to_string(),
+        ];
+        let plan = plan(&entries, &k, &declared).unwrap();
+        assert_eq!(
+            plan.kept,
+            [
+                "nvidia/ga102/gsp/gsp-570.144.bin.zst",
+                "nvidia/ad102/gsp/gsp-570.144.bin.zst",
+                "nvidia/ga102/gr/sw_ctx.bin.zst",
+            ]
+        );
     }
 
     #[test]
