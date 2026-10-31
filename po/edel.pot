@@ -3095,13 +3095,10 @@ msgstr ""
 msgid "GRUB's environment block has no directory"
 msgstr ""
 
-msgid "{command} has to wait: {holder}; try again when it is done"
-msgstr ""
-
 msgid "could not take the lock {path}"
 msgstr ""
 
-msgid "could not take the lock {path}: another edel command took it first; try again"
+msgid "{command} has to wait: {holder}; try again when it is done"
 msgstr ""
 
 msgid "{doing}: permission denied; {command} changes the system, so it needs an administrator: doas {command}"
