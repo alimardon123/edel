@@ -179,9 +179,7 @@ pub fn append(path: &Path, used: &Use) -> std::io::Result<()> {
     if file.metadata()?.len() > 64 * 1024 {
         let text = std::fs::read_to_string(path)?;
         let now = used.start + used.seconds;
-        let new = path.with_extension("new");
-        std::fs::write(&new, trim(&text, now))?;
-        std::fs::rename(&new, path)?;
+        crate::files::replace(path, trim(&text, now).as_bytes())?;
     }
     Ok(())
 }

@@ -328,16 +328,9 @@ fn add_in(profiles: &Path, apps_dir: &Path, url: &str, name: &str) -> Result<Web
         )
     })?;
     let text = desktop_text(name, url, &id, &profile);
-    let new = apps_dir.join(format!("{id}.desktop.new"));
-    fs::write(&new, text).with_context(|| {
+    crate::files::replace(&desktop, text.as_bytes()).with_context(|| {
         trf(
             "could not write {path}",
-            &[("path", &new.display().to_string())],
-        )
-    })?;
-    fs::rename(&new, &desktop).with_context(|| {
-        trf(
-            "could not put {path} in place",
             &[("path", &desktop.display().to_string())],
         )
     })?;
