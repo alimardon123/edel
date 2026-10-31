@@ -35,6 +35,7 @@ use edel::users::ADMIN_GROUP;
 use crate::boot::GRUB_PREFIX;
 use crate::privilege;
 use crate::release::os_release_value;
+use crate::settings_source;
 use crate::update::{Disk, Lock, io_failure, run};
 
 /// The machine's settings file as it is found now: by its name, or by a
@@ -1532,7 +1533,14 @@ fn deferred(change: &Change, boot: bool) -> Option<String> {
 /// The file to apply or diff, read leniently, with the profiles it names
 /// laid under it and its problems and the keys this release skips printed
 /// first; `None` when there is none.
-fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::Read>> {
+/// `shown` is what messages call `file` when it is a private copy of the
+/// file the person named (`settings_source::Local`), which is gone once the
+/// command ends; None calls it by its path.
+fn load(
+    file: Option<&Path>,
+    shown: Option<&str>,
+    seed_if_missing: bool,
+) -> Result<Option<settings::Read>> {
     let machine = machine_file();
     let path = file.unwrap_or(&machine);
     if file.is_none() && !path.exists() {
@@ -1560,7 +1568,7 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     read.file = edel::profiles::applied(&read.file);
     // Each line names the file, the key left out and its mistake; the
     // rest of the file is used (the messages audit's row 50).
-    let shown = path.display().to_string();
+    let shown = shown.map_or_else(|| path.display().to_string(), str::to_string);
     for problem in &read.problems {
         println!(
             "warning: {}",
@@ -1628,13 +1636,13 @@ fn settle_names() -> Result<()> {
 /// `edel settings apply`: applies the machine's own settings file, which
 /// is seeded first when it is missing.
 pub fn apply(boot: bool) -> Result<()> {
-    apply_file(None, boot)
+    apply_file(None, None, boot)
 }
 
 /// `edel settings import FILE`: applies FILE, which then becomes the
 /// machine's settings file, so the next boot keeps it.
-pub fn import(file: &Path) -> Result<()> {
-    apply_file(Some(file), false)
+pub fn import(file: &settings_source::Local) -> Result<()> {
+    apply_file(Some(file.path()), Some(file.shown()), false)
 }
 
 /// Lays the slot's default add-ons under a file that names none of its
@@ -1673,7 +1681,7 @@ fn boot_services() -> Result<()> {
     Ok(())
 }
 
-fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
+fn apply_file(file: Option<&Path>, shown: Option<&str>, boot: bool) -> Result<()> {
     let _lock = Lock::take("settings", "edel settings")?;
     // A file by a former name is renamed first, so it is read and kept by
     // the name this release writes; a failure here never stops the apply.
@@ -1684,7 +1692,7 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
         // Once per boot, after udev settled, for every later reader (M8.17).
         services::decide_screen();
     }
-    let Some(read) = load(file, true)? else {
+    let Some(read) = load(file, shown, true)? else {
         // With no settings file the boot still switches the services, so
         // a machine with no screen starts no desktop service (M8.17).
         return if boot { boot_services() } else { Ok(()) };
@@ -1735,11 +1743,12 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     let machine = places::machine_settings();
     if let Some(path) = file.filter(|f| !same_file(f, &machine)) {
         settings::copy_file(path, &machine)?;
+        let named = shown.map_or_else(|| path.display().to_string(), str::to_string);
         println!(
             "edel settings: {}",
             trf(
                 "{path} is now this machine's settings file",
-                &[("path", &path.display().to_string())]
+                &[("path", &named)]
             )
         );
     } else if changes.is_empty() {
@@ -1793,7 +1802,7 @@ pub(crate) fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
 /// `edel settings diff [FILE]`: what apply would change, one `change:` line
 /// each, changing nothing. Returns whether there is anything to change.
 pub fn diff(file: Option<&Path>) -> Result<bool> {
-    let Some(read) = load(file, false)? else {
+    let Some(read) = load(file, None, false)? else {
         return Ok(false);
     };
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);

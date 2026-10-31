@@ -296,8 +296,12 @@ impl Owners {
             0
         };
         let id = assign(next, replaces);
+        // Age is counted from the newest id given out, not from `id`: a
+        // replaced notification keeps its old id, and counting from it would
+        // forget the owner of every notification made after it.
+        let newest = next.load(Ordering::Relaxed).wrapping_sub(1);
         self.0
-            .retain(|kept, _| id.wrapping_sub(*kept) < OWNERS_KEPT);
+            .retain(|kept, _| newest.wrapping_sub(*kept) < OWNERS_KEPT);
         self.0.insert(id, sender.to_string());
         id
     }
@@ -730,6 +734,20 @@ mod tests {
         assert_ne!(owners.assign(&next, 77, ":1.10"), 77, "an id nobody made");
         owners.forget(update);
         assert!(!owners.owns(update, ":1.10"));
+    }
+
+    #[test]
+    fn replacing_an_old_notification_keeps_the_newer_ones_owners() {
+        let next = AtomicU32::new(1);
+        let mut owners = Owners::default();
+        let download = owners.assign(&next, 0, ":1.10");
+        let chat = owners.assign(&next, 0, ":1.20");
+        assert_eq!(owners.assign(&next, download, ":1.10"), download);
+        assert!(
+            owners.owns(chat, ":1.20"),
+            "the chat app still owns its own"
+        );
+        assert_eq!(owners.assign(&next, chat, ":1.20"), chat);
     }
 
     #[test]
