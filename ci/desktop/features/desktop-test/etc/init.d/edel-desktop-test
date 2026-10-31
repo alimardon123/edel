@@ -510,8 +510,7 @@ commands() {
 		# colour scheme and the accent.
 		# The keyring (M7.18): whether its daemon runs, a secret stored and
 		# read back as ci through the Secret Service with oo7-cli, and the
-		# daemon stopped, so the next ask starts it again with the session's
-		# key.
+		# daemon stopped and started again with the session's key.
 		'keyring running') say "keyring_running $(pgrep -x oo7-daemon >/dev/null && echo yes || echo no)" ;;
 		'keyring store')
 			bus=$(session_bus)
@@ -523,8 +522,21 @@ commands() {
 			;;
 		'keyring lookup')
 			bus=$(session_bus)
-			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' oo7-cli lookup --secret-only edel=ci" </dev/null 2>&1 | tr '\n' ' ')
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 30 oo7-cli lookup --secret-only edel=ci" </dev/null 2>&1 | tr '\n' ' ')
 			say "keyring_lookup $out"
+			;;
+		'keyring start')
+			# As the login does, in the session: the daemon again, given the
+			# session's key, with no app asking.
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' setsid edel boot keyring </dev/null >/dev/null 2>&1 &"
+			n=0
+			while [ "$n" -lt 20 ] && ! pgrep -x oo7-daemon >/dev/null; do
+				sleep 0.5
+				n=$((n + 1))
+			done
+			sleep 2
+			say "keyring_started $(pgrep -x oo7-daemon >/dev/null && echo yes || echo no)"
 			;;
 		'keyring stop')
 			pkill -x oo7-daemon
