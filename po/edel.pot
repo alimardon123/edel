@@ -1706,6 +1706,9 @@ msgstr ""
 msgid "no data partition"
 msgstr ""
 
+msgid "This computer's data stays encrypted with the same passphrase, the password it was installed with, which every start asks for. To give the computer to someone else, install Edel OS on it from a stick instead."
+msgstr ""
+
 msgid "on"
 msgstr ""
 
@@ -3320,7 +3323,7 @@ msgstr ""
 msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"
 msgstr ""
 
-msgid "Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new"
+msgid "Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new; encrypted data keeps its passphrase, so to give the computer away, install Edel OS on it from a stick instead"
 msgstr ""
 
 msgid "Erase without asking for the machine's name, for scripts"

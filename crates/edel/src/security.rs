@@ -162,14 +162,13 @@ pub fn now() -> Facts {
     let os_release = fs::read_to_string(OS_RELEASE).unwrap_or_default();
     let running = version::os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let record = fs::read_to_string(places::LAST_CHECK).ok();
-    let mounts = fs::read_to_string(MOUNTS).unwrap_or_default();
     Facts {
         updates: updates(
             &running,
             record.as_deref(),
             Path::new(places::RESTART_PENDING).exists(),
         ),
-        data: data(&mounts, dm_uuid),
+        data: Data::now(),
         firewall: firewall(&services::installed(), base::is_started),
     }
 }
@@ -219,6 +218,24 @@ impl Data {
             value: value.to_string(),
             hint: None,
         }
+    }
+
+    /// What a factory reset keeps that its list of what goes does not
+    /// say (the architecture review of 2026-10-31): an encrypted data
+    /// partition keeps its encryption and its passphrase (M8.38), so the
+    /// next owner would need the old one's password. `edel factory-reset`
+    /// says it before it asks; none for data that is not encrypted.
+    pub fn after_reset(&self) -> Option<&'static str> {
+        (*self == Data::Encrypted).then(|| {
+            tr(
+                "This computer's data stays encrypted with the same passphrase, the password it was installed with, which every start asks for. To give the computer to someone else, install Edel OS on it from a stick instead.",
+            )
+        })
+    }
+
+    /// Whether the data partition is encrypted on this machine now.
+    pub fn now() -> Data {
+        data(&fs::read_to_string(MOUNTS).unwrap_or_default(), dm_uuid)
     }
 }
 
@@ -378,6 +395,15 @@ mod tests {
     fn a_plain_partition_is_not_encrypted() {
         let mounts = "/dev/vda3 /data ext4 rw 0 0\n";
         assert_eq!(data(mounts, |_| None), Data::NotEncrypted);
+    }
+
+    #[test]
+    fn a_reset_says_the_passphrase_stays_only_on_encrypted_data() {
+        let said = Data::Encrypted.after_reset().unwrap();
+        assert!(said.contains("same passphrase"), "{said}");
+        assert!(said.contains("from a stick"), "{said}");
+        assert_eq!(Data::NotEncrypted.after_reset(), None);
+        assert_eq!(Data::NoDataPartition.after_reset(), None);
     }
 
     #[test]

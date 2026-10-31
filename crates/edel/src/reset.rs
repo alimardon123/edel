@@ -196,6 +196,9 @@ pub fn factory_reset(yes: bool) -> Result<()> {
             "A factory reset erases every account, every person's files, this machine's settings, developer mode's changes and the add-ons in use, and restarts. The default apps and the version of Edel OS stay, so the machine starts as new, offline too, and can still roll back."
         )
     );
+    if let Some(keeps) = edel::security::Data::now().after_reset() {
+        println!("{keeps}");
+    }
     if !yes {
         let name = edel::install::machine_name();
         if name.is_empty() {
