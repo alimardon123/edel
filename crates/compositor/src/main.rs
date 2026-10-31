@@ -65,6 +65,7 @@ mod sun;
 mod switcher;
 mod tiers;
 mod toplevels;
+mod touch;
 mod wallpaper;
 mod watch;
 #[cfg(feature = "winit")]

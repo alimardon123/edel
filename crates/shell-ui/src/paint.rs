@@ -1595,6 +1595,8 @@ mod tests {
                 ("windows-like", 0, 1280, false),
                 ("hive", 0, 1280, true),
                 ("tablet", 0, 1280, true),
+                ("phone", 0, 360, true),
+                ("phone", 1, 360, true),
             ] {
                 let (pixmap, _, _) = preview(name, index, scheme, width, 1, &live(4, tiling));
                 write_png(&format!("{name}-{index}-{width}-{mode}"), &pixmap);

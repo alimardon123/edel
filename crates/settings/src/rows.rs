@@ -772,6 +772,7 @@ pub fn label(value: &str) -> String {
         "stack" => n_("Stack"),
         "split" => n_("Split"),
         "scroll" => n_("Scroll"),
+        "full" => n_("Full"),
         "dot" => n_("Dot"),
         "count" => n_("Count"),
         "none" => n_("None"),
@@ -987,7 +988,10 @@ mod tests {
         );
         assert_eq!(label("top"), "Top");
         assert_eq!(on_page("appearance").count(), 35);
-        assert_eq!(values("layout.tiling_style"), ["stack", "split", "scroll"]);
+        assert_eq!(
+            values("layout.tiling_style"),
+            ["stack", "split", "scroll", "full"]
+        );
         assert_eq!(on_page("about").count(), 0);
     }
 
