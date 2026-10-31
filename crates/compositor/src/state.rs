@@ -166,8 +166,6 @@ pub struct Edel {
     /// The touch screen's finger that moves the pointer, while it is down
     /// (M9.5).
     pub touching: Option<smithay::backend::input::TouchSlot>,
-    /// The keyboard on the screen (M9.5).
-    pub screen_keyboard: crate::screen_keyboard::ScreenKeyboard,
     /// Game mode (M7.7, `games.rs`).
     pub game: crate::games::Game,
     /// The timer for the sun's next change of scheme (M7.14, `sun.rs`).
@@ -408,7 +406,6 @@ impl Edel {
             saver: false,
             tablet_mode: false,
             touching: None,
-            screen_keyboard: Default::default(),
             game: Default::default(),
             sun: Default::default(),
             animations: crate::animate::Animations::new(edel_compositor::animation::style(
@@ -1563,9 +1560,6 @@ pub fn listen(
             |_, display, state: &mut Edel| {
                 // SAFETY: the display is never dropped while the loop runs.
                 unsafe { display.get_mut().dispatch_clients(state)? };
-                if let Some(handle) = state.handle.clone() {
-                    state.follow_screen_keyboard(&handle);
-                }
                 Ok(PostAction::Continue)
             },
         )
