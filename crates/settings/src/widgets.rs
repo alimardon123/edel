@@ -1789,7 +1789,10 @@ impl Line {
             self.row.subtitle.set_label(&status::said(&problem));
         }
         let reset = if self.machine {
-            !matches!(source, edel::settings::Source::Release)
+            !matches!(
+                source,
+                edel::settings::Source::Release | edel::settings::Source::Profile(_)
+            )
         } else {
             rows::resettable(source)
         };

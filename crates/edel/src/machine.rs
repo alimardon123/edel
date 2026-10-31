@@ -35,6 +35,7 @@ use edel::users::ADMIN_GROUP;
 use crate::boot::GRUB_PREFIX;
 use crate::privilege;
 use crate::release::os_release_value;
+use crate::settings_source;
 use crate::update::{Disk, Lock, io_failure, run};
 
 /// The machine's settings file as it is found now: by its name, or by a
@@ -1532,7 +1533,14 @@ fn deferred(change: &Change, boot: bool) -> Option<String> {
 /// The file to apply or diff, read leniently, with the profiles it names
 /// laid under it and its problems and the keys this release skips printed
 /// first; `None` when there is none.
-fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::Read>> {
+/// `shown` is what messages call `file` when it is a private copy of the
+/// file the person named (`settings_source::Local`), which is gone once the
+/// command ends; None calls it by its path.
+fn load(
+    file: Option<&Path>,
+    shown: Option<&str>,
+    seed_if_missing: bool,
+) -> Result<Option<settings::Read>> {
     let machine = machine_file();
     let path = file.unwrap_or(&machine);
     if file.is_none() && !path.exists() {
@@ -1560,7 +1568,7 @@ fn load(file: Option<&Path>, seed_if_missing: bool) -> Result<Option<settings::R
     read.file = edel::profiles::applied(&read.file);
     // Each line names the file, the key left out and its mistake; the
     // rest of the file is used (the messages audit's row 50).
-    let shown = path.display().to_string();
+    let shown = shown.map_or_else(|| path.display().to_string(), str::to_string);
     for problem in &read.problems {
         println!(
             "warning: {}",
@@ -1628,13 +1636,13 @@ fn settle_names() -> Result<()> {
 /// `edel settings apply`: applies the machine's own settings file, which
 /// is seeded first when it is missing.
 pub fn apply(boot: bool) -> Result<()> {
-    apply_file(None, boot)
+    apply_file(None, None, boot)
 }
 
 /// `edel settings import FILE`: applies FILE, which then becomes the
 /// machine's settings file, so the next boot keeps it.
-pub fn import(file: &Path) -> Result<()> {
-    apply_file(Some(file), false)
+pub fn import(file: &settings_source::Local) -> Result<()> {
+    apply_file(Some(file.path()), Some(file.shown()), false)
 }
 
 /// Lays the slot's default add-ons under a file that names none of its
@@ -1673,7 +1681,7 @@ fn boot_services() -> Result<()> {
     Ok(())
 }
 
-fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
+fn apply_file(file: Option<&Path>, shown: Option<&str>, boot: bool) -> Result<()> {
     let _lock = Lock::take("settings", "edel settings")?;
     // A file by a former name is renamed first, so it is read and kept by
     // the name this release writes; a failure here never stops the apply.
@@ -1684,7 +1692,7 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
         // Once per boot, after udev settled, for every later reader (M8.17).
         services::decide_screen();
     }
-    let Some(read) = load(file, true)? else {
+    let Some(read) = load(file, shown, true)? else {
         // With no settings file the boot still switches the services, so
         // a machine with no screen starts no desktop service (M8.17).
         return if boot { boot_services() } else { Ok(()) };
@@ -1735,11 +1743,12 @@ fn apply_file(file: Option<&Path>, boot: bool) -> Result<()> {
     let machine = places::machine_settings();
     if let Some(path) = file.filter(|f| !same_file(f, &machine)) {
         settings::copy_file(path, &machine)?;
+        let named = shown.map_or_else(|| path.display().to_string(), str::to_string);
         println!(
             "edel settings: {}",
             trf(
                 "{path} is now this machine's settings file",
-                &[("path", &path.display().to_string())]
+                &[("path", &named)]
             )
         );
     } else if changes.is_empty() {
@@ -1793,7 +1802,7 @@ pub(crate) fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
 /// `edel settings diff [FILE]`: what apply would change, one `change:` line
 /// each, changing nothing. Returns whether there is anything to change.
 pub fn diff(file: Option<&Path>) -> Result<bool> {
-    let Some(read) = load(file, false)? else {
+    let Some(read) = load(file, None, false)? else {
         return Ok(false);
     };
     let (changes, notes) = plan(&read.file, &Machine::read(&read.file)?);
@@ -2640,9 +2649,35 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     // The keys a page has that nobody set: the value that applies and the
     // layer that decides it (M6.11), or nothing when no line says so.
     let preset = preset_in_use(&person, &machine);
+    let machine_text = fs::read_to_string(machine_file()).ok();
+    let person_text = places::person_settings()
+        .map(|p| places::found(&p))
+        .and_then(|p| fs::read_to_string(p).ok());
     for entry in settings::KEYS.iter().filter(|k| !k.path.contains('*')) {
         if wanted(entry.path) && !rows.iter().any(|row| row.key == entry.path) {
             let line = key_help::find(entry.path);
+            // A value a profile, a person's own preset or a theme gives, as
+            // the desktop applies it (the architecture review of 2026-10-31:
+            // a profile's value showed as the release's, an own preset's as
+            // Classic's).
+            // The person's file counts only for what the desktop follows, as above.
+            let person_text = person_text
+                .as_deref()
+                .filter(|_| desktop_follows(entry.path));
+            let machine_text = machine_text.as_deref();
+            if let Some(value) = settings::chosen(entry.path, machine_text, person_text) {
+                let from = match settings::source(entry.path, machine_text, person_text) {
+                    settings::Source::Profile(_) => tr("a profile").to_string(),
+                    _ => layer_label(line, &preset),
+                };
+                rows.push(Row {
+                    key: entry.path.to_string(),
+                    value: toml::Value::String(String::new()),
+                    from,
+                    default: Some(value),
+                });
+                continue;
+            }
             rows.push(Row {
                 key: entry.path.to_string(),
                 value: toml::Value::String(String::new()),
@@ -2663,13 +2698,7 @@ pub fn get(what: Option<&str>, as_toml: bool) -> Result<()> {
     let width = rows.iter().map(|row| row.key.len()).max().unwrap_or(0);
     // When the sun changes the scheme next, under auto at a place (M7.14),
     // read from the same two files the rows came from.
-    let sun = {
-        let machine_text = fs::read_to_string(machine_file()).ok();
-        let person_text = places::person_settings()
-            .map(|p| places::found(&p))
-            .and_then(|p| fs::read_to_string(p).ok());
-        edel::sun::scheme_of(machine_text.as_deref(), person_text.as_deref()).1
-    };
+    let sun = edel::sun::scheme_of(machine_text.as_deref(), person_text.as_deref()).1;
     for page in settings::PAGES {
         let mut mine: Vec<&Row> = rows
             .iter()

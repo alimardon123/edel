@@ -1,8 +1,8 @@
 # Edel OS
 
-A lightweight, fast and beautiful operating system for everyone: developers, creative workers, gamers, office users, and later servers, cloud VMs and containers. One base, built on a soft fork of [Alpine Linux](https://alpinelinux.org/), runs as a container, a VM, a desktop and a phone.
+A lightweight, fast and beautiful operating system for everyone: developers, creative workers, gamers, office users, and later servers, cloud VMs and containers. One base, built on a soft fork of [Alpine Linux](https://alpinelinux.org/), runs as a container, a VM, a desktop and a phone. To try it, see [Try it](docs/TRY-IT.md).
 
-**Status:** early. The update path, the settings file and the installer work and are tested in CI. The desktop (our compositor and panel, four layout presets, light and dark) runs in CI's virtual machine and has not met real hardware yet. The first target is a light, beautiful desktop for AMD and Intel laptops, on the same base as the container image; servers, edge devices and phones follow ([roadmap](docs/ROADMAP.md)).
+**Status:** early. The update path, the settings file and the installer work and are tested in CI. The desktop (our compositor and panel, seven layout presets, light and dark) runs in CI's virtual machine and has met real hardware only in a few early trials. The first target is a light, beautiful desktop for AMD and Intel laptops, on the same base as the container image; servers, edge devices and phones follow ([roadmap](docs/ROADMAP.md)).
 
 ## How decisions are made
 
@@ -10,7 +10,7 @@ Every decision follows the ranked [design principles](docs/DESIGN-PRINCIPLES.md)
 
 1. Reliable
 2. Instant
-3. Simple
+3. Simple and modular
 4. Efficient
 5. Beautiful
 6. Functional

@@ -797,6 +797,7 @@ pub fn describe(source: &Source, current: &str) -> String {
     match source {
         Source::Person(_) => tr("Your choice").to_string(),
         Source::Machine(_) => tr("Set by this machine").to_string(),
+        Source::Profile(_) => tr("From the profile").to_string(),
         Source::Release => trf("Automatic ({current})", &[("current", current)]),
     }
 }
@@ -812,11 +813,13 @@ pub fn release_choice() -> String {
 
 /// What a row's line adds about where its value comes from, as the
 /// mockup's rows say it: nothing when the release decides, `From the
-/// preset` when the preset does, `Your choice` or `Set by this machine`.
+/// preset` or `From the profile` when one does, `Your choice` or `Set by
+/// this machine`.
 pub fn note(source: &Source, from_preset: bool) -> Option<&'static str> {
     match source {
         Source::Person(_) => Some(tr("Your choice")),
         Source::Machine(_) => Some(tr("Set by this machine")),
+        Source::Profile(_) => Some(tr("From the profile")),
         Source::Release if from_preset => Some(tr("From the preset")),
         Source::Release => None,
     }
@@ -1006,6 +1009,9 @@ mod tests {
         assert!(resettable(&own));
         assert_eq!(note(&Source::Release, true), Some("From the preset"));
         assert_eq!(note(&Source::Release, false), None);
+        let given = Source::Profile(Value::String("always".into()));
+        assert_eq!(note(&given, false), Some("From the profile"));
+        assert_eq!(describe(&given, "Plugged in"), "From the profile");
         assert_eq!(note(&own, true), Some("Your choice"));
         assert_eq!(note(&set, false), Some("Set by this machine"));
     }

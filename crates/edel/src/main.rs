@@ -1061,7 +1061,7 @@ fn run(command: Commands) -> Result<()> {
             }
             Some(SettingsCommands::Apply { boot }) => machine::apply(boot),
             Some(SettingsCommands::Import { file }) => {
-                machine::import(settings_source::local(&file)?.path())
+                machine::import(&settings_source::local(&file)?)
             }
             Some(SettingsCommands::Export) => machine::export(),
             Some(SettingsCommands::Check { file: Some(file) }) => {
