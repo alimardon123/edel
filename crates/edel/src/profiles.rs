@@ -34,25 +34,25 @@ pub struct Profile {
 pub const BUILT_IN: &[Profile] = &[
     Profile {
         name: "office",
-        text: include_str!("../../../profiles/office.toml"),
+        text: include_str!(concat!(env!("EDEL_SOURCE"), "/profiles/office.toml")),
         title: n_("Office"),
         about: n_("LibreOffice, printing and scanning"),
     },
     Profile {
         name: "developer",
-        text: include_str!("../../../profiles/developer.toml"),
+        text: include_str!(concat!(env!("EDEL_SOURCE"), "/profiles/developer.toml")),
         title: n_("Developer"),
         about: n_("Podman containers and the VSCodium editor"),
     },
     Profile {
         name: "creative",
-        text: include_str!("../../../profiles/creative.toml"),
+        text: include_str!(concat!(env!("EDEL_SOURCE"), "/profiles/creative.toml")),
         title: n_("Creative"),
         about: n_("Krita for drawing, GIMP for photos and low-latency sound"),
     },
     Profile {
         name: "gaming",
-        text: include_str!("../../../profiles/gaming.toml"),
+        text: include_str!(concat!(env!("EDEL_SOURCE"), "/profiles/gaming.toml")),
         title: n_("Gaming"),
         about: n_("Steam, and game mode for every fullscreen game"),
     },

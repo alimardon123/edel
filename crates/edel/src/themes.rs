@@ -27,10 +27,22 @@ use crate::wallpapers;
 /// The built-in themes, in the order people see them; a new one is a file
 /// under `themes/` and a line here. The release's own theme comes first.
 pub const BUILT_IN: &[(&str, &str)] = &[
-    ("edel", include_str!("../../../themes/edel.toml")),
-    ("aurora", include_str!("../../../themes/aurora.toml")),
-    ("earth", include_str!("../../../themes/earth.toml")),
-    ("ocean", include_str!("../../../themes/ocean.toml")),
+    (
+        "edel",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/themes/edel.toml")),
+    ),
+    (
+        "aurora",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/themes/aurora.toml")),
+    ),
+    (
+        "earth",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/themes/earth.toml")),
+    ),
+    (
+        "ocean",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/themes/ocean.toml")),
+    ),
 ];
 
 /// The theme in use while `appearance.theme` is absent: the release's own,
