@@ -3488,6 +3488,9 @@ pub struct Layers {
     /// The two files through [`in_use`], the person's then the machine's,
     /// made once: what the desktop applies.
     applied: [SettingsFile; 2],
+    /// The person's applied file laid over the machine's, made once:
+    /// [`Layers::merged`].
+    merged: SettingsFile,
 }
 
 impl Layers {
@@ -3496,12 +3499,27 @@ impl Layers {
         let (machine, machine_raw) = read_one(machine);
         let (person, person_raw) = read_one(person);
         let applied = [in_use(&person), in_use(&machine)];
+        let merged = over(&applied[0], &applied[1]);
         Layers {
             machine,
             person,
             raw: [person_raw, machine_raw],
             applied,
+            merged,
         }
+    }
+
+    /// The person's file as the desktop applies it, laid over the machine's
+    /// as the desktop applies that ([`lay_under`]): the one file every reader
+    /// of a value asks for what it is set to.
+    pub fn merged(&self) -> &SettingsFile {
+        &self.merged
+    }
+
+    /// The machine's file as the desktop applies it: what applies when the
+    /// person sets nothing.
+    pub fn machine(&self) -> &SettingsFile {
+        &self.applied[1]
     }
 
     /// Where `key` comes from, in the order of [`Source`].
@@ -3685,6 +3703,82 @@ pub fn value_at(part: &impl Serialize, path: &str) -> Option<Value> {
 /// reads (ADR-010); the writers never do, so they write the file as it is.
 pub fn in_use(file: &SettingsFile) -> SettingsFile {
     crate::themes::themed(&crate::presets::applied(&crate::profiles::applied(file)))
+}
+
+/// The person's applied file laid over the machine's applied file, the one
+/// merge of the two ([`Layers::merged`]).
+fn over(person: &SettingsFile, machine: &SettingsFile) -> SettingsFile {
+    // Both files are the same struct, so both convert; should one not, the
+    // person's file stands as it is, which is what the desktop reads without
+    // the machine's.
+    let (Ok(Value::Table(mut own)), Ok(Value::Table(under))) =
+        (Value::try_from(person), Value::try_from(machine))
+    else {
+        return person.clone();
+    };
+    lay_under(&mut own, under, "");
+    // The laid table holds only values the struct read or wrote, so it reads
+    // back as the struct; the person's file is kept should it not.
+    Value::Table(own)
+        .try_into()
+        .unwrap_or_else(|_| person.clone())
+}
+
+/// Lays `under` beneath `own`, table by table: a key `own` has stays, and a
+/// table both have is laid through key by key. `at` is the dotted path of
+/// `own` (`""` at the top). A table [`replaced_whole`] names is not laid
+/// through: `own`'s table stays as it is, whole.
+pub(crate) fn lay_under(own: &mut Table, under: Table, at: &str) {
+    lay(own, under, at, true);
+}
+
+/// [`lay_under`] with no table kept whole: how themes and own presets lay
+/// their values under the ones they change (M5.12b6a, M5.17).
+pub(crate) fn lay_under_all(own: &mut Table, under: Table) {
+    lay(own, under, "", false);
+}
+
+fn lay(own: &mut Table, under: Table, at: &str, stops: bool) {
+    for (key, value) in under {
+        let path = if at.is_empty() {
+            key.clone()
+        } else {
+            format!("{at}.{key}")
+        };
+        match own.get_mut(&key) {
+            Some(Value::Table(inner)) => match value {
+                Value::Table(theirs) if !(stops && replaced_whole(&path)) => {
+                    lay(inner, theirs, &path, stops);
+                }
+                _ => {}
+            },
+            Some(_) => {}
+            None => {
+                own.insert(key, value);
+            }
+        }
+    }
+}
+
+/// Whether the table at the dotted `path` is kept whole by [`lay_under`],
+/// derived from [`KEYS`]: the path of a key whose table is one value
+/// (`workspaces.apps`, the person's own themes and presets), and each look
+/// under a key of [`Kind::LockLooks`] (`lock_screen.looks.NAME`). A key's
+/// `*` matches one name. Other tables, such as `displays.NAME`, `shortcuts`
+/// and `colours`, are laid through key by key.
+fn replaced_whole(path: &str) -> bool {
+    let parts: Vec<String> = path.split('.').map(str::to_string).collect();
+    KEYS.iter().any(|key| {
+        if matches(key.path, &parts, false) {
+            return matches!(
+                key.kind,
+                Kind::AppWorkspaces | Kind::OwnTheme | Kind::OwnPreset
+            );
+        }
+        key.kind == Kind::LockLooks
+            && parts.len() == key.path.split('.').count() + 1
+            && matches(key.path, &parts[..parts.len() - 1], false)
+    })
 }
 
 /// The value the machine's own settings file chooses for `key`, read now;
@@ -5906,6 +6000,90 @@ mod tests {
             source("layout.preset", Some("not toml ["), None),
             Source::Release
         );
+    }
+
+    #[test]
+    fn a_file_laid_over_an_empty_one_and_an_empty_one_over_it_give_the_file() {
+        let text = toml::to_string(&with_keys(KEYS.iter().map(|k| k.path))).unwrap();
+        let empty = format!("format = {FORMAT}\n");
+        let applied = in_use(&read(&text).unwrap().file);
+        assert_eq!(Layers::read(None, Some(&text)).merged(), &applied);
+        assert_eq!(Layers::read(Some(&text), Some(&empty)).merged(), &applied);
+    }
+
+    #[test]
+    fn the_persons_workspace_apps_replace_the_machines_whole() {
+        let machine = "format = 1\n[workspaces.apps]\n\"org.mozilla.firefox\" = 1\n";
+        let person = "format = 1\n[workspaces.apps]\n\"org.gimp.GIMP\" = 2\n";
+        let layers = Layers::read(Some(machine), Some(person));
+        assert_eq!(
+            value_at(layers.merged(), "workspaces.apps"),
+            Some(value_from_arg(r#"{ "org.gimp.GIMP" = 2 }"#))
+        );
+    }
+
+    #[test]
+    fn a_display_is_merged_field_by_field() {
+        let machine = "format = 1\n[displays.DP-1]\nscale = 1.25\n";
+        let person = "format = 1\n[displays.DP-1]\nposition = [0, 0]\n";
+        let layers = Layers::read(Some(machine), Some(person));
+        assert_eq!(
+            value_at(layers.merged(), "displays.DP-1.scale"),
+            Some(Value::Float(1.25))
+        );
+        assert_eq!(
+            value_at(layers.merged(), "displays.DP-1.position"),
+            Some(value_from_arg("[0, 0]"))
+        );
+    }
+
+    #[test]
+    fn shortcuts_are_merged_by_name() {
+        let machine = "format = 1\n[shortcuts]\nclose_window = \"Super+W\"\n";
+        let person = "format = 1\n[shortcuts]\nopen_terminal = \"Super+T\"\n";
+        let layers = Layers::read(Some(machine), Some(person));
+        assert_eq!(
+            value_at(layers.merged(), "shortcuts.close_window"),
+            Some(Value::String("Super+W".into()))
+        );
+        assert_eq!(
+            value_at(layers.merged(), "shortcuts.open_terminal"),
+            Some(Value::String("Super+T".into()))
+        );
+    }
+
+    #[test]
+    fn a_list_the_person_sets_replaces_the_machines_whole() {
+        let machine = "format = 1\n[apps]\ninstalled = [\"io.mpv.Mpv\"]\n";
+        let person = "format = 1\n[apps]\ninstalled = [\"org.gimp.GIMP\"]\n";
+        let layers = Layers::read(Some(machine), Some(person));
+        assert_eq!(
+            value_at(layers.merged(), "apps.installed"),
+            Some(value_from_arg(r#"["org.gimp.GIMP"]"#))
+        );
+    }
+
+    #[test]
+    fn only_the_tables_the_keys_keep_whole_are_replaced_whole() {
+        for path in [
+            "workspaces.apps",
+            "lock_screen.looks.home",
+            "themes.earth",
+            "presets.mine",
+        ] {
+            assert!(replaced_whole(path), "{path} is kept whole");
+        }
+        for path in [
+            "lock_screen.looks",
+            "displays.DP-1",
+            "shortcuts",
+            "appearance.colours",
+            "apps.camera",
+            "appearance",
+            "layout",
+        ] {
+            assert!(!replaced_whole(path), "{path} is merged by name");
+        }
     }
 
     #[test]

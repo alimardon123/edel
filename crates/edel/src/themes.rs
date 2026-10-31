@@ -142,26 +142,8 @@ fn merged_table(own: &Appearance, theme: &Appearance) -> Option<Table> {
     for key in NOT_IN_A_THEME {
         values.remove(*key);
     }
-    merge(&mut merged, values);
+    settings::lay_under_all(&mut merged, values);
     Some(merged)
-}
-
-/// Lays `theme` under `own`, table by table: a key `own` has stays. Also
-/// how an own preset's keys lay under the file's (M5.17).
-pub(crate) fn merge(own: &mut Table, theme: Table) {
-    for (key, value) in theme {
-        match own.get_mut(&key) {
-            Some(Value::Table(inner)) => {
-                if let Value::Table(theirs) = value {
-                    merge(inner, theirs);
-                }
-            }
-            Some(_) => {}
-            None => {
-                own.insert(key, value);
-            }
-        }
-    }
 }
 
 /// `own` with `theme`'s values under it ([`merged_table`]), as appearance

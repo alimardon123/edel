@@ -752,7 +752,7 @@ pub fn applied(file: &SettingsFile) -> SettingsFile {
     else {
         return file.clone();
     };
-    themes::merge(&mut layout, values);
+    settings::lay_under_all(&mut layout, values);
     layout.insert("preset".into(), Value::String(base_of(own)));
     let mut out = file.clone();
     if let Ok(layout) = Value::Table(layout).try_into() {
@@ -903,10 +903,10 @@ pub fn save_text(text: &str, below: Option<&str>, name: &str) -> Result<String> 
         .get(in_use)
         .or_else(|| machine.presets.get(in_use));
     let mut table = layout_table(&file.layout)?;
-    themes::merge(&mut table, layout_table(&machine.layout)?);
+    settings::lay_under_all(&mut table, layout_table(&machine.layout)?);
     let base = match own_in_use {
         Some(own) => {
-            themes::merge(&mut table, layout_table(&own.layout)?);
+            settings::lay_under_all(&mut table, layout_table(&own.layout)?);
             base_of(own)
         }
         None => if is_built_in(in_use) { in_use } else { DEFAULT }.to_string(),
