@@ -1634,6 +1634,33 @@ msgstr ""
 msgid "wrote {path} on the EFI system partition"
 msgstr ""
 
+msgid "erasing this machine's accounts, files and settings, as a factory reset asked"
+msgstr ""
+
+msgid "the factory reset could not take out {what}"
+msgstr ""
+
+msgid "the factory reset is done: {count} entries taken out, the default apps kept; this start is a first start"
+msgstr ""
+
+msgid "this system runs from a stick, which keeps nothing to reset; to erase a disk completely, install Edel OS on it with edel install"
+msgstr ""
+
+msgid "A factory reset erases every account, every person's files, this machine's settings, developer mode's changes and the add-ons in use, and restarts. The default apps and the version of Edel OS stay, so the machine starts as new, offline too, and can still roll back."
+msgstr ""
+
+msgid "this machine has no name in /etc/hostname to confirm with; nothing was erased"
+msgstr ""
+
+msgid "To erase everything, type this machine's name, {name}"
+msgstr ""
+
+msgid "that is not this machine's name, {name}; nothing was erased"
+msgstr ""
+
+msgid "The machine restarts now and erases everything as it starts."
+msgstr ""
+
 msgid "an update waits for a restart"
 msgstr ""
 
@@ -3279,6 +3306,12 @@ msgid "Do what updates.automatic says: nothing, check, install, or install and r
 msgstr ""
 
 msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"
+msgstr ""
+
+msgid "Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new"
+msgstr ""
+
+msgid "Erase without asking for the machine's name, for scripts"
 msgstr ""
 
 msgid "Show whether the machine is up to date, its data encrypted and its firewall on, then the version running now and the one in the other slot, the desktop's effect tier while a session runs, and which log to read when the last boot or desktop session went wrong"

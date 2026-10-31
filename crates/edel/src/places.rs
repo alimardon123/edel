@@ -87,6 +87,15 @@ pub const DEVELOPER_HELD: &str = data!("/developer/held");
 /// A reset waits here for the next start, which deletes the layer before
 /// mounting anything (M7.1).
 pub const DEVELOPER_RESET: &str = data!("/developer/reset");
+/// A factory reset waits here for the next start (M8.38): `edel boot
+/// mount-data` erases the data partition but the default apps, the
+/// add-ons' images and [`INSTALLED`] before mounting anything from it, and
+/// deletes this last, so a start cut short erases the rest at the next.
+pub const FACTORY_RESET: &str = data!("/edel/factory-reset");
+/// What a factory reset moved aside, deleted by a process of its own
+/// after the move, so the guard's watchdog never waits on a long erase;
+/// a start that finds it deletes it again (M8.38).
+pub const FACTORY_RESET_TRASH: &str = data!("/.edel-erasing");
 /// What developer mode is in this boot, written by `edel boot
 /// mount-data`: `on` or `held`; absent is off (M7.1).
 pub const DEVELOPER_NOW: &str = run!("/developer");
@@ -401,6 +410,9 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ),
         ("first_passwords", FIRST_PASSWORDS.to_string()),
         ("installed_mark", INSTALLED.to_string()),
+        ("default_apps", DEFAULT_APPS.to_string()),
+        ("factory_reset", FACTORY_RESET.to_string()),
+        ("factory_reset_trash", FACTORY_RESET_TRASH.to_string()),
         ("greeter_dir", GREETER_DIR.to_string()),
         ("greeter_sessions", GREETER_SESSIONS.to_string()),
         ("share_dir", SHARE_DIR.to_string()),

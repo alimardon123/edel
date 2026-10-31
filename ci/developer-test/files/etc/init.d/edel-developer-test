@@ -17,6 +17,11 @@
 #      developer mode.
 #   5. The reset deleted the layer and developer mode is off: hello and
 #      the package are gone, /usr is read-only again and apk add fails.
+#      Then a factory reset (M8.38): a file in root's home, a name set in
+#      the settings file, and a file each among the default apps and the
+#      add-ons, then edel factory-reset --yes, which restarts.
+#   6. The reset erased the file and the name, kept the other two, and
+#      deleted its request and, soon after, its trash.
 
 description="Edel OS developer mode test"
 
@@ -72,6 +77,7 @@ safe_start() {
 }
 
 start() {
+	. /usr/share/edel/places.sh
 	esp=/run/developer-test/esp
 	mkdir -p "$esp"
 	mount -t vfat -o iocharset=iso8859-1 "$(findfs LABEL=EDEL-ESP)" "$esp"
@@ -141,6 +147,32 @@ start() {
 		check "/usr read-only" read_only_usr || return 0
 		check "apk add to fail" apk_fails || return 0
 		check "no developer mode line" sh -c '! /usr/bin/edel status | grep -q "^developer mode:"' || return 0
+		echo mine >/root/factory-reset-test &&
+			mkdir -p "$default_apps" "$addons_dir" &&
+			touch "$default_apps/factory-reset-test" "$addons_dir/factory-reset-test" &&
+			/usr/bin/edel settings set network.hostname=reset-test && /usr/bin/edel settings apply ||
+			{ finish "FAIL: step 5 could not prepare the factory reset"; return 0; }
+		check "the name set" grep -qx reset-test /etc/hostname || return 0
+		check "factory-reset to refuse a wrong name" sh -c '! echo wrong | /usr/bin/edel factory-reset' || return 0
+		check "nothing asked after a wrong name" sh -c "[ ! -e $factory_reset ]" || return 0
+		echo 6 >"$esp/developer-test-step"
+		say "step 5 done, restarting for step 6 with a factory reset"
+		umount "$esp"
+		/usr/bin/edel factory-reset --yes || { finish "FAIL: step 5 factory-reset"; return 0; }
+		;;
+	6)
+		check "the request deleted" sh -c "[ ! -e $factory_reset ]" || return 0
+		check "root's file erased" sh -c '[ ! -e /root/factory-reset-test ]' || return 0
+		check "the name back to the image's" sh -c '! grep -qx reset-test /etc/hostname' || return 0
+		check "the default apps kept" test -e "$default_apps/factory-reset-test" || return 0
+		check "the add-ons kept" test -e "$addons_dir/factory-reset-test" || return 0
+		# The trash goes in a process of its own while the machine starts.
+		i=0
+		while [ -e "$factory_reset_trash" ] && [ "$i" -lt 60 ]; do
+			sleep 1
+			i=$((i + 1))
+		done
+		check "the trash deleted" sh -c "[ ! -e $factory_reset_trash ]" || return 0
 		finish PASS
 		;;
 	*)
