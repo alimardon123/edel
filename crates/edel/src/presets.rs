@@ -761,38 +761,6 @@ pub fn applied(file: &SettingsFile) -> SettingsFile {
     out
 }
 
-/// The value a preset in use gives `key` (a `layout.*` key), as the desktop
-/// applies it, the person's file over the machine's; None when no file names
-/// an own preset, so the caller reads each file's own value as before.
-pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
-    let path = key.strip_prefix("layout.")?;
-    // Most files name no own preset, and then nothing is parsed: this is asked
-    // at each drawing of a menu.
-    let names_some_preset = |text: Option<&str>| text.is_some_and(|text| text.contains("presets"));
-    if !names_some_preset(machine) && !names_some_preset(person) {
-        return None;
-    }
-    let read = |text: Option<&str>| text.and_then(|text| settings::read(text).ok());
-    let (machine, person) = (read(machine), read(person));
-    let names_one = [&machine, &person]
-        .into_iter()
-        .flatten()
-        .any(|read| !read.file.presets.is_empty());
-    if !names_one {
-        return None;
-    }
-    let person = person.map(|read| settings::in_use(&read.file));
-    let machine = machine.map(|read| settings::in_use(&read.file));
-    let value = [person, machine]
-        .into_iter()
-        .flatten()
-        .find_map(|file| settings::value_at(&file.layout, path))?;
-    Some(match value {
-        Value::String(text) => text,
-        other => other.to_string(),
-    })
-}
-
 /// What the file's own presets and the preset in use say wrong, one line each,
 /// as `edel settings check` gives them: a preset's name, a built-in name taken
 /// by a person's own preset, a preset based on another of the person's own
@@ -1673,26 +1641,6 @@ mod tests {
         assert_eq!(rows[7].title, "mine");
         assert_eq!(rows[7].base, "hive");
         assert!(rows[0].built_in && !rows[0].in_use);
-    }
-
-    #[test]
-    fn chosen_gives_an_own_presets_layout_value_and_none_without_one() {
-        assert_eq!(
-            chosen("layout.window_buttons", None, Some(MINE)).as_deref(),
-            Some("left")
-        );
-        assert_eq!(
-            chosen("layout.preset", None, Some(MINE)).as_deref(),
-            Some("hive")
-        );
-        assert_eq!(
-            chosen(
-                "layout.window_buttons",
-                None,
-                Some("format = 1\n[layout]\nwindow_buttons = \"right\"\n")
-            ),
-            None
-        );
     }
 
     #[test]

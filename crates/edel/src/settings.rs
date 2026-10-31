@@ -3444,9 +3444,10 @@ pub fn format(text: &str) -> Result<i64> {
 }
 
 /// Where a key's value comes from, in the order every reader resolves it
-/// (ADR-008): the person's own file, then the machine's, then a profile
-/// either file names (M7.6), else the release decides. Settings shows it
-/// on each row (M5.6b), as `edel settings get` does.
+/// (ADR-008): the person's own line, what the person's profile, own preset
+/// or theme gives, the machine's own line, what the machine's gives, else
+/// the release decides. Settings shows it on each row (M5.6b), as
+/// `edel settings get` does.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Source {
     /// The person's own file sets it.
@@ -3458,47 +3459,190 @@ pub enum Source {
     /// 2026-10-31: readers that skipped this showed a value the desktop
     /// does not use).
     Profile(Value),
-    /// None of those: the preset or the release decides.
+    /// Neither file sets it, and the own layout preset (M5.17) that one of
+    /// them names gives it, as [`in_use`] applies it.
+    Preset(Value),
+    /// Neither file sets it, and the theme one of them names gives it, built
+    /// in or the person's own (M5.12b6a), as [`in_use`] applies it.
+    Theme(Value),
+    /// None of those: the release decides.
     Release,
+}
+
+/// The machine's and the person's settings files as the desktop applies
+/// them (ADR-008, ADR-010): each read leniently, the person's laid over the
+/// machine's key by key through [`in_use`]. The one owner of "the person's
+/// file over the machine's" (the architecture review of 2026-10-31); the
+/// free functions [`source`], [`chosen`], [`texts`] and [`flag`] answer
+/// through it whenever a file names a profile, an own preset, a theme or a
+/// picture.
+pub struct Layers {
+    /// The machine's file, read leniently, not yet laid through [`in_use`].
+    machine: SettingsFile,
+    /// The person's file, read the same way.
+    person: SettingsFile,
+    /// The two texts as TOML, the person's then the machine's, for the lines
+    /// [`Layers::source`] labels as theirs; none where a text is missing or
+    /// [`read`] refuses it.
+    raw: [Option<Table>; 2],
+    /// The two files through [`in_use`], the person's then the machine's,
+    /// made once: what the desktop applies.
+    applied: [SettingsFile; 2],
+}
+
+impl Layers {
+    /// Both files read: a missing text, or one [`read`] refuses, sets nothing.
+    pub fn read(machine: Option<&str>, person: Option<&str>) -> Layers {
+        let (machine, machine_raw) = read_one(machine);
+        let (person, person_raw) = read_one(person);
+        let applied = [in_use(&person), in_use(&machine)];
+        Layers {
+            machine,
+            person,
+            raw: [person_raw, machine_raw],
+            applied,
+        }
+    }
+
+    /// Where `key` comes from, in the order of [`Source`].
+    pub fn source(&self, key: &str) -> Source {
+        if let Some(value) = self.raw[0].as_ref().and_then(|t| table_value(t, key)) {
+            return Source::Person(value);
+        }
+        if let Some(source) = given(&self.person, key) {
+            return source;
+        }
+        if let Some(value) = self.raw[1].as_ref().and_then(|t| table_value(t, key)) {
+            return Source::Machine(value);
+        }
+        given(&self.machine, key).unwrap_or(Source::Release)
+    }
+
+    /// The value the desktop uses for `key`, as text; none when neither file
+    /// sets it.
+    pub fn chosen(&self, key: &str) -> Option<String> {
+        self.value(key).map(text_of)
+    }
+
+    /// The value the desktop uses for `key` as a list of texts; none when
+    /// neither file sets it, or the value is not a list of texts. An empty
+    /// list is a list.
+    pub fn texts(&self, key: &str) -> Option<Vec<String>> {
+        match self.value(key)? {
+            Value::Array(items) => items
+                .into_iter()
+                .map(|item| match item {
+                    Value::String(s) => Some(s),
+                    _ => None,
+                })
+                .collect(),
+            _ => None,
+        }
+    }
+
+    /// The value the desktop uses for `key` as a flag; none when neither
+    /// file sets it, or the value is not `true` or `false`.
+    pub fn flag(&self, key: &str) -> Option<bool> {
+        match self.value(key)? {
+            Value::Boolean(on) => Some(on),
+            _ => None,
+        }
+    }
+
+    /// `key` as the person's file in use sets it, else as the machine's.
+    fn value(&self, key: &str) -> Option<Value> {
+        self.applied.iter().find_map(|file| value_at(file, key))
+    }
+}
+
+/// A settings text read for [`Layers`]: the file as [`read`] leaves it, and
+/// the text as TOML. Empty when the text is missing or [`read`] refuses it.
+fn read_one(text: Option<&str>) -> (SettingsFile, Option<Table>) {
+    let Some(text) = text else {
+        return (SettingsFile::default(), None);
+    };
+    match read(text) {
+        Ok(read) => (read.file, toml::from_str(text).ok()),
+        Err(_) => (SettingsFile::default(), None),
+    }
+}
+
+/// The value at the dotted `key` of a settings table, as the text wrote it.
+fn table_value(table: &Table, key: &str) -> Option<Value> {
+    let mut parts = key.split('.');
+    let mut value = table.get(parts.next()?)?;
+    for part in parts {
+        value = value.as_table()?.get(part)?;
+    }
+    Some(value.clone())
+}
+
+/// A value as the text the readers show: a string as it is, else its TOML.
+fn text_of(value: Value) -> String {
+    match value {
+        Value::String(text) => text,
+        other => other.to_string(),
+    }
+}
+
+/// What one file's profile, own preset or theme gives `key` when the file's
+/// own line does not set it, as [`in_use`] lays them under the file. Each
+/// layer is laid on the one before, the order the desktop applies them.
+fn given(file: &SettingsFile, key: &str) -> Option<Source> {
+    let own = |layer: &SettingsFile| value_at(layer, key).filter(|_| value_at(file, key).is_none());
+    let profiled = crate::profiles::applied(file);
+    if let Some(value) = own(&profiled) {
+        return Some(Source::Profile(value));
+    }
+    let presetted = crate::presets::applied(&profiled);
+    if let Some(value) = own(&presetted) {
+        return Some(Source::Preset(value));
+    }
+    own(&crate::themes::themed(&presetted)).map(Source::Theme)
+}
+
+/// Whether no text names a profile, an own preset, a theme or a picture:
+/// then the files' own lines are all that applies, and the raw tables answer.
+/// A menu asks at each drawing, so this is the common case. `theme` counts
+/// only where it is not the end of `icon_theme` or `cursor_theme`: [`read`]
+/// drops an icon theme the machine lacks, which the raw line keeps.
+fn plain(text: &str) -> bool {
+    let theme = text
+        .match_indices("theme")
+        .any(|(at, _)| !text[..at].ends_with('_'));
+    !theme
+        && ["profiles", "presets", "pictures"]
+            .iter()
+            .all(|word| !text.contains(word))
+}
+
+/// Whether every given text is [`plain`].
+fn all_plain(machine: Option<&str>, person: Option<&str>) -> bool {
+    [machine, person].into_iter().flatten().all(plain)
+}
+
+/// Where `key` comes from as the files' own lines say it, the person's
+/// first; for texts that are [`plain`], where [`Layers`] gives the same.
+fn raw_source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source {
+    let line = |text: Option<&str>| -> Option<Value> {
+        let table: Table = toml::from_str(text?).ok()?;
+        table_value(&table, key)
+    };
+    match (line(person), line(machine)) {
+        (Some(v), _) => Source::Person(v),
+        (None, Some(v)) => Source::Machine(v),
+        (None, None) => Source::Release,
+    }
 }
 
 /// Where `key` (such as `layout.preset`) comes from, given the machine's
 /// and the person's files' text; a file that is missing or not TOML sets
-/// nothing.
+/// nothing. See [`Layers::source`].
 pub fn source(key: &str, machine: Option<&str>, person: Option<&str>) -> Source {
-    let find = |text: Option<&str>| -> Option<Value> {
-        let table: Table = toml::from_str(text?).ok()?;
-        let mut value = Value::Table(table);
-        for part in key.split('.') {
-            value = value.as_table()?.get(part)?.clone();
-        }
-        Some(value)
-    };
-    // A profile's value, from the person's file and then the machine's.
-    // Most files name no profile, and then nothing more is parsed: this is
-    // asked at each drawing of a menu.
-    let profile = |text: Option<&str>| -> Option<Value> {
-        let text = text.filter(|text| text.contains("profiles"))?;
-        let file = read(text).ok()?.file;
-        if file
-            .system
-            .profiles
-            .as_deref()
-            .unwrap_or_default()
-            .is_empty()
-        {
-            return None;
-        }
-        value_at(&crate::profiles::applied(&file), key)
-    };
-    match (find(person), find(machine)) {
-        (Some(v), _) => Source::Person(v),
-        (None, Some(v)) => Source::Machine(v),
-        (None, None) => match profile(person).or_else(|| profile(machine)) {
-            Some(v) => Source::Profile(v),
-            None => Source::Release,
-        },
+    if all_plain(machine, person) {
+        return raw_source(key, machine, person);
     }
+    Layers::read(machine, person).source(key)
 }
 
 /// The values a choice key takes, as the key table lists them, so every
@@ -3553,22 +3697,13 @@ pub fn on_machine(key: &str) -> Option<String> {
 /// `key`'s value as the files say it now: the person's file over the
 /// machine's, as a string; none when neither sets it.
 pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
-    // A value a theme gives comes first, as the tokens take it (M5.12b6a);
-    // with no theme in the files this is the value each file says.
-    if let Some(value) = crate::themes::chosen(key, machine, person) {
-        return Some(value);
+    if all_plain(machine, person) {
+        return match raw_source(key, machine, person) {
+            Source::Person(value) | Source::Machine(value) => Some(text_of(value)),
+            _ => None,
+        };
     }
-    // A layout value an own preset gives, as the preset in use applies it (M5.17).
-    if let Some(value) = crate::presets::chosen(key, machine, person) {
-        return Some(value);
-    }
-    match source(key, machine, person) {
-        Source::Person(value) | Source::Machine(value) | Source::Profile(value) => match value {
-            Value::String(s) => Some(s),
-            other => Some(other.to_string()),
-        },
-        Source::Release => None,
-    }
+    Layers::read(machine, person).chosen(key)
 }
 
 /// The key what closing the lid does is kept under (M7.8), the one name
@@ -3788,10 +3923,13 @@ pub fn texts(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<V
             .collect(),
         _ => None,
     };
-    match source(key, machine, person) {
-        Source::Person(value) | Source::Machine(value) | Source::Profile(value) => list(value),
-        Source::Release => None,
+    if all_plain(machine, person) {
+        return match raw_source(key, machine, person) {
+            Source::Person(value) | Source::Machine(value) => list(value),
+            _ => None,
+        };
     }
+    Layers::read(machine, person).texts(key)
 }
 
 /// The apps kept in the panel after `app` is kept (appended, once) or taken
@@ -3821,12 +3959,13 @@ pub fn tray_value(list: &[String], machine: Option<&str>) -> Option<String> {
 /// `key`'s value as a flag, the person's file over the machine's; none
 /// when neither sets it, or what they say is not `true` or `false`.
 pub fn flag(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<bool> {
-    match source(key, machine, person) {
-        Source::Person(Value::Boolean(on))
-        | Source::Machine(Value::Boolean(on))
-        | Source::Profile(Value::Boolean(on)) => Some(on),
-        _ => None,
+    if all_plain(machine, person) {
+        return match raw_source(key, machine, person) {
+            Source::Person(Value::Boolean(on)) | Source::Machine(Value::Boolean(on)) => Some(on),
+            _ => None,
+        };
     }
+    Layers::read(machine, person).flag(key)
 }
 
 /// Sets `key` to `value` in the settings file at `path`, or takes it out
@@ -5796,6 +5935,96 @@ mod tests {
         assert_eq!(
             source("power.game_mode", Some("format = 1\n"), None),
             Source::Release
+        );
+    }
+
+    #[test]
+    fn a_persons_own_preset_comes_before_a_machine_line() {
+        let machine = "format = 1\n[layout]\ntiling = false\n";
+        let person = "format = 1\n[layout]\npreset = \"mine\"\n\n[presets.mine]\npreset = \"classic\"\ntiling = true\n";
+        assert_eq!(
+            source("layout.tiling", Some(machine), Some(person)),
+            Source::Preset(Value::Boolean(true))
+        );
+        assert_eq!(
+            chosen("layout.tiling", Some(machine), Some(person)).as_deref(),
+            Some("true")
+        );
+        // The machine's line still answers when the person's preset says nothing.
+        assert_eq!(
+            source("layout.tiling", Some(machine), None),
+            Source::Machine(Value::Boolean(false))
+        );
+    }
+
+    #[test]
+    fn a_built_in_theme_gives_its_values_as_the_theme() {
+        let person = "format = 1\n[appearance]\ntheme = \"earth\"\n";
+        let given = match source("appearance.radius", None, Some(person)) {
+            Source::Theme(value) => value,
+            other => panic!("expected the theme's value, got {other:?}"),
+        };
+        assert_eq!(given, Value::Integer(12));
+        assert_eq!(
+            chosen("appearance.radius", None, Some(person)),
+            Some("12".to_string())
+        );
+    }
+
+    #[test]
+    fn plain_files_answer_the_same_through_both_paths() {
+        let machine = "format = 1\n[layout]\ntiling = false\n[sound]\nlow_latency = true\n";
+        let person = "format = 1\n[layout]\npreset = \"hive\"\n";
+        let texts = [
+            (Some(machine), None),
+            (None, Some(person)),
+            (Some(machine), Some(person)),
+            (Some("not toml ["), None),
+        ];
+        for (machine, person) in texts {
+            let layers = Layers::read(machine, person);
+            for key in [
+                "layout.tiling",
+                "layout.preset",
+                "sound.low_latency",
+                "panels.list",
+            ] {
+                assert_eq!(source(key, machine, person), layers.source(key), "{key}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_persons_own_preset_gives_the_layout_value_and_the_lines_without_one() {
+        let mine = "format = 1\n# my desk\n[appearance]\naccent = \"blue\"\n\n[layout]\npreset = \"mine\"\ntiling = true\n\n[presets.mine]\npreset = \"hive\"\nwindow_buttons = \"left\"\n";
+        assert_eq!(
+            chosen("layout.window_buttons", None, Some(mine)).as_deref(),
+            Some("left")
+        );
+        assert_eq!(
+            chosen("layout.preset", None, Some(mine)).as_deref(),
+            Some("hive")
+        );
+        assert_eq!(
+            chosen(
+                "layout.window_buttons",
+                None,
+                Some("format = 1\n[layout]\nwindow_buttons = \"right\"\n")
+            ),
+            Some("right".to_string())
+        );
+    }
+
+    #[test]
+    fn a_theme_gives_its_value_and_none_without_a_theme() {
+        let person = "format = 1\n[appearance]\ntheme = \"aurora\"\n";
+        assert_eq!(
+            chosen("appearance.accent", None, Some(person)).as_deref(),
+            Some("wallpaper")
+        );
+        assert_eq!(
+            chosen("appearance.accent", None, Some("format = 1\n")),
+            None
         );
     }
 

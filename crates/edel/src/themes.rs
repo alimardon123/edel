@@ -429,45 +429,6 @@ pub fn rows(file: &SettingsFile) -> Vec<Row> {
         .collect()
 }
 
-/// The value a theme gives `key` (an `appearance.*` key) in the files, the
-/// person's over the machine's, when a file names a theme; None when no file
-/// does, so the caller reads each file's own value as before. Colour tokens
-/// are looked up by their path, as the tokens take them.
-pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
-    key.strip_prefix("appearance.")?;
-    // Most files name no theme, and then nothing is parsed: this is asked at
-    // each drawing of a menu, so the common case costs a search of the text.
-    let names_some_theme = |text: Option<&str>| {
-        text.is_some_and(|text| text.contains("theme") || text.contains("pictures"))
-    };
-    if !names_some_theme(machine) && !names_some_theme(person) {
-        return None;
-    }
-    let read = |text: Option<&str>| text.and_then(|text| settings::read(text).ok());
-    let (machine, person) = (read(machine), read(person));
-    let names_a_theme = [&machine, &person].into_iter().flatten().any(|read| {
-        read.file.appearance.theme.is_some() || read.file.appearance.pictures.is_some()
-    });
-    if !names_a_theme {
-        return None;
-    }
-    let person = person.map(|read| settings::in_use(&read.file));
-    let machine = machine.map(|read| settings::in_use(&read.file));
-    let value = person
-        .as_ref()
-        .and_then(|file| value_of(file, key))
-        .or_else(|| machine.as_ref().and_then(|file| value_of(file, key)))?;
-    Some(match value {
-        Value::String(text) => text,
-        other => other.to_string(),
-    })
-}
-
-/// The value of an `appearance.*` key in `file`, by its path.
-fn value_of(file: &SettingsFile, key: &str) -> Option<Value> {
-    settings::value_at(&file.appearance, key.strip_prefix("appearance.")?)
-}
-
 /// `edel theme save NAME`, on a file's text: makes `[themes.NAME]` from the
 /// theme in use with the person's changes on top, its pictures the theme's
 /// (the person's wallpaper first, when it is not one of them), then sets
@@ -1181,19 +1142,6 @@ mod tests {
         let (tokens, _) =
             crate::tokens::load_from_files(crate::tokens::Scheme::Light, None, Some(over), None);
         assert_eq!(tokens.radius_window, 9);
-    }
-
-    #[test]
-    fn chosen_gives_the_theme_value_and_none_without_a_theme() {
-        let person = "format = 1\n[appearance]\ntheme = \"aurora\"\n";
-        assert_eq!(
-            chosen("appearance.accent", None, Some(person)).as_deref(),
-            Some("wallpaper")
-        );
-        assert_eq!(
-            chosen("appearance.accent", None, Some("format = 1\n")),
-            None
-        );
     }
 
     #[test]

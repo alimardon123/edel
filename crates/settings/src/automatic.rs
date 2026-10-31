@@ -218,8 +218,10 @@ fn show(ui: &Rc<Ui>) {
                 });
             }
         }
-        row.reset
-            .set_visible(!matches!(source, Source::Release | Source::Profile(_)));
+        row.reset.set_visible(!matches!(
+            source,
+            Source::Release | Source::Profile(_) | Source::Preset(_) | Source::Theme(_)
+        ));
     }
     // The hours matter only while updates restart by themselves.
     if let Some(row) = ui.holder.parent() {

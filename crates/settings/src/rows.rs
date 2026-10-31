@@ -798,6 +798,8 @@ pub fn describe(source: &Source, current: &str) -> String {
         Source::Person(_) => tr("Your choice").to_string(),
         Source::Machine(_) => tr("Set by this machine").to_string(),
         Source::Profile(_) => tr("From the profile").to_string(),
+        Source::Preset(_) => tr("From the preset").to_string(),
+        Source::Theme(_) => tr("From the theme").to_string(),
         Source::Release => trf("Automatic ({current})", &[("current", current)]),
     }
 }
@@ -820,6 +822,8 @@ pub fn note(source: &Source, from_preset: bool) -> Option<&'static str> {
         Source::Person(_) => Some(tr("Your choice")),
         Source::Machine(_) => Some(tr("Set by this machine")),
         Source::Profile(_) => Some(tr("From the profile")),
+        Source::Preset(_) => Some(tr("From the preset")),
+        Source::Theme(_) => Some(tr("From the theme")),
         Source::Release if from_preset => Some(tr("From the preset")),
         Source::Release => None,
     }
