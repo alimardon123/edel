@@ -1,0 +1,14 @@
+# The keyring (roadmap M7.18): oo7's Secret Service and Secret portal,
+# which the session's D-Bus starts only when an app first asks, opened by
+# a key of each person's own that edel boot keyring hands the session at
+# login (the login feature's PAM file), so nobody is asked for a password.
+format = 1
+summary = "Keyring: oo7 keeps apps' passwords in the person's home, started only when an app asks and opened at login with no prompt"
+why = "Browsers, Signal, mail and Git's credential helpers keep their passwords through the Secret Service, and Flatpak apps through the Secret portal; with neither, they store secrets in plain files or refuse, so a keyring is a basic, not an extra. oo7 (Alpine's oo7-server and oo7-portal, about 7.6 MiB in Rust, needing only musl, libgcc and D-Bus) serves both, against gnome-keyring, which brings gcr and GTK 3, tens of MiB more on the stick. The session's D-Bus starts each only when an app first asks, so nothing runs while nobody uses it. Each keyring is a file in the person's home on the data partition, so it survives every update and rollback and M7.10h's backup carries it. It opens with a random key of the person's own, never their password, so changing a password changes nothing: edel boot keyring makes the key once in the data partition, root's alone, copies it for the session as the login opens it (pam_exec, the login feature's PAM file) and takes the copy out as it closes, and becomes the daemon with the key on its standard input when D-Bus starts it. Whoever holds the disk unencrypted could read it, as they could the person's files; the data partition's encryption, offered at install, covers that (Claude's default of 2026-10-31, put to Alimardon with the other two ways: a prompt at first use, or gnome-keyring running from login)."
+packages = ["oo7-server", "oo7-portal"]
+
+# The basics checklist (M6.7): each row is proved by its desktop-test case or marked.
+
+[[basics]]
+name = "Apps keep their passwords"
+test = "keyring"

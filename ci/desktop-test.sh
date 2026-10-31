@@ -225,6 +225,9 @@
 #               card token's colour; kept as updates.png (M5.8c); the
 #               About page (edel-settings --page about) likewise, kept
 #               as about.png (M5.8d)
+#   keyring     oo7's daemon absent until a secret is stored as ci, then
+#               running, opened by the session's key; stopped, the next
+#               ask starts it again and reads the same secret (M7.18)
 #   tray        a StatusNotifierItem from edel-testclient --sni (a
 #               #33aa66 pixmap) registers with shell-ui's watcher and its
 #               icon lies in the panel's tray; AT-SPI names it, a click
@@ -6318,6 +6321,39 @@ case_frame_rate() {
 	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on a game's frames had p99 $3 ms, $1 times its median $2 ms (budget $limit times); Super+Shift+G hid it"
 }
 
+case_keyring() {
+	# The keyring (M7.18): oo7's daemon does not run before an app asks;
+	# a secret stored as ci through the Secret Service starts it, opened
+	# with no prompt by the key the login handed the session; stopped, the
+	# next ask starts it again with the same key, and the secret, kept in
+	# ci's home, reads back the same.
+	asked=$(count 'DESKTOP-TEST: keyring_running ')
+	guest 'keyring running'
+	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
+	[ "$(value keyring_running)" = no ] || fail "oo7-daemon ran before any app asked for the keyring"
+	asked=$(count 'DESKTOP-TEST: keyring_store ')
+	guest 'keyring store'
+	wait_more 'DESKTOP-TEST: keyring_store ' "$asked" 60 || fail "the service did not store a secret"
+	case "$(value keyring_store)" in
+	"0 "* | 0) ;;
+	*) fail "oo7-cli store failed as ci: $(value keyring_store)" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: keyring_running ')
+	guest 'keyring running'
+	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
+	[ "$(value keyring_running)" = yes ] || fail "no oo7-daemon runs after a secret was stored"
+	asked=$(count 'DESKTOP-TEST: keyring_stopped ')
+	guest 'keyring stop'
+	wait_more 'DESKTOP-TEST: keyring_stopped ' "$asked" || fail "the service did not stop the keyring"
+	[ "$(value keyring_stopped)" = yes ] || fail "oo7-daemon did not stop"
+	asked=$(count 'DESKTOP-TEST: keyring_lookup ')
+	guest 'keyring lookup'
+	wait_more 'DESKTOP-TEST: keyring_lookup ' "$asked" 60 || fail "the service did not read the secret back"
+	got=$(value keyring_lookup | sed 's/ *$//')
+	[ "$got" = edel-keyring-test ] || fail "the keyring, started again, did not give back the secret: $got"
+	echo "PASS: no keyring ran before an app asked; a secret stored as ci started oo7, opened with no prompt by the session's key, and after the daemon stopped, the next ask started it again and read the same secret back"
+}
+
 case_portal() {
 	# The settings portal (M5.5a): an app asking xdg-desktop-portal for
 	# the colour scheme and the accent hears shell-ui's answer, from the
@@ -9832,7 +9868,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal keyring own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

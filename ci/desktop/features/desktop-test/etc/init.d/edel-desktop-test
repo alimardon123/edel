@@ -508,6 +508,26 @@ commands() {
 		# The settings portal (M5.5a): what an app hears when it asks
 		# xdg-desktop-portal, which D-Bus starts on this first call, for the
 		# colour scheme and the accent.
+		# The keyring (M7.18): whether its daemon runs, a secret stored and
+		# read back as ci through the Secret Service with oo7-cli, and the
+		# daemon stopped, so the next ask starts it again with the session's
+		# key.
+		'keyring running') say "keyring_running $(pgrep -x oo7-daemon >/dev/null && echo yes || echo no)" ;;
+		'keyring store')
+			bus=$(session_bus)
+			printf edel-keyring-test | as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' oo7-cli store CI edel=ci" >/tmp/keyring.log 2>&1
+			say "keyring_store $? $(tr '\n' ' ' </tmp/keyring.log)"
+			;;
+		'keyring lookup')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' oo7-cli lookup --secret-only edel=ci" </dev/null 2>&1 | tr '\n' ' ')
+			say "keyring_lookup $out"
+			;;
+		'keyring stop')
+			pkill -x oo7-daemon
+			sleep 1
+			say "keyring_stopped $(pgrep -x oo7-daemon >/dev/null && echo no || echo yes)"
+			;;
 		'portal read')
 			bus=$(session_bus)
 			for key in color-scheme accent-color; do
