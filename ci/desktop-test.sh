@@ -6414,7 +6414,9 @@ taps_place() {
 		others = [w for w in windows if w is not me and w["workspace"] == me["workspace"]]
 		def covered(x, y):
 		    return any(o["x"] <= x < o["x"] + o["width"] and o["y"] <= y < o["y"] + o["height"] for o in others)
-		spots = [(me["x"] + me["width"] * a // 4, me["y"] + me["height"] * b // 4) for a in (1, 2, 3) for b in (1, 2, 3)]
+		# Every 8 px across the window, as a newer window cascades only
+		# 32 px over it and leaves just a strip along its top and left.
+		spots = [(me["x"] + a, me["y"] + b) for b in range(8, me["height"], 8) for a in range(8, me["width"], 8)]
 		free = [s for s in spots if not covered(*s)]
 		at = f"{free[0][0]},{free[0][1]}" if free else "none"
 		print(me["x"], me["y"], me["width"], me["height"], at, "focused" if me["focused"] else "unfocused")
