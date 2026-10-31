@@ -143,9 +143,6 @@ pub const DOCK_PAD: f32 = 8.0;
 /// How much taller a dock is than the bar of its size, for bigger icons
 /// (M5.31c): a medium dock is 60 px high, as it was before sizes.
 pub const DOCK_EXTRA: u32 = 20;
-/// The corners' radius of a dock or a floating bar, in logical pixels:
-/// rounder than a bar's square edge, for bigger icons.
-const DOCK_RADIUS: f32 = 18.0;
 
 /// A panel's own height, without the fillets' strip, in logical pixels:
 /// the bar's height for its size, a dock's with its extra room (M5.31c).
@@ -772,7 +769,7 @@ pub fn paint(
     if card {
         // A card rounded all round, with the tokens' hairline inside its
         // edge, so it reads on any background.
-        let r = DOCK_RADIUS * s;
+        let r = tokens.radius_dock as f32 * s;
         fill(pixmap, 0.0, top, w, panel_h, r, tokens.edge);
         let (x, y, cw, ch, cr) = (s, top + s, w - 2.0 * s, panel_h - 2.0 * s, r - s);
         if let (Some((picture, scale, origin)), Some(shape)) = (glass, rounded(x, y, cw, ch, cr)) {

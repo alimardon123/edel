@@ -69,14 +69,6 @@ pub enum ButtonKind {
 
 /// The margin round a placed part's outline, logical pixels.
 pub const PART_PAD: f32 = 8.0;
-/// The corners of a part's outline, logical pixels.
-pub const PART_RADIUS: f32 = 12.0;
-/// The corners of the lock screen's picture in the edit mode.
-pub const PREVIEW_RADIUS: f32 = 18.0;
-/// The corners of a drawer's sheet.
-pub const SHEET_RADIUS: f32 = 24.0;
-/// The corners of a drawer tile.
-pub const TILE_RADIUS: f32 = 14.0;
 /// A tile's icon, logical pixels across; it sits in the tile's top 60 percent.
 pub const ICON: f32 = 22.0;
 /// A button's height on a desktop and on a touch screen (Compact).
@@ -113,9 +105,6 @@ const GLASS_GLOW: f32 = 1.0;
 /// how strong it is at the foot (the shadow colour's alpha there).
 const SHADE_FROM: f32 = 0.45;
 const SHADE: f32 = 0.5;
-/// The corners of the glass picture, and of a glass side panel (M5.10c7f).
-const STAGE_RADIUS: f32 = 16.0;
-const SIDE_RADIUS: f32 = 18.0;
 /// A side panel's fill and hairline, white at these shares (M5.10c7f).
 const SIDE_FILL: f32 = 0.05;
 const SIDE_EDGE: f32 = 0.09;
@@ -126,7 +115,6 @@ const STAGE_EDGE: f32 = 0.12;
 /// percent just outside it.
 const MARK_RING: f32 = 1.5;
 const MARK_HALO: f32 = 4.0;
-const MARK_RADIUS: f32 = 16.0;
 const MARK_RING_SHARE: f32 = 0.9;
 /// The glass slider's track (`slider`, M5.10c7g): 4 px high, its rest white at
 /// 18 percent, and its knob 16 px across.
@@ -200,7 +188,7 @@ pub fn vacate(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, s: f32) {
         a: 0.94,
         ..tokens.lock_backdrop_deep
     };
-    fill(pixmap, x, y, w, h, PART_RADIUS * s, base);
+    fill(pixmap, x, y, w, h, tokens.radius_menu as f32 * s, base);
 }
 
 /// Strokes the rounded rectangle `rect` (device pixels) inside its edge,
@@ -261,7 +249,7 @@ pub fn stage(
         lock::glow(pixmap, centre, reach, tokens.lock_edit_glow, GLASS_GLOW, ph);
         shade_below(pixmap, screen, tokens, s);
     }
-    lock::lift(pixmap, preview, picture_corner(style), s, tokens);
+    lock::lift(pixmap, preview, picture_corner(style, tokens), s, tokens);
 }
 
 /// Darkens the stage's lower part, as the mockup's backdrop settles there
@@ -297,13 +285,13 @@ fn shade_below(pixmap: &mut Pixmap, screen: Rect, tokens: &Tokens, s: f32) {
     }
 }
 
-/// The corners of the picture in `style` (logical pixels): `STAGE_RADIUS` on
-/// the glass, `PREVIEW_RADIUS` on the desktop.
-fn picture_corner(style: Style) -> f32 {
+/// The corners of the picture in `style` (logical pixels): `radius_card` on
+/// the glass, `radius_dock` on the desktop.
+fn picture_corner(style: Style, tokens: &Tokens) -> f32 {
     if style.glass {
-        STAGE_RADIUS * style.scale
+        tokens.radius_card as f32 * style.scale
     } else {
-        PREVIEW_RADIUS * style.scale
+        tokens.radius_dock as f32 * style.scale
     }
 }
 
@@ -333,7 +321,7 @@ pub fn stage_frame(
         ..tiny_skia::PixmapPaint::default()
     };
     layer.draw_pixmap(0, 0, picture.as_ref(), &smooth, scale, None);
-    let radius = picture_corner(style) * s;
+    let radius = picture_corner(style, tokens) * s;
     if let Some(mut mask) = tiny_skia::Mask::new(pw, ph) {
         if let Some(path) = paint::rounded(0.0, 0.0, pw as f32, ph as f32, radius) {
             mask.fill_path(&path, FillRule::Winding, true, Transform::identity());
@@ -364,7 +352,7 @@ pub fn stage_frame(
 /// of white at `SIDE_EDGE`, and no shadow. Draws nothing outside `r`.
 pub fn side_panel(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, s: f32) {
     let (x, y, w, h) = r.device(s);
-    let radius = SIDE_RADIUS * s;
+    let radius = tokens.radius_dock as f32 * s;
     let fill_colour = Colour {
         a: SIDE_FILL,
         ..tokens.backdrop_text
@@ -500,7 +488,7 @@ pub fn outline_part(
 ) {
     let ink = inks(style, tokens);
     let area = part_area(r);
-    let radius = PART_RADIUS * style.scale;
+    let radius = tokens.radius_menu as f32 * style.scale;
     let device = area.device(s);
     let (x, y, w, h) = device;
     match state {
@@ -623,7 +611,7 @@ pub fn guides(pixmap: &mut Pixmap, lines: &[Guide], clip: Rect, tokens: &Tokens,
 /// the edge colour. Both have `SHEET_RADIUS` corners. Draws nothing outside `r`.
 pub fn sheet(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, style: Style, s: f32) {
     let (x, y, w, h) = r.device(s);
-    let radius = style.corner(SHEET_RADIUS, s);
+    let radius = style.corner(tokens.radius_sheet as f32, s);
     if style.glass {
         let base = Colour {
             a: GLASS_BASE,
@@ -675,7 +663,7 @@ pub fn tile(
         ..c
     };
     let (x, y, w, h) = r.device(s);
-    let radius = style.corner(TILE_RADIUS, s);
+    let radius = style.corner(tokens.radius_tile as f32, s);
     fill(pixmap, x, y, w, h, radius, alpha(ink.raised));
     if state == State::Hover || state == State::Focus {
         let over = if style.glass {
@@ -705,7 +693,7 @@ pub fn tile(
         text.draw(pixmap, &mut line, at, baseline, alpha(ink.text));
     }
     if state == State::Focus {
-        popup::focus_ring(pixmap, r, TILE_RADIUS, s, tokens);
+        popup::focus_ring(pixmap, r, tokens.radius_tile as f32, s, tokens);
     }
 }
 
@@ -804,7 +792,7 @@ pub fn mark_part(
     s: f32,
 ) {
     let ink = inks(style, tokens);
-    let radius = MARK_RADIUS * style.scale;
+    let radius = tokens.radius_card as f32 * style.scale;
     match state {
         State::Rest => {}
         State::Hover => {
@@ -813,7 +801,7 @@ pub fn mark_part(
                 a: 0.25,
                 ..ink.text
             };
-            let corners = PART_RADIUS * style.scale * s;
+            let corners = tokens.radius_menu as f32 * style.scale * s;
             stroke(pixmap, (x, y, w, h), corners, LINE * s, faint, None);
         }
         State::Focus => {

@@ -300,7 +300,7 @@ pub struct Look<'a> {
 }
 
 /// The screen's width below which it is Compact (M5.6c's size classes).
-pub(crate) const COMPACT_BELOW: f32 = 600.0;
+pub(crate) const COMPACT_BELOW: f32 = edel::touch::COMPACT_BELOW as f32;
 /// The field's size: as wide as `FIELD_WIDE`, or the screen less 2 x
 /// `MARGIN`, and touch-sized (44 px) high; the go button 4 px inside its end.
 const FIELD_WIDE: f32 = 300.0;
@@ -336,8 +336,6 @@ const COUNT_HIGH: f32 = 36.0;
 const COUNT_TILE: f32 = 24.0;
 const COUNT_OVERLAP: f32 = 8.0;
 const COUNT_TEXT: f32 = 13.0;
-/// An app's tile in the count: a rounded square, as apps' icons are.
-const TILE_RADIUS: f32 = 7.0;
 pub const MOST_APPS: usize = 3;
 /// The battery part (M5.10c5c): the icon's side, the room between it and
 /// the percent, and the percent's words' size (the count's).
@@ -1748,7 +1746,7 @@ fn count(
             (ty - 1.5) * s,
             (COUNT_TILE + 3.0) * s,
             (COUNT_TILE + 3.0) * s,
-            (TILE_RADIUS + 1.5) * s,
+            (tokens.radius_control as f32 + 1.5) * s,
             mix(tokens.lock_backdrop_deep, tokens.lock_backdrop, 0.4),
         );
         let found = icons.as_deref_mut().and_then(|icons| {
@@ -1762,7 +1760,7 @@ fn count(
                 pixmap,
                 &picture,
                 (tx * s, ty * s, side, side),
-                TILE_RADIUS * s,
+                tokens.radius_control as f32 * s,
             ),
             None => {
                 fill(

@@ -33,8 +33,6 @@ use crate::paint::{Face, Text, fill, mix, outline};
 use crate::popup::{self, Card, Rect, dim, icon_in, veil};
 use crate::quick::Key;
 
-/// The corner radius of both cards, logical pixels.
-pub const RADIUS: f32 = 30.0;
 /// The room between the two cards, logical pixels.
 pub const CARD_GAP: f32 = 10.0;
 /// The room the count line takes above its own line, logical pixels.
@@ -458,14 +456,14 @@ pub fn layout(view: &View) -> Layout {
 
 /// The cards as the popup holds them, the notifications card first, the
 /// calendar's when it shows.
-pub fn cards(layout: &Layout) -> Vec<Card> {
+pub fn cards(layout: &Layout, tokens: &Tokens) -> Vec<Card> {
     layout
         .boxes
         .iter()
         .filter(|rect| rect.h > 0.0)
         .map(|&rect| Card {
             rect,
-            radius: RADIUS,
+            radius: tokens.radius_centre as f32,
         })
         .collect()
 }
@@ -726,7 +724,7 @@ pub fn paint(
 ) {
     let l = layout(view);
     let m = l.metrics;
-    popup::cards(pixmap, tokens, s, &cards(&l));
+    popup::cards(pixmap, tokens, s, &cards(&l, tokens));
     let (title_px, body_px, small_px) = sizes(tokens);
     let hovered = |part: Part| view.hover == Some(part);
     let focused = |part: Part| view.focus == Some(part);
@@ -803,7 +801,7 @@ pub fn paint(
             item,
             placed,
             (view.hover.and_then(on), view.focus.and_then(on)),
-            (true, notice::CARD_RADIUS),
+            (true, tokens.radius_notice as f32),
             view.compact,
             s,
         );
@@ -1054,8 +1052,8 @@ mod tests {
         assert_eq!(l.boxes[0], lw.boxes[0]);
         assert_eq!(l.size.1 as f32, l.boxes[0].h.ceil());
         assert!(l.size.1 < lw.size.1);
-        assert_eq!(cards(&l).len(), 1);
-        assert_eq!(cards(&lw).len(), 2);
+        assert_eq!(cards(&l, &Tokens::built_in()).len(), 1);
+        assert_eq!(cards(&lw, &Tokens::built_in()).len(), 2);
         // No month button to click, to tab to or to log.
         let (px, py) = (lw.prev.x + 1.0, lw.prev.y + 1.0);
         assert_eq!(hit(&lw, px, py), Some(Part::Prev));
@@ -1112,11 +1110,14 @@ mod tests {
         assert_eq!(a.y, 0.0);
         assert!((a.y + a.h + 10.0 - b.y).abs() < 0.01, "{a:?} {b:?}");
         assert_eq!(l.size.1, (b.y + b.h).ceil() as u32);
-        let held = cards(&l);
+        let held = cards(&l, &Tokens::built_in());
         assert_eq!(held.len(), 2);
         assert_eq!(held[0].rect, a);
         assert_eq!(held[1].rect, b);
-        assert!(held.iter().all(|c| c.radius == RADIUS));
+        assert!(
+            held.iter()
+                .all(|c| c.radius == Tokens::built_in().radius_centre as f32)
+        );
     }
 
     #[test]
@@ -1197,7 +1198,7 @@ mod tests {
             (list.y + list.h + CARD_GAP - cal.y).abs() < 0.01,
             "{list:?} {cal:?}"
         );
-        assert_eq!(cards(&l).len(), 2);
+        assert_eq!(cards(&l, &Tokens::built_in()).len(), 2);
     }
 
     #[test]
@@ -1207,7 +1208,7 @@ mod tests {
         assert_eq!(l.size, (360, 760));
         assert_eq!(l.boxes[0].h, 760.0);
         assert_eq!(l.boxes[1].h, 0.0);
-        assert_eq!(cards(&l).len(), 1);
+        assert_eq!(cards(&l, &Tokens::built_in()).len(), 1);
         assert!(!places(&l).contains("prev"));
     }
 

@@ -27,13 +27,6 @@ use crate::popup::{self, Rect, dim, icon_in, raised, veil};
 /// The lines a body keeps, here and in the centre.
 pub const BODY_LINES: usize = 2;
 
-/// The corner radius of a notification drawn as a card of its own (the
-/// centre's), logical pixels.
-pub const CARD_RADIUS: f32 = 20.0;
-
-/// The corner radius of the app's icon tile, logical pixels.
-const TILE_RADIUS: f32 = 5.0;
-
 /// The round of the close button's circle, logical pixels: it is drawn
 /// this size inside its touch-sized square.
 const CLOSE_CIRCLE: f32 = 22.0;
@@ -101,22 +94,25 @@ pub struct Metrics {
     pub button_gap: f32,
 }
 
+/// A finger's target on a Compact screen, logical pixels.
+const TOUCH: f32 = edel::touch::TARGET as f32;
+
 pub fn metrics(compact: bool) -> Metrics {
     if compact {
         Metrics {
             pad_x: 14.0,
             pad_y: 14.0,
-            head: 44.0,
+            head: TOUCH,
             tile: 28.0,
             icon: 24.0,
             name_gap: 8.0,
-            close: 44.0,
+            close: TOUCH,
             summary_gap: 10.0,
             summary: 22.0,
             body: 20.0,
             body_gap: 2.0,
             buttons_gap: 12.0,
-            button: 44.0,
+            button: TOUCH,
             button_gap: 8.0,
         }
     } else {
@@ -340,7 +336,15 @@ pub fn paint(
         }
     }
     if !drawn {
-        fill(pixmap, tx, ty, tw, th, TILE_RADIUS * s, tokens.accent);
+        fill(
+            pixmap,
+            tx,
+            ty,
+            tw,
+            th,
+            tokens.radius_small as f32 * s,
+            tokens.accent,
+        );
     }
     let (summary_px, body_px, button_px, app_px) = sizes(tokens);
     if let Some(text) = text.as_deref_mut() {
