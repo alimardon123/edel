@@ -42,9 +42,7 @@ use crate::status::{Link, Status};
 pub const WIDTH: u32 = 352;
 /// A screen narrower than this is Compact (M5.6c's size classes): the
 /// card is a sheet across the screen.
-pub const COMPACT_BELOW: u32 = 600;
-/// The card's corners, as the mockups draw them.
-pub const RADIUS: f32 = 50.0;
+pub const COMPACT_BELOW: u32 = edel::touch::COMPACT_BELOW;
 /// The most outputs the list shows.
 pub const MOST_OUTPUTS: usize = 6;
 /// A step of the volume on the keyboard, percent.
@@ -1214,7 +1212,7 @@ pub fn items(view: &View, layout: &Layout, origin: (f64, f64)) -> (Vec<Item>, Op
 
 /// The cards the popup draws: the player's (when there is one) and quick
 /// settings', each with `RADIUS` corners (M5.9d).
-pub fn cards(l: &Layout) -> Vec<Card> {
+pub fn cards(l: &Layout, tokens: &Tokens) -> Vec<Card> {
     let mut out = Vec::new();
     if let Some(player) = &l.player {
         // A pill, its corners half its height (M5.9i).
@@ -1225,7 +1223,7 @@ pub fn cards(l: &Layout) -> Vec<Card> {
     }
     out.push(Card {
         rect: l.quick,
-        radius: RADIUS,
+        radius: tokens.radius_quick as f32,
     });
     out
 }
@@ -1241,7 +1239,7 @@ pub fn paint(
 ) {
     let s = scale;
     let l = layout(view);
-    popup::cards(pixmap, tokens, s, &cards(&l));
+    popup::cards(pixmap, tokens, s, &cards(&l, tokens));
     for (i, (t, b)) in view.tiles.iter().zip(&l.tiles).enumerate() {
         if t.tile.pill() {
             pill_tile(pixmap, view, i, *b, tokens, text.as_deref_mut(), s);
@@ -2478,7 +2476,7 @@ mod tests {
         // The cover's row sits under the app's, centred at 64.
         assert_eq!(l.player.as_ref().unwrap().cover.middle(), 64.0);
         // A pill: its corners half its height.
-        assert_eq!(cards(&l)[0].radius, 60.0);
+        assert_eq!(cards(&l, &Tokens::built_in())[0].radius, 60.0);
     }
 
     #[test]
@@ -2713,7 +2711,7 @@ mod tests {
                         pixmap.width(),
                         pixmap.height(),
                         room,
-                        RADIUS * 2.0,
+                        tokens.radius_quick as f32 * 2.0,
                         &tokens,
                         2.0,
                     ) {

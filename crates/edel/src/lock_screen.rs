@@ -1834,7 +1834,7 @@ mod tests {
     /// on a compact screen (under 600 px) scaled to its width, since the
     /// clock's 420 px would not fit 360 px less the margins.
     fn lock_items(screen: (f32, f32), parts: &[Placed]) -> Vec<Item> {
-        let compact = screen.0 < 600.0;
+        let compact = screen.0 < crate::touch::COMPACT_BELOW as f32;
         let scale = if compact {
             ((screen.0 - 2.0 * MARGIN) / 420.0).min(1.0)
         } else {
@@ -2109,7 +2109,10 @@ mod tests {
                 ]);
             }
             // The arrangement the lock draws, at the screen's own size class.
-            let items = lock_items(screen, &classic(screen.0 < 600.0));
+            let items = lock_items(
+                screen,
+                &classic(screen.0 < crate::touch::COMPACT_BELOW as f32),
+            );
             run(&items);
         }
         assert_eq!(cases, SCREENS.len() * (9 * 2 + 81 + 9 + 1));
@@ -2118,7 +2121,7 @@ mod tests {
     #[test]
     fn classic_places_every_part_in_its_order() {
         for screen in SCREENS {
-            let parts = classic(screen.0 < 600.0);
+            let parts = classic(screen.0 < crate::touch::COMPACT_BELOW as f32);
             let keep_out = [corner(screen)];
             let out = arrange(screen, &lock_items(screen, &parts), &keep_out, GAP, MARGIN);
             check_layout(screen, &keep_out, &out);
@@ -2474,7 +2477,7 @@ mod tests {
     fn every_built_in_look_passes_the_check_and_stands_clear() {
         for name in LOOKS {
             for screen in [(1280.0, 800.0), (1920.0, 1080.0), (360.0, 740.0)] {
-                let compact = screen.0 < 600.0;
+                let compact = screen.0 < crate::touch::COMPACT_BELOW as f32;
                 let parts = look_parts(name, compact).expect(name);
                 assert!(
                     check(&parts).is_ok(),

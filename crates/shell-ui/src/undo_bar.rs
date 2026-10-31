@@ -28,7 +28,7 @@ const TEXT: f32 = 128.0;
 const PILL_WIDTH: f32 = 88.0;
 const PILL_WITH_KEYS: f32 = 136.0;
 const PILL: f32 = 36.0;
-const PILL_TOUCH: f32 = 44.0;
+const PILL_TOUCH: f32 = edel::touch::TARGET as f32;
 
 /// What the bar shows: whether the pointer is on Undo, the screen's width in
 /// logical pixels, 0 when unknown (a Compact screen's touch sizes), and the
@@ -89,10 +89,10 @@ pub fn layout(view: &View) -> Layout {
 }
 
 /// The card, with the menus' corners.
-pub fn cards(l: &Layout, _tokens: &Tokens) -> Vec<Card> {
+pub fn cards(l: &Layout, tokens: &Tokens) -> Vec<Card> {
     vec![Card {
         rect: l.card,
-        radius: edit_kit::SHEET_RADIUS,
+        radius: tokens.radius_sheet as f32,
     }]
 }
 

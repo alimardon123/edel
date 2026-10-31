@@ -89,7 +89,7 @@ pub const APP_ID: &str = "io.github.alimardon123.edel.Settings";
 
 /// Below this width, in sp, the sidebar folds away, and a group that lays
 /// itself out narrow folds too (`widgets::folding`).
-pub(crate) const NARROW_SP: f64 = 600.0;
+pub(crate) const NARROW_SP: f64 = edel::touch::COMPACT_BELOW as f64;
 
 /// The sidebar's width, in logical pixels, as the mockups draw it.
 const SIDEBAR: f64 = 204.0;
