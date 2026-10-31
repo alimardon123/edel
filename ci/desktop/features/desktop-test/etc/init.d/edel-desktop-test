@@ -515,8 +515,11 @@ commands() {
 		'keyring running') say "keyring_running $(pgrep -x oo7-daemon >/dev/null && echo yes || echo no)" ;;
 		'keyring store')
 			bus=$(session_bus)
-			printf edel-keyring-test | as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' oo7-cli store CI edel=ci" >/tmp/keyring.log 2>&1
-			say "keyring_store $? $(tr '\n' ' ' </tmp/keyring.log)"
+			printf edel-keyring-test | as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 30 oo7-cli store CI edel=ci" >/tmp/keyring.log 2>&1
+			stored=$?
+			# What the login and the daemon left, for a failed store.
+			[ "$stored" = 0 ] || say "keyring_diag keys: $(ls -ln "$keyring_keys" 2>&1 | tr '\n' ' ') run: $(ls -ln "$keyring_run" 2>&1 | tr '\n' ' ') daemon: $(pgrep -a oo7-daemon | tr '\n' ' ') logs: $(grep -ihE 'oo7|keyring|secret|pam_exec' "$session_log" /tmp/compositor.log /var/log/greetd.log "$system_log" /var/log/messages 2>/dev/null | tail -n 25 | tr '\n' '|')"
+			say "keyring_store $stored $(tr '\n' ' ' </tmp/keyring.log)"
 			;;
 		'keyring lookup')
 			bus=$(session_bus)
