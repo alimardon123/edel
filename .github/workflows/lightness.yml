@@ -1,0 +1,70 @@
+name: Lightness
+
+# How light Edel OS is beside Alpine and Debian (roadmap M10.7): each
+# system's server image booted from its own download in the same QEMU
+# machine, with no screen; its download, its seconds to the console's
+# first prompt and its memory in use at idle (ci/lightness.sh says how).
+# Started by hand from the Actions tab (Run workflow) and when a release
+# is published, never on a change, so it spends three runners only when
+# the numbers are wanted.
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lightness
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: Lightness ${{ matrix.system }}
+    runs-on: ubuntu-latest
+    # actions: read takes main's newest image.
+    permissions:
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        system: [edel, alpine, debian]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install QEMU and UEFI firmware
+        run: sh ci/apt.sh qemu-system-x86 ovmf
+
+      - name: Measure ${{ matrix.system }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh ci/lightness.sh ${{ matrix.system }}
+          {
+            echo "### Lightness: ${{ matrix.system }}"
+            echo
+            echo "One QEMU machine for every system: 1 GiB, 2 processors, UEFI, no screen. Memory is MemTotal less MemAvailable, in MiB, from the guest's virtio balloon driver, two minutes after the console's first prompt."
+            echo
+            echo "| System | Download (MiB) | Seconds to the first prompt | Memory at idle (MiB) |"
+            echo "|---|---|---|---|"
+            cat out/lightness/results.md
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the logs and samples
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-lightness-${{ matrix.system }}
+          if-no-files-found: ignore
+          path: |
+            out/lightness/*.samples
+            out/lightness/*.serial
+            out/lightness/results.md
