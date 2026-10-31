@@ -199,16 +199,12 @@ impl Files {
             .unwrap_or_default()
     }
 
-    /// The layout from the machine's keys with `person`'s laid over them,
-    /// the preset and the release under both.
-    fn layout_from(
-        machine_file: &settings::SettingsFile,
-        person_file: &settings::SettingsFile,
-    ) -> Layout {
-        let (machine, person) = (&machine_file.layout, &person_file.layout);
-        let (machine_spaces, person_spaces) = (&machine_file.workspaces, &person_file.workspaces);
-        let (machine_look, person_look) = (&machine_file.appearance, &person_file.appearance);
-        let chosen = person.preset.clone().or(machine.preset.clone());
+    /// The layout the desktop shows, from `merged`: the person's file laid
+    /// over the machine's ([`Files::layers`]), the preset and the release
+    /// under both.
+    fn layout_from(merged: &settings::SettingsFile) -> Layout {
+        let (layout, spaces, appearance) = (&merged.layout, &merged.workspaces, &merged.appearance);
+        let chosen = layout.preset.clone();
         let (preset, _) = presets::named(chosen.as_deref());
         let name = chosen
             .filter(|n| presets::NAMES.contains(&n.as_str()))
@@ -218,127 +214,89 @@ impl Files {
                 .filter(|v| crate::rows::values(key).contains(&v.as_str()))
                 .cloned()
         };
-        let title_bars = person.title_bars.as_ref().or(machine.title_bars.as_ref());
-        let buttons = person
-            .window_buttons
-            .as_ref()
-            .or(machine.window_buttons.as_ref());
-        let style = person
-            .tiling_style
-            .as_ref()
-            .or(machine.tiling_style.as_ref());
-        let look = person_look
-            .switcher_look
-            .as_ref()
-            .or(machine_look.switcher_look.as_ref());
-        let ends = person_look
-            .switcher_ends
-            .as_ref()
-            .or(machine_look.switcher_ends.as_ref());
         let most = presets::MOST_WORKSPACES as u32;
         let in_range = |n: u32| (1..=most).contains(&n);
         Layout {
             preset: name,
             // Filled in from the files as they say it (`named_preset`).
             named: String::new(),
-            tiling: person
+            tiling: layout
                 .tiling
-                .or(machine.tiling)
                 .unwrap_or(preset.windows.policy == Policy::Tiling),
             // Absent, the preset's title bars, else every window has its bar
             // (docs/settings.md, M5.18b).
-            title_bars: known("layout.title_bars", title_bars)
+            title_bars: known("layout.title_bars", layout.title_bars.as_ref())
                 .or_else(|| preset.windows.title_bars.map(|t| t.name().to_string()))
                 .unwrap_or_else(|| "always".to_string()),
-            window_buttons: known("layout.window_buttons", buttons)
+            window_buttons: known("layout.window_buttons", layout.window_buttons.as_ref())
                 .unwrap_or_else(|| preset.windows.buttons.name().to_string()),
             // Absent, the preset's style, else tiling stacks (docs/settings.md,
             // M5.18b).
-            tiling_style: known("layout.tiling_style", style)
+            tiling_style: known("layout.tiling_style", layout.tiling_style.as_ref())
                 .or_else(|| preset.windows.tiling_style.clone())
                 .unwrap_or_else(|| "stack".to_string()),
             // Absent, every bar shows each button (docs/settings.md).
-            close_button: person.close_button.or(machine.close_button).unwrap_or(true),
-            minimize_button: person
-                .minimize_button
-                .or(machine.minimize_button)
-                .unwrap_or(true),
-            maximize_button: person
-                .maximize_button
-                .or(machine.maximize_button)
-                .unwrap_or(true),
+            close_button: layout.close_button.unwrap_or(true),
+            minimize_button: layout.minimize_button.unwrap_or(true),
+            maximize_button: layout.maximize_button.unwrap_or(true),
             // Absent, the preset's count of workspaces (M5.2n); a number
             // out of range is the same as none.
-            workspaces: person_spaces
+            workspaces: spaces
                 .count
-                .or(machine_spaces.count)
                 .filter(|n| in_range(*n))
                 .unwrap_or(preset.workspaces.count as u32),
-            dynamic_workspaces: person_spaces
-                .dynamic
-                .or(machine_spaces.dynamic)
-                .unwrap_or(false),
-            workspaces_per_screen: person_spaces
-                .per_screen
-                .or(machine_spaces.per_screen)
-                .unwrap_or(false),
-            workspaces_look: known("appearance.switcher_look", look)
-                .unwrap_or_else(|| settings::SWITCHER_LOOK_DEFAULT.to_string()),
-            workspaces_shown: person_look
+            dynamic_workspaces: spaces.dynamic.unwrap_or(false),
+            workspaces_per_screen: spaces.per_screen.unwrap_or(false),
+            workspaces_look: known(
+                "appearance.switcher_look",
+                appearance.switcher_look.as_ref(),
+            )
+            .unwrap_or_else(|| settings::SWITCHER_LOOK_DEFAULT.to_string()),
+            workspaces_shown: appearance
                 .switcher_shown
-                .or(machine_look.switcher_shown)
                 .filter(|n| in_range(*n))
                 .unwrap_or(settings::SWITCHER_SHOWN_DEFAULT),
-            workspaces_ends: known("appearance.switcher_ends", ends)
-                .unwrap_or_else(|| settings::SWITCHER_ENDS_DEFAULT.to_string()),
-            // Absent, the strip lies on the left (M5.2j-b).
-            overview_strip: known(
-                "workspaces.overview_strip",
-                person_spaces
-                    .overview_strip
-                    .as_ref()
-                    .or(machine_spaces.overview_strip.as_ref()),
+            workspaces_ends: known(
+                "appearance.switcher_ends",
+                appearance.switcher_ends.as_ref(),
             )
-            .unwrap_or_else(|| settings::OVERVIEW_STRIP_DEFAULT.to_string()),
+            .unwrap_or_else(|| settings::SWITCHER_ENDS_DEFAULT.to_string()),
+            // Absent, the strip lies on the left (M5.2j-b).
+            overview_strip: known("workspaces.overview_strip", spaces.overview_strip.as_ref())
+                .unwrap_or_else(|| settings::OVERVIEW_STRIP_DEFAULT.to_string()),
             // The person's list or table is the whole one, not merged with
             // the machine's (M5.2n).
-            workspace_names: person_spaces
-                .names
-                .clone()
-                .or_else(|| machine_spaces.names.clone())
-                .unwrap_or_default(),
+            workspace_names: spaces.names.clone().unwrap_or_default(),
             // The same whole list rule, for each workspace's wallpaper
             // (M5.12b5); absent is Appearance's for every workspace.
-            workspace_wallpapers: person_spaces
-                .wallpapers
-                .clone()
-                .or_else(|| machine_spaces.wallpapers.clone())
-                .unwrap_or_default(),
-            app_workspaces: person_spaces
-                .apps
-                .clone()
-                .or_else(|| machine_spaces.apps.clone())
-                .unwrap_or_default(),
+            workspace_wallpapers: spaces.wallpapers.clone().unwrap_or_default(),
+            app_workspaces: spaces.apps.clone().unwrap_or_default(),
             // Absent, the release's choice (docs/settings.md).
-            mode: known(
-                "appearance.mode",
-                person_look.mode.as_ref().or(machine_look.mode.as_ref()),
-            )
-            .unwrap_or_else(|| release_value("appearance.mode")),
+            mode: known("appearance.mode", appearance.mode.as_ref())
+                .unwrap_or_else(|| release_value("appearance.mode")),
         }
     }
 
     /// The layout the desktop shows: the person's keys over the
     /// machine's, then the preset, Classic when none is chosen.
     pub fn layout(&self) -> Layout {
-        let machine = Self::file_of(Some(&self.machine));
-        let person = Self::file_of(self.person.as_ref());
-        let mut layout = Self::layout_from(&machine, &person);
+        let mut layout = Self::layout_from(self.layers().merged());
         layout.named = named_preset(
             &Self::raw_file_of(Some(&self.machine)),
             &Self::raw_file_of(self.person.as_ref()),
         );
         layout
+    }
+
+    /// Both files as the desktop applies them, each read once: what every
+    /// reader of "the person's file over the machine's" asks for
+    /// (`edel::settings::Layers`).
+    pub fn layers(&self) -> edel::settings::Layers {
+        let text = |path: Option<&PathBuf>| path.and_then(|p| std::fs::read_to_string(p).ok());
+        edel::settings::Layers::read(
+            text(Some(&self.machine)).as_deref(),
+            text(self.person.as_ref()).as_deref(),
+        )
     }
 
     /// The own presets the Layout page offers: the machine's and the
@@ -471,9 +429,12 @@ impl Files {
     /// The apps `startup.apps` names that apply (M6.10): the person's list
     /// over the machine's, which it replaces whole, else none.
     pub fn startup(&self) -> Vec<String> {
-        let machine = Self::raw_file_of(Some(&self.machine)).startup.apps;
-        let person = Self::raw_file_of(self.person.as_ref()).startup.apps;
-        person.or(machine).unwrap_or_default()
+        self.layers()
+            .merged()
+            .startup
+            .apps
+            .clone()
+            .unwrap_or_default()
     }
 
     /// Writes the person's `startup.apps` as `list` (M6.10), the whole list
@@ -481,9 +442,12 @@ impl Files {
     /// writers never write what would apply anyway (ADR-008), so an empty
     /// list goes only when the machine has none.
     pub fn choose_startup(&self, list: &[String]) -> Result<(), String> {
-        let machine = Self::raw_file_of(Some(&self.machine))
+        let machine = self
+            .layers()
+            .machine()
             .startup
             .apps
+            .clone()
             .unwrap_or_default();
         if list == machine.as_slice() {
             self.set("startup.apps", None)
@@ -500,7 +464,7 @@ impl Files {
         if key == "layout.preset" {
             return self.choose_preset(value);
         }
-        let machine = Self::file_of(Some(&self.machine));
+        let machine = Self::raw_file_of(Some(&self.machine));
         // Whether the person has the line is read from the file as written,
         // and what applies without it from that file with its own preset and
         // theme applied, so a value an own preset holds counts as applying
@@ -527,7 +491,8 @@ impl Files {
             "appearance.mode" => person.appearance.mode.take().is_some(),
             _ => return Err(format!("{key} is not a key these pages choose")),
         };
-        let without = Self::layout_from(&machine, &edel::settings::in_use(&person));
+        let without =
+            Self::layout_from(edel::settings::Layers::of(Some(&machine), Some(&person)).merged());
         match (without.value(key).as_deref() != Some(value), had) {
             (true, _) => self.set(key, Some(value)),
             (false, true) => self.set(key, None),
@@ -552,22 +517,7 @@ impl Files {
     /// Each screen's `[displays.NAME]` as the desktop follows it: the
     /// person's keys over the machine's, key by key.
     pub fn displays(&self) -> BTreeMap<String, settings::Display> {
-        let mut all = Self::read(Some(&self.machine))
-            .map(|f| f.displays)
-            .unwrap_or_default();
-        let person = Self::read(self.person.as_ref())
-            .map(|f| f.displays)
-            .unwrap_or_default();
-        for (name, own) in person {
-            let d = all.entry(name).or_default();
-            d.position = own.position.or(d.position);
-            d.scale = own.scale.or(d.scale);
-            d.resolution = own.resolution.or(d.resolution.take());
-            d.refresh_rate = own.refresh_rate.or(d.refresh_rate);
-            d.enabled = own.enabled.or(d.enabled);
-            d.rotation = own.rotation.or(d.rotation);
-        }
-        all
+        self.layers().merged().displays.clone()
     }
 
     /// Chooses `value` for `key`: written to the person's file, or taken
@@ -590,10 +540,8 @@ impl Files {
     /// The keys of `action` as the desktop follows them: the person's
     /// `[shortcuts]` over the machine's over the release's.
     pub fn shortcut(&self, action: &str) -> Option<String> {
-        let shortcuts = |path| Self::read(path).map(|f| f.shortcuts).unwrap_or_default();
-        let mut table = shortcuts(Some(&self.machine));
-        table.extend(shortcuts(self.person.as_ref()));
-        let (resolved, _) = edel::shortcuts::resolve(&table);
+        let layers = self.layers();
+        let (resolved, _) = edel::shortcuts::resolve(&layers.merged().shortcuts);
         resolved
             .into_iter()
             .find(|(a, _)| a.name == action)
@@ -605,10 +553,7 @@ impl Files {
     /// lines, the person's over them (M5.13b, the page's conflicts and
     /// the chords it writes).
     pub fn shortcut_table(&self) -> BTreeMap<String, String> {
-        let shortcuts = |path| Self::read(path).map(|f| f.shortcuts).unwrap_or_default();
-        let mut table = shortcuts(Some(&self.machine));
-        table.extend(shortcuts(self.person.as_ref()));
-        table
+        self.layers().merged().shortcuts.clone()
     }
 
     /// The value to write for `action`'s line once `keys` are chosen: the
@@ -1305,5 +1250,66 @@ mod tests {
         assert_eq!(title("classic"), "Classic");
         assert_eq!(title("mac-like"), "Mac-like");
         assert_eq!(title("windows-like"), "Windows-like");
+    }
+
+    #[test]
+    fn the_radius_slider_starts_from_the_theme_the_person_picks() {
+        // Earth gives 12 px corners (themes/earth.toml); the release gives 10.
+        let dir = scratch("radius-theme");
+        let machine = dir.join("machine.toml");
+        let person = dir.join("person.toml");
+        std::fs::write(&machine, "format = 1\n").unwrap();
+        std::fs::write(&person, "format = 1\n[appearance]\ntheme = \"earth\"\n").unwrap();
+        let files = Files {
+            machine,
+            person: Some(person),
+        };
+        assert_eq!(crate::shape::now(&files)[crate::shape::RADIUS], 12);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_own_themes_colour_shows_in_the_colours_the_rows_read() {
+        let dir = scratch("own-theme-colour");
+        let machine = dir.join("machine.toml");
+        let person = dir.join("person.toml");
+        std::fs::write(&machine, "format = 1\n").unwrap();
+        std::fs::write(
+            &person,
+            "format = 1\n[appearance]\ntheme = \"mine\"\n[themes.mine.colours]\npanel = \"#102030\"\n",
+        )
+        .unwrap();
+        let files = Files {
+            machine,
+            person: Some(person),
+        };
+        let colours = files.layers().merged().appearance.colours.clone();
+        let shown = crate::colours::listed(colours.as_ref());
+        assert!(
+            shown
+                .iter()
+                .any(|item| item.name == "panel" && item.value == "#102030")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_screens_keys_from_both_files_are_shown_together() {
+        // The machine places the screen, the person scales it: both show,
+        // each key from the file that sets it.
+        let dir = scratch("display-keys");
+        let machine = dir.join("machine.toml");
+        let person = dir.join("person.toml");
+        std::fs::write(&machine, "format = 1\n[displays.main]\nposition = [0, 0]\n").unwrap();
+        std::fs::write(&person, "format = 1\n[displays.main]\nscale = 1.5\n").unwrap();
+        let files = Files {
+            machine,
+            person: Some(person),
+        };
+        let shown = files.displays();
+        let main = shown.get("main").expect("the screen is shown");
+        assert_eq!(main.position, Some([0, 0]));
+        assert_eq!(main.scale, Some(1.5));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
