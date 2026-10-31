@@ -20,10 +20,17 @@ export CARGO_HOME=/src/.cargo-home CARGO_TARGET_DIR=/src/target
 # Flatpak's triggers build the default apps' icon, desktop and MIME caches
 # at install when these tools are there (M6.2a); pipewire-tools gives
 # apps/make-repo.sh the pw-record it puts in the test runtime (M6.14b),
-# and pulseaudio-utils its parecord.
-apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi merge-usr mtools openssh-keygen pigz qemu-img sfdisk tar flatpak \
+# and pulseaudio-utils its parecord. Three tries: one TLS error fetching
+# the mirror's index once left apk with no packages to pick (2026-10-31).
+tries=0
+until apk add --no-cache cargo dosfstools e2fsprogs e2fsprogs-extra grub grub-efi merge-usr mtools openssh-keygen pigz qemu-img sfdisk tar flatpak \
 	gtk-update-icon-cache desktop-file-utils shared-mime-info pipewire-tools pulseaudio-utils \
-	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev
+	eudev-dev libinput-dev libseat-dev libxkbcommon-dev mesa-dev pkgconf gtk4.0-dev libadwaita-dev; do
+	tries=$((tries + 1))
+	[ "$tries" -lt 3 ] || exit 1
+	echo "build.sh: installing the build tools failed, try $tries of 3; trying again in 10 s"
+	sleep 10
+done
 
 # The tool and our programs the features ship (edel-compositor, M4.2b);
 # edel image build copies those from beside itself.
