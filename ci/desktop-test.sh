@@ -235,7 +235,7 @@
 #               group logs appearance.acent as not understood, Remove at its
 #               place takes the line out, and the log then says nothing is
 #               left (M6.11)
-#   factory-reset  Settings' System page scrolled to Erase everything:
+#   factory-reset  Settings' System page Tabbed to Erase everything:
 #               its dialog's Erase waits for the computer's name and a
 #               password, and Escape closes it with nothing erased (M8.38)
 #   welcome     the Welcome (edel-settings --welcome, M6.12), full screen:
@@ -2876,7 +2876,7 @@ case_settings_unknown() {
 
 case_factory_reset() {
 	# Erase everything on Settings' System page (M8.38, part b): the page
-	# opens, the wheel takes it to its last group, and Erase... at the place
+	# opens, Tab takes it to its last group, and Erase... at the place
 	# the page logs opens the dialog of what goes and what stays. Its Erase
 	# button waits for the computer's name and a password, as the log's
 	# `factory-reset ready` lines say; Escape closes it and nothing is
@@ -2893,18 +2893,22 @@ case_factory_reset() {
 	place=$(tr -d '\r' <"$log" | sed -n 's/.*mapped window Settings at \([0-9]*\),\([0-9]*\) \([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p' | tail -n 1)
 	set -- $place
 	x=$1 y=$2 w=$3 h=$4
+	# The tablet's wheel never reaches the page (see the tour), so Tab
+	# walks the keyboard's focus down it, and the page scrolls to each
+	# focused button, until Erase... lies inside the window.
 	sleep 2
-	python3 ci/qmp.py scroll $((x + w / 2)) $((y + h / 2)) 40
 	erase=none
-	i=0
+	tries=0
 	while [ "$erase" = none ]; do
-		i=$((i + 1))
-		[ "$i" -lt 30 ] || fail "Settings did not log where Erase... lies once scrolled: $(value settings_system_log)"
+		tries=$((tries + 1))
+		[ "$tries" -lt 120 ] || fail "Tab did not bring Erase... into the window: $(value settings_system_log)"
+		python3 ci/qmp.py key tab
+		[ $((tries % 5)) -eq 0 ] || continue
 		sleep 1
 		system_log
 		erase=$(value settings_system_log | sed -n 's/.*system group places erase \([0-9]*\)+\([0-9]*\)+\([0-9]*\)x\([0-9]*\).*/\1 \2 \3 \4/p')
 		[ -n "$erase" ] || erase=none
-		# Only a place inside the window, after the scroll has settled.
+		# Only a place wholly inside the window.
 		[ "$erase" != none ] && set -- $erase && [ $(($2 + $4)) -gt "$h" ] && erase=none
 	done
 	set -- $erase
@@ -2949,7 +2953,7 @@ case_factory_reset() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: Settings' System page, scrolled to its end, logged Erase... at $cx,$cy; a click opened Erase everything, whose Erase waited for the computer's name ($name) and a password and for both again once the password went, and Escape closed it with nothing erased (factory-reset-row.png, factory-reset.png, factory-reset-ready.png)"
+	echo "PASS: Settings' System page, Tabbed to its end, logged Erase... at $cx,$cy; a click opened Erase everything, whose Erase waited for the computer's name ($name) and a password and for both again once the password went, and Escape closed it with nothing erased (factory-reset-row.png, factory-reset.png, factory-reset-ready.png)"
 }
 
 # welcome_window: the Welcome window's top left corner, wx and wy, once it
