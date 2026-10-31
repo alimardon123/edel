@@ -318,21 +318,16 @@ pub fn set_screens(panels: &[Panel], panel: usize, screens: Screens) -> Result<V
 /// The panels that apply, the rule shell-ui's `from_system_files` follows:
 /// `panels.list`, the person's file over the machine's, else the preset
 /// `layout.preset` names (the person's over the machine's, an own preset
-/// applied as the desktop applies it, M5.17). A file that
-/// does not read, or is not in this release's format, counts as absent.
+/// applied as the desktop applies it, M5.17), all through
+/// [`settings::Layers`]. A file that does not read, or is not in this
+/// release's format, counts as absent.
 pub fn applying(machine: Option<&str>, person: Option<&str>) -> Vec<Panel> {
-    let file = |text: Option<&str>| {
-        text.and_then(|t| settings::read(t).ok())
-            .map(|read| settings::in_use(&read.file))
-            .unwrap_or_default()
-    };
-    let (machine, person) = (file(machine), file(person));
-    let panels = person.panels.list.or(machine.panels.list);
-    if let Some(panels) = panels {
+    let layers = settings::Layers::read(machine, person);
+    let merged = layers.merged();
+    if let Some(panels) = merged.panels.list.clone() {
         return panels;
     }
-    let name = person.layout.preset.or(machine.layout.preset);
-    presets::named(name.as_deref()).0.panels
+    presets::named(merged.layout.preset.as_deref()).0.panels
 }
 
 /// The `panels.list` value of `panels` as one TOML line: an inline array
@@ -369,25 +364,18 @@ pub fn to_write(
 /// The apps pinned to the apps widget that apply (M5.31d): the person's
 /// `panels.pinned` over the machine's, else the list the preset named by
 /// `layout.preset` pins (the person's over the machine's, as `applying`
-/// finds it). A file that does not read, or is not in this release's
-/// format, counts as absent.
+/// finds it), through [`settings::Layers`]. A file that does not read, or
+/// is not in this release's format, counts as absent.
 pub fn pins_applying(machine: Option<&str>, person: Option<&str>) -> Vec<String> {
-    let read = |text: Option<&str>| {
-        text.and_then(|t| settings::read(t).ok())
-            .map(|read| settings::in_use(&read.file))
-            .unwrap_or_default()
-    };
-    let (machine, person) = (read(machine), read(person));
-    if let Some(pins) = person
-        .panels
-        .pinned
-        .clone()
-        .or(machine.panels.pinned.clone())
-    {
+    let layers = settings::Layers::read(machine, person);
+    let merged = layers.merged();
+    if let Some(pins) = merged.panels.pinned.clone() {
         return pins;
     }
-    let name = person.layout.preset.or(machine.layout.preset);
-    presets::named(name.as_deref()).0.apps.pinned
+    presets::named(merged.layout.preset.as_deref())
+        .0
+        .apps
+        .pinned
 }
 
 /// `list` with `app` taken out where it is and put at `index`, counted

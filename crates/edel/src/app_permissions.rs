@@ -167,19 +167,13 @@ pub fn choice_of(entry: &[String]) -> Option<&'static str> {
 
 /// The choices that apply, from the machine's and the person's settings
 /// files' texts, read leniently: each permission's table is the machine's
-/// with the person's laid over it, app by app, so a fleet's file sets them
-/// and a person can still change one.
+/// with the person's laid over it, app by app ([`crate::settings::Layers`]),
+/// so a fleet's file sets them and a person can still change one.
 pub fn choices_between(machine: Option<&str>, person: Option<&str>) -> Choices {
-    let read = |text: Option<&str>| {
-        text.and_then(|t| crate::settings::read(t).ok())
-            .map(|r| r.file.apps.choices())
-            .unwrap_or_default()
-    };
-    let mut all = read(machine);
-    for (key, apps) in read(person) {
-        all.entry(key).or_default().extend(apps);
-    }
-    all
+    crate::settings::Layers::read(machine, person)
+        .merged()
+        .apps
+        .choices()
 }
 
 /// One entry the store should hold: table, id, app and its words.

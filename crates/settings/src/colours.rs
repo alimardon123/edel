@@ -13,14 +13,13 @@
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::TAU;
-use std::path::Path;
 use std::rc::{Rc, Weak};
 
 use gtk::glib;
 use gtk::prelude::*;
 
 use edel::i18n::{n_, tr};
-use edel::settings::{self, Colours};
+use edel::settings::Colours;
 use edel::tokens::{self, Colour, Scheme, Tokens};
 
 use crate::files::Files;
@@ -211,13 +210,6 @@ fn scheme_now() -> Scheme {
 /// Whether the portal says dark.
 fn is_dark() -> bool {
     adw::StyleManager::default().is_dark()
-}
-
-/// The colours a settings file names, read leniently; none when the file
-/// does not read or names none.
-fn read_colours(path: &Path) -> Option<Colours> {
-    let text = std::fs::read_to_string(path).ok()?;
-    settings::read(&text).ok()?.file.appearance.colours
 }
 
 /// The High contrast row (M6.9), under the swatches: its title and switch,
@@ -420,9 +412,7 @@ impl Group {
             }
         }
 
-        let machine = read_colours(&files.machine);
-        let person = files.person.as_deref().and_then(read_colours);
-        let merged = settings::colours_over(machine.as_ref(), person.as_ref());
+        let merged = files.layers().merged().appearance.colours.clone();
         let listed = listed(merged.as_ref());
         let keys: Vec<String> = listed.iter().map(Listed::key).collect();
         if self.keys_shown.borrow().as_ref() != Some(&keys) {
@@ -939,6 +929,7 @@ fn log_places(flow: &gtk::Box, swatches: Vec<(String, gtk::ToggleButton)>, reset
 #[cfg(test)]
 mod tests {
     use super::*;
+    use edel::settings;
     use std::collections::BTreeMap;
 
     #[test]

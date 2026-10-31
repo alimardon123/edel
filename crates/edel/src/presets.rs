@@ -280,40 +280,29 @@ pub struct Buttons {
     pub maximize: bool,
 }
 
-/// The buttons the person's file over the machine's give (M6.16):
+/// The buttons the applied files give (M6.16), read from the merged file:
 /// `layout.window_buttons` for the side, else the preset's side, the preset
-/// being the one `layout.preset` names in the files, and each of
-/// `layout.close_button`, `minimize_button` and `maximize_button` unless a
-/// file sets it false. Each file's own preset is applied first
-/// ([`settings::in_use`]), as the compositor reads them.
-pub fn buttons_applying(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Buttons {
-    let machine = machine.map(settings::in_use);
-    let person = person.map(settings::in_use);
-    let (mut side, mut preset) = (None, None);
-    let mut shown = [true; 3];
-    for file in [machine.as_ref(), person.as_ref()].into_iter().flatten() {
-        if file.layout.preset.is_some() {
-            preset.clone_from(&file.layout.preset);
-        }
-        if let Some(chosen) = file.layout.window_buttons.as_deref().and_then(Side::parse) {
-            side = Some(chosen);
-        }
-        for (value, index) in [
-            (file.layout.close_button, 0),
-            (file.layout.minimize_button, 1),
-            (file.layout.maximize_button, 2),
-        ] {
-            if let Some(value) = value {
-                shown[index] = value;
-            }
-        }
-    }
+/// being the one `layout.preset` names, and each of `layout.close_button`,
+/// `minimize_button` and `maximize_button` unless a file sets it false.
+/// Each file's own preset is applied first, as [`settings::Layers`] does.
+pub fn buttons_of(file: &SettingsFile) -> Buttons {
     Buttons {
-        side: side.unwrap_or_else(|| named(preset.as_deref()).0.windows.buttons),
-        close: shown[0],
-        minimize: shown[1],
-        maximize: shown[2],
+        side: file
+            .layout
+            .window_buttons
+            .as_deref()
+            .and_then(Side::parse)
+            .unwrap_or_else(|| named(file.layout.preset.as_deref()).0.windows.buttons),
+        close: file.layout.close_button.unwrap_or(true),
+        minimize: file.layout.minimize_button.unwrap_or(true),
+        maximize: file.layout.maximize_button.unwrap_or(true),
     }
+}
+
+/// [`buttons_of`] of the two files as the compositor reads them: the person's
+/// over the machine's, each as [`settings::Layers`] applies it (M6.16).
+pub fn buttons_applying(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Buttons {
+    buttons_of(settings::Layers::of(machine, person).merged())
 }
 
 /// The buttons in GNOME's `button-layout` form (M6.16), which GTK and
@@ -752,45 +741,13 @@ pub fn applied(file: &SettingsFile) -> SettingsFile {
     else {
         return file.clone();
     };
-    themes::merge(&mut layout, values);
+    settings::lay_under_all(&mut layout, values);
     layout.insert("preset".into(), Value::String(base_of(own)));
     let mut out = file.clone();
     if let Ok(layout) = Value::Table(layout).try_into() {
         out.layout = layout;
     }
     out
-}
-
-/// The value a preset in use gives `key` (a `layout.*` key), as the desktop
-/// applies it, the person's file over the machine's; None when no file names
-/// an own preset, so the caller reads each file's own value as before.
-pub fn chosen(key: &str, machine: Option<&str>, person: Option<&str>) -> Option<String> {
-    let path = key.strip_prefix("layout.")?;
-    // Most files name no own preset, and then nothing is parsed: this is asked
-    // at each drawing of a menu.
-    let names_some_preset = |text: Option<&str>| text.is_some_and(|text| text.contains("presets"));
-    if !names_some_preset(machine) && !names_some_preset(person) {
-        return None;
-    }
-    let read = |text: Option<&str>| text.and_then(|text| settings::read(text).ok());
-    let (machine, person) = (read(machine), read(person));
-    let names_one = [&machine, &person]
-        .into_iter()
-        .flatten()
-        .any(|read| !read.file.presets.is_empty());
-    if !names_one {
-        return None;
-    }
-    let person = person.map(|read| settings::in_use(&read.file));
-    let machine = machine.map(|read| settings::in_use(&read.file));
-    let value = [person, machine]
-        .into_iter()
-        .flatten()
-        .find_map(|file| settings::value_at(&file.layout, path))?;
-    Some(match value {
-        Value::String(text) => text,
-        other => other.to_string(),
-    })
 }
 
 /// What the file's own presets and the preset in use say wrong, one line each,
@@ -935,10 +892,10 @@ pub fn save_text(text: &str, below: Option<&str>, name: &str) -> Result<String> 
         .get(in_use)
         .or_else(|| machine.presets.get(in_use));
     let mut table = layout_table(&file.layout)?;
-    themes::merge(&mut table, layout_table(&machine.layout)?);
+    settings::lay_under_all(&mut table, layout_table(&machine.layout)?);
     let base = match own_in_use {
         Some(own) => {
-            themes::merge(&mut table, layout_table(&own.layout)?);
+            settings::lay_under_all(&mut table, layout_table(&own.layout)?);
             base_of(own)
         }
         None => if is_built_in(in_use) { in_use } else { DEFAULT }.to_string(),
@@ -1673,26 +1630,6 @@ mod tests {
         assert_eq!(rows[7].title, "mine");
         assert_eq!(rows[7].base, "hive");
         assert!(rows[0].built_in && !rows[0].in_use);
-    }
-
-    #[test]
-    fn chosen_gives_an_own_presets_layout_value_and_none_without_one() {
-        assert_eq!(
-            chosen("layout.window_buttons", None, Some(MINE)).as_deref(),
-            Some("left")
-        );
-        assert_eq!(
-            chosen("layout.preset", None, Some(MINE)).as_deref(),
-            Some("hive")
-        );
-        assert_eq!(
-            chosen(
-                "layout.window_buttons",
-                None,
-                Some("format = 1\n[layout]\nwindow_buttons = \"right\"\n")
-            ),
-            None
-        );
     }
 
     #[test]

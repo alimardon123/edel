@@ -1781,10 +1781,13 @@ msgstr ""
 msgid "From the profile"
 msgstr ""
 
-msgid "Edel OS's choice"
+msgid "From the preset"
 msgstr ""
 
-msgid "From the preset"
+msgid "From the theme"
+msgstr ""
+
+msgid "Edel OS's choice"
 msgstr ""
 
 msgid "Version {version} · {channel}"

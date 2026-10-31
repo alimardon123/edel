@@ -149,6 +149,7 @@ use smithay_client_toolkit::reexports::client::protocol::wl_output::WlOutput;
 use tiny_skia::Pixmap;
 
 use edel::i18n::tr;
+use edel::panel_edit;
 use edel::places;
 use edel::presets::{self, Edge, Hide, Screens, Size, Style};
 use edel::settings;
@@ -1070,29 +1071,13 @@ fn chosen() -> follow::Chosen {
 /// the machine's. The scheme is auto's sun at `location.place` too (M7.14),
 /// worked out by `edel::sun`.
 fn read_choices() -> (Option<String>, Option<Vec<presets::Panel>>, Scheme) {
-    let (mut name, mut panels) = (None, None);
-    let files = [Some(places::machine_settings()), places::person_settings()];
-    for path in files.into_iter().flatten().map(|p| places::found(&p)) {
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        match settings::read(&text) {
-            Ok(read) => {
-                // The preset and theme in use apply under the file's values (M5.12b6a, M5.17).
-                let file = edel::settings::in_use(&read.file);
-                let layout = file.layout;
-                name = layout.preset.or(name);
-                panels = file.panels.list.or(panels);
-            }
-            Err(e) => eprintln!(
-                "edel-shell-ui: {}: {e:#}; its keys are left out",
-                path.display()
-            ),
-        }
-    }
     let (machine, person) = settings_texts();
-    let scheme = edel::sun::scheme_of(machine.as_deref(), person.as_deref()).0;
-    (name, panels, scheme)
+    let (machine, person) = (machine.as_deref(), person.as_deref());
+    let name = settings::chosen("layout.preset", machine, person);
+    // The panels that apply: the person's `panels.list`, else the preset's.
+    let panels = panel_edit::applying(machine, person);
+    let scheme = edel::sun::scheme_of(machine, person).0;
+    (name, Some(panels), scheme)
 }
 
 /// Whether the fillets are drawn: not on the Lite tier, which keeps
@@ -3313,14 +3298,8 @@ impl KeyboardHandler for Shell {
 /// machine's and the person's settings text: apps' own title bars put their
 /// buttons where ours are, and their glyphs come from the Edel icon theme.
 fn button_layout(machine: Option<&str>, person: Option<&str>) -> String {
-    let read = |text: Option<&str>| {
-        text.and_then(|text| settings::read(text).ok())
-            .map(|read| read.file)
-    };
-    let (machine, person) = (read(machine), read(person));
-    presets::gnome_button_layout(&presets::buttons_applying(
-        machine.as_ref(),
-        person.as_ref(),
+    presets::gnome_button_layout(&presets::buttons_of(
+        settings::Layers::read(machine, person).merged(),
     ))
 }
 
