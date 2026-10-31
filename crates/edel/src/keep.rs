@@ -177,7 +177,10 @@ pub fn plan(entries: &[Entry], keep: &Keep, declared: &[String]) -> Result<Plan>
             }
             at = resolve(&at, next);
         }
-        if kept.contains(&at) {
+        // A link to a folder (a chip named after another, `ad103` to
+        // `ad102`) stays when something under that folder stays.
+        let folder = format!("{at}/");
+        if kept.contains(&at) || kept.iter().any(|k| k.starts_with(&folder)) {
             kept.insert(e.path.clone());
         }
     }
@@ -308,6 +311,21 @@ mod tests {
                 "nvidia/ad102/gsp/gsp-570.144.bin.zst",
                 "nvidia/ga102/gr/sw_ctx.bin.zst",
             ]
+        );
+    }
+
+    #[test]
+    fn a_link_to_a_folder_stays_while_something_under_it_stays() {
+        let entries = [
+            file("nvidia/ad102/gsp/gsp-570.144.bin.zst"),
+            link("nvidia/ad103", "ad102"),
+            link("nvidia/tu999", "tu998"),
+        ];
+        let k = keep(&["nvidia/*", "nvidia/*/*/*"], &[]);
+        let plan = plan(&entries, &k, &[]).unwrap();
+        assert_eq!(
+            plan.kept,
+            ["nvidia/ad102/gsp/gsp-570.144.bin.zst", "nvidia/ad103"]
         );
     }
 
