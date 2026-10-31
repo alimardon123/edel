@@ -59,13 +59,6 @@ pub struct Services {
     input_method: Option<Input>,
 }
 
-impl Services {
-    /// Whether the compositor runs an input method now.
-    pub fn input_method(&self) -> bool {
-        self.input_method.is_some()
-    }
-}
-
 /// The input method's program, as `region.input_method` names it (M6.8).
 const INPUT_METHOD: &str = "fcitx5";
 

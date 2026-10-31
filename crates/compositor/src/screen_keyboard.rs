@@ -12,10 +12,7 @@
 //!
 //! Text input, not input-method-v2, decides when it shows: an input
 //! method is one program at a time, and fcitx5 (M6.8) keeps that place
-//! for people who type a language their keyboard lacks. smithay tells a
-//! window's text inputs they have the focus only while an input method
-//! runs, and a field never asks for text before it is told, so without
-//! one the compositor tells them itself (`follow_text_focus`).
+//! for people who type a language their keyboard lacks.
 
 use rustix::process::{Pid, Signal, kill_process};
 use smithay::reexports::calloop::LoopHandle;
@@ -48,9 +45,6 @@ pub struct ScreenKeyboard {
     /// The window's surface a finger last tapped, until a mouse or a key
     /// is used.
     tapped: Option<WlSurface>,
-    /// The surface whose text inputs the compositor itself told they have
-    /// the focus, while no input method runs.
-    entered: Option<WlSurface>,
 }
 
 impl ScreenKeyboard {
@@ -92,40 +86,9 @@ pub fn args(tokens: &Tokens) -> Vec<String> {
 }
 
 impl Edel {
-    /// Tells text inputs the keyboard's focus came or went, as smithay does
-    /// only while an input method runs (fcitx5, which the compositor
-    /// starts): `leave` to the surface told last, `enter` to the one
-    /// focused now.
-    fn follow_text_focus(&mut self) {
-        let text_input = self.seat.text_input();
-        if self.services.input_method() {
-            self.screen_keyboard.entered = None;
-            return;
-        }
-        let focus = text_input.focus();
-        if focus == self.screen_keyboard.entered {
-            return;
-        }
-        if let Some(old) = self
-            .screen_keyboard
-            .entered
-            .take()
-            .filter(|old| old.is_alive())
-        {
-            text_input.set_focus(Some(old));
-            text_input.leave();
-            text_input.set_focus(focus.clone());
-        }
-        if focus.is_some() {
-            text_input.enter();
-        }
-        self.screen_keyboard.entered = focus;
-    }
-
     /// After the clients spoke: shows the keyboard when the window a
     /// finger tapped asks for text, and hides it once no field asks.
     pub fn follow_screen_keyboard(&mut self, handle: &LoopHandle<'static, Edel>) {
-        self.follow_text_focus();
         let mut asking = None;
         self.seat
             .text_input()
