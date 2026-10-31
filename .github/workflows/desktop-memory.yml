@@ -39,7 +39,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install QEMU, UEFI firmware and ffmpeg
-        run: sudo apt-get update && sudo apt-get install -y qemu-system-x86 ovmf ffmpeg
+        run: sh ci/apt.sh qemu-system-x86 ovmf ffmpeg
 
       - name: Measure ${{ matrix.system }}
         env:

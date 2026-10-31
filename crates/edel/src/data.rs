@@ -533,9 +533,12 @@ fn hardware_packs(probe: bool) {
 fn follow_keyboard(device: &Path) {
     let machine = edel::settings::on_machine("region.keyboard");
     let person = || crate::machine::first_persons_keyboard();
-    // No keyboard anywhere is the default, the kernel's US map.
-    let keyboard = machine.or_else(person).unwrap_or_else(|| "us".into());
-    crate::crypt::follow_keyboard(device, &keyboard);
+    // No keyboard anywhere (no settings yet, as after a factory reset,
+    // M8.38) leaves the header's map as it is, so a passphrase typed in
+    // another layout still matches; a chosen `us` sets the US map.
+    if let Some(keyboard) = machine.or_else(person) {
+        crate::crypt::follow_keyboard(device, &keyboard);
+    }
 }
 
 /// Grows the data partition if the disk has room, mounts it at `/data` and
@@ -573,6 +576,9 @@ pub fn mount_data() -> Result<()> {
             .arg(&dev)
             .arg(MOUNT_POINT))
         .with_context(|| format!("cannot mount {} at {MOUNT_POINT}", dev.display()))?;
+        // A factory reset (M8.38) erases on a fresh mount only, before
+        // anything below mounts or reads the partition.
+        crate::reset::erase_if_asked(Path::new(MOUNT_POINT));
     }
     grow_file_system(&dev);
     let _ = Command::new("df").args(["-m", MOUNT_POINT]).status();
