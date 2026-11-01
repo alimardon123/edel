@@ -17,8 +17,12 @@
 //! whole p99. The line says how many there were and the slowest of them
 //! (`opening_intervals=... opening_worst_ms=...`, names that end in none
 //! of the other keys, as CI reads each key as the last match of its
-//! name), so a slow start still shows. CI's smoothness gate reads this
-//! line.
+//! name), so a slow start still shows. Last, how late the frames after
+//! the median came, in half milliseconds (`late_half_ms=K:N,...`: N
+//! intervals came K to K+1 half milliseconds after the median), so CI can
+//! tell a few long stalls from a wide spread and count the intervals over
+//! its own limit without the limit written here. CI's smoothness gate
+//! reads this line.
 
 use std::time::Duration;
 
@@ -132,9 +136,10 @@ impl Frames {
             self.direct,
             self.discarded,
         ) + &format!(
-            " opening_intervals={} opening_worst_ms={:.1}",
+            " opening_intervals={} opening_worst_ms={:.1} late_half_ms={}",
             self.settling.len(),
-            settle_slowest.as_secs_f64() * 1000.0
+            settle_slowest.as_secs_f64() * 1000.0,
+            late(&self.intervals, median)
         )
     }
 }
@@ -152,6 +157,26 @@ pub fn summary(intervals: &[Duration]) -> (Duration, Duration, Duration) {
     };
     let at = |percent: usize| sorted[(sorted.len() * percent).div_ceil(100) - 1];
     (at(50), at(99), slowest)
+}
+
+/// How late the intervals after the median came, counted in half
+/// millisecond steps, `K:N` for each step K that has any, slowest last;
+/// `-` when none came after the median.
+fn late(intervals: &[Duration], median: Duration) -> String {
+    let mut steps = std::collections::BTreeMap::<u128, u32>::new();
+    for interval in intervals.iter().filter(|i| **i > median) {
+        *steps
+            .entry((*interval - median).as_micros() / 500)
+            .or_default() += 1;
+    }
+    if steps.is_empty() {
+        return "-".into();
+    }
+    steps
+        .iter()
+        .map(|(step, n)| format!("{step}:{n}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn format(
@@ -270,7 +295,22 @@ mod tests {
         assert!(smooth.done());
         assert!(smooth
             .line()
-            .ends_with("median_ms=8.0 p99_ms=440.0 slowest_ms=440.0 direct=0 discarded=0 opening_intervals=2 opening_worst_ms=40.0"));
+            .ends_with("median_ms=8.0 p99_ms=440.0 slowest_ms=440.0 direct=0 discarded=0 opening_intervals=2 opening_worst_ms=40.0 late_half_ms=864:1"));
+    }
+
+    #[test]
+    fn late_frames_count_in_half_milliseconds() {
+        let us = |v: &[u64]| {
+            v.iter()
+                .map(|m| Duration::from_micros(*m))
+                .collect::<Vec<_>>()
+        };
+        let median = Duration::from_micros(10_000);
+        assert_eq!(late(&us(&[10_000, 9_000]), median), "-");
+        assert_eq!(
+            late(&us(&[10_200, 10_400, 12_600, 18_200, 9_000]), median),
+            "0:2,5:1,16:1"
+        );
     }
 
     #[test]
