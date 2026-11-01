@@ -806,6 +806,15 @@ msgstr ""
 msgid "Which side of the screen the workspace overview shows its strip of workspaces on"
 msgstr ""
 
+msgid "Glass"
+msgstr ""
+
+msgid "How the panel and its cards are drawn"
+msgstr ""
+
+msgid "The glass's colour"
+msgstr ""
+
 msgid "Workspace switcher"
 msgstr ""
 
@@ -1439,6 +1448,9 @@ msgstr ""
 msgid "Glass blur"
 msgstr ""
 
+msgid "Glass colour"
+msgstr ""
+
 msgid "Interface font"
 msgstr ""
 
@@ -1770,6 +1782,15 @@ msgid "Arrows"
 msgstr ""
 
 msgid "Counts"
+msgstr ""
+
+msgid "Tinted"
+msgstr ""
+
+msgid "Solid"
+msgstr ""
+
+msgid "Neutral"
 msgstr ""
 
 msgid "Stack"

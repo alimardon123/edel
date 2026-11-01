@@ -565,6 +565,22 @@ fn build(section: &'static str, theme: &Rc<Theme>) -> gtk::Widget {
             // The desktop's widgets after the motion (M8.21 part 21j1): the
             // clock and the date over the wallpaper, one switch.
             desktop_group = Some(desktop::group(&content, &problem));
+            // The glass (M8.21 part 21m): how the shell's surfaces are drawn
+            // and their colour, one group.
+            widgets::heading(&content, tr("Glass"));
+            let glass = widgets::group(&content);
+            settings.push(setting(
+                &glass,
+                "appearance.glass",
+                (tr("How the panel and its cards are drawn"), None, false),
+                Control::choice("appearance.glass"),
+            ));
+            settings.push(setting(
+                &glass,
+                "appearance.glass_colour",
+                (tr("The glass's colour"), None, false),
+                Control::choice("appearance.glass_colour"),
+            ));
             widgets::heading(&content, tr("Workspace switcher"));
             let switcher = widgets::group(&content);
             settings.push(setting(

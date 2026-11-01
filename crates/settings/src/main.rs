@@ -1120,6 +1120,7 @@ mod tests {
         assert_eq!(page_named(&pages, "workspaces.count"), Some(3));
         assert_eq!(page_named(&pages, "Number of workspaces"), Some(3));
         assert_eq!(page_named(&pages, "appearance.switcher_look"), Some(0));
+        assert_eq!(page_named(&pages, "appearance.glass"), Some(0));
         assert_eq!(
             start_page(args(&["--page", "panels"]), &pages),
             Ok(Start::Page(2))
