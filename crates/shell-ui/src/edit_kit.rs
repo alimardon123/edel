@@ -152,7 +152,7 @@ pub fn inks(style: Style, tokens: &Tokens) -> Inks {
             accent: tokens.accent,
             accent_text: tokens.accent_text,
             dim: Colour { a: 0.70, ..text },
-            fill: tokens.lock_glass,
+            fill: tokens.glass,
         }
     } else {
         let text = tokens.panel_text;
@@ -606,7 +606,7 @@ pub fn guides(pixmap: &mut Pixmap, lines: &[Guide], clip: Rect, tokens: &Tokens,
 }
 
 /// The drawer's sheet (M5.10c6c3): over the glass, the deep backdrop at
-/// `GLASS_BASE` with the glass over it and a 1 px hairline of `lock_glass_edge`;
+/// `GLASS_BASE` with the glass over it and a 1 px hairline of `glass_rim`;
 /// over the desktop, the panel's colour at `DESKTOP_SHEET` with a hairline of
 /// the edge colour. Both have `SHEET_RADIUS` corners. Draws nothing outside `r`.
 pub fn sheet(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, style: Style, s: f32) {
@@ -618,13 +618,13 @@ pub fn sheet(pixmap: &mut Pixmap, r: Rect, tokens: &Tokens, style: Style, s: f32
             ..tokens.lock_backdrop_deep
         };
         fill(pixmap, x, y, w, h, radius, base);
-        fill(pixmap, x, y, w, h, radius, tokens.lock_glass);
+        fill(pixmap, x, y, w, h, radius, tokens.glass);
         stroke(
             pixmap,
             (x, y, w, h),
             radius,
             LINE * s,
-            tokens.lock_glass_edge,
+            tokens.glass_rim,
             None,
         );
     } else {
@@ -925,7 +925,7 @@ mod tests {
         let t = tokens();
         let glass = inks(Style::GLASS, &t);
         assert_eq!(glass.text, t.backdrop_text);
-        assert_eq!(glass.fill, t.lock_glass);
+        assert_eq!(glass.fill, t.glass);
         let desk = inks(Style::DESKTOP, &t);
         assert_eq!(desk.text, t.panel_text);
         assert_ne!(glass.raised, desk.raised);

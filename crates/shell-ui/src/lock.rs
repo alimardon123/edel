@@ -1113,8 +1113,8 @@ pub(crate) fn glass(
     s: f32,
     tokens: &Tokens,
 ) {
-    fill(pixmap, x, y, w, h, r, tokens.lock_glass);
-    outline(pixmap, (x, y, w, h), r, s, tokens.lock_glass_edge);
+    fill(pixmap, x, y, w, h, r, tokens.glass);
+    outline(pixmap, (x, y, w, h), r, s, tokens.glass_rim);
 }
 
 thread_local! {
