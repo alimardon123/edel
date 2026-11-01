@@ -265,11 +265,22 @@ pub fn glass(
     outline(pixmap, (x, y, w, h), r, s, tokens.glass_rim);
 }
 
-/// The glass's hairline alone (M8.21 part 21n): the edge a pop-up's card
-/// takes over its own fill, the same as the lock screen's cards, so every
-/// card reads as the same glass on any background.
-pub fn rim(pixmap: &mut Pixmap, rect: (f32, f32, f32, f32), r: f32, s: f32, tokens: &Tokens) {
-    outline(pixmap, rect, r, s, tokens.glass_rim);
+/// A pop-up card's edge (M8.21 part 21n), two hairlines `s` wide: the
+/// tokens' `edge` outside, which sets the card off the light scheme's pale
+/// backgrounds, and the glass's lit `glass_rim` just inside it, which the
+/// dark scheme shows, as the lock screen's cards do. Each scheme so shows
+/// the hairline that reads on it, and high contrast's `edge` draws a firm
+/// line round every card.
+pub fn rim(
+    pixmap: &mut Pixmap,
+    (x, y, w, h): (f32, f32, f32, f32),
+    r: f32,
+    s: f32,
+    tokens: &Tokens,
+) {
+    outline(pixmap, (x, y, w, h), r, s, tokens.edge);
+    let inner = (x + s, y + s, w - 2.0 * s, h - 2.0 * s);
+    outline(pixmap, inner, (r - s).max(0.0), s, tokens.glass_rim);
 }
 
 /// Strokes the rounded rectangle's edge, inside it, `width` pixels wide:

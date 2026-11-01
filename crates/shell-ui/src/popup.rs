@@ -878,6 +878,28 @@ mod tests {
     }
 
     #[test]
+    fn a_card_edge_reads_in_both_schemes_and_leaves_the_fill_alone() {
+        for scheme in [edel::tokens::Scheme::Light, edel::tokens::Scheme::Dark] {
+            let tokens = Tokens::built_in_scheme(scheme);
+            let mut pixmap = Pixmap::new(200, 120).unwrap();
+            card(&mut pixmap, &tokens, 1.0);
+            let panel = tokens.panel.bytes();
+            // Halfway down the left side: the edge's hairline, then the
+            // glass's, then the panel's own fill.
+            let edge = pixel(&pixmap, 0, 60);
+            let distance = (0..3)
+                .map(|k| (edge[k] as i32 - panel[k] as i32).abs())
+                .max()
+                .unwrap();
+            assert!(
+                distance >= 8,
+                "{scheme:?}: the edge {edge:?} against {panel:?}"
+            );
+            assert_eq!(pixel(&pixmap, 4, 60)[..3], panel[..3], "{scheme:?}");
+        }
+    }
+
+    #[test]
     fn text_wraps_at_spaces_and_the_last_line_keeps_the_rest() {
         // Room for 10 characters.
         let room = 60.0;

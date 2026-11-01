@@ -906,6 +906,11 @@ fn setting(
 ) -> Setting {
     let widget = control.widget();
     let row = widgets::row(group, rows::title(key), &widget);
+    // Segments rows answer their key themselves (`log_places`), with the
+    // chosen button taking the keyboard.
+    if !matches!(control, Control::Segments(..)) {
+        widgets::show_when_asked(key, &widget);
+    }
     Setting {
         key,
         what: what.to_string(),
