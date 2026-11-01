@@ -10,7 +10,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::io::{self, BufRead as _, IsTerminal as _, Read as _, Write as _};
-use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt, chown};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -237,13 +237,8 @@ fn passwd_with_shell(passwd: &str, name: &str, shell: &str) -> Option<String> {
 /// Replaces a file through a new file and a rename, keeping its mode and
 /// owner, so a power cut leaves the old or the new account file.
 fn replace(path: &Path, text: &str) -> Result<()> {
-    let meta = fs::metadata(path).with_context(|| could_not_read(path))?;
-    let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    fs::write(&new, text)?;
-    fs::set_permissions(&new, meta.permissions())?;
-    chown(&new, Some(meta.uid()), Some(meta.gid()))?;
-    fs::File::open(&new)?.sync_all()?;
-    fs::rename(&new, path).with_context(|| {
+    fs::metadata(path).with_context(|| could_not_read(path))?;
+    edel::files::replace(path, text.as_bytes()).with_context(|| {
         trf(
             "could not replace {path}",
             &[("path", &path.display().to_string())],
@@ -1790,13 +1785,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 /// Writes `text` to `path` through a new file and a rename, so a power cut
 /// leaves the old file or the new one, never an empty one.
 pub(crate) fn write_whole(path: &Path, text: &[u8]) -> Result<()> {
-    fs::create_dir_all(path.parent().unwrap_or(Path::new("/")))?;
-    let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    let mut out = fs::File::create(&new).with_context(|| could_not_write(&new))?;
-    out.write_all(text)?;
-    out.sync_all()?;
-    fs::rename(&new, path).with_context(|| could_not_write(path))?;
-    Ok(())
+    edel::files::replace(path, text).with_context(|| could_not_write(path))
 }
 
 /// `edel settings diff [FILE]`: what apply would change, one `change:` line

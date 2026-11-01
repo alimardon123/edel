@@ -1157,8 +1157,8 @@ impl Build<'_> {
     fn make_loader(&self, dir: &Path, root: &Path, kernel: &str, cmdline: &str) -> Result<()> {
         let (target, efi_name) = boot::efi_target(&self.def.arch)?;
         let efi = dir.join(efi_name);
-        let cfg = dir.join("grub.cfg");
-        let env = dir.join("grubenv");
+        let cfg = dir.join(edel::places::GRUB_CFG);
+        let env = dir.join(edel::places::GRUBENV);
 
         self.runner.step(&format!(
             "write GRUB's config and environment block in {}",
@@ -1198,9 +1198,9 @@ impl Build<'_> {
             return Ok(());
         }
         let version = crate::loader::loader_toml(&fs::read(&efi)?, &fs::read(&cfg)?);
-        fs::write(dir.join("loader.toml"), &version)?;
+        fs::write(dir.join(edel::places::LOADER_TOML), &version)?;
         fs::create_dir_all(&slot_dir)?;
-        for file in [efi_name, "grub.cfg", "loader.toml"] {
+        for file in [efi_name, edel::places::GRUB_CFG, edel::places::LOADER_TOML] {
             fs::copy(dir.join(file), slot_dir.join(file))?;
         }
         // How GRUB starts this slot, read from the slot itself (M6.17). A
@@ -1236,9 +1236,9 @@ impl Build<'_> {
     fn make_esp(&self, dir: &Path, esp: &Path) -> Result<()> {
         let (_, efi_name) = boot::efi_target(&self.def.arch)?;
         let efi = dir.join(efi_name);
-        let cfg = dir.join("grub.cfg");
-        let env = dir.join("grubenv");
-        let version = dir.join("loader.toml");
+        let cfg = dir.join(edel::places::GRUB_CFG);
+        let env = dir.join(edel::places::GRUBENV);
+        let version = dir.join(edel::places::LOADER_TOML);
 
         self.runner.step(&format!(
             "create a sparse {} MiB EFI system partition image",

@@ -386,16 +386,10 @@ fn or_empty(text: &str) -> String {
     }
 }
 
-/// Writes `bytes` to `path` as `path.new` and renames it over `path`, after
-/// making its folder, so a reader never sees half a file.
+/// Writes `bytes` to `path` whole, after making its folder, so a reader
+/// never sees half a file (`edel::files`).
 pub fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    let shown = path.display().to_string();
-    if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
-        fs::create_dir_all(dir).with_context(|| could_not_write(&shown))?;
-    }
-    let new = PathBuf::from(format!("{shown}.new"));
-    fs::write(&new, bytes).with_context(|| could_not_write(&shown))?;
-    fs::rename(&new, path).with_context(|| could_not_write(&shown))
+    crate::files::replace(path, bytes).with_context(|| could_not_write(&path.display().to_string()))
 }
 
 /// What an archive entry is, once its name and type are judged.

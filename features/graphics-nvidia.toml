@@ -1,9 +1,24 @@
 # NVIDIA graphics (M7.11, ADR-012): the first hardware pack.
 format = 1
 summary = "NVIDIA graphics: Mesa's open Vulkan driver (NVK) and the cards' firmware"
-why = "NVIDIA cards run on the kernel's open nouveau driver, which needs NVIDIA's signed firmware to start the cards from Ada on and to run Turing and newer at full speed; linux-firmware-nvidia holds it (about 100 MiB, so it is a pack and not on the always list). mesa-vulkan-nouveau is NVK, Mesa's open Vulkan driver for these cards, matching mesa-vulkan-intel and mesa-vulkan-ati in graphics.toml, so the system's own GTK 4 apps, Settings among them, find a Vulkan driver on NVIDIA cards as on Intel and AMD. Flatpak apps and games bring their own Mesa, NVK included, from their GL runtime. Matched by NVIDIA's PCI vendor ID on a display controller, so only machines with an NVIDIA card are offered it."
+why = "NVIDIA cards run on the kernel's open nouveau driver, which needs NVIDIA's signed firmware to start the cards from Ada on and to run Turing and newer at full speed; linux-firmware-nvidia holds it (about 100 MiB, about 66 once only the GSP release the driver loads stays, so it is a pack and not on the always list). The pack carries nouveau itself, so no other machine's slot does, and turns its GSP firmware on for Turing and Ampere cards too, with which the card runs at its full clocks (M8.39a). mesa-vulkan-nouveau is NVK, Mesa's open Vulkan driver for these cards, matching mesa-vulkan-intel and mesa-vulkan-ati in graphics.toml, so the system's own GTK 4 apps, Settings among them, find a Vulkan driver on NVIDIA cards as on Intel and AMD. Flatpak apps and games bring their own Mesa, NVK included, from their GL runtime. Matched by NVIDIA's PCI vendor ID on a display controller, so only machines with an NVIDIA card are offered it."
 packages = ["linux-firmware-nvidia", "mesa-vulkan-nouveau"]
+# nouveau (M8.39a), about 1.5 MiB, travels with the pack, as every card it
+# drives is a display controller of NVIDIA's that the pack's match finds.
+# Loaded once the pack is mounted, so it reads the pack's options in
+# /usr/lib/modprobe.d and the firmware beside it.
+kernel_drivers = ["drivers/gpu/drm/nouveau"]
 addon = true
 # Over the desktop, whose Mesa NVK joins (M8.17c).
 on = "desktop"
 hardware = ["pci:v000010DEd*bc03sc*"]
+
+# Of the GSP firmware, only the release nouveau loads first stays (570
+# while the kernel names 535 and 570, about 38 MiB less). The family is
+# read from the file's name, not its chip's folder: every chip with GSP
+# firmware ships the newest release, so none loses its own.
+[[keep]]
+under = "lib/firmware"
+files = ["nvidia/*", "nvidia/*/*", "nvidia/*/*/*", "nvidia/*/gsp/*"]
+newest = ["nvidia/*/gsp/*"]
+newest_by = "nouveau"

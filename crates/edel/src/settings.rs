@@ -4010,24 +4010,10 @@ fn replace_text(path: &Path, edited: &str) -> Result<()> {
         false => edited.to_string(),
     };
     // Each writer's own new file, so even one that took a dead writer's
-    // lock never writes into another's.
-    let new = PathBuf::from(format!(
-        "{}.edel-new-{}",
-        target.display(),
-        std::process::id()
-    ));
-    let written = fs::File::create(&new)
-        .and_then(|mut file| {
-            std::io::Write::write_all(&mut file, edited.as_bytes())?;
-            file.sync_all()
-        })
-        .and_then(|()| fs::rename(&new, &target));
-    // A full disk stops the write halfway (M8.11): the file kept as it was,
-    // and the half-written one taken out, not left to fill the disk more.
-    if written.is_err() {
-        let _ = fs::remove_file(&new);
-    }
-    written.with_context(|| {
+    // lock never writes into another's; a full disk stops the write
+    // halfway (M8.11): the file kept as it was, and the half-written one
+    // taken out, not left to fill the disk more.
+    crate::files::replace(&target, edited.as_bytes()).with_context(|| {
         trf(
             "could not write {path}",
             &[("path", &path.display().to_string())],
