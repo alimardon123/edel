@@ -129,10 +129,27 @@ pub fn session_program_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; the rest of the desktop works without it")
 }
 
-/// A program of the session's list ran a while and stopped.
+/// A program of the session's list ran a while and was stopped by a
+/// signal someone sent, so it is left stopped.
 pub fn session_program_stopped(name: &str, how: &str) -> String {
     format!(
-        "{name} {how} after running a while, and is not started again; what it served (sound, for PipeWire) stops until the next login"
+        "{name} {how} after running a while, stopped by a signal, and is not started again; what it served (sound, for PipeWire) is off until the next login"
+    )
+}
+
+/// A program of the session's list failed after running a while and is
+/// started again, so sound comes back after PipeWire crashes (2026-11-01).
+pub fn session_program_revived(name: &str, how: &str, time: u32, of: u32) -> String {
+    format!(
+        "{name} {how} after running a while; starting it again ({time} of {of} times this session)"
+    )
+}
+
+/// A program of the session's list failed after running a while once
+/// more than it may be started again.
+pub fn session_program_crashed_too_often(name: &str, how: &str, times: u32) -> String {
+    format!(
+        "{name} {how} again after being started again {times} times this session, and is left; what it served (sound, for PipeWire) is off until the next login, and the lines above say why"
     )
 }
 
@@ -493,7 +510,9 @@ mod tests {
             order_no_home("workspaces.names"),
             session_program_missing("pipewire"),
             session_program_not_started("pipewire", "x"),
-            session_program_stopped("pipewire", "ended (exit status: 1)"),
+            session_program_stopped("pipewire", "ended (signal: 15 (SIGTERM))"),
+            session_program_revived("pipewire", "ended (signal: 6 (SIGABRT))", 1, 3),
+            session_program_crashed_too_often("pipewire", "ended (signal: 6 (SIGABRT))", 3),
             session_program_given_up("pipewire", "ended (exit status: 1)", 4, 5),
             input_method_missing("fcitx5"),
             input_method_ended("fcitx5", "ended (exit status: 1)"),

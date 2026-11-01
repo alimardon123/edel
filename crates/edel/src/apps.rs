@@ -336,6 +336,9 @@ const ROLES: &[(&str, &str)] = &[
     ("settings", "Settings"),
     // The store (M6.4), Bazaar by default.
     ("store", PACKAGE_MANAGER),
+    // The stick's install button (M8.22's shortcut): only a stick has an
+    // app of this category, so the pin is left out everywhere else.
+    ("install", "X-Edel-Install"),
 ];
 
 /// The category of an app that adds and removes software.
@@ -900,5 +903,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(pinned(&[other], "store"), None);
+    }
+
+    #[test]
+    fn the_install_role_finds_the_stick_button_and_nothing_else() {
+        let button = parse(
+            "[Desktop Entry]\nType=Application\nName=Install Edel OS\nExec=edel-settings --page install\nCategories=System;X-Edel-Install;\n",
+        )
+        .unwrap();
+        let apps = [button];
+        assert_eq!(
+            pinned(&apps, "install").map(|a| a.name.as_str()),
+            Some("Install Edel OS")
+        );
+        assert_eq!(pinned(&[], "install"), None);
     }
 }

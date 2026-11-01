@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <!-- The stick's install button (M8.22): an arrow down into a disk, lit
+       from above like Settings' icon, an object rather than a glyph. -->
+  <defs>
+    <linearGradient id="gI" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7ea9ff"/>
+      <stop offset="1" stop-color="#3d6fe0"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="22" height="22" rx="5.5" fill="url(#gI)"/>
+  <g fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 4.5V12.3"/>
+    <path d="M8.7 9.3L12 12.6L15.3 9.3"/>
+    <rect x="4.8" y="14.4" width="14.4" height="5.1" rx="1.5"/>
+    <path d="M15.6 16.92H15.61"/>
+  </g>
+</svg>
