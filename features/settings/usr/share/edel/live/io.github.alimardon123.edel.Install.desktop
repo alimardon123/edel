@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Install Edel OS
+Comment=Put Edel OS on this computer's disk, from the stick
+Exec=edel-settings --page install
+Icon=io.github.alimardon123.edel.Install
+Terminal=false
+Categories=System;X-Edel-Install;
+Keywords=install;installer;disk;setup;
+StartupNotify=true
