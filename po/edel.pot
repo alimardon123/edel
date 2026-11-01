@@ -2048,6 +2048,12 @@ msgstr ""
 msgid "How strongly the wallpaper blurs behind see-through panels, in percent; 0 shows it sharp."
 msgstr ""
 
+msgid "How the shell's surfaces are drawn: frosted glass over a blur, a tint without the blur, or solid."
+msgstr ""
+
+msgid "What colour the glass takes: the release's grey, the accent colour, or the wallpaper's own colour."
+msgstr ""
+
 msgid "The font for the interface's text, by its family name."
 msgstr ""
 

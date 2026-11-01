@@ -615,16 +615,19 @@ pub struct Card {
 }
 
 /// Clears `pixmap` and draws `cards` in the panel's colour at scale `s`,
-/// the room between them left clear.
+/// each edged with the glass's hairline (M8.21 part 21n), the room between
+/// them left clear.
 pub fn cards(pixmap: &mut Pixmap, tokens: &Tokens, s: f32, cards: &[Card]) {
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
     for c in cards {
         let (x, y, w, h) = c.rect.device(s);
         fill(pixmap, x, y, w, h, c.radius * s, tokens.panel);
+        paint::rim(pixmap, (x, y, w, h), c.radius * s, s, tokens);
     }
 }
 
-/// Clears `pixmap` and draws the card, the whole of it, at scale `s`.
+/// Clears `pixmap` and draws the card, the whole of it, at scale `s`, edged
+/// with the glass's hairline (M8.21 part 21n).
 pub fn card(pixmap: &mut Pixmap, tokens: &Tokens, s: f32) {
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
     let (w, h) = (pixmap.width() as f32, pixmap.height() as f32);
@@ -636,6 +639,13 @@ pub fn card(pixmap: &mut Pixmap, tokens: &Tokens, s: f32) {
         h,
         tokens.radius_menu as f32 * s,
         tokens.panel,
+    );
+    paint::rim(
+        pixmap,
+        (0.0, 0.0, w, h),
+        tokens.radius_menu as f32 * s,
+        s,
+        tokens,
     );
 }
 

@@ -189,7 +189,10 @@ fn load_from_files_as(
     let icons = IconSize::between(machine.as_ref(), person.as_ref());
     let (tokens, more) = tokens.with_icons(&icons);
     notes.extend(more);
-    (tokens, notes)
+    // The glass last (M8.21 part 21m), as it takes the accent and the
+    // panel's colour the keys above settled.
+    let glass = Glass::between(machine.as_ref(), person.as_ref());
+    (tokens.with_glass(&glass, from_wallpaper), notes)
 }
 
 /// A settings file's text read leniently; none when there is no text or
@@ -305,7 +308,12 @@ fn text_at(path: &std::path::Path) -> Option<String> {
 #[cfg(feature = "pictures")]
 fn wallpaper_accent(scheme: Scheme, machine: Option<&str>, person: Option<&str>) -> Option<Colour> {
     let ((machine, _), (person, _)) = (read_file(machine), read_file(person));
-    if accent_between(machine.as_ref(), person.as_ref()).as_deref() != Some(WALLPAPER_ACCENT) {
+    // Read for the accent or the glass's colour that takes it (M8.21 part
+    // 21m), else not at all.
+    let glass = Glass::between(machine.as_ref(), person.as_ref());
+    if accent_between(machine.as_ref(), person.as_ref()).as_deref() != Some(WALLPAPER_ACCENT)
+        && glass.colour.as_deref() != Some(WALLPAPER_ACCENT)
+    {
         return None;
     }
     let over = |key: fn(&SettingsFile) -> Option<&String>| {
@@ -1866,6 +1874,30 @@ impl IconSize {
     }
 }
 
+/// The glass (M8.21 part 21m): how the shell's surfaces are drawn,
+/// `appearance.glass`, and their colour, `appearance.glass_colour`, each the
+/// person's over the machine's.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Glass {
+    pub mode: Option<String>,
+    pub colour: Option<String>,
+}
+
+impl Glass {
+    /// The values the person's file sets, else the machine's.
+    pub fn between(machine: Option<&SettingsFile>, person: Option<&SettingsFile>) -> Glass {
+        Glass {
+            mode: over(machine, person, |a| a.glass.clone()),
+            colour: over(machine, person, |a| a.glass_colour.clone()),
+        }
+    }
+}
+
+/// How far a tinted or solid surface's colour moves towards the glass's
+/// colour, and how solid a tinted one is (M8.21 part 21m).
+const GLASS_TINT: f32 = 0.25;
+const GLASS_TINTED_ALPHA: f32 = 0.85;
+
 /// An icon's size of `value` scaled to `percent` of the release's, rounded
 /// half up and never below 12 px (M5.12b5 part A).
 fn scaled_icon(value: u32, percent: u32) -> u32 {
@@ -1873,6 +1905,47 @@ fn scaled_icon(value: u32, percent: u32) -> u32 {
 }
 
 impl Tokens {
+    /// These tokens with the glass on top (M8.21 part 21m). Its colour
+    /// moves the glass halfway to the accent, or to `from_wallpaper` (the
+    /// wallpaper's colour, none for no picture, which keeps the grey);
+    /// `neutral` keeps the release's. `tinted` draws no blur, the panel's
+    /// colour tinted that way and nearly solid; `solid` draws no blur and
+    /// nothing through, the panel's colour barely tinted. Unknown values
+    /// were named by the file's own check and change nothing here.
+    pub fn with_glass(mut self, glass: &Glass, from_wallpaper: Option<Colour>) -> Tokens {
+        let tint = match glass.colour.as_deref() {
+            Some("accent") => Some(self.accent),
+            Some(WALLPAPER_ACCENT) => from_wallpaper,
+            _ => None,
+        };
+        if let Some(tint) = tint {
+            self.glass = self.glass.towards(tint, 0.5);
+        }
+        let surface = |amount: f32| match tint {
+            Some(tint) => self.panel.towards(tint, amount),
+            None => self.panel,
+        };
+        match glass.mode.as_deref() {
+            Some("tinted") => {
+                self.glass = Colour {
+                    a: GLASS_TINTED_ALPHA,
+                    ..surface(GLASS_TINT)
+                };
+                self.blur = 0;
+            }
+            Some("solid") => {
+                self.glass = Colour {
+                    a: 1.0,
+                    ..surface(GLASS_TINT / 2.0)
+                };
+                self.blur = 0;
+                self.panel_opacity = 100;
+            }
+            _ => {}
+        }
+        self
+    }
+
     /// These tokens with a person's icon size on top (M5.12b5 part A): the
     /// panel's icon and the apps widget's icons are scaled by the percent,
     /// never below 12 px. The panel's height does not change, so the panel's
@@ -2892,6 +2965,76 @@ mod tests {
         let (same, notes) = built.clone().with_text(&Text::default());
         assert!(notes.is_empty(), "{notes:?}");
         assert_eq!(same, built);
+    }
+
+    #[test]
+    fn the_glass_follows_its_mode_and_colour() {
+        let built = Tokens::built_in();
+        let glass = |mode: Option<&str>, colour: Option<&str>| Glass {
+            mode: mode.map(String::from),
+            colour: colour.map(String::from),
+        };
+        // Absent and neutral glass is the release's own.
+        assert_eq!(built.clone().with_glass(&Glass::default(), None), built);
+        assert_eq!(
+            built
+                .clone()
+                .with_glass(&glass(Some("glass"), Some("neutral")), None),
+            built
+        );
+        // The accent moves the glass halfway to it and keeps it see-through.
+        let accent = built.clone().with_glass(&glass(None, Some("accent")), None);
+        assert_eq!(accent.glass, built.glass.towards(built.accent, 0.5));
+        assert_eq!(accent.glass.a, built.glass.a);
+        assert_eq!(accent.blur, built.blur);
+        // A wallpaper with no picture keeps the grey.
+        assert_eq!(
+            built
+                .clone()
+                .with_glass(&glass(None, Some("wallpaper")), None),
+            built
+        );
+        let red = Colour {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        };
+        let wallpaper = built
+            .clone()
+            .with_glass(&glass(None, Some("wallpaper")), Some(red));
+        assert_eq!(wallpaper.glass, built.glass.towards(red, 0.5));
+        // Tinted: no blur, the panel's colour nearly solid.
+        let tinted = built.clone().with_glass(&glass(Some("tinted"), None), None);
+        assert_eq!(tinted.blur, 0);
+        assert_eq!(tinted.glass.a, GLASS_TINTED_ALPHA);
+        assert_eq!(
+            (tinted.glass.r, tinted.glass.g),
+            (built.panel.r, built.panel.g)
+        );
+        // Solid: no blur and nothing through, the panels opaque too.
+        let solid = built
+            .clone()
+            .with_glass(&glass(Some("solid"), Some("accent")), None);
+        assert_eq!(
+            (solid.blur, solid.panel_opacity, solid.glass.a),
+            (0, 100, 1.0)
+        );
+        assert_eq!(
+            solid.glass,
+            Colour {
+                a: 1.0,
+                ..built.panel.towards(built.accent, GLASS_TINT / 2.0)
+            }
+        );
+    }
+
+    #[test]
+    fn the_glass_keys_in_a_file_reach_the_tokens() {
+        let person = Some("format = 1\n[appearance]\nglass = \"solid\"\n");
+        let (tokens, notes) = load_from_files(Scheme::Light, None, person, None);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!((tokens.blur, tokens.glass.a), (0, 1.0));
     }
 
     #[test]

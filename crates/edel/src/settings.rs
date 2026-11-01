@@ -1207,6 +1207,34 @@ pub const KEYS: &[Key] = &[
             retired: None,
         },
     ),
+    // The glass (M8.21 part 21m): how the shell's surfaces are drawn and
+    // their colour.
+    now(
+        "appearance.glass",
+        Kind::OneOf(&["glass", "tinted", "solid"]),
+        Help {
+            help: n_(
+                "How the shell's surfaces are drawn: frosted glass over a blur, a tint without the blur, or solid.",
+            ),
+            default: r#""glass""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
+    now(
+        "appearance.glass_colour",
+        Kind::OneOf(&["neutral", "accent", "wallpaper"]),
+        Help {
+            help: n_(
+                "What colour the glass takes: the release's grey, the accent colour, or the wallpaper's own colour.",
+            ),
+            default: r#""neutral""#,
+            from: DecidedBy::Release,
+            belongs: Belongs::Person,
+            retired: None,
+        },
+    ),
     // The text (M5.12b5): the interface and monospace fonts by family name,
     // and every text size in percent of the release's.
     now(
@@ -2449,6 +2477,14 @@ pub struct Appearance {
     /// `arrows` or `counts` (M5.2m); absent is [`SWITCHER_ENDS_DEFAULT`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub switcher_ends: Option<String>,
+    /// How the shell's surfaces are drawn, `glass`, `tinted` or `solid`
+    /// (M8.21 part 21m); absent is [`GLASS_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glass: Option<String>,
+    /// The glass's colour, `neutral`, `accent` or `wallpaper` (M8.21 part
+    /// 21m); absent is [`GLASS_COLOUR_DEFAULT`].
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub glass_colour: Option<String>,
     /// The desktop's widgets (M8.21 part 21j1): absent is none.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub widgets: Option<Vec<crate::lock_screen::Placed>>,
@@ -3759,6 +3795,16 @@ pub const SWITCHER_ENDS: &str = "appearance.switcher_ends";
 pub const SWITCHER_LOOK_DEFAULT: &str = "numbers";
 pub const SWITCHER_SHOWN_DEFAULT: u32 = 3;
 pub const SWITCHER_ENDS_DEFAULT: &str = "arrows";
+
+/// The keys the glass is kept under (M8.21 part 21m): how the shell's
+/// surfaces are drawn, and their colour. shell-ui and Settings share the
+/// names.
+pub const GLASS: &str = "appearance.glass";
+pub const GLASS_COLOUR: &str = "appearance.glass_colour";
+/// What the glass is when neither file sets its keys (M8.21 part 21m):
+/// frosted glass, in the release's grey.
+pub const GLASS_DEFAULT: &str = "glass";
+pub const GLASS_COLOUR_DEFAULT: &str = "neutral";
 
 /// The key the overview's strip of workspaces is kept under (M5.2j-b), the
 /// one name shell-ui, Settings and `edel settings` share, and what it shows
@@ -7173,6 +7219,24 @@ version = "1.2"
         assert_eq!(
             format!("{refused:#}"),
             "workspaces.wallpapers: expected a list of wallpapers in quotes, one per workspace, such as [\"\", \"#336699\"], not [1]"
+        );
+    }
+
+    #[test]
+    fn the_glass_keys_are_checked_and_written() {
+        let base = "format = 1\n";
+        assert_eq!(
+            set(base, GLASS, "tinted").unwrap(),
+            "format = 1\n\n[appearance]\nglass = \"tinted\"\n"
+        );
+        assert_eq!(
+            set(base, GLASS_COLOUR, "accent").unwrap(),
+            "format = 1\n\n[appearance]\nglass_colour = \"accent\"\n"
+        );
+        let refused = set(base, GLASS_COLOUR, "pink").unwrap_err();
+        assert_eq!(
+            format!("{refused:#}"),
+            "appearance.glass_colour: unknown value \"pink\"; use neutral, accent or wallpaper"
         );
     }
 

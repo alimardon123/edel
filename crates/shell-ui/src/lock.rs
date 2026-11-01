@@ -1104,18 +1104,9 @@ pub(crate) fn frosted(
 /// How solid a frosted card's base is under its glass.
 const CARD_SOLID: f32 = 0.85;
 
-/// Frosted glass: the tokens' tint over what lies behind, edged with
-/// their hairline, its corners `r` (device pixels).
-pub(crate) fn glass(
-    pixmap: &mut Pixmap,
-    (x, y, w, h): (f32, f32, f32, f32),
-    r: f32,
-    s: f32,
-    tokens: &Tokens,
-) {
-    fill(pixmap, x, y, w, h, r, tokens.glass);
-    outline(pixmap, (x, y, w, h), r, s, tokens.glass_rim);
-}
+/// Frosted glass, the one painter every glass surface shares (M8.21 part
+/// 21n).
+pub(crate) use crate::paint::glass;
 
 thread_local! {
     /// Each picture's colour for a `wallpaper` colour (M5.33d), read once: the
