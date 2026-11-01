@@ -333,7 +333,8 @@
 #               ci/build.sh signs, served here on port 8001, puts a
 #               compositor that only fails into slot B and restarts; no
 #               frame, so the guard lets the watchdog restart slot B, and
-#               GRUB, out of tries, starts slot A, which says so (M4.8)
+#               GRUB, out of tries, starts slot A, which says so (M4.8);
+#               a dev box made before the update still runs (M7.17)
 #   input-method  region.input_method = fcitx5 starts fcitx5 with the desktop
 #               (the compositor logs `started fcitx5`); Super+T opens foot,
 #               Ctrl+Alt+Shift+U and e9 open fcitx5's Unicode picker, whose
@@ -362,6 +363,11 @@
 #               ends 0, the diff is empty, and podman runs our own
 #               container image, imported as edel:ci, as ci, an admin,
 #               printing ok (M7.6b)
+#   dev-box     the dev box (M7.17): the containers add-on's distrobox
+#               makes the default box from the image this host serves,
+#               a .deb app and an AppImage installed in it show in the
+#               launcher and the .deb's command runs from the session's
+#               PATH
 #   ai-agents   the AI agents add-on (built in): addons.installed+= makes
 #               apply install its two Flatpak stand-ins for ci, Newelle
 #               starts from the launcher, a stand-in agent's edel settings
@@ -8209,6 +8215,15 @@ case_completion() {
 }
 
 case_rollback() {
+	# The dev box (M7.17) is made before the update, on /data, and must be
+	# there and still run on slot A after the fallback.
+	asked=$(count 'DESKTOP-TEST: dev_box_make ')
+	guest 'dev box make'
+	wait_more 'DESKTOP-TEST: dev_box_make ' "$asked" 600 || fail "the dev box was not made within 600 s"
+	case "$(value dev_box_make)" in
+	'0 dev '*) ;;
+	*) fail "distrobox create with the add-on's defaults did not make the box dev as ci: $(value dev_box_make)" ;;
+	esac
 	guest 'break update'
 	wait_for 'DESKTOP-TEST: rollback: (slot B has|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
 		fail "the test service did not install the broken update: $(tr -d '\r' <"$log" | grep -a 'rollback' | tail -n 3)"
@@ -8219,7 +8234,14 @@ case_rollback() {
 	value rollback: | grep -q '^PASS' || fail "$(value rollback:)"
 	tr -d '\r' <"$log" | grep -q 'DESKTOP-TEST: rollback: slot B runs' ||
 		fail "slot B never ran, so its fallback proves nothing"
-	echo "PASS: an update whose compositor fails was installed into slot B; slot B never showed a frame, the guard let the watchdog restart it and the VM came back on slot A, with slot B switched off"
+	# Slot A's boot after the fallback checks the box itself, as it reads
+	# no commands.
+	wait_for 'DESKTOP-TEST: dev_box_check ' 300 || fail "the service did not check the dev box after the fallback"
+	case "$(value dev_box_check)" in
+	'dev '*'box ok') ;;
+	*) fail "after the update and the fallback to slot A the dev box is gone or does not run: $(value dev_box_check)" ;;
+	esac
+	echo "PASS: an update whose compositor fails was installed into slot B; slot B never showed a frame, the guard let the watchdog restart it and the VM came back on slot A, with slot B switched off, and the dev box made before the update still ran"
 }
 
 case_tiling() {
@@ -9580,6 +9602,57 @@ case_profile_developer() {
 	echo "PASS: with the developer profile applied (VSCodium left out), edel settings diff was empty and podman run --rm edel:ci echo ok, our own container image, printed ok as ci, an admin"
 }
 
+case_dev_box() {
+	# The dev box (M7.17): distrobox, in the containers add-on, makes the
+	# default box (its own distrobox.conf names the image) from the image
+	# this host serves (ci/dev-box-files.sh), with no other network; a .deb
+	# app and an AppImage installed in it are exported to the launcher,
+	# which then offers three apps more (the box's own entry, Dev, which
+	# opens a terminal in it, and the two), and the .deb's command runs from
+	# the session's own PATH.
+	shown=$(count 'edel-shell-ui: launcher shown, ')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown, ' "$shown" || fail "Super did not open the launcher"
+	before=$(tr -d '\r' <"$log" | grep -aoE 'launcher shown, [0-9]+ apps' | tail -n 1 | grep -oE '[0-9]+')
+	python3 ci/qmp.py key esc
+	asked=$(count 'DESKTOP-TEST: dev_box_make ')
+	guest 'dev box make'
+	wait_more 'DESKTOP-TEST: dev_box_make ' "$asked" 600 || fail "the dev box was not made within 600 s"
+	case "$(value dev_box_make)" in
+	'0 dev '*) ;;
+	*) fail "distrobox create with the add-on's defaults, then a first enter, did not make the box dev as ci: $(value dev_box_make)" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: dev_box_apps ')
+	guest 'dev box apps'
+	wait_more 'DESKTOP-TEST: dev_box_apps ' "$asked" 300 || fail "installing the .deb and the AppImage in the box took over 300 s"
+	case "$(value dev_box_apps)" in
+	'0 2 '*) ;;
+	*) fail "the .deb app and the AppImage did not both install in the box and export to ~/.local/share/applications: $(value dev_box_apps)" ;;
+	esac
+	shown=$(count 'edel-shell-ui: launcher shown, ')
+	python3 ci/qmp.py key meta_l
+	wait_more 'edel-shell-ui: launcher shown, ' "$shown" || fail "Super did not open the launcher again"
+	after=$(tr -d '\r' <"$log" | grep -aoE 'launcher shown, [0-9]+ apps' | tail -n 1 | grep -oE '[0-9]+')
+	python3 ci/qmp.py type 'edel hello'
+	sleep 1
+	python3 ci/qmp.py screendump "$dir/dev-box-launcher.png"
+	python3 ci/qmp.py key esc
+	[ "$after" = $((before + 3)) ] || fail "the launcher offers $after apps after the box was made and its two apps were exported, not $((before + 3)): Dev, a terminal in the box, and the two"
+	asked=$(count 'DESKTOP-TEST: dev_box_run ')
+	guest 'dev box run'
+	wait_more 'DESKTOP-TEST: dev_box_run ' "$asked" 120 || fail "the service did not run the box's apps"
+	ran=$(value dev_box_run)
+	case "$ran" in
+	*'deb=hello from the dev box; app=hello from an AppImage') ;;
+	*) fail "the .deb's command from the session's PATH and the AppImage in the box did not both say hello: $ran" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: dev_box_clean ')
+	guest 'dev box clean'
+	wait_more 'DESKTOP-TEST: dev_box_clean ' "$asked" 120 || fail "the service did not remove the box"
+	[ "$(value dev_box_clean)" = '0 0' ] || fail "the box, its image or the add-on was not removed: $(value dev_box_clean)"
+	echo "PASS: distrobox made the default box from the add-on's own distrobox.conf, the .deb app and the AppImage installed in it took the launcher from $before to $after apps (dev-box-launcher.png), and $(echo "$ran" | sed 's/^path=[^;]*; //')"
+}
+
 case_flatpak() {
 	# Flatpak apps (M6.1): `edel settings set` lists io.mpv.Mpv in
 	# apps.installed and makes ci an admin, as apps install for admins only,
@@ -9872,7 +9945,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal keyring own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal keyring own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer dev-box profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')
@@ -10473,16 +10546,24 @@ fi
 # profile-gaming and game-session a stand-in for Steam and ai-agents its two apps' stand-ins from the test apps'
 # repository;
 # profile-developer our own container image (ci/build.sh's
-# out/desktop-container).
+# out/desktop-container); dev-box, and rollback for the box it keeps
+# through the update, the default box image and its test apps
+# (ci/dev-box-files.sh).
 case " $* " in
-*' profile-gaming '* | *' profile-developer '* | *' ai-agents '* | *' game-session '*)
+*' profile-gaming '* | *' profile-developer '* | *' ai-agents '* | *' game-session '* | *' dev-box '* | ' rollback ')
 	rm -rf "$dir/serve"
 	mkdir -p "$dir/serve"
 	ln -s "$PWD/out/apps-repo" "$dir/serve/apps"
 	ln -s "$PWD/out/desktop-container/edel-container-x86_64.tar.gz" "$dir/serve/edel-container.tar.gz"
+	case " $* " in *' dev-box '* | ' rollback ')
+		sh ci/dev-box-files.sh || fail "ci/dev-box-files.sh could not make the dev box's image and test apps"
+		ln -s "$PWD/out/dev-box" "$dir/serve/dev-box"
+		;;
+	esac
 	python3 -m http.server 8002 --bind 127.0.0.1 --directory "$dir/serve" >out/desktop-serve.log 2>&1 &
 	served=$!
-	trap 'kill "$served" 2>/dev/null || true; rm -f "$grown"' EXIT
+	# rollback's update server keeps its own kill.
+	trap 'kill "$served" "${server:-$served}" 2>/dev/null || true; rm -f "$grown"' EXIT
 	;;
 esac
 
