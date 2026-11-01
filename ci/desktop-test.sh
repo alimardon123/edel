@@ -3990,10 +3990,16 @@ case_launcher() {
 	background=$(token background)
 	panel=$(token panel)
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background before the launcher opens"
+	bare=$(shot launcher-bare 1100 100 '!000001')
 	shown=$(count 'edel-shell-ui: launcher shown')
+	veiled=$(count 'edel-shell-ui: veil shown 1280x800 dimmed')
 	python3 ci/qmp.py key meta_l
 	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super, tapped alone, did not open the launcher"
 	shot launcher 188 748 "$panel" >/dev/null || fail "the launcher is not drawn at 188,748 in the panel's colour"
+	# The veil (M8.21 21o): the screen behind the launcher dimmed as the
+	# lock dims, so 1100,100 is darker than before. Kept as launcher-veil.png.
+	wait_more 'edel-shell-ui: veil shown 1280x800 dimmed' "$veiled" || fail "the launcher opened with no veil over the screen"
+	dim=$(shot launcher-veil 1100 100 "!$bare") || fail "1100,100 is still #$bare with the launcher open: the veil is not drawn"
 	apps=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, //')
 	# Typed, foot is the best match, and Return starts it.
 	opened=$(count 'edel-compositor: mapped window foot')
@@ -4026,9 +4032,10 @@ case_launcher() {
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher"
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
+	shot launcher-bare 1100 100 "$bare" >/dev/null || fail "1100,100 is not #$bare again after the launcher closed: the veil stayed"
 	guest 'shell rss'
 	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
-	echo "PASS: Super opened the launcher in the panel's colour with $apps, a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps over the veil (1100,100 #$bare dimmed to #$dim), a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
 }
 
 case_app_permissions() {
