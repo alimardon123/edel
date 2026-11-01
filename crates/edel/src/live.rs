@@ -47,6 +47,45 @@ fn with_live_session(config: &str) -> Option<String> {
     Some(doc.to_string())
 }
 
+/// Links the install button's desktop file into `home`'s applications on a
+/// stick, so the launcher and the presets' `install` pin find it, and takes
+/// the link away otherwise (a machine nobody has set up, which has no
+/// installer page). Returns whether the link is there.
+fn install_button(home: &Path, stick: bool, uid: u32) -> Result<bool> {
+    let apps = home.join(".local/share/applications");
+    let link = apps.join(edel::places::INSTALL_APP);
+    if !stick {
+        match fs::remove_file(&link) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(err).with_context(|| format!("could not remove {}", link.display()));
+            }
+        }
+        return Ok(false);
+    }
+    // The folders the live account's launcher reads, made by us so the
+    // account owns them (M8.22); a folder already there is left as it is.
+    for dir in [home.join(".local"), home.join(".local/share"), apps.clone()] {
+        if !dir.is_dir() {
+            fs::create_dir(&dir).with_context(|| format!("could not make {}", dir.display()))?;
+            std::os::unix::fs::chown(&dir, Some(uid), None)
+                .with_context(|| format!("could not give {} to {uid}", dir.display()))?;
+        }
+    }
+    match fs::remove_file(&link) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            return Err(err).with_context(|| format!("could not remove {}", link.display()));
+        }
+    }
+    let target = Path::new(edel::places::LIVE_APPS_DIR).join(edel::places::INSTALL_APP);
+    std::os::unix::fs::symlink(&target, &link)
+        .with_context(|| format!("could not link {} to {}", link.display(), target.display()))?;
+    Ok(true)
+}
+
 /// `edel boot live`, run at boot by the login feature's `edel-live`.
 pub fn live() -> Result<()> {
     let sys = Path::new("/sys");
@@ -78,6 +117,15 @@ pub fn live() -> Result<()> {
         return Ok(());
     };
     machine::add_live_account(LIVE_USER)?;
+    if install_button(
+        &Path::new("/home").join(LIVE_USER),
+        stick,
+        edel::places::LIVE_UID,
+    )? {
+        println!(
+            "edel boot live: Install Edel OS is first in {LIVE_USER}'s panel and in the launcher"
+        );
+    }
     if let Some(dir) = Path::new(GREETD_LIVE).parent() {
         fs::create_dir_all(dir)?;
     }
@@ -119,5 +167,27 @@ mod tests {
         let twice = with_live_session(&with_live_session(config).unwrap()).unwrap();
         assert_eq!(twice.matches("[initial_session]").count(), 1);
         assert_eq!(with_live_session("not = [toml"), None);
+    }
+
+    #[test]
+    fn the_install_button_links_on_a_stick_and_is_taken_away_elsewhere() {
+        use std::os::unix::fs::MetadataExt;
+        let home = std::env::temp_dir().join(format!("edel-install-button-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(&home).unwrap();
+        let uid = fs::metadata(&home).unwrap().uid();
+        let link = home
+            .join(".local/share/applications")
+            .join(edel::places::INSTALL_APP);
+        assert!(install_button(&home, true, uid).unwrap());
+        assert_eq!(
+            fs::read_link(&link).unwrap(),
+            Path::new(edel::places::LIVE_APPS_DIR).join(edel::places::INSTALL_APP)
+        );
+        assert!(!install_button(&home, false, uid).unwrap());
+        assert!(fs::symlink_metadata(&link).is_err(), "the link is gone");
+        // Taking away a link that is not there is no error.
+        assert!(!install_button(&home, false, uid).unwrap());
+        fs::remove_dir_all(&home).unwrap();
     }
 }
