@@ -10042,10 +10042,57 @@ if [ "$*" = live ]; then
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
+	# Not the whole partition, which took about 20 s a look (#614): its
+	# file system's metadata, journal included (e2image), with the journal
+	# replayed on that copy, names the log's size and blocks, and the
+	# blocks are read from the stick itself, where ext4 writes a file's
+	# data before the journal names it.
 	stick_session() {
-		partition_out "$stick" 4 "$dir/data.img"
-		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
-		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
+		looked=$(date +%s%N)
+		start=$(sfdisk -d "$stick" 2>/dev/null | sed -n 's/^[^ ]*[^0-9]4 : start= *\([0-9]*\),.*/\1/p')
+		rm -f "$dir/data-meta.img"
+		e2image -r -o $((start * 512)) "$stick" "$dir/data-meta.img" 2>/dev/null
+		copied=$(date +%s%N)
+		e2fsck -fy -E journal_only "$dir/data-meta.img" >/dev/null 2>&1 || true
+		checked=$(date +%s%N)
+		file=/home/live/$home_session_log
+		bs=$(debugfs -R stats "$dir/data-meta.img" 2>/dev/null | sed -n 's/^Block size: *\([0-9]*\).*/\1/p')
+		size=$(debugfs -R "stat $file" "$dir/data-meta.img" 2>/dev/null | sed -n 's/.*  Size: \([0-9]*\).*/\1/p' | head -n 1)
+		# In a file, as the callers run it in pipes and $(...).
+		echo "$(((copied - looked) / 1000000)) $(((checked - copied) / 1000000))" >>"$dir/session-looks"
+		# No log yet (the session has not started), or the copy failed.
+		[ -n "$bs" ] && [ -n "$size" ] || return 0
+		# The log's extents (debugfs ex): the leaves map its blocks to the
+		# disk's; a block in no extent, or in an unwritten one, reads as
+		# zeros, as the file system would read it.
+		debugfs -R "ex $file" "$dir/data-meta.img" 2>/dev/null | python3 -I -c '
+import re, sys
+disk, start, block, size = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+leaf = re.compile(r"^\s*(\d+)/\s*(\d+)\s+\d+/\s*\d+\s+(\d+)\s*-\s*(\d+)\s+(\d+)\s*-\s*\d+\s+\d+(.*)$")
+out = bytearray(size)
+with open(disk, "rb") as f:
+    for line in sys.stdin:
+        m = leaf.match(line)
+        if not m or m[1] != m[2] or "Uninit" in m[6]:
+            continue
+        first, last, at = int(m[3]), int(m[4]), int(m[5])
+        for n in range(first, last + 1):
+            if n * block >= size:
+                break
+            f.seek(start + (at + n - first) * block)
+            piece = f.read(min(block, size - n * block))
+            out[n * block:n * block + len(piece)] = piece
+sys.stdout.buffer.write(bytes(out))
+' "$stick" $((start * 512)) "$bs" "$size"
+	}
+	# lap NAME: how long the live walk took since the last lap, so the
+	# lane's slow stretches show in CI's log.
+	lap_at=$(date +%s)
+	: >"$dir/session-looks"
+	lap() {
+		echo "  live: $1 took $(($(date +%s) - lap_at)) s; $(awk '{ n++; c += $1; k += $2 } END { printf "%d looks at the session log, %d ms copying and %d checking", n, c, k }' "$dir/session-looks")"
+		lap_at=$(date +%s)
+		: >"$dir/session-looks"
 	}
 	# settings_open NAME: types settings in the launcher and waits until
 	# the compositor maps one more Settings window than before (M8.15a's
@@ -10105,6 +10152,7 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	lap "starting the stick"
 	walk try "seconds=$started" || fail "starting the stick took longer than its budget (walk try, docs/REVIEW-experience.md)"
 	# The first start (M6.12): live's session opens Settings' Welcome,
 	# which on a stick asks Try or Install first, Install taking Return.
@@ -10164,6 +10212,7 @@ if [ "$*" = live ]; then
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
+	lap "the Welcome, the screen and the serial log"
 	# The browser offline (M6.2): Super, "firefox" and Return start the
 	# default apps' Firefox from the stick's own installation with no
 	# network beyond the VM, and its window must map within 180 s, which
@@ -10208,6 +10257,7 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py screendump "$dir/store.png"
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	lap "Firefox and the store"
 	# A web app (M6.4): an address typed in the launcher offers to make it
 	# an app, first; Return makes it and starts it, Firefox with a profile
 	# and an app id of its own, so it is a window of its own, which the
@@ -10252,6 +10302,7 @@ if [ "$*" = live ]; then
 	*) fail "the live session did not add Flathub from the image's file, so the store lists nothing" ;;
 	esac
 	rm -f "$dir/apps-data.img"
+	lap "the web app and the default apps' files"
 	# Settings' installer page (M6.6a), by keyboard alone as a person
 	# could: the launcher opens Settings, which on a stick opens on the
 	# page with the login name taking the keys; Return moves on, and on
@@ -10295,6 +10346,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	lap "the first install"
 	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
@@ -10331,6 +10383,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the installed disk has no desktop add-on beside its slot"
 	fi
+	lap "the installed disk's files and add-on"
 	echo "PASS: the installed disk holds the desktop add-on in $addons_dir/$carried"
 	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
@@ -10420,7 +10473,8 @@ if [ "$*" = live ]; then
 	# own (en_US: America/New_York), and the first boot applies it.
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	rm -f "$stick" "$dir/data.img" "$dir/data-meta.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	lap "the install from a settings file and its first start"
 	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png)"
 	exit 0
 fi
