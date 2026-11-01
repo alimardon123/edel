@@ -296,7 +296,8 @@ mod tests {
                 let corner = pixmap.pixel(0, 0).unwrap();
                 assert_eq!(corner.alpha(), 0, "a round corner");
                 let middle = pixmap
-                    .pixel(pixmap.width() / 2, pixmap.height() - 2)
+                    // Inside the glass's hairline, which edges the card.
+                    .pixel(pixmap.width() / 2, pixmap.height() - 2 - scale as u32)
                     .unwrap()
                     .demultiply();
                 assert_eq!(
