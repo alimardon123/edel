@@ -1,0 +1,23 @@
+#!/bin/sh
+# The dev box (M7.17, M7.19): runs a command, or a shell, in the person's
+# dev box, making the box first when it does not exist yet, so the
+# launcher's Dev box opens it with no command typed. Its image and name
+# are distrobox.conf's (the add-on's, then the machine's, then the
+# person's own), which `distrobox create` reads too.
+set -eu
+container_name_default=
+for conf in /usr/share/distrobox/distrobox.conf /etc/distrobox/distrobox.conf \
+	"${XDG_CONFIG_HOME:-$HOME/.config}/distrobox/distrobox.conf" "$HOME/.distroboxrc"; do
+	if [ -r "$conf" ]; then
+		. "$conf"
+	fi
+done
+name=${container_name_default:?distrobox.conf names no box: set container_name_default in ~/.config/distrobox/distrobox.conf}
+if ! podman container exists "$name" 2>/dev/null; then
+	echo "Making your dev box, $name. The first time downloads its system, which can take a few minutes."
+	distrobox create --yes --name "$name"
+fi
+if [ "$#" -eq 0 ]; then
+	exec distrobox enter "$name"
+fi
+exec distrobox enter "$name" -- "$@"
