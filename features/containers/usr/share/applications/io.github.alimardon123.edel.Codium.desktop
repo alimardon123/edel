@@ -1,3 +1,5 @@
+# Not TextEditor: that category makes an app the panel's pinned editor
+# (edel::apps' roles), and this one's first open downloads the box.
 [Desktop Entry]
 Type=Application
 Name=VSCodium
@@ -6,5 +8,5 @@ Comment=Write code with the languages and tools of your dev box
 Exec=edel-codium %F
 Icon=accessories-text-editor
 Terminal=false
-Categories=Development;IDE;TextEditor;
+Categories=Development;IDE;
 Keywords=vscode;code;editor;ide;programming;
