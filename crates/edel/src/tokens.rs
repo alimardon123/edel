@@ -697,11 +697,11 @@ pub struct Tokens {
     pub backdrop_deep: Colour,
     /// Text and marks drawn straight on the backdrop.
     pub backdrop_text: Colour,
-    /// The lock and login screens' frosted glass (M5.10c): the field, the
-    /// notifications' count and the corner's buttons, and the hairline
-    /// round them.
-    pub lock_glass: Colour,
-    pub lock_glass_edge: Colour,
+    /// The frosted glass (M5.10c; named for every surface since M8.21's
+    /// 21l): the lock's field, the notifications' count and the corner's
+    /// buttons, and the hairline round them, its rim.
+    pub glass: Colour,
+    pub glass_rim: Colour,
     /// What lies behind the lock and login screens without a wallpaper:
     /// a gradient from `lock_backdrop` to `lock_backdrop_deep`, lit by two
     /// soft glows (M5.10c).
@@ -790,7 +790,7 @@ colour_tokens! {
     title_button_hover, title_close_hover, panel, panel_text, accent, shadow,
     window, card, line, accent_text, edge, window_border, window_border_focused,
     window_border_focused_end, backdrop, backdrop_deep, backdrop_text,
-    lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
+    glass, glass_rim, lock_backdrop, lock_backdrop_deep, lock_glow,
     lock_glow_second, lock_edit_deep, lock_edit_glow, in_use, in_use_text,
 }
 
@@ -1521,8 +1521,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         backdrop: BLACK,
         backdrop_deep: BLACK,
         backdrop_text: BLACK,
-        lock_glass: BLACK,
-        lock_glass_edge: BLACK,
+        glass: BLACK,
+        glass_rim: BLACK,
         lock_backdrop: BLACK,
         lock_backdrop_deep: BLACK,
         lock_glow: BLACK,
