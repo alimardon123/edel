@@ -8,10 +8,6 @@
 //! with no fillets. Sizes are logical pixels times the buffer's scale;
 //! colours come from the design tokens.
 
-use cosmic_text::{
-    Attrs, Buffer, Color, Family, FeatureTag, FontFeatures, FontSystem, Metrics, Shaping,
-    SwashCache, Weight,
-};
 use tiny_skia::{
     FillRule, GradientStop, LinearGradient, Mask, Paint, Path, PathBuilder, Pixmap, PixmapPaint,
     Point, Rect, SpreadMode, Stroke, StrokeDash, Transform,
@@ -158,192 +154,17 @@ pub fn height(style: Style, size: Size, tokens: &Tokens) -> u32 {
     }
 }
 
-/// The fonts and glyph cache text is drawn with, loaded once.
-pub struct Text {
-    fonts: FontSystem,
-    glyphs: SwashCache,
-    /// The interface font's family, from the tokens.
-    family: String,
-}
+/// The text engine, shared with the compositor (`edel::text`, M8.21).
+pub use edel::text::{Face, Text};
 
-/// How heavy a line of text is and whether its figures all have one
-/// width (Inter's `tnum`), as the mockups set the clock.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Face {
-    pub weight: u16,
-    pub tabular: bool,
-}
-
-impl Face {
-    pub const REGULAR: Face = Face {
-        weight: 400,
-        tabular: false,
-    };
-    /// Window buttons' titles.
-    pub const MEDIUM: Face = Face {
-        weight: 500,
-        tabular: false,
-    };
-    /// Numbers that stand out: the clock's time, the workspaces'.
-    pub const SEMIBOLD: Face = Face {
-        weight: 600,
-        tabular: false,
-    };
-
-    /// The same weight with tabular figures.
-    pub const fn tabular(self) -> Face {
-        Face {
-            tabular: true,
-            ..self
-        }
+/// The text engine in `family`, saying so when no font loaded at all
+/// (M6.17), as the panel and the lock screen then draw no words.
+pub fn text(family: &str) -> Text {
+    let text = Text::load(family);
+    if !text.has_fonts() {
+        eprintln!("edel-shell-ui: {}", crate::messages::NO_FONT);
     }
-}
-
-/// One line of text, shaped.
-pub struct Line {
-    buffer: Buffer,
-    pub width: f32,
-}
-
-impl Text {
-    /// Text in `family`, the tokens' interface font. When fontconfig finds
-    /// no font at all, the fallback fonts are loaded from their files; with
-    /// none of those either, text is drawn as nothing rather than ending
-    /// shell-ui, which draws the lock screen too (M6.17).
-    pub fn load(family: &str) -> Text {
-        let mut fonts = FontSystem::new();
-        if fonts.db().is_empty() {
-            for path in edel::places::FALLBACK_FONTS {
-                let _ = fonts.db_mut().load_font_file(path);
-            }
-            if fonts.db().is_empty() {
-                eprintln!("edel-shell-ui: {}", crate::messages::NO_FONT);
-            }
-        }
-        Text {
-            fonts,
-            glyphs: SwashCache::new(),
-            family: family.to_string(),
-        }
-    }
-
-    /// Shapes in `family` from now on, as the look changed (M6.17): the
-    /// fonts are the system's, loaded once, so only the name changes.
-    pub fn set_family(&mut self, family: &str) {
-        if self.family != family {
-            self.family = family.to_string();
-        }
-    }
-
-    /// `text` shaped in the interface font, falling back for other
-    /// scripts, `size` pixels high.
-    pub fn line(&mut self, text: &str, size: f32) -> Line {
-        self.line_in(text, size, Face::REGULAR)
-    }
-
-    /// [`Text::line`] in `face`.
-    pub fn line_in(&mut self, text: &str, size: f32, face: Face) -> Line {
-        let metrics = Metrics::new(size, size * 1.25);
-        if self.fonts.db().is_empty() {
-            // Shaping with no font at all panics in cosmic-text: an empty
-            // line instead, never shaped.
-            return Line {
-                buffer: Buffer::new_empty(metrics),
-                width: 0.0,
-            };
-        }
-        let mut buffer = Buffer::new(&mut self.fonts, metrics);
-        buffer.set_size(None, None);
-        let mut attrs = Attrs::new()
-            .family(Family::Name(&self.family))
-            .weight(Weight(face.weight));
-        if face.tabular {
-            let mut features = FontFeatures::new();
-            features.enable(FeatureTag::new(b"tnum"));
-            attrs = attrs.font_features(features);
-        }
-        buffer.set_text(text, &attrs, Shaping::Advanced, None);
-        buffer.shape_until_scroll(&mut self.fonts, false);
-        let width = buffer
-            .layout_runs()
-            .map(|run| run.line_w)
-            .fold(0.0, f32::max);
-        Line { buffer, width }
-    }
-
-    /// `text` as one line `size` pixels high in at most `room` pixels:
-    /// whole, or cut short with an ellipsis, or nothing if not even that
-    /// fits.
-    pub fn fit(&mut self, text: &str, size: f32, room: f32) -> Line {
-        self.fit_in(text, size, room, Face::REGULAR)
-    }
-
-    /// [`Text::fit`] in `face`.
-    pub fn fit_in(&mut self, text: &str, size: f32, room: f32, face: Face) -> Line {
-        let whole = self.line_in(text, size, face);
-        if whole.width <= room {
-            return whole;
-        }
-        // The most characters that fit before the ellipsis, by halving.
-        let ends: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
-        let (mut fits, mut over) = (0, ends.len());
-        let mut best = self.line_in("\u{2026}", size, face);
-        while fits + 1 < over {
-            let mid = (fits + over) / 2;
-            let cut = format!("{}\u{2026}", text[..ends[mid]].trim_end());
-            let line = self.line_in(&cut, size, face);
-            if line.width <= room {
-                (fits, best) = (mid, line);
-            } else {
-                over = mid;
-            }
-        }
-        if best.width > room {
-            return self.line_in("", size, face);
-        }
-        best
-    }
-
-    /// Draws `line` with its top left at `x`, `y`, rounded to pixels.
-    pub fn draw(&mut self, pixmap: &mut Pixmap, line: &mut Line, x: f32, y: f32, colour: Colour) {
-        let (x, y) = (x.round() as i32, y.round() as i32);
-        let ink = Color::rgba(
-            (colour.r * 255.0) as u8,
-            (colour.g * 255.0) as u8,
-            (colour.b * 255.0) as u8,
-            255,
-        );
-        let (pw, ph) = (pixmap.width() as i32, pixmap.height() as i32);
-        let pixels = pixmap.data_mut();
-        line.buffer.draw(
-            &mut self.fonts,
-            &mut self.glyphs,
-            ink,
-            |gx, gy, gw, gh, color| {
-                let alpha = color.a() as f32 / 255.0;
-                if alpha == 0.0 {
-                    return;
-                }
-                for py in (y + gy)..(y + gy + gh as i32) {
-                    for px in (x + gx)..(x + gx + gw as i32) {
-                        if px < 0 || py < 0 || px >= pw || py >= ph {
-                            continue;
-                        }
-                        let i = ((py * pw + px) * 4) as usize;
-                        // Premultiplied source over premultiplied destination.
-                        for (k, channel) in [color.r(), color.g(), color.b(), 255]
-                            .into_iter()
-                            .enumerate()
-                        {
-                            let src = channel as f32 * alpha;
-                            let dst = pixels[i + k] as f32;
-                            pixels[i + k] = (src + dst * (1.0 - alpha)).round() as u8;
-                        }
-                    }
-                }
-            },
-        );
-    }
+    text
 }
 
 /// The shell's icon `name` from `design/icons/` (M5.5d), `px` pixels
@@ -963,30 +784,6 @@ pub fn to_argb(pixmap: &Pixmap, out: &mut [u8]) {
 mod tests {
     use super::*;
 
-    #[test]
-    fn with_no_font_at_all_text_is_drawn_as_nothing() {
-        // Neither fontconfig's fonts nor the fallback files (M6.17):
-        // cosmic-text panics shaping with none, which once ended shell-ui
-        // and left a lock screen nothing could unlock.
-        let empty = cosmic_text::fontdb::Database::new();
-        let mut text = Text {
-            fonts: FontSystem::new_with_locale_and_db("en-US".into(), empty),
-            glyphs: SwashCache::new(),
-            family: "Inter".into(),
-        };
-        let mut line = text.line("Wrong password. Type it again.", 14.0);
-        assert_eq!(line.width, 0.0);
-        assert_eq!(text.fit("Settings", 14.0, 40.0).width, 0.0);
-        let mut pixmap = Pixmap::new(64, 16).unwrap();
-        let ink = Colour {
-            r: 0.0,
-            g: 0.0,
-            b: 0.0,
-            a: 1.0,
-        };
-        text.draw(&mut pixmap, &mut line, 0.0, 0.0, ink);
-        assert!(pixmap.data().iter().all(|b| *b == 0));
-    }
     use crate::widgets::{self, find, menu};
 
     fn pixel(pixmap: &Pixmap, x: u32, y: u32) -> [u8; 4] {

@@ -235,7 +235,7 @@ pub fn run(cmd: String) -> Result<()> {
         screens: Vec::new(),
         keyboard: None,
         pointer: None,
-        text: Text::load(&tokens.font),
+        text: crate::paint::text(&tokens.font),
         tokens,
         row,
         name,
