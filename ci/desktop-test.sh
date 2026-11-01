@@ -360,7 +360,7 @@
 #   profile-gaming  a stand-in for Steam served as ci's Flathub: the gaming
 #               profile's apply installs it, the launcher starts it and its
 #               window maps; the compositor offers tearing control (M7.6b)
-#   profile-developer  the developer profile, VSCodium left out: apply
+#   profile-developer  the developer profile: apply
 #               ends 0, the diff is empty, and podman runs our own
 #               container image, imported as edel:ci, as ci, an admin,
 #               printing ok (M7.6b)
@@ -9614,9 +9614,9 @@ case_profile_gaming() {
 }
 
 case_profile_developer() {
-	# Developer (M7.6b part 4): the profile brings the containers add-on,
-	# built into this image; VSCodium, its app, is left out, so nothing
-	# comes from Flathub. As ci, an admin, podman imports our own container
+	# Developer (M7.6b part 4, M7.19): the profile brings the containers
+	# add-on, built into this image, and no Flathub app (VSCodium comes in
+	# the dev box, the dev-box case). As ci, an admin, podman imports our own container
 	# image as edel:ci and runs echo ok in it; the diff is empty.
 	profile_get developer addons.installed | grep -qx containers || fail "profiles/developer.toml does not bring the containers add-on"
 	[ -s out/desktop-container/edel-container-x86_64.tar.gz ] || fail "out/desktop-container/edel-container-x86_64.tar.gz is missing; ci/build.sh desktop-test builds it"
@@ -9634,7 +9634,7 @@ case_profile_developer() {
 	guest 'podman clean'
 	wait_more 'DESKTOP-TEST: podman_clean ' "$asked" 60 || fail "the service did not remove edel:ci"
 	profile_off
-	echo "PASS: with the developer profile applied (VSCodium left out), edel settings diff was empty and podman run --rm edel:ci echo ok, our own container image, printed ok as ci, an admin"
+	echo "PASS: with the developer profile applied, edel settings diff was empty and podman run --rm edel:ci echo ok, our own container image, printed ok as ci, an admin"
 }
 
 case_dev_box() {
@@ -9642,9 +9642,12 @@ case_dev_box() {
 	# default box (its own distrobox.conf names the image) from the image
 	# this host serves (ci/dev-box-files.sh), with no other network; a .deb
 	# app and an AppImage installed in it are exported to the launcher,
-	# which then offers three apps more (the box's own entry, Dev, which
-	# opens a terminal in it, and the two), and the .deb's command runs from
-	# the session's own PATH.
+	# which then offers two apps more, and the .deb's command runs from the
+	# session's own PATH. The add-on's own Dev box, which makes the box on
+	# its first open, and VSCodium, which installs itself in the box on its
+	# first open (M7.19), are in the launcher before, as this image builds
+	# the add-on in; VSCodium itself is not installed here, as its packages
+	# come from the internet, which the VM has not.
 	shown=$(count 'edel-shell-ui: launcher shown, ')
 	python3 ci/qmp.py key meta_l
 	wait_more 'edel-shell-ui: launcher shown, ' "$shown" || fail "Super did not open the launcher"
@@ -9655,7 +9658,7 @@ case_dev_box() {
 	wait_more 'DESKTOP-TEST: dev_box_make ' "$asked" 600 || fail "the dev box was not made within 600 s"
 	case "$(value dev_box_make)" in
 	'0 dev '*) ;;
-	*) fail "distrobox create with the add-on's defaults, then a first enter, did not make the box dev as ci: $(value dev_box_make)" ;;
+	*) fail "edel-dev-box, the launcher's Dev box, did not make the box dev with the add-on's defaults as ci: $(value dev_box_make)" ;;
 	esac
 	asked=$(count 'DESKTOP-TEST: dev_box_apps ')
 	guest 'dev box apps'
@@ -9672,7 +9675,7 @@ case_dev_box() {
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/dev-box-launcher.png"
 	python3 ci/qmp.py key esc
-	[ "$after" = $((before + 3)) ] || fail "the launcher offers $after apps after the box was made and its two apps were exported, not $((before + 3)): Dev, a terminal in the box, and the two"
+	[ "$after" = $((before + 2)) ] || fail "the launcher offers $after apps after the box was made and its two apps were exported, not $((before + 2)): the add-on's Dev box and VSCodium were there before, and the two are new"
 	asked=$(count 'DESKTOP-TEST: dev_box_run ')
 	guest 'dev box run'
 	wait_more 'DESKTOP-TEST: dev_box_run ' "$asked" 120 || fail "the service did not run the box's apps"
@@ -9685,7 +9688,7 @@ case_dev_box() {
 	guest 'dev box clean'
 	wait_more 'DESKTOP-TEST: dev_box_clean ' "$asked" 120 || fail "the service did not remove the box"
 	[ "$(value dev_box_clean)" = '0 0' ] || fail "the box, its image or the add-on was not removed: $(value dev_box_clean)"
-	echo "PASS: distrobox made the default box from the add-on's own distrobox.conf, the .deb app and the AppImage installed in it took the launcher from $before to $after apps (dev-box-launcher.png), and $(echo "$ran" | sed 's/^path=[^;]*; //')"
+	echo "PASS: the launcher's Dev box made the default box from the add-on's own distrobox.conf on its first open, the .deb app and the AppImage installed in it took the launcher from $before to $after apps (dev-box-launcher.png), and $(echo "$ran" | sed 's/^path=[^;]*; //')"
 }
 
 case_flatpak() {
@@ -10719,8 +10722,16 @@ trap 'fail "the case $c ran over $case_limit s, so it stopped there; the lines a
 for c in "$@"; do
 	(sleep "$case_limit" && kill -USR1 $$) >/dev/null 2>&1 &
 	timer=$!
+	panics=$(count 'panicked at')
 	"case_$(echo "$c" | tr '-' '_')"
 	kill "$timer" 2>/dev/null || true
+	# No program of ours may panic in a case, even one the compositor
+	# starts again: shell-ui ended after every unlock for weeks unseen, as
+	# the panel came back by itself (the keyboard's repeat timer, cards.rs).
+	if [ "$(count 'panicked at')" -gt "$panics" ]; then
+		tr -d '\r' <"$log" | grep -A3 'panicked at' | tail -n 20
+		fail "a program panicked during the case $c (the lines above say where); a panic is a bug even when the program is started again"
+	fi
 	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
 	# has exited already.
 	echo "$c" >>"$dir/passed"

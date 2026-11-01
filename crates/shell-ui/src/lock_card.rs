@@ -627,7 +627,7 @@ impl Shell {
         };
         let edit = card.edit_after;
         if let Some(keyboard) = &card.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         card.session.unlock();
         drop(card);
@@ -1160,7 +1160,7 @@ impl SessionLockHandler for Shell {
     fn finished(&mut self, _: &Connection, _: &QueueHandle<Self>, session: SessionLock) {
         if let Some(card) = self.lock.take() {
             if let Some(keyboard) = &card.keyboard {
-                keyboard.release();
+                self.let_go(keyboard);
             }
             if !session.is_locked() {
                 eprintln!("edel-shell-ui: {}", messages::LOCK_REFUSED);

@@ -1781,8 +1781,7 @@ ieee80211w=2' channel=6 ;;
 					wget -q -O /tmp/dev-box.tar http://10.0.2.2:8002/dev-box/dev-box.tar &&
 					chmod 644 /tmp/dev-box.tar &&
 					as_ci 'podman load -q -i /tmp/dev-box.tar' &&
-					as_ci 'distrobox create --yes' &&
-					as_ci 'distrobox enter dev -- true'
+					as_ci 'edel-dev-box true'
 			} </dev/null >/tmp/dev-box.log 2>&1
 			status=$?
 			rm -f /tmp/dev-box.tar

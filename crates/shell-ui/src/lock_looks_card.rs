@@ -261,7 +261,7 @@ impl Shell {
             return;
         };
         if let Some(keyboard) = &ll.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         drop(ll);
         eprintln!("edel-shell-ui: lock looks hidden");

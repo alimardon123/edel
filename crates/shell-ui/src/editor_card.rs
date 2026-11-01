@@ -442,7 +442,7 @@ impl Shell {
         };
         let scale = popup.scale() as u32;
         if let Some(keyboard) = &keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         drop(popup);
         if write {

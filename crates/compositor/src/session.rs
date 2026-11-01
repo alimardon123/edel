@@ -6,11 +6,14 @@
 //! the desktop is on screen, after shell-ui, in the order listed (each
 //! needs the one before).
 //!
-//! Started once, not kept alive: a program that fails within a few
-//! seconds of starting is tried again a few times, because WirePlumber
-//! started before PipeWire's socket exists fails at once and is right
-//! a moment later; one that fails after running a while is left, and the
-//! log says so, rather than hiding that sound stopped. They end with the
+//! A program that fails within a few seconds of starting is tried again a
+//! few times, because WirePlumber started before PipeWire's socket exists
+//! fails at once and is right a moment later. One that fails after running
+//! a while, a crash such as PipeWire's assertions or WirePlumber losing
+//! PipeWire, is started again too, up to [`REVIVES`] times a session, so
+//! sound comes back by itself; one that someone stopped with a signal
+//! (`kill`, so SIGTERM, or SIGKILL, SIGINT or SIGHUP) is left stopped, as
+//! asked, and so is one that ended well. The log says each. They end with the
 //! compositor, the kernel sending each SIGTERM when it goes, a crash
 //! included, so the next session never meets a second sound system. A
 //! change of preset does not start or end them until the next login.
@@ -47,6 +50,11 @@ const QUICK: Duration = Duration::from_secs(5);
 /// Runs of one program, the first included, before it is given up on.
 const TRIES: u32 = 4;
 
+/// Times a program that failed after running a while is started again in
+/// one session, before it is left, so a program that crashes over and
+/// over does not take the processor with it.
+const REVIVES: u32 = 3;
+
 /// How long after a quick failure it starts again.
 const AGAIN: Duration = Duration::from_millis(500);
 
@@ -80,7 +88,7 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     follow_low_latency(state);
     let env = state.cursors.env();
     for command in state.settings.session_start() {
-        spawn(handle, command, 1, env.clone());
+        spawn(handle, command, 1, 0, env.clone());
     }
     follow_input_method(handle, state);
     // A game session (M8.26) opens its game alone.
@@ -302,7 +310,7 @@ fn ends_with_us(process: &mut Command) {
     }
 }
 
-fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, env: Env) {
+fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived: u32, env: Env) {
     let mut words = command.split_whitespace();
     let Some(name) = words.next().map(str::to_string) else {
         return;
@@ -333,7 +341,8 @@ fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, env: Env
     let again = handle.clone();
     let inserted = handle.insert_source(receiver, move |event, _, _: &mut Edel| {
         if let Event::Msg(status) = event {
-            ended(&again, command.clone(), run, began, status, env.clone());
+            let runs = Runs { run, revived };
+            ended(&again, command.clone(), runs, began, status, env.clone());
         }
     });
     if let Err(e) = inserted {
@@ -350,12 +359,33 @@ fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, env: Env
     }
 }
 
+/// How often a program of the session has run: `run` counts quick
+/// failures in a row, the first run included, and `revived` the times it
+/// was started again after failing once it had run a while.
+#[derive(Clone, Copy)]
+struct Runs {
+    run: u32,
+    revived: u32,
+}
+
+/// Whether a program ended because someone stopped it with a signal
+/// (`kill`'s SIGTERM, SIGKILL, SIGINT or SIGHUP), which is left as asked,
+/// rather than by crashing or failing.
+fn was_stopped(status: Option<ExitStatus>) -> bool {
+    use std::os::unix::process::ExitStatusExt as _;
+    let asked = [Signal::TERM, Signal::KILL, Signal::INT, Signal::HUP].map(Signal::as_raw);
+    status
+        .and_then(|s| s.signal())
+        .is_some_and(|sig| asked.contains(&sig))
+}
+
 /// A program of the session ended: tried again if it failed right after
-/// starting, said so if it ran a while and stopped.
+/// starting, or if it failed after a while without being stopped, up to
+/// [`REVIVES`] times; said so either way.
 fn ended(
     handle: &LoopHandle<'static, Edel>,
     command: String,
-    run: u32,
+    runs: Runs,
     began: Instant,
     status: Option<ExitStatus>,
     env: Env,
@@ -371,11 +401,27 @@ fn ended(
         eprintln!("edel-compositor: {name} {how}");
         return;
     }
+    let Runs { run, revived } = runs;
     if began.elapsed() >= QUICK {
+        if was_stopped(status) {
+            eprintln!(
+                "edel-compositor: {}",
+                messages::session_program_stopped(&name, &how)
+            );
+            return;
+        }
+        if revived >= REVIVES {
+            eprintln!(
+                "edel-compositor: {}",
+                messages::session_program_crashed_too_often(&name, &how, REVIVES)
+            );
+            return;
+        }
         eprintln!(
             "edel-compositor: {}",
-            messages::session_program_stopped(&name, &how)
+            messages::session_program_revived(&name, &how, revived + 1, REVIVES)
         );
+        again(handle, command, 1, revived + 1, env);
         return;
     }
     if run >= TRIES {
@@ -386,9 +432,19 @@ fn ended(
         return;
     }
     eprintln!("edel-compositor: {name} {how}; starting it again");
+    again(handle, command, run + 1, revived, env);
+}
+
+/// Starts `command` again after [`AGAIN`].
+fn again(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived: u32, env: Env) {
     let later = handle.clone();
+    let name = command
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_string();
     let timer = handle.insert_source(Timer::from_duration(AGAIN), move |_, _, _: &mut Edel| {
-        spawn(&later, command.clone(), run + 1, env.clone());
+        spawn(&later, command.clone(), run, revived, env.clone());
         TimeoutAction::Drop
     });
     if let Err(e) = timer {
@@ -399,6 +455,19 @@ fn ended(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_program_someone_stopped_is_left_and_a_crash_is_not() {
+        use std::os::unix::process::ExitStatusExt as _;
+        // A signal's number in the low byte, as wait(2) reports it.
+        let by = |sig: Signal| Some(ExitStatus::from_raw(sig.as_raw()));
+        assert!(was_stopped(by(Signal::TERM)), "kill");
+        assert!(was_stopped(by(Signal::KILL)));
+        assert!(!was_stopped(by(Signal::ABORT)), "an assertion");
+        assert!(!was_stopped(by(Signal::SEGV)));
+        assert!(!was_stopped(Some(ExitStatus::from_raw(1 << 8))), "exit 1");
+        assert!(!was_stopped(None), "lost");
+    }
 
     #[test]
     fn a_startup_id_names_the_installed_app_with_that_desktop_file_id() {
