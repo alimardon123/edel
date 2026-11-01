@@ -525,8 +525,9 @@ commands() {
 		# xdg-desktop-portal, which D-Bus starts on this first call, for the
 		# colour scheme and the accent.
 		# The keyring (M7.18): whether its daemon runs, a secret stored and
-		# read back as ci through the Secret Service with oo7-cli, and the
-		# daemon stopped and started again with the session's key.
+		# read back as ci through the Secret Service with oo7-cli and by a
+		# Flatpak app through the Secret portal, and the daemon stopped and
+		# started again with the session's key.
 		# pidof, not pgrep -x: the session starts the daemon by its whole
 		# path, and busybox's pgrep -x compares that, not the name.
 		'keyring running')
@@ -548,6 +549,22 @@ commands() {
 			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 30 oo7-cli lookup --secret-only edel=ci" </dev/null 2>&1 | tr '\n' ' ')
 			say "keyring_lookup $out"
 			;;
+		# The same for a Flatpak app: Test A's secret-tool, whose libsecret
+		# in a sandbox asks the Secret portal (oo7-portal) for the app's own
+		# key and keeps the secret in the app's data folder, so the file
+		# there is the proof the portal answered.
+		'keyring app store')
+			bus=$(session_bus)
+			printf edel-keyring-app | as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 60 flatpak run --command=secret-tool org.edel.TestA store --label=CI edel app" >/tmp/keyring-app.log 2>&1
+			stored=$?
+			[ "$stored" = 0 ] || keyring_diag
+			say "keyring_app_store $stored $(ls /home/ci/.var/app/org.edel.TestA/data/keyrings 2>&1 | tr '\n' ' ')$(tr '\n' ' ' </tmp/keyring-app.log)"
+			;;
+		'keyring app lookup')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 60 flatpak run --command=secret-tool org.edel.TestA lookup edel app" </dev/null 2>&1 | tr '\n' ' ')
+			say "keyring_app_lookup $out"
+			;;
 		'keyring start')
 			# As the login does, in the session: the daemon again, given the
 			# session's key, with no app asking.
@@ -562,7 +579,9 @@ commands() {
 			say "keyring_started $(pidof oo7-daemon >/dev/null && echo yes || echo no)"
 			;;
 		'keyring stop')
-			kill $(pidof oo7-daemon)
+			# The portal too, as a session's end takes both; D-Bus starts it
+			# again when an app next asks.
+			kill $(pidof oo7-daemon) $(pidof oo7-portal) 2>/dev/null
 			sleep 1
 			say "keyring_stopped $(pidof oo7-daemon >/dev/null && echo no || echo yes)"
 			;;
