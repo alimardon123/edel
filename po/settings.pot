@@ -95,10 +95,31 @@ msgstr ""
 msgid "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart."
 msgstr ""
 
-msgid "Serves this computer's hardware"
+msgid "Found in this computer"
+msgstr ""
+
+msgid "Not found in this computer"
+msgstr ""
+
+msgid "Extras"
+msgstr ""
+
+msgid "Hardware support"
+msgstr ""
+
+msgid "Take the desktop away?"
+msgstr ""
+
+msgid "At the next restart this computer starts with a console only. Your files and settings stay, and turning this switch on again brings the desktop back."
 msgstr ""
 
 msgid "This version of Edel OS has no add-ons to choose."
+msgstr ""
+
+msgid "Use the desktop"
+msgstr ""
+
+msgid "Take away"
 msgstr ""
 
 msgid "What it may use"
