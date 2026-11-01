@@ -31,9 +31,10 @@ style = "menu"
 [apps]
 # The apps the apps widget shows first, by role (files, browser, mail,
 # editor, terminal, music, settings, store: the installed app for it) or
-# by desktop file id; one this machine lacks is left out. panels.pinned
+# by desktop file id; one this machine lacks is left out. install, first,
+# is the stick's install button, which only a stick has. panels.pinned
 # replaces the list, and a drag on the panel writes it.
-pinned = ["browser", "files", "editor", "terminal", "store"]
+pinned = ["install", "browser", "files", "editor", "terminal", "store"]
 
 # Each panel is one layer-shell surface along a screen's edge, top or
 # bottom, holding shell-ui's widgets by name: from its start, in its

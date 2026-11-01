@@ -322,7 +322,8 @@
 #               (images/edel.toml), started as a removable USB stick (QEMU's
 #               usb-storage, removable=on) on a plain screen (-vga std),
 #               with no seed and no test service; edel boot live says the
-#               stick logs live in, the slot is confirmed, and the panel
+#               stick logs live in with the install button first in its panel
+#               (on the fresh disk it does not), the slot is confirmed, and the panel
 #               lies along the bottom in the token colour, so the desktop
 #               showed with nobody logging in (M3.6), timed as the try walk
 #               and the install-page walk (M8.15a); and the checks the
@@ -10156,6 +10157,8 @@ sys.stdout.buffer.write(bytes(out))
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
+	tr -d '\r' <"$log" | grep -qa "edel boot live: Install Edel OS is first in live's panel and in the launcher" ||
+		fail "edel boot live did not put the install button in the stick's panel"
 	python3 ci/qmp.py screendump "$dir/live.png"
 	size=$(python3 ci/qmp.py size "$dir/live.png")
 	w=${size% *} h=${size#* }
@@ -10543,6 +10546,9 @@ if [ "$*" = fresh ]; then
 	[ "$found" = 1 ] || { cat "$fresh_log"; fail "the released image as a computer's own disk did not confirm its slot"; }
 	tr -d '\r' <"$fresh_log" | grep -qa 'edel boot live: nobody has an account yet, so live logs in by itself' ||
 		fail "the released image on a computer's own disk with nobody on it did not log live in by itself"
+	if tr -d '\r' <"$fresh_log" | grep -qa 'edel boot live: Install Edel OS is first'; then
+		fail "the released image on a computer's own disk showed the stick's install button"
+	fi
 	fresh_wait 'edel-settings: welcome page language' 120
 	sleep 3
 	walk_steps=0
