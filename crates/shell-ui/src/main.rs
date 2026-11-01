@@ -738,7 +738,7 @@ fn run() -> Result<()> {
         handle: event_loop.handle(),
         clipboard: clipboard_card::Clipboard::bind(&globals, &qh, &event_loop.handle()),
         chosen: chosen(),
-        text: Text::load(&tokens.font),
+        text: crate::paint::text(&tokens.font),
         icons: icons::Icons::new(apps::data_dirs(), &icon_theme),
         _portal: portal::serve(&tokens, &buttons, high, &icon_theme, edits, location_off),
         app_permissions: None,

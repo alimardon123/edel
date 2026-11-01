@@ -22,7 +22,6 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::lock::{self, When};
 use crate::lock_editor;
-use crate::paint::Text;
 use crate::{messages, player, quick};
 
 /// The width a picture is written at when `--width` is not given: the size
@@ -149,7 +148,7 @@ pub fn render(
         ..LockScreen::default()
     };
     let applied = lock_screen::applied(&look, false);
-    let mut text = Text::load(&tokens.font);
+    let mut text = crate::paint::text(&tokens.font);
     let mut icons = edel::app_icons::Icons::new(edel::apps::data_dirs(), icon_theme);
     let mut pictures = lock::Pictures::default();
     let mut backdrops = lock::Backdrops::default();

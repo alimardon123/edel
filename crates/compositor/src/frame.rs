@@ -10,7 +10,6 @@
 //! here, tested without a display; the compositor turns the pixels into
 //! one texture per window and redraws it only when what it shows changes.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow};
@@ -26,10 +25,6 @@ pub const GRIP: i32 = 6;
 
 /// How far from a corner a grab on an edge resizes from the corner.
 pub const CORNER: i32 = 16;
-
-/// The fonts titles fall back to when the tokens' interface font is not
-/// among the system's fonts: Inter (`fonts` feature), then Noto Sans.
-pub const FONTS: [&str; 2] = edel::places::FALLBACK_FONTS;
 
 /// What a frame adds round a window, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -573,11 +568,12 @@ impl Canvas<'_> {
     }
 }
 
-/// The title's font at one size, with the letters drawn so far.
+/// The title's text at one size (M8.21, T4): `edel::text`, the engine
+/// shell-ui draws with, so every script and emoji shapes and falls back
+/// to a font that has it, as the panel's words do.
 pub struct Text {
-    font: fontdue::Font,
+    engine: edel::text::Text,
     px: f32,
-    glyphs: HashMap<char, (fontdue::Metrics, Vec<u8>)>,
     /// Above the baseline, in pixels.
     ascent: f32,
     /// Below it, negative.
@@ -654,106 +650,48 @@ pub fn font_file(family: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
     best.map(|(_, path)| path)
 }
 
-/// How many letters [`Text`] keeps drawn; a title in a script with many
-/// letters clears them rather than growing without end.
-const KEPT: usize = 512;
-
 impl Text {
-    /// The tokens' interface font `family` (`font_file`), else the first
-    /// of [`FONTS`] that loads, at `px` pixels per em.
+    /// The tokens' interface font `family`, falling back as fontconfig
+    /// finds, else the release's own fonts, at `px` pixels per em; an
+    /// error when no font loads at all.
     pub fn load(family: &str, px: f32) -> Result<Text> {
-        let mut errors = Vec::new();
-        let found = font_file(family, &font_dirs());
-        let paths = found.iter().map(|p| p.to_string_lossy().into_owned());
-        for path in paths.chain(FONTS.iter().map(|p| p.to_string())) {
-            let path = path.as_str();
-            match std::fs::read(path)
-                .map_err(anyhow::Error::from)
-                .and_then(|data| Text::new(&data, px))
-            {
-                Ok(text) => return Ok(text),
-                Err(e) => errors.push(format!("{path}: {e}")),
-            }
+        let engine = edel::text::Text::load(family);
+        if !engine.has_fonts() {
+            return Err(anyhow!(
+                "no font for titles: fontconfig found none, nor {}",
+                edel::places::FALLBACK_FONTS.join(" or ")
+            ));
         }
-        Err(anyhow!("no font for titles: {}", errors.join("; ")))
+        let mut text = Text {
+            engine,
+            px: 0.0,
+            ascent: 0.0,
+            descent: 0.0,
+        };
+        text.set_size(px);
+        Ok(text)
     }
 
-    pub fn new(data: &[u8], px: f32) -> Result<Text> {
-        let font = fontdue::Font::from_bytes(data, fontdue::FontSettings::default())
-            .map_err(|e| anyhow!("{e}"))?;
-        let metrics = font
-            .horizontal_line_metrics(px)
-            .ok_or_else(|| anyhow!("the font has no horizontal metrics"))?;
-        Ok(Text {
-            font,
-            px,
-            glyphs: HashMap::new(),
-            ascent: metrics.ascent,
-            descent: metrics.descent,
-        })
-    }
-
-    /// Draws from now on at `px` pixels per em; the letters drawn at the
-    /// old size are dropped.
+    /// Draws from now on at `px` pixels per em.
     pub fn set_size(&mut self, px: f32) {
         if px == self.px || px <= 0.0 {
             return;
         }
-        if let Some(metrics) = self.font.horizontal_line_metrics(px) {
-            self.px = px;
-            self.ascent = metrics.ascent;
-            self.descent = metrics.descent;
-            self.glyphs.clear();
-        }
-    }
-
-    fn glyph(&mut self, c: char) -> &(fontdue::Metrics, Vec<u8>) {
-        if self.glyphs.len() >= KEPT && !self.glyphs.contains_key(&c) {
-            self.glyphs.clear();
-        }
-        let (font, px) = (&self.font, self.px);
-        self.glyphs
-            .entry(c)
-            .or_insert_with(|| font.rasterize(c, px))
-    }
-
-    /// Where each letter of `text` starts, and where the last one ends.
-    fn advances(&mut self, text: &str) -> (Vec<f32>, f32) {
-        let mut pen = 0.0;
-        let mut starts = Vec::new();
-        let mut previous = None;
-        for c in text.chars() {
-            if let Some(p) = previous {
-                pen += self.font.horizontal_kern(p, c, self.px).unwrap_or(0.0);
-            }
-            starts.push(pen);
-            pen += self.glyph(c).0.advance_width;
-            previous = Some(c);
-        }
-        (starts, pen)
+        self.px = px;
+        (self.ascent, self.descent) = self.engine.extent(px, edel::text::Face::REGULAR);
     }
 
     /// The width `text` takes, in pixels.
     pub fn width(&mut self, text: &str) -> f32 {
-        self.advances(text).1
+        self.engine.line(text, self.px).width
     }
 
     /// `text`, or as much of it as fits in `room` pixels with an ellipsis.
     pub fn fit(&mut self, text: &str, room: f32) -> String {
-        let text = text.trim();
-        if self.width(text) <= room {
-            return text.to_string();
-        }
-        let ellipsis = self.width("\u{2026}");
-        let mut kept = String::new();
-        for c in text.chars() {
-            kept.push(c);
-            if self.width(&kept) + ellipsis > room {
-                kept.pop();
-                break;
-            }
-        }
-        format!("{}\u{2026}", kept.trim_end())
+        self.engine
+            .fit(text.trim(), self.px, room)
+            .text()
+            .to_string()
     }
 
     /// Above the baseline, in pixels, at the size set.
@@ -766,6 +704,13 @@ impl Text {
         self.descent
     }
 
+    /// Hands each pixel of `text` drawn from `x` on `baseline` to `cover`.
+    fn paint(&mut self, text: &str, x: f32, baseline: f32, cover: impl FnMut(i32, i32, f32)) {
+        let mut line = self.engine.line(text, self.px);
+        let top = baseline - edel::text::Text::baseline(&line);
+        self.engine.paint(&mut line, x, top, cover);
+    }
+
     /// Draws `text` from `x` on `baseline` over `pixmap` (premultiplied
     /// RGBA, as tiny-skia keeps it), for the overview's labels (M5.2j-b).
     pub fn draw_on(
@@ -776,34 +721,25 @@ impl Text {
         baseline: f32,
         colour: Colour,
     ) {
-        let (width, height) = (pixmap.width() as i64, pixmap.height() as i64);
+        let (width, height) = (pixmap.width() as i32, pixmap.height() as i32);
         let [r, g, b, _] = colour.bytes();
-        let (starts, _) = self.advances(text);
         let data = pixmap.data_mut();
-        for (c, start) in text.chars().zip(starts) {
-            let (metrics, coverage) = self.glyph(c).clone();
-            let left = (x + start).round() as i64 + i64::from(metrics.xmin);
-            let top = baseline as i64 - i64::from(metrics.ymin) - metrics.height as i64;
-            for row in 0..metrics.height {
-                for col in 0..metrics.width {
-                    let (px, py) = (left + col as i64, top + row as i64);
-                    if px < 0 || py < 0 || px >= width || py >= height {
-                        continue;
-                    }
-                    let a = f32::from(coverage[row * metrics.width + col]) / 255.0 * colour.a;
-                    if a <= 0.0 {
-                        continue;
-                    }
-                    let i = ((py * width + px) * 4) as usize;
-                    for (k, c) in [r, g, b].into_iter().enumerate() {
-                        let under = f32::from(data[i + k]);
-                        data[i + k] = (f32::from(c) * a + under * (1.0 - a)).round() as u8;
-                    }
-                    let under = f32::from(data[i + 3]);
-                    data[i + 3] = (255.0 * a + under * (1.0 - a)).round() as u8;
-                }
+        self.paint(text, x, baseline, |px, py, coverage| {
+            if px < 0 || py < 0 || px >= width || py >= height {
+                return;
             }
-        }
+            let a = coverage * colour.a;
+            if a <= 0.0 {
+                return;
+            }
+            let i = ((py * width + px) * 4) as usize;
+            for (k, c) in [r, g, b].into_iter().enumerate() {
+                let under = f32::from(data[i + k]);
+                data[i + k] = (f32::from(c) * a + under * (1.0 - a)).round() as u8;
+            }
+            let under = f32::from(data[i + 3]);
+            data[i + 3] = (255.0 * a + under * (1.0 - a)).round() as u8;
+        });
     }
 
     /// Draws `text` from `x` on `baseline`, nothing right of `limit`.
@@ -816,22 +752,11 @@ impl Text {
         colour: Colour,
         limit: f32,
     ) {
-        let (starts, _) = self.advances(text);
-        for (c, start) in text.chars().zip(starts) {
-            let (metrics, coverage) = self.glyph(c).clone();
-            let left = (x + start).round() as i64 + i64::from(metrics.xmin);
-            let top = baseline as i64 - i64::from(metrics.ymin) - metrics.height as i64;
-            for row in 0..metrics.height {
-                for col in 0..metrics.width {
-                    let px = left + col as i64;
-                    if px as f32 >= limit {
-                        continue;
-                    }
-                    let alpha = f32::from(coverage[row * metrics.width + col]) / 255.0;
-                    canvas.blend(px, top + row as i64, colour, alpha);
-                }
+        self.paint(text, x, baseline, |px, py, coverage| {
+            if (px as f32) < limit {
+                canvas.blend(i64::from(px), i64::from(py), colour, coverage);
             }
-        }
+        });
     }
 }
 
@@ -1103,19 +1028,42 @@ mod tests {
         assert_ne!(pixel(&pixels, 302, 42, 14), [bar[0], bar[1], bar[2]]);
     }
 
-    /// A font from the image, or one most build machines have; without one
-    /// the test says so and passes, and CI's desktop test checks the title.
+    /// The system's fonts, or the image's; without any the test says so
+    /// and passes, and CI's desktop test checks the title.
     fn some_text() -> Option<Text> {
-        let paths = FONTS
-            .iter()
-            .chain(&["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]);
-        let found = paths
-            .filter_map(|p| std::fs::read(p).ok())
-            .find_map(|data| Text::new(&data, 13.0).ok());
+        let found = Text::load("Inter", 13.0).ok();
         if found.is_none() {
             eprintln!("no font here; the title text is left to CI's desktop test");
         }
         found
+    }
+
+    #[test]
+    fn a_title_in_another_script_is_drawn_as_letters() {
+        let Some(mut text) = some_text() else {
+            return;
+        };
+        let mut pixmap = tiny_skia::Pixmap::new(200, 24).unwrap();
+        let ink = Colour {
+            r: 1.0,
+            g: 1.0,
+            b: 1.0,
+            a: 1.0,
+        };
+        text.draw_on(
+            &mut pixmap,
+            "\u{65e5}\u{672c}\u{8a9e} \u{0645}\u{0631}\u{062d}\u{0628}\u{0627}",
+            2.0,
+            18.0,
+            ink,
+        );
+        let inked = pixmap.data().chunks_exact(4).filter(|p| p[3] > 0).count();
+        assert!(inked > 20, "{inked} pixels inked");
+        let rss = std::fs::read_to_string("/proc/self/status").unwrap_or_default();
+        eprintln!(
+            "{}",
+            rss.lines().find(|l| l.starts_with("VmRSS")).unwrap_or("")
+        );
     }
 
     #[test]
