@@ -83,6 +83,14 @@ check_library() {
 			fail "edel depends on $part: the library must not use a binary; move the code it needs into crates/edel and drop the dependency"
 		fi
 	done
+	# The owner files the library builds in (tokens, icons, presets, themes,
+	# profiles, platform levels) are read through EDEL_SOURCE (build.rs), so
+	# the crate builds outside this repository from a copy of them.
+	for file in $(cd "$1" && find crates/edel/src -name '*.rs' -type f | sort); do
+		if code_of "$1/$file" | grep -qE 'include_(str|bytes)!\("(\.\./){3}'; then
+			fail "$file reads the repository by a relative path; read an owner file as include_str!(concat!(env!(\"EDEL_SOURCE\"), \"/DIR/FILE\")), so the library builds on its own (crates/edel/build.rs)"
+		fi
+	done
 }
 
 # check_desktop ROOT LOCK: no desktop part depends on another part or on
@@ -151,7 +159,7 @@ allowed() {
 	crates/edel/src/release.rs) return 0 ;;
 	# Writes add-on images under /data/addons and their links; it reads the
 	# settings file only for the add-ons a machine wants (M7.2a).
-	crates/edel/src/addons.rs) return 0 ;;
+	crates/edel/src/addons/machine.rs) return 0 ;;
 	# Writes the disk it installs (partitions, the boot files, grubenv, the
 	# install marks and first passwords); the settings file it copies and
 	# the answers it asks go through edel::settings (M8.13's finding fixed).
@@ -376,13 +384,18 @@ if [ "${1:-}" = --self-test ]; then
 	printf '%s\n' 'const PAGES: &str = include_str!("../../settings/src/main.rs");' >"$copy/crates/shell-ui/src/path_probe.rs"
 	caught "$copy" "crates/shell-ui/src/path_probe.rs reads crates/settings by a relative path"
 
-	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui, a settings write in shell-ui, rc-update outside edel::base, an unlisted program in shell-ui and shell-ui reading Settings' source by a relative path"
+	copy="$work/source"
+	seed "$copy"
+	printf '%s\n' 'const TOKENS: &str = include_str!("../../../design/tokens.toml");' >"$copy/crates/edel/src/source_probe.rs"
+	caught "$copy" "crates/edel/src/source_probe.rs reads the repository by a relative path"
+
+	[ "$ok" = 1 ] && echo "PASS: the self-test caught a desktop part on another, the cli feature in the compositor, the os feature in shell-ui, a settings write in shell-ui, rc-update outside edel::base, an unlisted program in shell-ui, shell-ui reading Settings' source by a relative path and the library reading the repository by one"
 	[ "$ok" = 1 ]
 	exit
 fi
 
 if check . --locked; then
-	echo "PASS: every part stands alone (the library uses no binary, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, no crate reads another's directory but the pairs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
+	echo "PASS: every part stands alone (the library uses no binary and reads its owner files through EDEL_SOURCE, the desktop parts stand apart from each other and the test client, the compositor and shell-ui link none of the system's own work, the desktop parts and Settings run only the programs listed, no crate reads another's directory but the pairs listed, the settings file is written by edel::settings, and only edel::base names the base's tools)"
 else
 	exit 1
 fi

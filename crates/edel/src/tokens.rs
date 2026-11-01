@@ -19,7 +19,7 @@ use crate::wallpapers::{self, Wallpaper};
 pub const PATH: &str = crate::places::TOKENS_FILE;
 
 /// The repository's tokens, the release's defaults.
-pub const BUILT_IN: &str = include_str!("../../../design/tokens.toml");
+pub const BUILT_IN: &str = include_str!(concat!(env!("EDEL_SOURCE"), "/design/tokens.toml"));
 
 /// The only tokens format so far.
 pub const FORMAT: i64 = 1;

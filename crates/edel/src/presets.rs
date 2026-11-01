@@ -25,16 +25,34 @@ pub const FORMAT: i64 = 1;
 /// in [`NAMES`], in the same order; its name must be in
 /// [`crate::settings::PRESETS`].
 pub const BUILT_IN: &[(&str, &str)] = &[
-    ("classic", include_str!("../../../presets/classic.toml")),
-    ("mac-like", include_str!("../../../presets/mac-like.toml")),
+    (
+        "classic",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/classic.toml")),
+    ),
+    (
+        "mac-like",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/mac-like.toml")),
+    ),
     (
         "windows-like",
-        include_str!("../../../presets/windows-like.toml"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/windows-like.toml")),
     ),
-    ("hive", include_str!("../../../presets/hive.toml")),
-    ("zen", include_str!("../../../presets/zen.toml")),
-    ("tablet", include_str!("../../../presets/tablet.toml")),
-    ("phone", include_str!("../../../presets/phone.toml")),
+    (
+        "hive",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/hive.toml")),
+    ),
+    (
+        "zen",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/zen.toml")),
+    ),
+    (
+        "tablet",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/tablet.toml")),
+    ),
+    (
+        "phone",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/presets/phone.toml")),
+    ),
 ];
 
 /// The names in [`BUILT_IN`]: what `layout.preset` may be on this release,

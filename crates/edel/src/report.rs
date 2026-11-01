@@ -515,12 +515,6 @@ fn installed_features(dir: &Path) -> (Vec<String>, Vec<String>, Vec<BasicAnswer>
     (names, notes, basics)
 }
 
-/// Whether the disk `name` is removable or on USB (`edel::install`'s, which
-/// Settings shares).
-pub(crate) fn is_removable(sys: &Path, name: &str) -> bool {
-    edel::install::is_removable(sys, name)
-}
-
 /// MemTotal minus MemAvailable from `/proc/meminfo`, in MiB.
 fn memory_in_use_mib(meminfo: &str) -> Option<u64> {
     let field = |name: &str| {
@@ -776,9 +770,9 @@ mod tests {
             std::os::unix::fs::symlink(devices.join(dir), sys.join("block").join(name)).unwrap();
         }
         let found = [
-            is_removable(&sys, "sda"),
-            is_removable(&sys, "vda"),
-            is_removable(&sys, "sdb"),
+            edel::install::is_removable(&sys, "sda"),
+            edel::install::is_removable(&sys, "vda"),
+            edel::install::is_removable(&sys, "sdb"),
         ];
         fs::remove_dir_all(&sys).unwrap();
         assert_eq!(found, [true, false, true]);
