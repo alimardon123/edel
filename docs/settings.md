@@ -281,6 +281,8 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | `appearance.shadow_size` | How far the shadow under each window spreads, in logical pixels from 0 to 64; 0 is none. | the token size.shadow_blur | token |
 | `appearance.shadow_darkness` | How dark the shadow under each window is, in percent from 0 to 100. | the alpha of colour.shadow | token |
 | `appearance.blur` | How strongly the wallpaper blurs behind see-through panels, in percent; 0 shows it sharp. | the token size.blur | token |
+| `appearance.glass` | How the shell's surfaces are drawn: frosted glass over a blur, a tint without the blur, or solid. | `"glass"` | release |
+| `appearance.glass_colour` | What colour the glass takes: the release's grey, the accent colour, or the wallpaper's own colour. | `"neutral"` | release |
 | `appearance.font` | The font for the interface's text, by its family name. | `"Inter Variable"` | token |
 | `appearance.monospace_font` | The font apps use for code and terminals, by its family name. | `"Noto Sans Mono"` | release |
 | `appearance.text_size` | How big every text is, in percent of the release's size, from 80 to 150. | `100` | release |
