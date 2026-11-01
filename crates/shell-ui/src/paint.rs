@@ -249,6 +249,29 @@ fn keep_share(pixmap: &mut Pixmap, share: f32) {
     }
 }
 
+/// Frosted glass (M5.10c, the shell's language since M8.21 part 21n): the
+/// tokens' tint over what lies behind, edged with their hairline, its
+/// corners `r` and the hairline `s` wide (device pixels). The lock
+/// screen's cards and the shell's pop-ups are drawn with it, so the glass
+/// changes here.
+pub fn glass(
+    pixmap: &mut Pixmap,
+    (x, y, w, h): (f32, f32, f32, f32),
+    r: f32,
+    s: f32,
+    tokens: &Tokens,
+) {
+    fill(pixmap, x, y, w, h, r, tokens.glass);
+    outline(pixmap, (x, y, w, h), r, s, tokens.glass_rim);
+}
+
+/// The glass's hairline alone (M8.21 part 21n): the edge a pop-up's card
+/// takes over its own fill, the same as the lock screen's cards, so every
+/// card reads as the same glass on any background.
+pub fn rim(pixmap: &mut Pixmap, rect: (f32, f32, f32, f32), r: f32, s: f32, tokens: &Tokens) {
+    outline(pixmap, rect, r, s, tokens.glass_rim);
+}
+
 /// Strokes the rounded rectangle's edge, inside it, `width` pixels wide:
 /// the hairline round a tile or a card.
 pub fn outline(pixmap: &mut Pixmap, rect: (f32, f32, f32, f32), r: f32, width: f32, c: Colour) {
