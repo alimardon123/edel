@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=VSCodium
+GenericName=Code editor
+Comment=Write code with the languages and tools of your dev box
+Exec=edel-codium %F
+Icon=accessories-text-editor
+Terminal=false
+Categories=Development;IDE;TextEditor;
+Keywords=vscode;code;editor;ide;programming;

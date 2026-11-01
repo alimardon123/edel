@@ -435,7 +435,6 @@ mod tests {
         let apps = once.apps.installed.unwrap();
         assert!(apps.contains(&"org.libreoffice.LibreOffice".to_string()));
         assert!(apps.contains(&"org.gnome.SimpleScan".to_string()));
-        assert!(apps.contains(&"com.vscodium.codium".to_string()));
         // The file still names only the profiles.
         assert_eq!(once.system.profiles.unwrap(), ["office", "developer"]);
     }
