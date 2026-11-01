@@ -92,6 +92,23 @@ files() {
 	esac
 }
 
+# piece NAME ID FILE START END: bytes START to END of artifact ID, the
+# archive NAME, into FILE, going on from where a stopped try left off, up
+# to five tries. Each try asks the API again for the artifact's address,
+# which lasts a minute.
+piece() {
+	want=$(($5 - $4 + 1))
+	: >"$3"
+	tries=0
+	while [ "$(stat -c %s "$3")" -lt "$want" ] && [ "$tries" -lt 5 ]; do
+		tries=$((tries + 1))
+		have=$(stat -c %s "$3")
+		url=$(curl -fsS --retry 5 -o /dev/null -w '%{redirect_url}' -H "Authorization: Bearer $GH_TOKEN" "$api/artifacts/$2/zip") &&
+			curl -fsS -r "$(($4 + have))-$5" "$url" >>"$3" ||
+			echo "download $tries of edel-vm-images-$1's bytes $4 to $5 stopped at $(($4 + $(stat -c %s "$3"))); going on from there"
+	done
+}
+
 no_lane() {
 	echo "vm-tests.sh: there is no lane $1; the lanes are installed, system, live, fresh and fleet" >&2
 	exit 2
@@ -126,7 +143,10 @@ take)
 	# ended a few downloads early with no error (2026-10-30 and 31, 3 of
 	# about 57 lane jobs, the 2 to 6 GB archives), so this one resumes a
 	# download that stops, up to five times, and takes the archive only
-	# when its size and sha256 are those the build job uploaded.
+	# when its size and sha256 are those the build job uploaded. It comes
+	# in eight pieces at once (piece), as one stream from the artifact's
+	# storage ran at about 25 MB/s and four at about 80 (2026-11-01): the
+	# 6 GB system archive took 4 minutes in one.
 	api=https://api.github.com/repos/$GITHUB_REPOSITORY/actions
 	meta=$(curl -fsSL --retry 5 -H "Authorization: Bearer $GH_TOKEN" "$api/runs/$3/artifacts?name=edel-vm-images-$2" |
 		jq -r '.artifacts[0] | "\(.id) \(.size_in_bytes) \(.digest)"')
@@ -138,19 +158,29 @@ take)
 	set -- "$2" $meta
 	zip=out/vm-$1.zip
 	mkdir -p out
-	rm -f "$zip"
+	rm -f "$zip" "$zip".*
+	began=$(date +%s)
+	pieces=8
+	each=$((($3 + pieces - 1) / pieces))
+	i=0
+	while [ "$i" -lt "$pieces" ] && [ $((i * each)) -lt "$3" ]; do
+		end=$(((i + 1) * each - 1))
+		[ "$end" -lt "$3" ] || end=$(($3 - 1))
+		piece "$1" "$2" "$zip.$i" $((i * each)) "$end" &
+		i=$((i + 1))
+	done
+	wait
 	n=0
-	while [ "$(stat -c %s "$zip" 2>/dev/null || echo 0)" != "$3" ] && [ "$n" -lt 5 ]; do
+	while [ "$n" -lt "$i" ]; do
+		cat "$zip.$n" >>"$zip" && rm "$zip.$n"
 		n=$((n + 1))
-		curl -fsSL -C - -H "Authorization: Bearer $GH_TOKEN" -o "$zip" "$api/artifacts/$2/zip" ||
-			echo "download $n of edel-vm-images-$1 stopped at $(stat -c %s "$zip" 2>/dev/null || echo 0) of $3 bytes; going on from there"
 	done
 	sum=$(sha256sum "$zip" | cut -d' ' -f1)
 	if [ "sha256:$sum" != "$4" ]; then
-		echo "FAIL: edel-vm-images-$1 came $(stat -c %s "$zip") bytes long with sha256 $sum after $n tries; the build job uploaded $3 bytes with $4"
+		echo "FAIL: edel-vm-images-$1 came $(stat -c %s "$zip") bytes long with sha256 $sum; the build job uploaded $3 bytes with $4"
 		exit 1
 	fi
-	echo "took edel-vm-images-$1: $3 bytes in $n tries, sha256 as uploaded"
+	echo "took edel-vm-images-$1: $3 bytes in $i pieces in $(($(date +%s) - began)) s, sha256 as uploaded"
 	unzip -p "$zip" "vm-$1.tar.zst" | zstd -q -dc | tar -xf - || {
 		echo "FAIL: edel-vm-images-$1 matched its sha256 yet did not unpack"
 		exit 1

@@ -997,8 +997,7 @@ impl Build<'_> {
         // The update image is small; the disk is the size of both slots.
         self.gzip(&update)?;
         if self.compress {
-            self.gzip(&disk)?;
-            self.qcow2(&disk)?;
+            self.gzip_and_qcow2(&disk)?;
         }
         println!("vm disk: {}", disk.display());
         println!("update image: {}", update.display());
@@ -1085,8 +1084,28 @@ impl Build<'_> {
     /// `-n` leaves out the file's name and time, so the same file always
     /// gives the same bytes.
     fn gzip(&self, file: &Path) -> Result<()> {
-        self.runner
-            .run(Command::new("pigz").args(["-k", "-f", "-n"]).arg(file))
+        self.runner.run(&mut gzip_command(file))
+    }
+
+    /// The disk's `.gz` and `.qcow2` at once: each reads the disk and
+    /// writes its own file, and one after the other they were 98 and 97 s
+    /// of the build's slowest image on CI's runner (#615), while neither
+    /// kept every core busy. A dry run prints them in order, so the plan
+    /// reads the same each time.
+    fn gzip_and_qcow2(&self, disk: &Path) -> Result<()> {
+        if self.runner.dry_run {
+            self.gzip(disk)?;
+            return self.qcow2(disk);
+        }
+        let runner = &self.runner;
+        std::thread::scope(|scope| {
+            let gzip = scope.spawn(|| runner.run(&mut gzip_command(disk)));
+            let qcow2 = runner.run(&mut qcow2_command(disk));
+            let gzip = gzip
+                .join()
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("pigz's thread panicked")));
+            gzip.and(qcow2)
+        })
     }
 
     /// Writes `<stem>.qcow2` next to the disk `disk`, compressed, the form
@@ -1096,14 +1115,7 @@ impl Build<'_> {
     /// compression stays zlib, which every host reads, as zstd needs QEMU
     /// 5.1 or newer to open the file (Reliable before Efficient).
     fn qcow2(&self, disk: &Path) -> Result<()> {
-        self.runner.run(
-            Command::new("qemu-img")
-                .args([
-                    "convert", "-q", "-c", "-W", "-m", "16", "-f", "raw", "-O", "qcow2",
-                ])
-                .arg(disk)
-                .arg(disk.with_extension("qcow2")),
-        )
+        self.runner.run(&mut qcow2_command(disk))
     }
 
     /// Makes the file system `image` of `root`'s files, labelled `label`:
@@ -2099,6 +2111,24 @@ fn keep_time(src: &Path, dst: &Path) -> Result<()> {
 /// The data partition's size in MiB (M6.2): the definition's, or more
 /// when its files need it, with a quarter more and 64 MiB for ext4's own
 /// tables and journal; it grows to the disk on first boot anyway.
+/// pigz writing `FILE.gz` next to `file` ([`Build::gzip`]).
+fn gzip_command(file: &Path) -> Command {
+    let mut cmd = Command::new("pigz");
+    cmd.args(["-k", "-f", "-n"]).arg(file);
+    cmd
+}
+
+/// qemu-img writing `<stem>.qcow2` next to `disk` ([`Build::qcow2`]).
+fn qcow2_command(disk: &Path) -> Command {
+    let mut cmd = Command::new("qemu-img");
+    cmd.args([
+        "convert", "-q", "-c", "-W", "-m", "16", "-f", "raw", "-O", "qcow2",
+    ])
+    .arg(disk)
+    .arg(disk.with_extension("qcow2"));
+    cmd
+}
+
 fn data_mib_for(defined: u64, bytes: u64) -> u64 {
     defined.max((bytes + bytes / 4).div_ceil(MIB) + 64)
 }
