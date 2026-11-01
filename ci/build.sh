@@ -44,8 +44,11 @@ rm -rf out/apk-cache out/apk-cache-tests
 build() {
 	build_version=$1
 	shift
+	build_began=$(date +%s)
 	./target/release/edel image build --version "$build_version" --channel "${EDEL_CHANNEL:-ci}" \
-		--apk-cache "${apk_cache:-out/apk-cache}" "$@"
+		--apk-cache "${apk_cache:-out/apk-cache}" "$@" || return
+	# How long each image took, so the build's slowest chain shows.
+	echo "build: $* took $(($(date +%s) - build_began)) s"
 }
 . ci/names.sh
 # Two throwaway signing keys, new on every run; the real keys arrive with
