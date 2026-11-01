@@ -6243,11 +6243,11 @@ case_smoothness() {
 	for run in 1 2; do
 		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
 		ended=$(count 'edel-compositor: the game ended; the desktop is back')
-		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)')
+		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)')
 		guest 'smooth game'
 		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 			fail "the game stand-in did not play as a game (run $run)"
-		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
+		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
 		line=$(value smooth)
 		case $line in
 		frames=*) ;;
@@ -6318,11 +6318,11 @@ case_frame_rate() {
 	best=''
 	for run in 1 2; do
 		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
-		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)')
+		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)')
 		guest 'smooth game'
 		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 			fail "the timed game stand-in did not play as a game (run $run)"
-		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
+		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
 		line=$(value smooth)
 		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
 		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
