@@ -1548,6 +1548,24 @@ pub fn scroll_to_top(widget: &gtk::Widget) {
     adjustment.set_value(adjustment.value() + f64::from(at.y()) - SCROLL_MARGIN);
 }
 
+/// When Settings was opened on `key`'s row (`--page KEY`), scrolls that
+/// row to the top of its page and gives the keyboard to `control`, once
+/// the page is laid out. Any row built through a page's common row
+/// builder answers its key so, so a row far down a page opens in view.
+pub fn show_when_asked(key: &'static str, control: &gtk::Widget) {
+    if asked_row() != Some(key) {
+        return;
+    }
+    control.add_tick_callback(|control, _| {
+        if !control.is_mapped() || control.width() == 0 {
+            return glib::ControlFlow::Continue;
+        }
+        scroll_to_top(control);
+        control.grab_focus();
+        glib::ControlFlow::Break
+    });
+}
+
 /// A widget's place in the window as CI reads it, `X+Y+WxH` in logical
 /// pixels from the window's top left corner, or `none` when it has none.
 pub fn place(bounds: Option<graphene::Rect>) -> String {

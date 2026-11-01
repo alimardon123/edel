@@ -192,6 +192,16 @@ pub const ROWS: &[Row] = &[
         key: "appearance.blur",
         title: n_("Glass blur"),
     },
+    // The glass (M8.21 part 21m): how the shell's surfaces are drawn, and
+    // their colour.
+    Row {
+        key: "appearance.glass",
+        title: n_("Glass"),
+    },
+    Row {
+        key: "appearance.glass_colour",
+        title: n_("Glass colour"),
+    },
     // The text (M5.12b5): the fonts and the size, shown above the shape.
     Row {
         key: "appearance.font",
@@ -766,6 +776,12 @@ pub fn label(value: &str) -> String {
         "fade" => n_("Fade"),
         "arrows" => n_("Arrows"),
         "counts" => n_("Counts"),
+        "glass" => n_("Glass"),
+        "tinted" => n_("Tinted"),
+        "solid" => n_("Solid"),
+        "neutral" => n_("Neutral"),
+        "accent" => n_("Accent"),
+        "wallpaper" => n_("Wallpaper"),
         "light" => n_("Light"),
         "dark" => n_("Dark"),
         "auto" => n_("Automatic"),
@@ -990,7 +1006,7 @@ mod tests {
             ["left", "right", "top", "bottom"]
         );
         assert_eq!(label("top"), "Top");
-        assert_eq!(on_page("appearance").count(), 35);
+        assert_eq!(on_page("appearance").count(), 37);
         assert_eq!(
             values("layout.tiling_style"),
             ["stack", "split", "scroll", "full"]

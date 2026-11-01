@@ -2,10 +2,8 @@
 # Runs the VM tests in lanes. CI runs each lane on a runner of its own, fed
 # the images the build job made as one archive per lane (CI speed-ups,
 # 2026-10-16), so the lanes run at once and none slows another:
-#   installed  install-test.sh, ab-test.sh (it boots the disk the first
-#              installed), then apps-test.sh, the default apps across an
-#              update, then updates-test.sh, an update with nobody typing
-#              (M7.5)
+#   installed  install-test.sh, then ab-test.sh (it boots the disk the
+#              first installed)
 #   system     boot-test.sh, system-test.sh, developer-test.sh (M7.1),
 #              flatpak-test.sh, then
 #              `desktop-test.sh rollback`, which restarts the desktop VM
@@ -16,7 +14,11 @@
 #   fleet      fleet-test.sh, the fleet images and the stick that installs
 #              itself (M7.3), then server-test.sh, the seeded server and
 #              the cloud instance (M7.4), then upgrade-test.sh, an old
-#              release's disk updated to this build (M3.5)
+#              release's disk updated to this build (M3.5), then
+#              apps-test.sh, the default apps across an update, then
+#              updates-test.sh, an update with nobody typing (M7.5); these
+#              two left installed on 2026-11-01, as that lane ended the run
+#              8 minutes after fleet
 # Each lane runs its tests in order and stops at the first failure.
 #
 #   sh ci/vm-tests.sh             every lane on this machine: installed beside
@@ -60,11 +62,11 @@ lane() {
 # run_lane LANE: the lane's tests, in order.
 run_lane() {
 	case "$1" in
-	installed) lane install-test.sh ab-test.sh apps-test.sh updates-test.sh ;;
+	installed) lane install-test.sh ab-test.sh ;;
 	system) lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
-	fleet) lane fleet-test.sh server-test.sh upgrade-test.sh ;;
+	fleet) lane fleet-test.sh server-test.sh upgrade-test.sh apps-test.sh updates-test.sh ;;
 	*) no_lane "$1" ;;
 	esac
 }
@@ -84,12 +86,29 @@ archive() {
 # files LANE: what the lane's tests read from out/, as build.sh made it.
 files() {
 	case "$1" in
-	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test out/updates-test ;;
+	installed) echo out/install-test out/ab-test ;;
 	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-x86_64.img out/install-file.img ;;
-	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/upgrade-test out/keys out/edel-container-x86_64.tar.gz ;;
+	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/upgrade-test out/keys out/edel-container-x86_64.tar.gz out/apps-repo out/apps-test out/updates-test out/ab-test/update ;;
 	*) no_lane "$1" ;;
 	esac
+}
+
+# piece NAME ID FILE START END: bytes START to END of artifact ID, the
+# archive NAME, into FILE, going on from where a stopped try left off, up
+# to five tries. Each try asks the API again for the artifact's address,
+# which lasts a minute.
+piece() {
+	want=$(($5 - $4 + 1))
+	: >"$3"
+	tries=0
+	while [ "$(stat -c %s "$3")" -lt "$want" ] && [ "$tries" -lt 5 ]; do
+		tries=$((tries + 1))
+		have=$(stat -c %s "$3")
+		url=$(curl -fsS --retry 5 -o /dev/null -w '%{redirect_url}' -H "Authorization: Bearer $GH_TOKEN" "$api/artifacts/$2/zip") &&
+			curl -fsS -r "$(($4 + have))-$5" "$url" >>"$3" ||
+			echo "download $tries of edel-vm-images-$1's bytes $4 to $5 stopped at $(($4 + $(stat -c %s "$3"))); going on from there"
+	done
 }
 
 no_lane() {
@@ -126,7 +145,10 @@ take)
 	# ended a few downloads early with no error (2026-10-30 and 31, 3 of
 	# about 57 lane jobs, the 2 to 6 GB archives), so this one resumes a
 	# download that stops, up to five times, and takes the archive only
-	# when its size and sha256 are those the build job uploaded.
+	# when its size and sha256 are those the build job uploaded. It comes
+	# in eight pieces at once (piece), as one stream from the artifact's
+	# storage ran at about 25 MB/s and four at about 80 (2026-11-01): the
+	# 6 GB system archive took 4 minutes in one.
 	api=https://api.github.com/repos/$GITHUB_REPOSITORY/actions
 	meta=$(curl -fsSL --retry 5 -H "Authorization: Bearer $GH_TOKEN" "$api/runs/$3/artifacts?name=edel-vm-images-$2" |
 		jq -r '.artifacts[0] | "\(.id) \(.size_in_bytes) \(.digest)"')
@@ -138,19 +160,29 @@ take)
 	set -- "$2" $meta
 	zip=out/vm-$1.zip
 	mkdir -p out
-	rm -f "$zip"
+	rm -f "$zip" "$zip".*
+	began=$(date +%s)
+	pieces=8
+	each=$((($3 + pieces - 1) / pieces))
+	i=0
+	while [ "$i" -lt "$pieces" ] && [ $((i * each)) -lt "$3" ]; do
+		end=$(((i + 1) * each - 1))
+		[ "$end" -lt "$3" ] || end=$(($3 - 1))
+		piece "$1" "$2" "$zip.$i" $((i * each)) "$end" &
+		i=$((i + 1))
+	done
+	wait
 	n=0
-	while [ "$(stat -c %s "$zip" 2>/dev/null || echo 0)" != "$3" ] && [ "$n" -lt 5 ]; do
+	while [ "$n" -lt "$i" ]; do
+		cat "$zip.$n" >>"$zip" && rm "$zip.$n"
 		n=$((n + 1))
-		curl -fsSL -C - -H "Authorization: Bearer $GH_TOKEN" -o "$zip" "$api/artifacts/$2/zip" ||
-			echo "download $n of edel-vm-images-$1 stopped at $(stat -c %s "$zip" 2>/dev/null || echo 0) of $3 bytes; going on from there"
 	done
 	sum=$(sha256sum "$zip" | cut -d' ' -f1)
 	if [ "sha256:$sum" != "$4" ]; then
-		echo "FAIL: edel-vm-images-$1 came $(stat -c %s "$zip") bytes long with sha256 $sum after $n tries; the build job uploaded $3 bytes with $4"
+		echo "FAIL: edel-vm-images-$1 came $(stat -c %s "$zip") bytes long with sha256 $sum; the build job uploaded $3 bytes with $4"
 		exit 1
 	fi
-	echo "took edel-vm-images-$1: $3 bytes in $n tries, sha256 as uploaded"
+	echo "took edel-vm-images-$1: $3 bytes in $i pieces in $(($(date +%s) - began)) s, sha256 as uploaded"
 	unzip -p "$zip" "vm-$1.tar.zst" | zstd -q -dc | tar -xf - || {
 		echo "FAIL: edel-vm-images-$1 matched its sha256 yet did not unpack"
 		exit 1

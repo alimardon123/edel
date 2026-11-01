@@ -289,13 +289,13 @@
 #               list stays empty, and after a lock and unlock it is empty (M7.13)
 #   smoothness  a fullscreen game stand-in in game mode times 1200 frames as
 #               the screen presented them: the slowest 1 percent (p99) at
-#               most game_frame_p99_ratio times the median frame, and the
-#               share that went straight to the
+#               most game_frame_p99_extra_ms slower than the median frame,
+#               and the share that went straight to the
 #               screen at least game_direct_percent_floor; one more run when
 #               the first is over (M7.7e)
 #   frame-rate  Super+Shift+G shows the frame rate overlay over a fullscreen
 #               game stand-in (frame-rate.png), the game timed again with it
-#               on within game_frame_p99_ratio, and hidden again (M8.27)
+#               on within game_frame_p99_extra_ms, and hidden again (M8.27)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -3161,6 +3161,18 @@ case_settings_tour() {
 		python3 ci/qmp.py screendump "$dir/settings-tour-$page-1.png"
 		tour_close
 	done
+	# Rows that lie below the first screen of their page, opened by their
+	# key, which scrolls the row to the top of its page (`--page KEY`),
+	# maximized, each kept as settings-tour-KEY.png: the Glass group
+	# (M8.21 part 21m).
+	for key in appearance.glass; do
+		tour_open "$key" || fail "Settings did not open on the $key row"
+		sleep 2
+		python3 ci/qmp.py key meta_l-m
+		sleep 2
+		python3 ci/qmp.py screendump "$dir/settings-tour-$key.png"
+		tour_close
+	done
 	# Compact, as the power case makes it: 366 logical px wide, Settings
 	# maximized on an empty workspace.
 	python3 ci/qmp.py key meta_l-4
@@ -3186,7 +3198,7 @@ case_settings_tour() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
 	python3 ci/qmp.py key meta_l-1
 	set -- $shown
-	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
+	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, the rows far down a page by their key, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
 }
 
 case_display() {
@@ -3978,10 +3990,16 @@ case_launcher() {
 	background=$(token background)
 	panel=$(token panel)
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background before the launcher opens"
+	bare=$(shot launcher-bare 1100 100 '!000001')
 	shown=$(count 'edel-shell-ui: launcher shown')
+	veiled=$(count 'edel-shell-ui: veil shown 1280x800 dimmed')
 	python3 ci/qmp.py key meta_l
 	wait_more 'edel-shell-ui: launcher shown' "$shown" || fail "Super, tapped alone, did not open the launcher"
 	shot launcher 188 748 "$panel" >/dev/null || fail "the launcher is not drawn at 188,748 in the panel's colour"
+	# The veil (M8.21 21o): the screen behind the launcher dimmed as the
+	# lock dims, so 1100,100 is darker than before. Kept as launcher-veil.png.
+	wait_more 'edel-shell-ui: veil shown 1280x800 dimmed' "$veiled" || fail "the launcher opened with no veil over the screen"
+	dim=$(shot launcher-veil 1100 100 "!$bare") || fail "1100,100 is still #$bare with the launcher open: the veil is not drawn"
 	apps=$(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: launcher shown' | tail -n 1 | sed 's/.*shown, //')
 	# Typed, foot is the best match, and Return starts it.
 	opened=$(count 'edel-compositor: mapped window foot')
@@ -4014,9 +4032,10 @@ case_launcher() {
 	python3 ci/qmp.py key esc
 	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "Escape did not close the launcher"
 	shot launcher 188 748 "$background" >/dev/null || fail "188,748 is not the background after the launcher closed"
+	shot launcher-bare 1100 100 "$bare" >/dev/null || fail "1100,100 is not #$bare again after the launcher closed: the veil stayed"
 	guest 'shell rss'
 	wait_for 'DESKTOP-TEST: shell_ui_rss_now_mib [0-9]' || fail "the service did not read shell-ui's memory"
-	echo "PASS: Super opened the launcher in the panel's colour with $apps, a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
+	echo "PASS: Super opened the launcher in the panel's colour with $apps over the veil (1100,100 #$bare dimmed to #$dim), a screen reader found it as a window named Launcher with $listed list items ($first) while foot was typed, typing foot and Return started foot and closed it, Super+Q closed foot, and Escape closed it again; shell-ui then held $(value shell_ui_own_now_mib) MiB of its own, $(value shell_ui_shared_now_kib) kB of it shared buffers, $(value shell_ui_rss_now_mib) MiB resident"
 }
 
 case_app_permissions() {
@@ -6208,31 +6227,46 @@ case_clipboard() {
 	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
 }
 
+# late_why LINE LIMIT: from the game stand-in's line, how many intervals
+# came LIMIT ms or more after the median (late_half_ms, smooth.rs) and
+# how much of the processors' time the host took from the VM meanwhile
+# (steal_percent, the test service), so a p99 over the gate shows whether
+# a few stalls or the runner made it. The line is long, so the cases wait
+# for its end, the steal, as the serial console may still be writing it.
+late_why() {
+	over=$(echo "$1" | sed -n 's/.*late_half_ms=\([-0-9:,]*\).*/\1/p' | tr ',' '\n' |
+		awk -F: -v limit="$2" '$2 != "" && $1 * 0.5 >= limit { n += $2 } END { print n + 0 }')
+	steal=$(echo "$1" | sed -n 's/.*steal_percent=\([0-9.]*\).*/\1/p')
+	echo "$over intervals $2 ms or more after the median, ${steal:-unknown} percent of the processors' time taken by the host"
+}
+
 case_smoothness() {
 	# The smoothness gate (M7.7e): a game stand-in, fullscreen and drawing on
 	# every frame, with game mode on (the VM has no battery), times 1200
 	# frames as the screen presented them, after its first 0.5 s, the
 	# window's open animation, which the client keeps apart and reports
-	# (smooth.rs). Its slowest 1 percent, as a
-	# multiple of its median frame, must stay within game_frame_p99_ratio:
-	# the VM's screen has no refresh of its own, so the median is the
-	# runner's pace and the ratio is how much worse the slow frames are
-	# than that pace, which is what a person sees as a stutter. The share of
+	# (smooth.rs). Its slowest 1 percent may be at most
+	# game_frame_p99_extra_ms slower than its median frame: the VM's screen
+	# has no refresh of its own, so the median is the runner's pace, and
+	# how much later than that pace the slow frames come, in ms, is the
+	# stutter a person sees. The runner's own hiccups add about the same
+	# ms at any pace, so a ratio to the median read fast runners as worse
+	# (ci/budgets.toml says how much). The share of
 	# frames that went straight to the screen must not fall below
 	# game_direct_percent_floor. A shared runner can stall one run, so a run
 	# over the budget is measured once more and the better run counts. No
 	# screenshot is taken while frames are timed, as one stalls the VM.
-	limit=$(budget game_frame_p99_ratio)
+	limit=$(budget game_frame_p99_extra_ms)
 	floor=$(budget game_direct_percent_floor)
 	best=''
 	for run in 1 2; do
 		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
 		ended=$(count 'edel-compositor: the game ended; the desktop is back')
-		n=$(count 'DESKTOP-TEST: smooth ')
+		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)')
 		guest 'smooth game'
 		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 			fail "the game stand-in did not play as a game (run $run)"
-		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
+		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
 		line=$(value smooth)
 		case $line in
 		frames=*) ;;
@@ -6248,23 +6282,23 @@ case_smoothness() {
 		discarded=$(echo "$line" | sed -n 's/.*discarded=\([0-9]*\).*/\1/p')
 		settle=$(echo "$line" | sed -n 's/.*opening_intervals=\([0-9]*\) opening_worst_ms=\([0-9.]*\).*/\1 intervals of the first 0.5 s apart, the slowest \2 ms/p')
 		[ -n "$frames" ] && [ -n "$median" ] && [ -n "$p99" ] && [ -n "$direct" ] || fail "the game stand-in's line lacks a number (run $run): $line"
-		ratio=$(awk -v p="$p99" -v m="$median" 'BEGIN { if (m > 0) printf "%.2f", p / m; else print 99 }')
+		extra=$(awk -v p="$p99" -v m="$median" 'BEGIN { printf "%.1f", p - m }')
 		share=$(awk -v d="$direct" -v f="$frames" 'BEGIN { printf "%.1f", d * 100 / (f + 1) }')
-		echo "smoothness run $run: median $median ms, p99 $p99 ms ($ratio times the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}"
-		# The better run: the lower ratio.
-		if [ -z "$best" ] || awk -v p="$ratio" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
-			best="$ratio $slowest $share $discarded $median $p99"
+		echo "smoothness run $run: median $median ms, p99 $p99 ms ($extra ms slower than the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}; $(late_why "$line" "$limit")"
+		# The better run: the fewer ms the slow frames come late.
+		if [ -z "$best" ] || awk -v p="$extra" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$extra $slowest $share $discarded $median $p99"
 		fi
 		set -- $best
 		awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' && break
 	done
 	set -- $best
 	awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' ||
-		fail "a game's slowest frames or its frames straight to the screen are worse than their budgets in both runs: the better run's p99 $6 ms is $1 times its median $5 ms (budget $limit times), $3 percent straight to the screen (floor $floor percent)"
+		fail "a game's slowest frames or its frames straight to the screen are worse than their budgets in both runs: the better run's p99 $6 ms is $1 ms slower than its median $5 ms (budget $limit ms), $3 percent straight to the screen (floor $floor percent)"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Smoothness (M7.7e): a game's frames median $5 ms, p99 $6 ms, $1 times the median (budget $limit times), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
+		echo "Smoothness (M7.7e): a game's frames median $5 ms, p99 $6 ms, $1 ms slower than the median (budget $limit ms), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: a fullscreen game stand-in in game mode presented its frames with p99 $6 ms, $1 times its median $5 ms (budget $limit times), slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
+	echo "PASS: a fullscreen game stand-in in game mode presented its frames with p99 $6 ms, $1 ms slower than its median $5 ms (budget $limit ms), slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
 }
 
 case_frame_rate() {
@@ -6274,10 +6308,10 @@ case_frame_rate() {
 	# a graph in the upper left corner, kept as frame-rate.png, the rest of
 	# the screen the game's colour; nothing is put into the game. With it
 	# on, the smoothness gate's game is timed again and its slowest 1
-	# percent must stay within game_frame_p99_ratio times its median (the
+	# percent may be at most game_frame_p99_extra_ms slower than its median (the
 	# frames are composited now, so the direct share is not asked); a run
 	# over is measured once more. Super+Shift+G hides it again.
-	limit=$(budget game_frame_p99_ratio)
+	limit=$(budget game_frame_p99_extra_ms)
 	playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
 	guest 'frame rate game'
 	wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
@@ -6303,33 +6337,33 @@ case_frame_rate() {
 	best=''
 	for run in 1 2; do
 		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
-		n=$(count 'DESKTOP-TEST: smooth ')
+		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)')
 		guest 'smooth game'
 		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 			fail "the timed game stand-in did not play as a game (run $run)"
-		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
+		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=([0-9]+[.][0-9]|unknown)$)' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
 		line=$(value smooth)
 		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
 		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
 		[ -n "$median" ] && [ -n "$p99" ] || fail "the timed game stand-in failed (run $run): $line"
 		settle=$(echo "$line" | sed -n 's/.*opening_intervals=\([0-9]*\) opening_worst_ms=\([0-9.]*\).*/\1 intervals of the first 0.5 s apart, the slowest \2 ms/p')
-		ratio=$(awk -v p="$p99" -v m="$median" 'BEGIN { if (m > 0) printf "%.2f", p / m; else print 99 }')
-		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($ratio times the median); ${settle:-no start kept apart}"
-		if [ -z "$best" ] || awk -v p="$ratio" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
-			best="$ratio $median $p99"
+		extra=$(awk -v p="$p99" -v m="$median" 'BEGIN { printf "%.1f", p - m }')
+		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($extra ms slower than the median); ${settle:-no start kept apart}; $(late_why "$line" "$limit")"
+		if [ -z "$best" ] || awk -v p="$extra" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$extra $median $p99"
 		fi
 		awk -v p="${best%% *}" -v b="$limit" 'BEGIN { exit !(p <= b) }' && break
 	done
 	set -- $best
 	awk -v p="$1" -v b="$limit" 'BEGIN { exit !(p <= b) }' ||
-		fail "with the frame rate overlay on, a game's slowest frames are worse than the budget in both runs: p99 $3 ms is $1 times its median $2 ms (budget $limit times)"
+		fail "with the frame rate overlay on, a game's slowest frames are worse than the budget in both runs: p99 $3 ms is $1 ms slower than its median $2 ms (budget $limit ms)"
 	off=$(count 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]')
 	python3 ci/qmp.py key meta_l-shift-g
 	wait_more 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]' "$off" || fail "Super+Shift+G did not turn the frame rate overlay off"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on a game's frames had p99 $3 ms, $1 times the median $2 ms (budget $limit times)." >>"$GITHUB_STEP_SUMMARY"
+		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on a game's frames had p99 $3 ms, $1 ms slower than the median $2 ms (budget $limit ms)." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on a game's frames had p99 $3 ms, $1 times its median $2 ms (budget $limit times); Super+Shift+G hid it"
+	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on a game's frames had p99 $3 ms, $1 ms slower than its median $2 ms (budget $limit ms); Super+Shift+G hid it"
 }
 
 case_keyring() {
@@ -10029,10 +10063,81 @@ if [ "$*" = live ]; then
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
+	# Not the whole partition, which took about 20 s a look (#614): its
+	# file system's metadata, journal included (e2image), with the journal
+	# replayed on that copy, names the log's size and blocks, and the
+	# blocks are read from the stick itself, where ext4 writes a file's
+	# data before the journal names it.
 	stick_session() {
-		partition_out "$stick" 4 "$dir/data.img"
-		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
-		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
+		looked=$(date +%s%N)
+		start=$(sfdisk -d "$stick" 2>/dev/null | sed -n 's/^[^ ]*[^0-9]4 : start= *\([0-9]*\),.*/\1/p')
+		rm -f "$dir/data-meta.img"
+		e2image -r -o $((start * 512)) "$stick" "$dir/data-meta.img" 2>/dev/null
+		copied=$(date +%s%N)
+		e2fsck -fy -E journal_only "$dir/data-meta.img" >/dev/null 2>&1 || true
+		checked=$(date +%s%N)
+		file=/home/live/$home_session_log
+		bs=$(debugfs -R stats "$dir/data-meta.img" 2>/dev/null | sed -n 's/^Block size: *\([0-9]*\).*/\1/p')
+		size=$(debugfs -R "stat $file" "$dir/data-meta.img" 2>/dev/null | sed -n 's/.*  Size: \([0-9]*\).*/\1/p' | head -n 1)
+		# In a file, as the callers run it in pipes and $(...).
+		echo "$(((copied - looked) / 1000000)) $(((checked - copied) / 1000000))" >>"$dir/session-looks"
+		# No log yet (the session has not started), or the copy failed.
+		[ -n "$bs" ] && [ -n "$size" ] || return 0
+		# The log's extents (debugfs ex): the leaves map its blocks to the
+		# disk's; a block in no extent, or in an unwritten one, reads as
+		# zeros, as the file system would read it.
+		debugfs -R "ex $file" "$dir/data-meta.img" 2>/dev/null | python3 -I -c '
+import re, sys
+disk, start, block, size = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+leaf = re.compile(r"^\s*(\d+)/\s*(\d+)\s+\d+/\s*\d+\s+(\d+)\s*-\s*(\d+)\s+(\d+)\s*-\s*\d+\s+\d+(.*)$")
+out = bytearray(size)
+with open(disk, "rb") as f:
+    for line in sys.stdin:
+        m = leaf.match(line)
+        if not m or m[1] != m[2] or "Uninit" in m[6]:
+            continue
+        first, last, at = int(m[3]), int(m[4]), int(m[5])
+        for n in range(first, last + 1):
+            if n * block >= size:
+                break
+            f.seek(start + (at + n - first) * block)
+            piece = f.read(min(block, size - n * block))
+            out[n * block:n * block + len(piece)] = piece
+sys.stdout.buffer.write(bytes(out))
+' "$stick" $((start * 512)) "$bs" "$size"
+	}
+	# lap NAME: how long the live walk took since the last lap, so the
+	# lane's slow stretches show in CI's log.
+	lap_at=$(date +%s)
+	: >"$dir/session-looks"
+	lap() {
+		echo "  live: $1 took $(($(date +%s) - lap_at)) s; $(awk '{ n++; c += $1; k += $2 } END { printf "%d looks at the session log, %d ms copying and %d checking", n, c, k }' "$dir/session-looks")"
+		lap_at=$(date +%s)
+		: >"$dir/session-looks"
+	}
+	# settings_open NAME: types settings in the launcher and waits until
+	# the compositor maps one more Settings window than before (M8.15a's
+	# CI lane: no fixed 25 s wait), then gives the installer page 5 s to
+	# list the disks and look for a settings file, which it does after
+	# the window shows.
+	settings_open() {
+		before=$(stick_session | grep -ac 'edel-compositor: mapped window Settings')
+		python3 ci/qmp.py key meta_l
+		sleep 3
+		python3 ci/qmp.py type settings
+		sleep 1
+		python3 ci/qmp.py key ret
+		i=0
+		until [ "$(stick_session | grep -ac 'edel-compositor: mapped window Settings')" -gt "$before" ]; do
+			i=$((i + 2))
+			if [ "$i" -gt 60 ]; then
+				python3 ci/qmp.py screendump "$dir/$1-failed.png"
+				fail "Settings did not open from the launcher within 60 s ($1-failed.png)"
+			fi
+			sleep 2
+		done
+		echo "  Settings mapped about $i s after Return in the launcher ($1)"
+		sleep 5
 	}
 	# Offline (M6.2): the stick reaches nothing beyond the VM's own
 	# network, so the default apps must start from what it carries.
@@ -10068,6 +10173,7 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	lap "starting the stick"
 	walk try "seconds=$started" || fail "starting the stick took longer than its budget (walk try, docs/REVIEW-experience.md)"
 	# The first start (M6.12): live's session opens Settings' Welcome,
 	# which on a stick asks Try or Install first, Install taking Return.
@@ -10127,6 +10233,7 @@ if [ "$*" = live ]; then
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
+	lap "the Welcome, the screen and the serial log"
 	# The browser offline (M6.2): Super, "firefox" and Return start the
 	# default apps' Firefox from the stick's own installation with no
 	# network beyond the VM, and its window must map within 180 s, which
@@ -10171,6 +10278,7 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py screendump "$dir/store.png"
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	lap "Firefox and the store"
 	# A web app (M6.4): an address typed in the launcher offers to make it
 	# an app, first; Return makes it and starts it, Firefox with a profile
 	# and an app id of its own, so it is a window of its own, which the
@@ -10215,18 +10323,14 @@ if [ "$*" = live ]; then
 	*) fail "the live session did not add Flathub from the image's file, so the store lists nothing" ;;
 	esac
 	rm -f "$dir/apps-data.img"
+	lap "the web app and the default apps' files"
 	# Settings' installer page (M6.6a), by keyboard alone as a person
 	# could: the launcher opens Settings, which on a stick opens on the
 	# page with the login name taking the keys; Return moves on, and on
 	# the second password shows the plan and gives the keys to Erase and
 	# install, which wants two presses. The blank disk is the only one
 	# offered, as the stick never is.
-	python3 ci/qmp.py key meta_l
-	sleep 3
-	python3 ci/qmp.py type settings
-	sleep 1
-	python3 ci/qmp.py key ret
-	sleep 25
+	settings_open install-page
 	python3 ci/qmp.py screendump "$dir/install-page.png"
 	press type ali
 	press key ret
@@ -10263,6 +10367,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	lap "the first install"
 	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
@@ -10299,6 +10404,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the installed disk has no desktop add-on beside its slot"
 	fi
+	lap "the installed disk's files and add-on"
 	echo "PASS: the installed disk holds the desktop add-on in $addons_dir/$carried"
 	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
@@ -10311,12 +10417,7 @@ if [ "$*" = live ]; then
 	cp out/install-file.img "$dir/install-file.img"
 	python3 ci/qmp.py plug filestick "$PWD/$dir/install-file.img"
 	sleep 5
-	python3 ci/qmp.py key meta_l
-	sleep 3
-	python3 ci/qmp.py type settings
-	sleep 1
-	python3 ci/qmp.py key ret
-	sleep 25
+	settings_open install-file
 	python3 ci/qmp.py screendump "$dir/install-file.png"
 	python3 ci/qmp.py key ret
 	sleep 2
@@ -10393,7 +10494,8 @@ if [ "$*" = live ]; then
 	# own (en_US: America/New_York), and the first boot applies it.
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
-	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	rm -f "$stick" "$dir/data.img" "$dir/data-meta.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	lap "the install from a settings file and its first start"
 	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png)"
 	exit 0
 fi
@@ -10613,8 +10715,16 @@ trap 'fail "the case $c ran over $case_limit s, so it stopped there; the lines a
 for c in "$@"; do
 	(sleep "$case_limit" && kill -USR1 $$) >/dev/null 2>&1 &
 	timer=$!
+	panics=$(count 'panicked at')
 	"case_$(echo "$c" | tr '-' '_')"
 	kill "$timer" 2>/dev/null || true
+	# No program of ours may panic in a case, even one the compositor
+	# starts again: shell-ui ended after every unlock for weeks unseen, as
+	# the panel came back by itself (the keyboard's repeat timer, cards.rs).
+	if [ "$(count 'panicked at')" -gt "$panics" ]; then
+		tr -d '\r' <"$log" | grep -A3 'panicked at' | tail -n 20
+		fail "a program panicked during the case $c (the lines above say where); a panic is a bug even when the program is started again"
+	fi
 	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
 	# has exited already.
 	echo "$c" >>"$dir/passed"

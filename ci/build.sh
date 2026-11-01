@@ -40,12 +40,15 @@ cargo build --release --locked --workspace
 # shared apk cache (roadmap M3.1). Test images that no step downloads are
 # built with --no-compress. build VERSION ARGS...
 version=${EDEL_VERSION:-0.1}
-rm -rf out/apk-cache out/apk-cache-tests
+rm -rf out/apk-cache out/apk-cache-tests out/apk-cache-tests2
 build() {
 	build_version=$1
 	shift
+	build_began=$(date +%s)
 	./target/release/edel image build --version "$build_version" --channel "${EDEL_CHANNEL:-ci}" \
-		--apk-cache "${apk_cache:-out/apk-cache}" "$@"
+		--apk-cache "${apk_cache:-out/apk-cache}" "$@" || return
+	# How long each image took, so the build's slowest chain shows.
+	echo "build: $* took $(($(date +%s) - build_began)) s"
 }
 . ci/names.sh
 # Two throwaway signing keys, new on every run; the real keys arrive with
@@ -184,6 +187,19 @@ rm -f out/server-test/seed.img
 mkfs.vfat -C -n EDEL-SEED out/server-test/seed.img 4096
 mcopy -i out/server-test/seed.img out/server-test/seed.toml "::$settings_name"
 
+# The Flatpak spike image: the CI VM image (ci/vm/vm.toml) plus dbus, flatpak and a test
+# service that installs and runs a Flathub runtime (roadmap M1.9).
+build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
+) >out/build-tests.log 2>&1 &
+tests=$!
+# The second chain of test images, beside the first and the one image:
+# the update tests' images and those with default apps, about as long as
+# the first chain (4 to 5 min each, measured on #615), from a cache of its
+# own.
+cp -a out/apk-cache out/apk-cache-tests2
+(
+apk_cache=out/apk-cache-tests2
+
 # The install test image (roadmap M2.4, M2.5): the CI VM image (ci/vm/vm.toml) plus a test
 # service that installs onto a blank second disk, and the A/B test steps,
 # which run on the disk it installs (ci/ab-test.sh). health_timeout 30
@@ -239,10 +255,6 @@ cp "$update/release.toml.sig" "$update/bad.toml.sig"
 sed 's/^expires = .*$/expires = "2020-01-01"/' "$update/release.toml" >"$update/expired.toml"
 ./target/release/edel release sign --key out/keys/ci-1.key "$update/expired.toml"
 
-# The Flatpak spike image: the CI VM image (ci/vm/vm.toml) plus dbus, flatpak and a test
-# service that installs and runs a Flathub runtime (roadmap M1.9).
-build "$version" ci/flatpak/vm.toml --no-compress --out out/flatpak
-
 # The desktop test image here too, for desktop-test.sh rollback, which
 # runs in the VM test lane: its own update image and desktop add-on,
 # signed, are the update that case installs and breaks (roadmap M4.8,
@@ -276,16 +288,17 @@ mkdir -p "$update"
 ln out/apps-test-update/edel-apps-test-x86_64.ext4.gz "$update/"
 ./target/release/edel release make --version "$version.1" --channel "${EDEL_CHANNEL:-ci}" "$update/edel-apps-test-x86_64.ext4.gz"
 ./target/release/edel release sign --key out/keys/ci-1.key --expires-in 60 "$update/release.toml"
-) >out/build-tests.log 2>&1 &
-tests=$!
+) >out/build-tests2.log 2>&1 &
+tests2=$!
 for def in images/*.toml; do
 	[ "$def" = images/container.toml ] || build "$version" "$def" --out out
 done
-tests_ok=0
+tests_ok=0 tests2_ok=0
 wait "$tests" || tests_ok=$?
-cat out/build-tests.log
-[ "$tests_ok" = 0 ] || {
-	echo "ci/build.sh: building the test images failed (exit $tests_ok); out/build-tests.log above says where"
+wait "$tests2" || tests2_ok=$?
+cat out/build-tests.log out/build-tests2.log
+[ "$tests_ok" = 0 ] && [ "$tests2_ok" = 0 ] || {
+	echo "ci/build.sh: building the test images failed (exit $tests_ok and $tests2_ok); out/build-tests.log and out/build-tests2.log above say where"
 	exit 1
 }
 

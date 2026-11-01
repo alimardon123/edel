@@ -64,6 +64,8 @@ This file is written by `EDEL_WRITE_DOCS=1 cargo test -p edel key_help` from the
 | `appearance.shadow_size` | the token size.shadow_blur | token |
 | `appearance.shadow_darkness` | the alpha of colour.shadow | token |
 | `appearance.blur` | the token size.blur | token |
+| `appearance.glass` | `"glass"` | release |
+| `appearance.glass_colour` | `"neutral"` | release |
 | `appearance.font` | `"Inter Variable"` | token |
 | `appearance.monospace_font` | `"Noto Sans Mono"` | release |
 | `appearance.text_size` | `100` | release |

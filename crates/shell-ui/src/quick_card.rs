@@ -385,7 +385,7 @@ impl Shell {
             return;
         };
         if let Some(keyboard) = &card.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         drop(card);
         self.live.quick = false;

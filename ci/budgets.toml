@@ -104,10 +104,10 @@ desktop_behind_game_cpu_percent = 1
 
 # The smoothness gate (M7.7e, desktop-test smoothness): a fullscreen game
 # stand-in, edel-testclient --busy --smooth 1200, in game mode. The 99th
-# percentile of the time between the frames the screen presented, as a
-# multiple of their median, and the share of its frames that went
-# straight to the screen, in percent, which must not fall below the
-# floor. A change that makes either more than 10 percent worse does not
+# percentile of the time between the frames the screen presented, in ms
+# over their median (until 2026-10-31 a multiple of it, below), and the
+# share of its frames that went straight to the screen, in percent, which
+# must not fall below the floor. A change that makes either more than 10 percent worse does not
 # merge, so each is the first CI measurements made 10 percent worse.
 # Until 2026-10-24 the gate was the p99 alone, game_frame_p99_ms = 16.4
 # (PR #403): it measured the runner, as CI's VM has no screen refresh, so
@@ -126,9 +126,23 @@ desktop_behind_game_cpu_percent = 1
 # open animation, about 100 ms of fading frames once at a game's start,
 # can be the 12 slowest intervals of 1200 on a runner that draws one in
 # 8 ms; the settle numbers show whether it was.
+# From 2026-10-31 the gate is the p99's ms over the median, not their
+# ratio: the runner's own hiccups add about the same ms at any pace, so
+# the ratio read the same code as worse on a fast runner. Over 84 first
+# runs of the smoothness and frame-rate cases in CI from 2026-10-24 to
+# 2026-10-31, at medians of 7.9 to 15.1 ms, the p99 came 0.6 to 2.3 ms
+# after the median in the runs that passed, with no trend in the pace
+# (1.2 ms at 8.4 ms, 2.4 at 12.2, 0.7 at 14.1), while the ratio went
+# from 1.27 at 8.3 ms to 1.12 to 1.16 at 11.5 to 13.9 for about 2.1 ms
+# each time. The ratio's 1.24 allowed 1.9 ms at 7.9 ms, 2.1 at the first
+# measurement's 8.9, 2.9 at the typical 12.2 and 3.6 at 15.1; 2.5 ms is
+# stricter than it on every runner slower than 10.4 ms, most of CI's;
+# Alimardon chose 2.5 over 2.1 ms on 2026-10-31.
+# A stall the code adds shows in full: one dropped 60 Hz frame in 2
+# percent of frames puts the p99 16.7 ms late.
 # CI's VM gives the client shared memory buffers, which cannot go
 # straight to the screen, so the floor stays 0 there.
-game_frame_p99_ratio = 1.24
+game_frame_p99_extra_ms = 2.5
 game_direct_percent_floor = 0
 
 # The compositor's and shell-ui's wakeups per second together, from their

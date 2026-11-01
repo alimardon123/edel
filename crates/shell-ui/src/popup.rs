@@ -615,16 +615,19 @@ pub struct Card {
 }
 
 /// Clears `pixmap` and draws `cards` in the panel's colour at scale `s`,
-/// the room between them left clear.
+/// each edged with the glass's hairline (M8.21 part 21n), the room between
+/// them left clear.
 pub fn cards(pixmap: &mut Pixmap, tokens: &Tokens, s: f32, cards: &[Card]) {
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
     for c in cards {
         let (x, y, w, h) = c.rect.device(s);
         fill(pixmap, x, y, w, h, c.radius * s, tokens.panel);
+        paint::rim(pixmap, (x, y, w, h), c.radius * s, s, tokens);
     }
 }
 
-/// Clears `pixmap` and draws the card, the whole of it, at scale `s`.
+/// Clears `pixmap` and draws the card, the whole of it, at scale `s`, edged
+/// with the glass's hairline (M8.21 part 21n).
 pub fn card(pixmap: &mut Pixmap, tokens: &Tokens, s: f32) {
     pixmap.fill(tiny_skia::Color::TRANSPARENT);
     let (w, h) = (pixmap.width() as f32, pixmap.height() as f32);
@@ -636,6 +639,13 @@ pub fn card(pixmap: &mut Pixmap, tokens: &Tokens, s: f32) {
         h,
         tokens.radius_menu as f32 * s,
         tokens.panel,
+    );
+    paint::rim(
+        pixmap,
+        (0.0, 0.0, w, h),
+        tokens.radius_menu as f32 * s,
+        s,
+        tokens,
     );
 }
 
@@ -865,6 +875,28 @@ mod tests {
     /// Six pixels a character.
     fn six(s: &str) -> f32 {
         s.chars().count() as f32 * 6.0
+    }
+
+    #[test]
+    fn a_card_edge_reads_in_both_schemes_and_leaves_the_fill_alone() {
+        for scheme in [edel::tokens::Scheme::Light, edel::tokens::Scheme::Dark] {
+            let tokens = Tokens::built_in_scheme(scheme);
+            let mut pixmap = Pixmap::new(200, 120).unwrap();
+            card(&mut pixmap, &tokens, 1.0);
+            let panel = tokens.panel.bytes();
+            // Halfway down the left side: the edge's hairline, then the
+            // glass's, then the panel's own fill.
+            let edge = pixel(&pixmap, 0, 60);
+            let distance = (0..3)
+                .map(|k| (edge[k] as i32 - panel[k] as i32).abs())
+                .max()
+                .unwrap();
+            assert!(
+                distance >= 8,
+                "{scheme:?}: the edge {edge:?} against {panel:?}"
+            );
+            assert_eq!(pixel(&pixmap, 4, 60)[..3], panel[..3], "{scheme:?}");
+        }
     }
 
     #[test]
