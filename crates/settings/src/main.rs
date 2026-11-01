@@ -430,7 +430,7 @@ fn all_pages() -> Vec<Page> {
             // Notifications are shell-ui's, so the desktop's (M5.9b).
             "notifications" => Some(Page {
                 title: tr(page.title),
-                icon: "bell",
+                icon: "page-notifications",
                 section: Some(page.section),
                 build: |theme| notifications::page(theme),
                 needs: Some("shell"),
@@ -440,7 +440,7 @@ fn all_pages() -> Vec<Page> {
             // feature, as every image has them (M5.13b).
             "shortcuts" => Some(Page {
                 title: tr(page.title),
-                icon: "gear",
+                icon: "page-shortcuts",
                 section: Some(page.section),
                 build: |_| shortcuts::page(),
                 needs: None,
@@ -460,7 +460,7 @@ fn all_pages() -> Vec<Page> {
             // apps' desktop files, which every image has, so no feature.
             "default_apps" => Some(Page {
                 title: tr(page.title),
-                icon: "app-generic",
+                icon: "page-default-apps",
                 section: Some(page.section),
                 build: |_| default_apps::page(),
                 needs: None,
@@ -468,7 +468,7 @@ fn all_pages() -> Vec<Page> {
             }),
             "startup" => Some(Page {
                 title: tr(page.title),
-                icon: "app-generic",
+                icon: "page-startup",
                 section: Some(page.section),
                 build: |_| startup::page(),
                 needs: None,
@@ -478,7 +478,7 @@ fn all_pages() -> Vec<Page> {
             // Startup page reads them, and the Flatpak apps' permissions.
             "apps" => Some(Page {
                 title: tr(page.title),
-                icon: "app-generic",
+                icon: "page-apps",
                 section: Some(page.section),
                 build: |_| apps::page(),
                 needs: None,
@@ -489,7 +489,7 @@ fn all_pages() -> Vec<Page> {
             // location feature is.
             "location" => Some(Page {
                 title: tr(page.title),
-                icon: "location",
+                icon: "page-location",
                 section: Some(page.section),
                 build: |_| location::page(),
                 needs: Some("location"),
