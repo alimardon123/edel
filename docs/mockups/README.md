@@ -173,3 +173,7 @@ Their boards are `settings/canvas/power-updates-users.html` and `settings/canvas
 
 `edel-mockups.html` draws them all; `node render.js` writes the pictures
 (Playwright with Chromium, and Inter installed for the text).
+
+## Installer (2026-11-01): the installer as an app of its own
+
+Drawn for M8.22 after Alimardon asked again for an installer apart from Settings, easy for everyone and rich for experts; not yet approved. Eight screens in the lock and login screens' language: Welcome (language, Try it first or Install), You (login name and password, the keyboard, time zone and computer name as suggested chips), Disk (the disks as cards, the stick greyed, the switch to lock the files), Ready (the plan, naming what is erased, Erase and install pressed twice), Installing, Done, From a settings file (a file on the stick answers every question) and All on one page (every question beside the partitions and the same install as a command, for experts). The board is [installer/screens.html](installer/screens.html), plain HTML with our icons inlined; each `section` is one 1280 by 800 screen.
