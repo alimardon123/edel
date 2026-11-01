@@ -1993,7 +1993,7 @@ impl Shell {
             return;
         };
         if let Some(keyboard) = &menu.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         drop(menu);
         self.hide_veil();
@@ -2197,7 +2197,7 @@ impl Shell {
             return;
         };
         if let Some(keyboard) = &menu.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         eprintln!("edel-shell-ui: styles menu hidden");
     }

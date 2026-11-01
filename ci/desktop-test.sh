@@ -10713,8 +10713,16 @@ trap 'fail "the case $c ran over $case_limit s, so it stopped there; the lines a
 for c in "$@"; do
 	(sleep "$case_limit" && kill -USR1 $$) >/dev/null 2>&1 &
 	timer=$!
+	panics=$(count 'panicked at')
 	"case_$(echo "$c" | tr '-' '_')"
 	kill "$timer" 2>/dev/null || true
+	# No program of ours may panic in a case, even one the compositor
+	# starts again: shell-ui ended after every unlock for weeks unseen, as
+	# the panel came back by itself (the keyboard's repeat timer, cards.rs).
+	if [ "$(count 'panicked at')" -gt "$panics" ]; then
+		tr -d '\r' <"$log" | grep -A3 'panicked at' | tail -n 20
+		fail "a program panicked during the case $c (the lines above say where); a panic is a bug even when the program is started again"
+	fi
 	# The cases that passed, for ci/basics-test.sh (M6.7); a failing case
 	# has exited already.
 	echo "$c" >>"$dir/passed"

@@ -224,7 +224,7 @@ impl Shell {
             return;
         };
         if let Some(keyboard) = &list.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         eprintln!("edel-shell-ui: clipboard history hidden");
     }

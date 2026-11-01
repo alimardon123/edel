@@ -10,7 +10,7 @@ use resvg::usvg::{Options, Tree};
 use crate::tokens::Colour;
 
 /// Each icon's name and its file.
-pub const BUILT_IN: [(&str, &str); 81] = [
+pub const BUILT_IN: [(&str, &str); 87] = [
     (
         "menu",
         include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/menu.svg")),
@@ -65,6 +65,46 @@ pub const BUILT_IN: [(&str, &str); 81] = [
     // Settings' (M5.6a): its pages, its search field, Copy as command,
     // the chosen card, the way back from a page on a narrow window and a
     // value chosen from a few.
+    // Settings' sidebar pages that had borrowed icons (M8.21).
+    (
+        "page-notifications",
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-notifications.svg"
+        )),
+    ),
+    (
+        "page-shortcuts",
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-shortcuts.svg"
+        )),
+    ),
+    (
+        "page-default-apps",
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-default-apps.svg"
+        )),
+    ),
+    (
+        "page-startup",
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-startup.svg"
+        )),
+    ),
+    (
+        "page-apps",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/page-apps.svg")),
+    ),
+    (
+        "page-location",
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-location.svg"
+        )),
+    ),
     (
         "page-layout",
         include_str!(concat!(
