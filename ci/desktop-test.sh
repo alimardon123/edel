@@ -6212,7 +6212,8 @@ case_clipboard() {
 # came LIMIT ms or more after the median (late_half_ms, smooth.rs) and
 # how much of the processors' time the host took from the VM meanwhile
 # (steal_percent, the test service), so a p99 over the gate shows whether
-# a few stalls or the runner made it.
+# a few stalls or the runner made it. The line is long, so the cases wait
+# for its end, the steal, as the serial console may still be writing it.
 late_why() {
 	over=$(echo "$1" | sed -n 's/.*late_half_ms=\([-0-9:,]*\).*/\1/p' | tr ',' '\n' |
 		awk -F: -v limit="$2" '$2 != "" && $1 * 0.5 >= limit { n += $2 } END { print n + 0 }')
@@ -6242,11 +6243,11 @@ case_smoothness() {
 	for run in 1 2; do
 		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
 		ended=$(count 'edel-compositor: the game ended; the desktop is back')
-		n=$(count 'DESKTOP-TEST: smooth ')
+		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)')
 		guest 'smooth game'
 		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 			fail "the game stand-in did not play as a game (run $run)"
-		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
+		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)' "$n" 90 || fail "the game stand-in gave no result within 90 s (run $run)"
 		line=$(value smooth)
 		case $line in
 		frames=*) ;;
@@ -6317,11 +6318,11 @@ case_frame_rate() {
 	best=''
 	for run in 1 2; do
 		playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
-		n=$(count 'DESKTOP-TEST: smooth ')
+		n=$(count 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)')
 		guest 'smooth game'
 		wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
 			fail "the timed game stand-in did not play as a game (run $run)"
-		wait_more 'DESKTOP-TEST: smooth ' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
+		wait_more 'DESKTOP-TEST: smooth (none: |.* steal_percent=[0-9]+[.][0-9]$)' "$n" 90 || fail "the timed game stand-in gave no result within 90 s (run $run)"
 		line=$(value smooth)
 		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
 		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
