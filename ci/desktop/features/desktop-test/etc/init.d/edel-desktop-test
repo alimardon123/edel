@@ -39,7 +39,7 @@ pw_setting() {
 # and the lines the login, the compositor (the session's `edel boot
 # keyring`, its start and its end) and the daemon itself logged.
 keyring_diag() {
-	say "keyring_diag keys: $(ls -ln "$keyring_keys" 2>&1 | tr '\n' ' ') run: $(ls -ln "$keyring_run" 2>&1 | tr '\n' ' ') daemon: $(pgrep -a oo7-daemon | tr '\n' ' ') logs: $(grep -ihE 'oo7|keyring|secret|pam_exec|edel-compositor: (started )?edel[ ,]' "$session_log" /tmp/compositor.log /var/log/greetd.log "$system_log" /var/log/messages 2>/dev/null | tail -n 25 | tr '\n' '|')"
+	say "keyring_diag keys: $(ls -ln "$keyring_keys" 2>&1 | tr '\n' ' ') run: $(ls -ln "$keyring_run" 2>&1 | tr '\n' ' ') daemon: $(for pid in $(pidof oo7-daemon); do printf '%s ' "$pid"; tr '\0' ' ' <"/proc/$pid/cmdline"; done) logs: $(grep -ihE 'oo7|keyring|secret|pam_exec|edel-compositor: (started )?edel[ ,]' "$session_log" /tmp/compositor.log /var/log/greetd.log "$system_log" /var/log/messages 2>/dev/null | tail -n 25 | tr '\n' '|')"
 }
 
 # The session's D-Bus address, from shell-ui's environment.
@@ -518,8 +518,10 @@ commands() {
 		# The keyring (M7.18): whether its daemon runs, a secret stored and
 		# read back as ci through the Secret Service with oo7-cli, and the
 		# daemon stopped and started again with the session's key.
+		# pidof, not pgrep -x: the session starts the daemon by its whole
+		# path, and busybox's pgrep -x compares that, not the name.
 		'keyring running')
-			running=$(pgrep -x oo7-daemon >/dev/null && echo yes || echo no)
+			running=$(pidof oo7-daemon >/dev/null && echo yes || echo no)
 			# What the login, the session and the daemon left, when it is gone.
 			[ "$running" = yes ] || keyring_diag
 			say "keyring_running $running"
@@ -543,17 +545,17 @@ commands() {
 			bus=$(session_bus)
 			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' setsid edel boot keyring </dev/null >/dev/null 2>&1 &"
 			n=0
-			while [ "$n" -lt 20 ] && ! pgrep -x oo7-daemon >/dev/null; do
+			while [ "$n" -lt 20 ] && ! pidof oo7-daemon >/dev/null; do
 				sleep 0.5
 				n=$((n + 1))
 			done
 			sleep 2
-			say "keyring_started $(pgrep -x oo7-daemon >/dev/null && echo yes || echo no)"
+			say "keyring_started $(pidof oo7-daemon >/dev/null && echo yes || echo no)"
 			;;
 		'keyring stop')
-			pkill -x oo7-daemon
+			kill $(pidof oo7-daemon)
 			sleep 1
-			say "keyring_stopped $(pgrep -x oo7-daemon >/dev/null && echo no || echo yes)"
+			say "keyring_stopped $(pidof oo7-daemon >/dev/null && echo no || echo yes)"
 			;;
 		'portal read')
 			bus=$(session_bus)
