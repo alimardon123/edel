@@ -99,6 +99,7 @@ mod tray;
 mod tray_card;
 mod trayview;
 mod undo_bar;
+mod veil;
 mod watch;
 mod widgets;
 mod workspace_drag;
@@ -119,6 +120,7 @@ use smithay_client_toolkit::reexports::client::protocol::{
 };
 use smithay_client_toolkit::reexports::client::{Connection, QueueHandle};
 use smithay_client_toolkit::reexports::protocols::ext::background_effect::v1::client::ext_background_effect_manager_v1::ExtBackgroundEffectManagerV1;
+use smithay_client_toolkit::reexports::protocols::wp::viewporter::client::wp_viewporter::WpViewporter;
 use smithay_client_toolkit::reexports::protocols_wlr::screencopy::v1::client::zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1;
 use smithay_client_toolkit::reexports::protocols::ext::idle_notify::v1::client::{
     ext_idle_notification_v1::ExtIdleNotificationV1, ext_idle_notifier_v1::ExtIdleNotifierV1,
@@ -414,6 +416,10 @@ struct Shell {
     /// needs both (M8.21 21d).
     backdrops: Option<ExtBackgroundEffectManagerV1>,
     live_blur: bool,
+    /// The compositor's wp_viewporter, and the veil behind the launcher and
+    /// the switcher while either is open (M8.21 21o).
+    viewporter: Option<WpViewporter>,
+    veil: Option<veil::Veil>,
     /// The compositor's screen copy manager, when it has one (M8.21 21f),
     /// the screenshots being taken and the number the last one got.
     screencopy: Option<ZwlrScreencopyManagerV1>,
@@ -654,6 +660,8 @@ fn run() -> Result<()> {
         idle_notifier: power_card::bind_idle(&globals, &qh),
         backdrops: backdrop::bind(&globals, &qh),
         live_blur: false,
+        viewporter: veil::bind(&globals, &qh),
+        veil: None,
         screencopy: screenshot::bind(&globals, &qh),
         shots: Vec::new(),
         next_shot: 0,
@@ -1939,7 +1947,9 @@ impl Shell {
             .map_or((Edge::Bottom, 1), |p| (p.edge, p.scale));
         let size = launcher::size(&self.tokens);
         let room = paint::shadow_room(&self.tokens, !self.fillets_drawn());
+        self.show_veil();
         let Some(popup) = Popup::new(self, LAUNCHER, size, size, scale, room) else {
+            self.hide_veil();
             return;
         };
         let side = match edge {
@@ -1986,6 +1996,7 @@ impl Shell {
             keyboard.release();
         }
         drop(menu);
+        self.hide_veil();
         self.launcher.close();
         self.live.launcher = false;
         self.draw_all();
@@ -2306,7 +2317,9 @@ impl Shell {
                 let scale = self.panels.first().map_or(1, |p| p.scale);
                 let most = switcher::size(switcher::MOST, &self.tokens);
                 let room = paint::shadow_room(&self.tokens, !self.fillets_drawn());
+                self.show_veil();
                 let Some(flip) = Popup::new(self, SWITCHER, size, most, scale, room) else {
+                    self.hide_veil();
                     return;
                 };
                 // No anchor: the middle of the screen.
@@ -2321,6 +2334,7 @@ impl Shell {
 
     fn hide_switcher(&mut self) {
         if self.flip.take().is_some() {
+            self.hide_veil();
             self.flipped = switcher::View::default();
             eprintln!("edel-shell-ui: switcher hidden");
         }
@@ -2380,6 +2394,8 @@ impl LayerShellHandler for Shell {
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &LayerSurface) {
         if let Some(card) = self.card_of(surface.wl_surface()) {
             self.close_card(card);
+        } else if self.is_veil(surface.wl_surface()) {
+            self.veil = None;
         } else if let Some((i, _)) = self.desktop_surface(surface.wl_surface()) {
             self.desktop_closed(i);
         } else {
@@ -2397,6 +2413,9 @@ impl LayerShellHandler for Shell {
     ) {
         if let Some(card) = self.card_of(surface.wl_surface()) {
             return self.card_configured(card, configure.new_size);
+        }
+        if self.is_veil(surface.wl_surface()) {
+            return self.veil_configured(configure.new_size);
         }
         if let Some((i, area)) = self.desktop_surface(surface.wl_surface()) {
             return if area {
