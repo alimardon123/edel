@@ -6208,6 +6208,18 @@ case_clipboard() {
 	echo "PASS: two copies kept, Super+V listed them (clipboard.png), Return pasted the first into clip; off kept nothing; the lock emptied the list"
 }
 
+# late_why LINE LIMIT: from the game stand-in's line, how many intervals
+# came LIMIT ms or more after the median (late_half_ms, smooth.rs) and
+# how much of the processors' time the host took from the VM meanwhile
+# (steal_percent, the test service), so a p99 over the gate shows whether
+# a few stalls or the runner made it.
+late_why() {
+	over=$(echo "$1" | sed -n 's/.*late_half_ms=\([-0-9:,]*\).*/\1/p' | tr ',' '\n' |
+		awk -F: -v limit="$2" '$2 != "" && $1 * 0.5 >= limit { n += $2 } END { print n + 0 }')
+	steal=$(echo "$1" | sed -n 's/.*steal_percent=\([0-9.]*\).*/\1/p')
+	echo "$over intervals $2 ms or more after the median, ${steal:-unknown} percent of the processors' time taken by the host"
+}
+
 case_smoothness() {
 	# The smoothness gate (M7.7e): a game stand-in, fullscreen and drawing on
 	# every frame, with game mode on (the VM has no battery), times 1200
@@ -6252,7 +6264,7 @@ case_smoothness() {
 		[ -n "$frames" ] && [ -n "$median" ] && [ -n "$p99" ] && [ -n "$direct" ] || fail "the game stand-in's line lacks a number (run $run): $line"
 		extra=$(awk -v p="$p99" -v m="$median" 'BEGIN { printf "%.1f", p - m }')
 		share=$(awk -v d="$direct" -v f="$frames" 'BEGIN { printf "%.1f", d * 100 / (f + 1) }')
-		echo "smoothness run $run: median $median ms, p99 $p99 ms ($extra ms slower than the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}"
+		echo "smoothness run $run: median $median ms, p99 $p99 ms ($extra ms slower than the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}; $(late_why "$line" "$limit")"
 		# The better run: the fewer ms the slow frames come late.
 		if [ -z "$best" ] || awk -v p="$extra" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
 			best="$extra $slowest $share $discarded $median $p99"
@@ -6316,7 +6328,7 @@ case_frame_rate() {
 		[ -n "$median" ] && [ -n "$p99" ] || fail "the timed game stand-in failed (run $run): $line"
 		settle=$(echo "$line" | sed -n 's/.*opening_intervals=\([0-9]*\) opening_worst_ms=\([0-9.]*\).*/\1 intervals of the first 0.5 s apart, the slowest \2 ms/p')
 		extra=$(awk -v p="$p99" -v m="$median" 'BEGIN { printf "%.1f", p - m }')
-		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($extra ms slower than the median); ${settle:-no start kept apart}"
+		echo "frame rate overlay on, run $run: median $median ms, p99 $p99 ms ($extra ms slower than the median); ${settle:-no start kept apart}; $(late_why "$line" "$limit")"
 		if [ -z "$best" ] || awk -v p="$extra" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
 			best="$extra $median $p99"
 		fi

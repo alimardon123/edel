@@ -334,8 +334,15 @@ commands() {
 		# commands is not held.
 		'smooth game')
 			(
+				# The processors' time the host took from the VM while the
+				# frames were timed (steal, /proc/stat's eighth number), in
+				# percent of all their time: the runner's share of a slow p99.
+				before=$(awk '/^cpu / { print $9, $2 + $3 + $4 + $5 + $6 + $7 + $8 + $9; exit }' /proc/stat)
 				as_ci edel-testclient --fullscreen --busy --smooth 1200 --size 300x200 --colour 7a3fb0 --title game </dev/null >/tmp/smooth.log 2>&1
+				after=$(awk '/^cpu / { print $9, $2 + $3 + $4 + $5 + $6 + $7 + $8 + $9; exit }' /proc/stat)
+				steal=$(echo "$before $after" | awk '{ t = $4 - $2; printf "%.1f", t > 0 ? ($3 - $1) * 100 / t : 0 }')
 				line=$(grep '^smooth ' /tmp/smooth.log | tail -n 1)
+				[ -n "$line" ] && line="$line steal_percent=$steal"
 				say "${line:-smooth none: $(grep -v '^frames ' /tmp/smooth.log | tail -n 3 | tr '\n' ';')}"
 			) &
 			;;
