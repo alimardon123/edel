@@ -9641,11 +9641,12 @@ case_dev_box() {
 	# default box (its own distrobox.conf names the image) from the image
 	# this host serves (ci/dev-box-files.sh), with no other network; a .deb
 	# app and an AppImage installed in it are exported to the launcher,
-	# which then offers four apps more (the add-on's Dev box, which makes
-	# the box on its first open, and VSCodium, which installs itself in the
-	# box on its first open, M7.19, and the two), and the .deb's command
-	# runs from the session's own PATH. VSCodium itself is not installed
-	# here: its packages come from the internet, which the VM has not.
+	# which then offers two apps more, and the .deb's command runs from the
+	# session's own PATH. The add-on's own Dev box, which makes the box on
+	# its first open, and VSCodium, which installs itself in the box on its
+	# first open (M7.19), are in the launcher before, as this image builds
+	# the add-on in; VSCodium itself is not installed here, as its packages
+	# come from the internet, which the VM has not.
 	shown=$(count 'edel-shell-ui: launcher shown, ')
 	python3 ci/qmp.py key meta_l
 	wait_more 'edel-shell-ui: launcher shown, ' "$shown" || fail "Super did not open the launcher"
@@ -9673,7 +9674,7 @@ case_dev_box() {
 	sleep 1
 	python3 ci/qmp.py screendump "$dir/dev-box-launcher.png"
 	python3 ci/qmp.py key esc
-	[ "$after" = $((before + 4)) ] || fail "the launcher offers $after apps after the box was made and its two apps were exported, not $((before + 4)): Dev box, VSCodium and the two"
+	[ "$after" = $((before + 2)) ] || fail "the launcher offers $after apps after the box was made and its two apps were exported, not $((before + 2)): the add-on's Dev box and VSCodium were there before, and the two are new"
 	asked=$(count 'DESKTOP-TEST: dev_box_run ')
 	guest 'dev box run'
 	wait_more 'DESKTOP-TEST: dev_box_run ' "$asked" 120 || fail "the service did not run the box's apps"
