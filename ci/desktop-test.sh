@@ -10043,16 +10043,23 @@ if [ "$*" = live ]; then
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
 	stick_session() {
+		looked=$(date +%s%N)
 		partition_out "$stick" 4 "$dir/data.img"
+		copied=$(date +%s%N)
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
+		checked=$(date +%s%N)
 		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
+		# In a file, as the callers run it in pipes and $(...).
+		echo "$(((copied - looked) / 1000000)) $(((checked - copied) / 1000000))" >>"$dir/session-looks"
 	}
 	# lap NAME: how long the live walk took since the last lap, so the
 	# lane's slow stretches show in CI's log.
 	lap_at=$(date +%s)
+	: >"$dir/session-looks"
 	lap() {
-		echo "  live: $1 took $(($(date +%s) - lap_at)) s"
+		echo "  live: $1 took $(($(date +%s) - lap_at)) s; $(awk '{ n++; c += $1; k += $2 } END { printf "%d looks at the session log, %d ms copying and %d checking", n, c, k }' "$dir/session-looks")"
 		lap_at=$(date +%s)
+		: >"$dir/session-looks"
 	}
 	# settings_open NAME: types settings in the launcher and waits until
 	# the compositor maps one more Settings window than before (M8.15a's
