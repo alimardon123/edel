@@ -160,7 +160,7 @@ pub struct Launcher {
     apps: Vec<App>,
     pub query: String,
     pub selected: usize,
-    children: Vec<Child>,
+    children: Vec<(Child, String)>,
 }
 
 impl Launcher {
@@ -281,7 +281,7 @@ impl Launcher {
         }
         match command.spawn() {
             Ok(child) => {
-                self.children.push(child);
+                self.children.push((child, name.to_string()));
                 eprintln!("edel-shell-ui: launched {name} ({})", argv.join(" "));
                 true
             }
@@ -295,10 +295,26 @@ impl Launcher {
         }
     }
 
-    /// Collects the apps that ended, so none lingers as a zombie.
+    /// Collects the apps that ended, so none lingers as a zombie, and
+    /// says which ended and how: a store whose window never showed is
+    /// then told apart from one still starting.
     pub fn reap(&mut self) {
         self.children
-            .retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+            .retain_mut(|(child, name)| match child.try_wait() {
+                Ok(None) => true,
+                Ok(Some(status)) if status.success() => {
+                    eprintln!("edel-shell-ui: {name} ended");
+                    false
+                }
+                Ok(Some(status)) => {
+                    eprintln!(
+                        "edel-shell-ui: {}",
+                        crate::messages::app_failed(name, status)
+                    );
+                    false
+                }
+                Err(_) => false,
+            });
     }
 }
 
@@ -459,7 +475,7 @@ mod tests {
         // `true` starts and ends at once.
         launcher.query.clear();
         assert_eq!(launcher.start(Some(1)), Some("Foot".to_string()));
-        launcher.children[0].wait().unwrap();
+        launcher.children[0].0.wait().unwrap();
         launcher.reap();
         assert!(launcher.children.is_empty());
         launcher.close();

@@ -16,3 +16,7 @@ pub const KEY: &str = "touch-mode";
 /// The side of the smallest target a finger can hit, logical pixels, its
 /// padding included (`docs/layout-guide.md`, "Touch targets").
 pub const TARGET: u32 = 44;
+
+/// The width below which a screen or window is Compact, logical pixels
+/// (`docs/layout-guide.md`, "Size classes"): laid out for a phone.
+pub const COMPACT_BELOW: u32 = 600;

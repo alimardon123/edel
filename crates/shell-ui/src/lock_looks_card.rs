@@ -467,7 +467,7 @@ impl Shell {
     }
 
     /// Draws the switcher if it may draw and what it shows changed.
-    fn draw_lock_looks(&mut self) {
+    pub(crate) fn draw_lock_looks(&mut self) {
         let Some(mut ll) = self.lock_looks.take() else {
             return;
         };

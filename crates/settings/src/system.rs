@@ -177,6 +177,10 @@ pub fn page() -> gtk::Widget {
     // The machine's profile (M7.6), after developer mode.
     crate::profiles::group(&content);
 
+    // The desktop add-on (M8.21, T2), on its own rather than among the
+    // Add-ons page's extras.
+    crate::addons::desktop(&page, &content);
+
     // Erase everything (M8.38), last, as the step nobody undoes.
     erase(&content);
 
@@ -251,6 +255,8 @@ const ERASE: Ask = Ask {
             "Stays: the default apps and this version of Edel OS, so the computer starts as new, offline too, and can still roll back.",
         ),
     ],
+    // What the command says first on encrypted data: the passphrase stays.
+    note: Some(|| edel::security::Data::now().after_reset()),
     name: true,
     danger: true,
 };

@@ -657,6 +657,22 @@ pub struct Tokens {
     pub radius_control: u32,
     /// Small things inside a window: a sidebar's rows, a value's box.
     pub radius_small: u32,
+    /// Tiles and pictures in the editors and the lock's looks.
+    pub radius_tile: u32,
+    /// Cards: the corner menu, the editors' stage and marks.
+    pub radius_card: u32,
+    /// The dock and the editors' previews and side panes.
+    pub radius_dock: u32,
+    /// A notification's card.
+    pub radius_notice: u32,
+    /// A banner.
+    pub radius_banner: u32,
+    /// The editors' sheet.
+    pub radius_sheet: u32,
+    /// The notification centre.
+    pub radius_centre: u32,
+    /// Quick settings' round buttons.
+    pub radius_quick: u32,
     /// The one shadow, cast by one light above (M5.5e): its colour, how
     /// far it blurs and how far down it falls, logical pixels.
     pub shadow: Colour,
@@ -681,11 +697,11 @@ pub struct Tokens {
     pub backdrop_deep: Colour,
     /// Text and marks drawn straight on the backdrop.
     pub backdrop_text: Colour,
-    /// The lock and login screens' frosted glass (M5.10c): the field, the
-    /// notifications' count and the corner's buttons, and the hairline
-    /// round them.
-    pub lock_glass: Colour,
-    pub lock_glass_edge: Colour,
+    /// The frosted glass (M5.10c; named for every surface since M8.21's
+    /// 21l): the lock's field, the notifications' count and the corner's
+    /// buttons, and the hairline round them, its rim.
+    pub glass: Colour,
+    pub glass_rim: Colour,
     /// What lies behind the lock and login screens without a wallpaper:
     /// a gradient from `lock_backdrop` to `lock_backdrop_deep`, lit by two
     /// soft glows (M5.10c).
@@ -774,7 +790,7 @@ colour_tokens! {
     title_button_hover, title_close_hover, panel, panel_text, accent, shadow,
     window, card, line, accent_text, edge, window_border, window_border_focused,
     window_border_focused_end, backdrop, backdrop_deep, backdrop_text,
-    lock_glass, lock_glass_edge, lock_backdrop, lock_backdrop_deep, lock_glow,
+    glass, glass_rim, lock_backdrop, lock_backdrop_deep, lock_glow,
     lock_glow_second, lock_edit_deep, lock_edit_glow, in_use, in_use_text,
 }
 
@@ -1296,6 +1312,14 @@ impl Tokens {
                 "radius_menu" => (&mut self.radius_menu, 100),
                 "radius_control" => (&mut self.radius_control, 100),
                 "radius_small" => (&mut self.radius_small, 100),
+                "radius_tile" => (&mut self.radius_tile, 100),
+                "radius_card" => (&mut self.radius_card, 100),
+                "radius_dock" => (&mut self.radius_dock, 100),
+                "radius_notice" => (&mut self.radius_notice, 100),
+                "radius_banner" => (&mut self.radius_banner, 100),
+                "radius_sheet" => (&mut self.radius_sheet, 100),
+                "radius_centre" => (&mut self.radius_centre, 100),
+                "radius_quick" => (&mut self.radius_quick, 100),
                 "shadow_blur" => (&mut self.shadow_blur, 100),
                 "shadow_offset" => (&mut self.shadow_offset, 100),
                 "row" => (&mut self.row, 200),
@@ -1377,6 +1401,14 @@ pub fn check(text: &str) -> Result<Tokens> {
                 "radius_menu",
                 "radius_control",
                 "radius_small",
+                "radius_tile",
+                "radius_card",
+                "radius_dock",
+                "radius_notice",
+                "radius_banner",
+                "radius_sheet",
+                "radius_centre",
+                "radius_quick",
                 "row",
                 "text",
                 "shadow_blur",
@@ -1469,6 +1501,14 @@ pub fn check(text: &str) -> Result<Tokens> {
         radius_menu: 0,
         radius_control: 0,
         radius_small: 0,
+        radius_tile: 0,
+        radius_card: 0,
+        radius_dock: 0,
+        radius_notice: 0,
+        radius_banner: 0,
+        radius_sheet: 0,
+        radius_centre: 0,
+        radius_quick: 0,
         shadow: BLACK,
         window: BLACK,
         card: BLACK,
@@ -1481,8 +1521,8 @@ pub fn check(text: &str) -> Result<Tokens> {
         backdrop: BLACK,
         backdrop_deep: BLACK,
         backdrop_text: BLACK,
-        lock_glass: BLACK,
-        lock_glass_edge: BLACK,
+        glass: BLACK,
+        glass_rim: BLACK,
         lock_backdrop: BLACK,
         lock_backdrop_deep: BLACK,
         lock_glow: BLACK,
@@ -1608,8 +1648,8 @@ fn in_shape_range(key: &str, value: Option<u32>, notes: &mut Vec<String>) -> Opt
 
 impl Tokens {
     /// These tokens with a person's shape on top (M5.12b2): the radius
-    /// sets `radius_window` and scales `radius_menu`, `radius_control` and
-    /// `radius_small` by it (from the release's own `radius_window`; to
+    /// sets `radius_window` and scales `radius_menu`, `radius_control`,
+    /// `radius_small` and the other radius tokens by it (from the release's own `radius_window`; to
     /// the radius itself when that is 0); the gaps set `gap` and
     /// `gap_outer`, and `gaps_outer` alone sets `gap_outer`; the border,
     /// the title bar's height and the panels' opacity follow. The windows'
@@ -1636,6 +1676,14 @@ impl Tokens {
             self.radius_menu = scaled(self.radius_menu);
             self.radius_control = scaled(self.radius_control);
             self.radius_small = scaled(self.radius_small);
+            self.radius_tile = scaled(self.radius_tile);
+            self.radius_card = scaled(self.radius_card);
+            self.radius_dock = scaled(self.radius_dock);
+            self.radius_notice = scaled(self.radius_notice);
+            self.radius_banner = scaled(self.radius_banner);
+            self.radius_sheet = scaled(self.radius_sheet);
+            self.radius_centre = scaled(self.radius_centre);
+            self.radius_quick = scaled(self.radius_quick);
             self.radius_window = radius;
         }
         if let Some(gap) = in_shape_range("appearance.gaps", shape.gaps, &mut notes) {
@@ -2574,6 +2622,19 @@ mod tests {
                 square.radius_small
             ),
             (0, 0, 0, 0)
+        );
+        assert_eq!(
+            [
+                square.radius_tile,
+                square.radius_card,
+                square.radius_dock,
+                square.radius_notice,
+                square.radius_banner,
+                square.radius_sheet,
+                square.radius_centre,
+                square.radius_quick
+            ],
+            [0; 8]
         );
         let twenty = Shape {
             radius: Some(20),

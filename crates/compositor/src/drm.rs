@@ -1204,7 +1204,7 @@ fn announce(output: &Output, first: bool) {
 fn write_ready(line: &str) {
     let path = std::path::Path::new(READY);
     if path.parent().is_some_and(|dir| dir.is_dir()) {
-        if let Err(e) = crate::statefile::replace(path, &format!("{line}\n")) {
+        if let Err(e) = edel::files::replace(path, format!("{line}\n").as_bytes()) {
             eprintln!("edel-compositor: {}", messages::ready_not_written(READY, e));
         }
     }

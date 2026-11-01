@@ -44,12 +44,6 @@ pub const TAB_W: f32 = 120.0;
 /// them `BARE_TAB_PAD` (4 px) wide, its corners `BARE_TRACK_RADIUS`.
 const BARE_TAB_H: f32 = 32.0;
 const BARE_TAB_PAD: f32 = 4.0;
-const BARE_TRACK_RADIUS: f32 = 14.0;
-const BARE_SEGMENT_RADIUS: f32 = 10.0;
-/// The bare strip's tile (M5.10c7f): its corners, its fill (white at 6 percent,
-/// 10 under the pointer), its hairline (white at 10 percent), the gap between
-/// its preview and its title, and the title's size.
-const BARE_RADIUS: f32 = 16.0;
 const BARE_FILL: f32 = 0.06;
 const BARE_HOVER: f32 = 0.10;
 const BARE_EDGE: f32 = 0.10;
@@ -473,10 +467,10 @@ fn layout_bare(view: &View) -> Layout {
 
 /// The card, with the sheet's corners (`edit_kit::SHEET_RADIUS`), so a
 /// popup's shadow follows them.
-pub fn cards(l: &Layout, _tokens: &Tokens) -> Vec<Card> {
+pub fn cards(l: &Layout, tokens: &Tokens) -> Vec<Card> {
     vec![Card {
         rect: l.card,
-        radius: edit_kit::SHEET_RADIUS,
+        radius: tokens.radius_sheet as f32,
     }]
 }
 
@@ -732,7 +726,7 @@ pub fn paint(
         outline(
             pixmap,
             (x, y, w, h),
-            edit_kit::SHEET_RADIUS * style.scale * s,
+            tokens.radius_sheet as f32 * style.scale * s,
             2.0 * s,
             tokens.accent,
         );
@@ -871,7 +865,7 @@ pub fn paint(
             None,
         );
         if focused || tile.chosen {
-            popup::focus_ring(pixmap, *rect, edit_kit::TILE_RADIUS, s, tokens);
+            popup::focus_ring(pixmap, *rect, tokens.radius_tile as f32, s, tokens);
         }
     }
     for (part, rect, words, kind) in [
@@ -922,7 +916,7 @@ fn paint_bare_tabs(
         y,
         w,
         h,
-        BARE_TRACK_RADIUS * s,
+        tokens.radius_tile as f32 * s,
         Colour {
             a: BARE_TRACK_FILL,
             ..white
@@ -931,7 +925,7 @@ fn paint_bare_tabs(
     edit_kit::stroke(
         pixmap,
         (x, y, w, h),
-        BARE_TRACK_RADIUS * s,
+        tokens.radius_tile as f32 * s,
         BARE_LINE * s,
         Colour {
             a: BARE_TRACK_EDGE,
@@ -941,7 +935,7 @@ fn paint_bare_tabs(
     );
     if let Some(segment) = l.tabs.get(view.tab) {
         let (x, y, w, h) = segment.device(s);
-        fill(pixmap, x, y, w, h, BARE_SEGMENT_RADIUS * s, white);
+        fill(pixmap, x, y, w, h, tokens.radius_window as f32 * s, white);
     }
     let Some(text) = text else {
         return;
@@ -989,7 +983,15 @@ fn bare_tile(
     let (x, y, dw, dh) = Rect::new(0.0, 0.0, w, h).device(s);
     let share = if hover { BARE_HOVER } else { BARE_FILL };
     let fill_colour = Colour { a: share, ..white };
-    fill(layer, x, y, dw, dh, BARE_RADIUS * s, fill_colour);
+    fill(
+        layer,
+        x,
+        y,
+        dw,
+        dh,
+        tokens.radius_card as f32 * s,
+        fill_colour,
+    );
     let edge = Colour {
         a: BARE_EDGE,
         ..white
@@ -997,7 +999,7 @@ fn bare_tile(
     edit_kit::stroke(
         layer,
         (x, y, dw, dh),
-        BARE_RADIUS * s,
+        tokens.radius_card as f32 * s,
         BARE_LINE * s,
         edge,
         None,

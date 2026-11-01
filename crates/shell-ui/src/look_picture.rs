@@ -22,7 +22,6 @@ use tiny_skia::{FilterQuality, Pixmap, PixmapPaint, Transform};
 
 use crate::lock::{self, When};
 use crate::lock_editor;
-use crate::paint::Text;
 use crate::{messages, player, quick};
 
 /// The width a picture is written at when `--width` is not given: the size
@@ -149,7 +148,7 @@ pub fn render(
         ..LockScreen::default()
     };
     let applied = lock_screen::applied(&look, false);
-    let mut text = Text::load(&tokens.font);
+    let mut text = crate::paint::text(&tokens.font);
     let mut icons = edel::app_icons::Icons::new(edel::apps::data_dirs(), icon_theme);
     let mut pictures = lock::Pictures::default();
     let mut backdrops = lock::Backdrops::default();
@@ -238,11 +237,11 @@ fn sample_player() -> player::PlayerView {
     }
 }
 
-/// Writes `picture` to `out` as a PNG with `files::replace`, which makes
+/// Writes `picture` to `out` as a PNG with `edel::files::replace`, which makes
 /// the folder when it is missing.
 pub(crate) fn write_png(picture: &Pixmap, out: &Path) -> Result<()> {
     let png = picture.encode_png().context("could not make the PNG")?;
-    crate::files::replace(out, &png).with_context(|| format!("could not write {}", out.display()))
+    edel::files::replace(out, &png).with_context(|| format!("could not write {}", out.display()))
 }
 
 #[cfg(test)]

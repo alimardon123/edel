@@ -13,6 +13,13 @@ pub const REBOOT: &str = "/sbin/reboot";
 pub const POWEROFF: &str = "/sbin/poweroff";
 /// The program that suspends the machine to memory, run as root (M5.10c).
 pub const SUSPEND: &str = "/usr/sbin/zzz";
+/// The keyring's daemon (M7.18), from Alpine's oo7-server, which `edel boot
+/// keyring` becomes when the session starts it.
+pub const KEYRING_DAEMON: &str = "/usr/libexec/oo7-daemon";
+
+/// The keyring daemon's PAM socket, in the person's runtime folder, where
+/// `edel boot keyring` hands it the session's key (M7.18).
+pub const KEYRING_PAM_SOCKET: &str = "oo7-pam.sock";
 /// The folder where OpenRC keeps a mark for each service it has started,
 /// one file named after it (M8.14: the firewall's facts read it).
 pub const STARTED_SERVICES: &str = "/run/openrc/started";

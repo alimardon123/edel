@@ -56,13 +56,14 @@ window_border_focused_end = "#00000099"
 backdrop = "#4b5263"
 backdrop_deep = "#23272f"
 backdrop_text = "#f4f6fa"
-# The lock and login screens' frosted glass (M5.10c, docs/mockups/shell/
-# lock.jpg): the password field, the notifications' count and the
-# corner's buttons are this cool white over the backdrop (the mockups'
-# glass makes what lies behind it bluer), edged with the
-# second; the same in both schemes, as the backdrop is dark in both.
-lock_glass = "#b4c8ff24"
-lock_glass_edge = "#ffffff29"
+# The frosted glass (M5.10c, docs/mockups/shell/lock.jpg; named for every
+# surface since M8.21's 21l, as the polish brings the lock screen's glass
+# language to the shell): the lock's password field, the notifications'
+# count and the corner's buttons are this cool white over the backdrop
+# (the mockups' glass makes what lies behind it bluer), edged with the
+# rim; the same in both schemes, as the backdrop is dark in both.
+glass = "#b4c8ff24"
+glass_rim = "#ffffff29"
 # What lies behind the lock and login screens while there is no
 # wallpaper (M5.10c): a deep navy from the first at the top to the second
 # at the bottom, lit by two soft glows, one at the upper left and one at
@@ -136,8 +137,8 @@ window_border_focused_end = "#14182024"
 backdrop = "#8d9aba"
 backdrop_deep = "#3c4868"
 backdrop_text = "#f7f8fb"
-lock_glass = "#b4c8ff24"
-lock_glass_edge = "#ffffff29"
+glass = "#b4c8ff24"
+glass_rim = "#ffffff29"
 lock_backdrop = "#2f3c5e"
 lock_backdrop_deep = "#1f2b48"
 lock_glow = "#56688f"
@@ -298,6 +299,22 @@ radius_menu = 12
 radius_control = 7
 # Small things inside a window: a sidebar's rows, a value's box (M5.6a).
 radius_small = 5
+# Tiles and pictures in the editors and the lock's looks.
+radius_tile = 14
+# Cards: the corner menu, the editors' stage and marks.
+radius_card = 16
+# The dock and the editors' previews and side panes.
+radius_dock = 18
+# A notification's card.
+radius_notice = 20
+# A banner.
+radius_banner = 22
+# The editors' sheet.
+radius_sheet = 24
+# The notification centre.
+radius_centre = 30
+# Quick settings' round buttons.
+radius_quick = 50
 # Apps' text (M5.6a), Settings first; headings are drawn larger from it.
 text = 13
 # A row in a menu or list: the launcher's apps, the window switcher's

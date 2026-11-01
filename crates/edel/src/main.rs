@@ -32,6 +32,7 @@ mod guard;
 mod hardware_table;
 mod image;
 mod installer;
+mod keyring;
 mod leave;
 mod live;
 mod loader;
@@ -516,6 +517,9 @@ enum BootCommands {
     /// At shutdown, end what people's sessions left running and unmount
     /// their FUSE file systems, so the data partition unmounts
     Leave,
+    /// From PAM, hand a session its keyring key as it opens and take it
+    /// back as it closes; from D-Bus, start the keyring with it
+    Keyring,
 }
 
 #[derive(Subcommand)]
@@ -918,6 +922,7 @@ fn run(command: Commands) -> Result<()> {
             BootCommands::MarkGood => update::mark_good(),
             BootCommands::Live => live::live(),
             BootCommands::Leave => leave::leave(),
+            BootCommands::Keyring => keyring::boot(),
             BootCommands::Speakers => speaker_boot::speakers(),
             BootCommands::BatteryCare => system_power::battery_care(),
             BootCommands::Cloud => cloud::boot(),

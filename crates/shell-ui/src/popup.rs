@@ -427,6 +427,26 @@ impl<V: Clone + PartialEq> Popup<V> {
     }
 }
 
+/// What every pop-up surface does alike for the events `cards.rs` hands
+/// on, whatever it shows.
+pub trait Shown {
+    fn configured(&mut self);
+    fn framed(&mut self);
+    fn set_scale(&mut self, factor: i32);
+}
+
+impl<V: Clone + PartialEq> Shown for Popup<V> {
+    fn configured(&mut self) {
+        Popup::configured(self);
+    }
+    fn framed(&mut self) {
+        Popup::framed(self);
+    }
+    fn set_scale(&mut self, factor: i32) {
+        Popup::set_scale(self, factor);
+    }
+}
+
 impl<V> Drop for Popup<V> {
     /// Lets the compositor's background effect go with the popup: wayland-client
     /// sends no destroy when a proxy is dropped (M8.21 21d).

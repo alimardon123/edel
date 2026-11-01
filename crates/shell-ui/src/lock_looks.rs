@@ -38,9 +38,6 @@ pub const SIDE_EDGE: f32 = 0.22;
 /// neighbours peek in at the screen's edges, `PEEK` of them showing.
 pub const COMPACT_HEIGHT: f32 = 0.56;
 pub const PEEK: f32 = 30.0;
-/// The picture's corners, and the white ring round the middle one: 2 px
-/// wide, 3 px outside it, at 90 percent.
-pub const RADIUS: f32 = 14.0;
 pub const RING: f32 = 2.0;
 pub const RING_GAP: f32 = 3.0;
 pub const RING_ALPHA: f32 = 0.9;
@@ -500,16 +497,21 @@ pub fn paint(
     // hairline so they read as cards waiting at the side.
     for (rect, picture) in [(l.left, pictures[0]), (l.right, pictures[2])] {
         if let (Some(rect), Some(picture)) = (rect, picture) {
-            lock::lift(pixmap, rect, RADIUS, s, tokens);
+            lock::lift(pixmap, rect, tokens.radius_tile as f32, s, tokens);
             let (x, y, dw, dh) = rect.device(s);
-            paint_kit::rounded_picture(pixmap, picture, (x, y, dw, dh), RADIUS * s);
+            paint_kit::rounded_picture(
+                pixmap,
+                picture,
+                (x, y, dw, dh),
+                tokens.radius_tile as f32 * s,
+            );
             fill(
                 pixmap,
                 x,
                 y,
                 dw,
                 dh,
-                RADIUS * s,
+                tokens.radius_tile as f32 * s,
                 Colour {
                     a: 1.0 - SIDE_OPACITY,
                     ..tokens.lock_edit_deep
@@ -519,7 +521,7 @@ pub fn paint(
             edit_kit::stroke(
                 pixmap,
                 (x + half, y + half, dw - 2.0 * half, dh - 2.0 * half),
-                RADIUS * s - half,
+                tokens.radius_tile as f32 * s - half,
                 s,
                 white(SIDE_EDGE),
                 None,
@@ -527,17 +529,22 @@ pub fn paint(
         }
     }
     // The middle look lifts off the stage too.
-    lock::lift(pixmap, l.middle, RADIUS, s, tokens);
+    lock::lift(pixmap, l.middle, tokens.radius_tile as f32, s, tokens);
     if let Some(picture) = pictures[1] {
         let (x, y, dw, dh) = l.middle.device(s);
-        paint_kit::rounded_picture(pixmap, picture, (x, y, dw, dh), RADIUS * s);
+        paint_kit::rounded_picture(
+            pixmap,
+            picture,
+            (x, y, dw, dh),
+            tokens.radius_tile as f32 * s,
+        );
     }
     let grow = (RING_GAP + RING / 2.0) * s;
     let (x, y, dw, dh) = l.middle.device(s);
     edit_kit::stroke(
         pixmap,
         (x - grow, y - grow, dw + 2.0 * grow, dh + 2.0 * grow),
-        (RADIUS + RING_GAP + RING / 2.0) * s,
+        (tokens.radius_tile as f32 + RING_GAP + RING / 2.0) * s,
         RING * s,
         white(RING_ALPHA),
         None,

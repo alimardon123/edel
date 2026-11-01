@@ -235,7 +235,7 @@ pub fn run(cmd: String) -> Result<()> {
         screens: Vec::new(),
         keyboard: None,
         pointer: None,
-        text: Text::load(&tokens.font),
+        text: crate::paint::text(&tokens.font),
         tokens,
         row,
         name,
@@ -424,7 +424,7 @@ impl Greeter {
             return;
         }
         let text = sessions::remember(&text, login, id);
-        if let Err(e) = crate::files::replace(path, text.as_bytes()) {
+        if let Err(e) = edel::files::replace(path, text.as_bytes()) {
             eprintln!("edel-shell-ui: {}", messages::session_not_kept(e));
         }
     }
