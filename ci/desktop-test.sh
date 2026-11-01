@@ -6286,8 +6286,11 @@ case_frame_rate() {
 	*'shows '[0-9]*' fps, '[0-9]*.[0-9]' ms   1% '[0-9]*.[0-9]' ms') ;;
 	*) fail "the overlay's numbers do not read as a frame rate, a frame time and the slowest 1 percent: $numbers" ;;
 	esac
-	shot frame-rate 100 24 '!7a3fb0' >/dev/null || fail "the upper left corner shows the game, not the overlay (frame-rate.png)"
-	shot frame-rate 640 600 7a3fb0 >/dev/null || fail "the middle of the screen is not the game's colour with the overlay on (frame-rate.png)"
+	# The stand-in draws its colour and the colour's inverse on alternate
+	# frames (--busy), so either is the game; a picture can catch either.
+	corner=$(shot frame-rate 100 24 '!7a3fb0') && [ "$corner" != 85c04f ] ||
+		fail "the upper left corner shows the game, not the overlay (frame-rate.png)"
+	shot frame-rate 640 600 '7a3fb0|85c04f' >/dev/null || fail "the middle of the screen is not the game's colour with the overlay on (frame-rate.png)"
 	ended=$(count 'edel-compositor: the game ended; the desktop is back')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 || fail "Super+Q did not end the game stand-in"
