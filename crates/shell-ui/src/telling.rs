@@ -216,9 +216,9 @@ pub fn read_stamp_in(dir: &Path, name: &str) -> Option<String> {
 }
 
 /// [`write_stamp`] in `dir`, which is made when missing, through
-/// `files::replace`, so a stamp is never half written.
+/// `edel::files::replace`, so a stamp is never half written.
 pub fn write_stamp_in(dir: &Path, name: &str, value: &str) -> io::Result<()> {
-    crate::files::replace(&dir.join(name), format!("{value}\n").as_bytes())
+    edel::files::replace(&dir.join(name), format!("{value}\n").as_bytes())
 }
 
 #[cfg(test)]

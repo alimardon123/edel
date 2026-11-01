@@ -4,7 +4,7 @@
 //! colours. A change reaches apps already open through the settings portal
 //! (`portal.rs`) and the stylesheet's media queries, which GTK 4.22 matches
 //! live. The file is written only when its text differs, through
-//! `files::replace`, as `terminal.rs` writes foot's theme. A file the
+//! `edel::files::replace`, as `terminal.rs` writes foot's theme. A file the
 //! person wrote themselves is left alone, and so is one that is not UTF-8.
 //! Flatpak apps may read the file through the person's global Flatpak
 //! override, which `share_with_flatpak_apps` keeps holding the permission.
@@ -41,7 +41,7 @@ pub enum Written {
     Theirs,
 }
 
-/// Writes `text` to `path` with `files::replace`, only when the file is
+/// Writes `text` to `path` with `edel::files::replace`, only when the file is
 /// absent or ours (its text starts with [`GTK_CSS_MARK`] or is [`former`])
 /// and differs; a file of the person's own is left alone.
 pub fn write_css(path: &Path, text: &str) -> std::io::Result<Written> {
@@ -56,7 +56,7 @@ pub fn write_css(path: &Path, text: &str) -> std::io::Result<Written> {
         Err(e) if e.kind() == std::io::ErrorKind::InvalidData => return Ok(Written::Theirs),
         Err(e) => return Err(e),
     }
-    crate::files::replace(path, text.as_bytes())?;
+    edel::files::replace(path, text.as_bytes())?;
     Ok(Written::Wrote)
 }
 
