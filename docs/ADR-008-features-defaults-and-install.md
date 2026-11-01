@@ -1,7 +1,7 @@
 # ADR-008: Features, defaults and the way in
 
 **Status:** Proposed
-**Date:** 2026-10-02, amended 2026-10-02 (every action, not only every setting, in Settings and in `edel`) and 2026-10-04 (easy to use; own presets) and 2026-10-06 (the same names in Settings, the command line and the file; tab completion) and 2026-10-10 (keys renamed freely until the first release)
+**Date:** 2026-10-02, amended 2026-10-02 (every action, not only every setting, in Settings and in `edel`) and 2026-10-04 (easy to use; own presets) and 2026-10-06 (the same names in Settings, the command line and the file; tab completion) and 2026-10-10 (keys renamed freely until the first release) and 2026-11-01 (network boot planned as an add-on, M11.12)
 **Deciders:** Alimardon
 **Related:** ADR-002 (presets, no extension API; one line amended here), ADR-003 (same packages in every image), ADR-006 (settings file), ADR-007 (customization levels, add-ons, developer mode), [design principles](DESIGN-PRINCIPLES.md), [roadmap](ROADMAP.md)
 
@@ -25,6 +25,8 @@ The obvious answer is a feature framework: a registry of features with dependenc
 - A name we drop (preset, profile, add-on, service) must not stop a machine from booting or updating. M7.2 keeps the slot off when an add-on cannot be fetched, so the first add-on we drop would strand every machine that named it.
 
 The first two cannot be fixed later: the code that must be lenient is the code already on people's machines. That is why part of this ADR lands in phase 1.
+
+On 2026-11-01 Alimardon asked whether admins can install servers from their own computer over the network, as Red Hat's admins do, and chose to plan it: network boot leaves the not-built list as an add-on after the first public release (M11.12), starting the same unattended install from one settings file.
 
 ## Decision
 
@@ -172,7 +174,7 @@ Principles: Simple (one key picks every preset, one action saves one), Functiona
 | E. An append-only retired-keys file with migration verbs | The old slot never sees a file added later; `keys.txt` checked in CI and `retired` in the help table are enough until the first real bump |
 | F. A separate installer app, a text-UI installer or an ISO | The Settings page and `edel install` on a terminal cover both, with one question list and one planner |
 
-Not built, and defended: a plugin or extension API; dependencies, versions or alternatives between features; feature flags in shipped images; a schema-generated Settings UI; per-domain verbs that change settings (`edel addon add`; a value changes only through `edel settings set|reset`, and `edel preset` only saves, deletes and lists whole presets); aliases, a second name for a command or a key; completion for busybox's shell, which cannot complete (a shell that can comes with M5.26); telemetry; a stick writer of our own for Windows or macOS; netboot; a look-change notice (see Revisit).
+Not built, and defended: a plugin or extension API; dependencies, versions or alternatives between features; feature flags in shipped images; a schema-generated Settings UI; per-domain verbs that change settings (`edel addon add`; a value changes only through `edel settings set|reset`, and `edel preset` only saves, deletes and lists whole presets); aliases, a second name for a command or a key; completion for busybox's shell, which cannot complete (a shell that can comes with M5.26); telemetry; a stick writer of our own for Windows or macOS; netboot (since 2026-11-01 planned as the `netboot` add-on, M11.12, Alimardon's choice; nothing of it in the base); a look-change notice (see Revisit).
 
 ## Consequences
 
