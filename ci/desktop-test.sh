@@ -6331,7 +6331,7 @@ case_keyring() {
 	asked=$(count 'DESKTOP-TEST: keyring_running ')
 	guest 'keyring running'
 	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
-	[ "$(value keyring_running)" = yes ] || fail "the session did not start oo7-daemon"
+	[ "$(value keyring_running)" = yes ] || fail "the session did not start oo7-daemon, or it ended; what was there: $(value keyring_diag)"
 	asked=$(count 'DESKTOP-TEST: keyring_store ')
 	guest 'keyring store'
 	wait_more 'DESKTOP-TEST: keyring_store ' "$asked" 60 || fail "the service did not store a secret"
