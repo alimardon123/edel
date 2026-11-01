@@ -424,7 +424,7 @@ impl Greeter {
             return;
         }
         let text = sessions::remember(&text, login, id);
-        if let Err(e) = crate::files::replace(path, text.as_bytes()) {
+        if let Err(e) = edel::files::replace(path, text.as_bytes()) {
             eprintln!("edel-shell-ui: {}", messages::session_not_kept(e));
         }
     }

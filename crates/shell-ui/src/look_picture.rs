@@ -238,11 +238,11 @@ fn sample_player() -> player::PlayerView {
     }
 }
 
-/// Writes `picture` to `out` as a PNG with `files::replace`, which makes
+/// Writes `picture` to `out` as a PNG with `edel::files::replace`, which makes
 /// the folder when it is missing.
 pub(crate) fn write_png(picture: &Pixmap, out: &Path) -> Result<()> {
     let png = picture.encode_png().context("could not make the PNG")?;
-    crate::files::replace(out, &png).with_context(|| format!("could not write {}", out.display()))
+    edel::files::replace(out, &png).with_context(|| format!("could not write {}", out.display()))
 }
 
 #[cfg(test)]
