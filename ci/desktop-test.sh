@@ -10034,6 +10034,30 @@ if [ "$*" = live ]; then
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
 		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
 	}
+	# settings_open NAME: types settings in the launcher and waits until
+	# the compositor maps one more Settings window than before (M8.15a's
+	# CI lane: no fixed 25 s wait), then gives the installer page 5 s to
+	# list the disks and look for a settings file, which it does after
+	# the window shows.
+	settings_open() {
+		before=$(stick_session | grep -ac 'edel-compositor: mapped window Settings')
+		python3 ci/qmp.py key meta_l
+		sleep 3
+		python3 ci/qmp.py type settings
+		sleep 1
+		python3 ci/qmp.py key ret
+		i=0
+		until [ "$(stick_session | grep -ac 'edel-compositor: mapped window Settings')" -gt "$before" ]; do
+			i=$((i + 2))
+			if [ "$i" -gt 60 ]; then
+				python3 ci/qmp.py screendump "$dir/$1-failed.png"
+				fail "Settings did not open from the launcher within 60 s ($1-failed.png)"
+			fi
+			sleep 2
+		done
+		echo "  Settings mapped about $i s after Return in the launcher ($1)"
+		sleep 5
+	}
 	# Offline (M6.2): the stick reaches nothing beyond the VM's own
 	# network, so the default apps must start from what it carries.
 	vm_net=",restrict=on" keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
@@ -10221,12 +10245,7 @@ if [ "$*" = live ]; then
 	# the second password shows the plan and gives the keys to Erase and
 	# install, which wants two presses. The blank disk is the only one
 	# offered, as the stick never is.
-	python3 ci/qmp.py key meta_l
-	sleep 3
-	python3 ci/qmp.py type settings
-	sleep 1
-	python3 ci/qmp.py key ret
-	sleep 25
+	settings_open install-page
 	python3 ci/qmp.py screendump "$dir/install-page.png"
 	press type ali
 	press key ret
@@ -10311,12 +10330,7 @@ if [ "$*" = live ]; then
 	cp out/install-file.img "$dir/install-file.img"
 	python3 ci/qmp.py plug filestick "$PWD/$dir/install-file.img"
 	sleep 5
-	python3 ci/qmp.py key meta_l
-	sleep 3
-	python3 ci/qmp.py type settings
-	sleep 1
-	python3 ci/qmp.py key ret
-	sleep 25
+	settings_open install-file
 	python3 ci/qmp.py screendump "$dir/install-file.png"
 	python3 ci/qmp.py key ret
 	sleep 2
