@@ -314,16 +314,80 @@ pub fn list() -> Result<()> {
     Ok(())
 }
 
+/// The partition names of the disk `disk`, sorted, as `/sys/block` lists
+/// them.
+fn partition_names(disk: &str) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(Path::new("/sys/block").join(disk))
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().join("partition").exists())
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .collect()
+        })
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+/// The partition of the Edel OS stick that `--find-settings` searches: the
+/// one labelled `ESP_LABEL`, the stick's own small FAT drive, and no other
+/// (not the slots, not the data).
+fn stick_esp(partitions: &[(String, Option<String>)]) -> Option<&str> {
+    partitions
+        .iter()
+        .find(|(_, label)| label.as_deref() == Some(ESP_LABEL))
+        .map(|(name, _)| name.as_str())
+}
+
+/// Where `device` is mounted, as the text of `/proc/mounts` says: the second
+/// field of its line, or nothing when it is not mounted.
+fn mount_point<'a>(mounts: &'a str, device: &str) -> Option<&'a str> {
+    mounts.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        if fields.next() == Some(device) {
+            fields.next()
+        } else {
+            None
+        }
+    })
+}
+
+/// The settings file on the partition `device`, as `(where, text)`: read
+/// through `mount` when it is mounted already, else mounted read-only for
+/// the read. `where` is the path inside the partition.
+fn settings_on(device: &Path, mount: Option<&str>) -> Option<(String, String)> {
+    let read = |dir: &Path| {
+        edel::install::file_in(dir).map(|(path, text)| {
+            let inner = path
+                .strip_prefix(dir)
+                .unwrap_or(&path)
+                .display()
+                .to_string();
+            (inner, text)
+        })
+    };
+    match mount {
+        Some(dir) => read(Path::new(dir)),
+        None => crate::machine::with_mounted(device, None, true, read).flatten(),
+    }
+}
+
 /// `edel install --find-settings` (M6.6b): the settings file to install
 /// with, from another disk: each partition (or a disk with none, as a FAT
 /// image written whole) not mounted and not on the disk Edel OS runs from,
 /// mounted read-only in turn, holding the settings file
-/// at its top or in `EFI/edel` (`install::file_in`). The first one found is
-/// printed on standard output and where it was on standard error, so
-/// Settings' installer page can read both; nothing is changed.
+/// at its top or in `EFI/edel` (`install::file_in`). When Edel OS runs from
+/// a stick (`install::running_from_stick`), the stick's own `EDEL-ESP`
+/// partition is searched last, so a file on a second stick wins. The first
+/// one found is printed on standard output and where it was on standard
+/// error, so Settings' installer page can read both; nothing is changed.
 pub fn find_settings() -> Result<()> {
     let running = update::Disk::find().ok().map(|d| d.name);
     let mounts = fs::read_to_string("/proc/mounts").unwrap_or_default();
+    let stick = running
+        .as_deref()
+        .filter(|n| edel::install::running_from_stick(Path::new("/sys"), n));
     let mut disks: Vec<String> = fs::read_dir("/sys/block")
         .with_context(|| could_not_read(Path::new("/sys/block")))?
         .filter_map(|e| e.ok())
@@ -331,50 +395,50 @@ pub fn find_settings() -> Result<()> {
         .filter(|n| is_candidate(n) && running.as_deref() != Some(n.as_str()))
         .collect();
     disks.sort();
+    // Each place to look, with the mount point it already has, if any.
+    let mut places: Vec<(PathBuf, Option<String>)> = Vec::new();
     for disk in disks {
-        let mut devices: Vec<String> = fs::read_dir(Path::new("/sys/block").join(&disk))
-            .map(|entries| {
-                entries
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.path().join("partition").exists())
-                    .map(|e| e.file_name().to_string_lossy().into_owned())
-                    .collect()
-            })
-            .unwrap_or_default();
-        devices.sort();
-        if devices.is_empty() {
-            devices.push(disk.clone());
+        let mut names = partition_names(&disk);
+        if names.is_empty() {
+            names.push(disk.clone());
         }
-        for name in devices {
+        for name in names {
             let device = Path::new("/dev").join(&name);
-            let shown = device.display().to_string();
-            if mounts
-                .lines()
-                .any(|l| l.split_whitespace().next() == Some(shown.as_str()))
-            {
-                continue;
+            if mount_point(&mounts, &device.display().to_string()).is_none() {
+                places.push((device, None));
             }
-            let found = crate::machine::with_mounted(&device, None, true, |dir| {
-                edel::install::file_in(dir).map(|(path, text)| {
-                    let inner = path
-                        .strip_prefix(dir)
-                        .unwrap_or(&path)
-                        .display()
-                        .to_string();
-                    (inner, text)
-                })
-            });
-            if let Some(Some((inner, text))) = found {
-                eprintln!(
-                    "edel install: {}",
-                    trf(
-                        "found {file} on {device}",
-                        &[("file", &inner), ("device", &shown)]
-                    )
-                );
-                print!("{text}");
-                return Ok(());
-            }
+        }
+    }
+    if let Some(disk) = stick {
+        let partitions: Vec<(String, Option<String>)> = partition_names(disk)
+            .into_iter()
+            .map(|name| {
+                let label = Command::new("blkid")
+                    .arg(Path::new("/dev").join(&name))
+                    .output()
+                    .ok()
+                    .and_then(|o| parse_blkid(String::from_utf8_lossy(&o.stdout).trim()).0);
+                (name, label)
+            })
+            .collect();
+        if let Some(name) = stick_esp(&partitions) {
+            let device = Path::new("/dev").join(name);
+            let mount = mount_point(&mounts, &device.display().to_string());
+            places.push((device, mount.map(str::to_string)));
+        }
+    }
+    for (device, mount) in places {
+        let shown = device.display().to_string();
+        if let Some((inner, text)) = settings_on(&device, mount.as_deref()) {
+            eprintln!(
+                "edel install: {}",
+                trf(
+                    "found {file} on {device}",
+                    &[("file", &inner), ("device", &shown)]
+                )
+            );
+            print!("{text}");
+            return Ok(());
         }
     }
     bail!(
@@ -1490,6 +1554,30 @@ fn count_down(device: &str, id: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_stick_is_searched_on_its_esp_by_label_only() {
+        let part = |name: &str, label: Option<&str>| (name.to_string(), label.map(String::from));
+        let stick = [
+            part("sdb1", Some("EDEL-A")),
+            part("sdb2", Some(DATA_LABEL)),
+            part("sdb3", Some("EDEL-ESP-OLD")),
+            part("sdb4", Some(ESP_LABEL)),
+        ];
+        assert_eq!(stick_esp(&stick), Some("sdb4"));
+        let unlabelled = [part("sdb1", None), part("sdb2", Some("Windows"))];
+        assert_eq!(stick_esp(&unlabelled), None);
+        assert_eq!(stick_esp(&[]), None);
+    }
+
+    #[test]
+    fn a_mounted_device_gives_its_mount_point_and_others_none() {
+        let mounts = "/dev/sda2 / ext4 ro 0 0\n/dev/sdb4 /run/edel/esp vfat ro 0 0\n";
+        assert_eq!(mount_point(mounts, "/dev/sdb4"), Some("/run/edel/esp"));
+        assert_eq!(mount_point(mounts, "/dev/sdb"), None);
+        assert_eq!(mount_point(mounts, "/dev/sdb1"), None);
+        assert_eq!(mount_point("", "/dev/sdb4"), None);
+    }
 
     #[test]
     fn a_disk_mounted_swapped_or_held_is_in_use() {
