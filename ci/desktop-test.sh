@@ -8196,9 +8196,9 @@ case_rollback() {
 	value rollback: | grep -q '^PASS' || fail "$(value rollback:)"
 	tr -d '\r' <"$log" | grep -q 'DESKTOP-TEST: rollback: slot B runs' ||
 		fail "slot B never ran, so its fallback proves nothing"
-	asked=$(count 'DESKTOP-TEST: dev_box_check ')
-	guest 'dev box check'
-	wait_more 'DESKTOP-TEST: dev_box_check ' "$asked" 300 || fail "the service did not check the dev box after the fallback"
+	# Slot A's boot after the fallback checks the box itself, as it reads
+	# no commands.
+	wait_for 'DESKTOP-TEST: dev_box_check ' 300 || fail "the service did not check the dev box after the fallback"
 	case "$(value dev_box_check)" in
 	'dev '*'box ok') ;;
 	*) fail "after the update and the fallback to slot A the dev box is gone or does not run: $(value dev_box_check)" ;;

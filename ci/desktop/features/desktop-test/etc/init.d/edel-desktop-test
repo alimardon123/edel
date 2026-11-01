@@ -1759,12 +1759,6 @@ ieee80211w=2' channel=6 ;;
 			app=$(as_ci 'distrobox enter dev -- /opt/edel-hello/edel-hello.AppImage --appimage-extract-and-run' </dev/null 2>&1 | tail -n 1)
 			say "dev_box_run path=$path; deb=$deb; app=$app"
 			;;
-		# After an update and a rollback (M7.17): the box is listed and
-		# still runs what it has.
-		'dev box check')
-			out=$(as_ci 'distrobox enter dev -- sh -c "command -v dpkg >/dev/null && echo box ok"' </dev/null 2>&1 | tail -n 1)
-			say "dev_box_check $(as_ci "podman ps -a --format '{{.Names}}'" </dev/null 2>/dev/null | tr '\n' ' ') $out"
-			;;
 		'dev box clean')
 			as_ci 'distrobox rm --force dev' </dev/null >/dev/null 2>&1
 			as_ci 'podman rmi -f -a' </dev/null >/dev/null 2>&1
@@ -2305,6 +2299,12 @@ rolled_back() {
 	if echo "$slots" | grep -q '^running: A' && echo "$slots" | grep -q '^B: ok=0' &&
 		grep -q '^from = "B"' "$last_fallback" 2>/dev/null; then
 		say "rollback: PASS: back on slot A, slot B switched off and the fallback recorded"
+		# The dev box made before the update (M7.17): still listed and
+		# still runs what it has, on slot A after the fallback. This boot
+		# reads no commands, so the check runs here.
+		ci_runs="XDG_RUNTIME_DIR=/run/user/$(id -u ci)"
+		out=$(su -s /bin/sh ci -c "$ci_runs distrobox enter dev -- sh -c 'command -v dpkg >/dev/null && echo box ok'" </dev/null 2>&1 | tail -n 1)
+		say "dev_box_check $(su -s /bin/sh ci -c "$ci_runs podman ps -a --format '{{.Names}}'" </dev/null 2>/dev/null | tr '\n' ' ') $out"
 	else
 		say "rollback: FAIL: not back on slot A with slot B off"
 		cat "$last_fallback" >/dev/console 2>&1
