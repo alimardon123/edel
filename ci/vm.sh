@@ -102,13 +102,39 @@ stop_vm() {
 
 # partition_out DISK N FILE: partition N of the disk image DISK, copied
 # into the sparse file FILE (for debugfs); returns 1 when DISK has no
-# partition N. Copied in 4 MiB blocks: 512 bytes at a time, a data
-# partition's 6.6 GB took 50 s a copy, 4 MiB blocks take 4.
+# partition N. Only the parts of DISK that hold data are copied (the
+# file system's SEEK_DATA and SEEK_HOLE), by the kernel
+# (copy_file_range), so a data partition of 6.6 GB that the guest has
+# written little of copies in a fraction of the 4 s dd took reading
+# its holes, which the live and install tests pay on every look.
 partition_out() {
 	part_place=$(sfdisk -d "$1" 2>/dev/null | sed -n "s/^[^ ]*[^0-9]$2 : start= *\([0-9]*\), size= *\([0-9]*\),.*/\1 \2/p")
 	[ -n "$part_place" ] || return 1
-	dd if="$1" of="$3" bs=4M iflag=skip_bytes,count_bytes skip=$((${part_place% *} * 512)) \
-		count=$((${part_place#* } * 512)) conv=sparse status=none
+	python3 -I -c '
+import os, sys
+src, dst = sys.argv[1], sys.argv[2]
+start, size = int(sys.argv[3]) * 512, int(sys.argv[4]) * 512
+end = start + size
+fi = os.open(src, os.O_RDONLY)
+fo = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
+os.ftruncate(fo, size)
+pos = start
+while pos < end:
+    try:
+        data = os.lseek(fi, pos, os.SEEK_DATA)
+    except OSError:
+        break
+    if data >= end:
+        break
+    hole = min(os.lseek(fi, data, os.SEEK_HOLE), end)
+    at = data
+    while at < hole:
+        n = os.copy_file_range(fi, fo, hole - at, at, at - start)
+        if n <= 0:
+            sys.exit("partition_out: " + src + " ended early")
+        at += n
+    pos = hole
+' "$1" "$3" "${part_place% *}" "${part_place#* }"
 }
 
 # partition_in FILE DISK N: FILE written back over partition N of DISK, in

@@ -10047,6 +10047,13 @@ if [ "$*" = live ]; then
 		e2fsck -fy "$dir/data.img" >/dev/null 2>&1 || true
 		debugfs -R "cat /home/live/$home_session_log" "$dir/data.img" 2>/dev/null
 	}
+	# lap NAME: how long the live walk took since the last lap, so the
+	# lane's slow stretches show in CI's log.
+	lap_at=$(date +%s)
+	lap() {
+		echo "  live: $1 took $(($(date +%s) - lap_at)) s"
+		lap_at=$(date +%s)
+	}
 	# settings_open NAME: types settings in the launcher and waits until
 	# the compositor maps one more Settings window than before (M8.15a's
 	# CI lane: no fixed 25 s wait), then gives the installer page 5 s to
@@ -10105,6 +10112,7 @@ if [ "$*" = live ]; then
 			fail "$((w / 2)),$((h - 10)) on the ${w}x$h screen is not the panel's #$panel: nobody logged in by themselves"
 		fi
 	done
+	lap "starting the stick"
 	walk try "seconds=$started" || fail "starting the stick took longer than its budget (walk try, docs/REVIEW-experience.md)"
 	# The first start (M6.12): live's session opens Settings' Welcome,
 	# which on a stick asks Try or Install first, Install taking Return.
@@ -10164,6 +10172,7 @@ if [ "$*" = live ]; then
 		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
 	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
+	lap "the Welcome, the screen and the serial log"
 	# The browser offline (M6.2): Super, "firefox" and Return start the
 	# default apps' Firefox from the stick's own installation with no
 	# network beyond the VM, and its window must map within 180 s, which
@@ -10208,6 +10217,7 @@ if [ "$*" = live ]; then
 	python3 ci/qmp.py screendump "$dir/store.png"
 	python3 ci/qmp.py key meta_l-q
 	sleep 3
+	lap "Firefox and the store"
 	# A web app (M6.4): an address typed in the launcher offers to make it
 	# an app, first; Return makes it and starts it, Firefox with a profile
 	# and an app id of its own, so it is a window of its own, which the
@@ -10252,6 +10262,7 @@ if [ "$*" = live ]; then
 	*) fail "the live session did not add Flathub from the image's file, so the store lists nothing" ;;
 	esac
 	rm -f "$dir/apps-data.img"
+	lap "the web app and the default apps' files"
 	# Settings' installer page (M6.6a), by keyboard alone as a person
 	# could: the launcher opens Settings, which on a stick opens on the
 	# page with the login name taking the keys; Return moves on, and on
@@ -10295,6 +10306,7 @@ if [ "$*" = live ]; then
 		fi
 		sleep 10
 	done
+	lap "the first install"
 	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
@@ -10331,6 +10343,7 @@ if [ "$*" = live ]; then
 		stick_logs
 		fail "the installed disk has no desktop add-on beside its slot"
 	fi
+	lap "the installed disk's files and add-on"
 	echo "PASS: the installed disk holds the desktop add-on in $addons_dir/$carried"
 	# Use a settings file (M6.6b): a FAT stick holding a settings file
 	# (ci/desktop/install-file.toml, which names the computer and bea) is
@@ -10421,6 +10434,7 @@ if [ "$*" = live ]; then
 	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
 	rm -f "$stick" "$dir/data.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
+	lap "the install from a settings file and its first start"
 	echo "PASS: the desktop image started from a USB stick logged live in by itself (its panel lies along the bottom of the ${w}x$h screen), started Firefox offline from the default apps within ${firefox_seconds} s (firefox.png), opened the store, Bazaar, within ${store_seconds} s (store.png) with Flathub added for live, made example.org a web app from the launcher, which mapped as its own window, app edel-web-example-org, within ${web_app_seconds} s (web-app.png), mounted /data, guarded the boot with the hardware watchdog, wrote its report, left sshd off and had its default apps' installation with its icon cache built; Settings' installer page, used by keyboard alone, installed it on the blank disk with ali an administrator, ali's password hashed in first-passwords and no default written; then, a stick holding a settings file plugged in, the page found the file and asked only bea's password, installed again from it, and the installed disk started on its own as from-file in America/New_York with the greeter asking and sshd off (install-page.png, install-plan.png, install-done.png); the first start opened the Welcome, whose Install Edel OS opened the installer page (welcome-stick.png)"
 	exit 0
 fi
