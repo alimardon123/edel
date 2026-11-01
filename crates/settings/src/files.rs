@@ -57,6 +57,12 @@ pub struct Layout {
     pub overview_strip: String,
     /// Light, dark or automatic (`appearance.mode`, M5.2q).
     pub mode: String,
+    /// How the shell's surfaces are drawn, `glass`, `tinted` or `solid`
+    /// (`appearance.glass`, M8.21 part 21m).
+    pub glass: String,
+    /// The glass's colour, `neutral`, `accent` or `wallpaper`
+    /// (`appearance.glass_colour`, M8.21 part 21m).
+    pub glass_colour: String,
 }
 
 /// A list of texts as the TOML array `edel settings set` takes, such as
@@ -104,6 +110,8 @@ impl Layout {
             "workspaces.apps" => Some(apps_text(&self.app_workspaces)),
             "workspaces.overview_strip" => Some(self.overview_strip.clone()),
             "appearance.mode" => Some(self.mode.clone()),
+            "appearance.glass" => Some(self.glass.clone()),
+            "appearance.glass_colour" => Some(self.glass_colour.clone()),
             _ => None,
         }
     }
@@ -135,6 +143,8 @@ fn own(file: &settings::SettingsFile, key: &str) -> Option<String> {
         "appearance.switcher_look" => look.switcher_look.clone(),
         "appearance.switcher_shown" => look.switcher_shown.map(|n| n.to_string()),
         "appearance.switcher_ends" => look.switcher_ends.clone(),
+        "appearance.glass" => look.glass.clone(),
+        "appearance.glass_colour" => look.glass_colour.clone(),
         _ => None,
     }
 }
@@ -325,6 +335,20 @@ impl Files {
                 person_look.mode.as_ref().or(machine_look.mode.as_ref()),
             )
             .unwrap_or_else(|| release_value("appearance.mode")),
+            // Absent, the glass is frosted and grey (M8.21 part 21m).
+            glass: known(
+                "appearance.glass",
+                person_look.glass.as_ref().or(machine_look.glass.as_ref()),
+            )
+            .unwrap_or_else(|| settings::GLASS_DEFAULT.to_string()),
+            glass_colour: known(
+                "appearance.glass_colour",
+                person_look
+                    .glass_colour
+                    .as_ref()
+                    .or(machine_look.glass_colour.as_ref()),
+            )
+            .unwrap_or_else(|| settings::GLASS_COLOUR_DEFAULT.to_string()),
         }
     }
 
@@ -525,6 +549,8 @@ impl Files {
             "workspaces.apps" => person.workspaces.apps.take().is_some(),
             "workspaces.overview_strip" => person.workspaces.overview_strip.take().is_some(),
             "appearance.mode" => person.appearance.mode.take().is_some(),
+            "appearance.glass" => person.appearance.glass.take().is_some(),
+            "appearance.glass_colour" => person.appearance.glass_colour.take().is_some(),
             _ => return Err(format!("{key} is not a key these pages choose")),
         };
         let without = Self::layout_from(&machine, &edel::settings::in_use(&person));
