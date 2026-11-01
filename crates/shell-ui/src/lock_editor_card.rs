@@ -1872,7 +1872,7 @@ impl Shell {
             return;
         };
         if let Some(keyboard) = &le.keyboard {
-            keyboard.release();
+            self.let_go(keyboard);
         }
         let name = lock_editor::log_name(le.view.on);
         drop(le);

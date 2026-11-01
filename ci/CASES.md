@@ -2,6 +2,8 @@
 
 What each case of `desktop-test.sh CASE...` checks, one line per case (moved here from [CLAUDE.md](CLAUDE.md) by M6.17, line 11), so a pull request that changes a case edits only its own line.
 
+Every case also fails when a program of ours panics during it (a `panicked at` line in the log), even one the compositor starts again, with the panic's lines.
+
 - `background` (M6.2a, first): `background` lists the processes whose names hold `flatpak`, `portal` or `permission-store`; before any app starts there must be none, as Flatpak's helpers and the portals start on D-Bus activation.
 - `floating`: the clients at 522,325 and 604,382 in the state file, centred in the 1280x760 area above shell-ui's panel, `two` focused and on top, and their colours at 530,333 and 704,457.
 - `titlebar`: every window has `title_bar = true`, the bars' left ends in the tokens' `title_bar` and, for focused `two`, `title_bar_focused`, two's title drawn, a click on two's close button at 791,368 followed by `unmapped window two` and two windows, and a drag of one's bar from 560,311 to 760,131 moving it to 722,145.
