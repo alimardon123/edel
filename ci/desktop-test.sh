@@ -3161,6 +3161,18 @@ case_settings_tour() {
 		python3 ci/qmp.py screendump "$dir/settings-tour-$page-1.png"
 		tour_close
 	done
+	# Rows that lie below the first screen of their page, opened by their
+	# key, which scrolls the row to the top of its page (`--page KEY`),
+	# maximized, each kept as settings-tour-KEY.png: the Glass group
+	# (M8.21 part 21m).
+	for key in appearance.glass; do
+		tour_open "$key" || fail "Settings did not open on the $key row"
+		sleep 2
+		python3 ci/qmp.py key meta_l-m
+		sleep 2
+		python3 ci/qmp.py screendump "$dir/settings-tour-$key.png"
+		tour_close
+	done
 	# Compact, as the power case makes it: 366 logical px wide, Settings
 	# maximized on an empty workspace.
 	python3 ci/qmp.py key meta_l-4
@@ -3186,7 +3198,7 @@ case_settings_tour() {
 	wait_more 'edel-compositor: output Virtual-1 scale 1$' "$scaled" || fail "unsetting the scale did not bring scale 1 back"
 	python3 ci/qmp.py key meta_l-1
 	set -- $shown
-	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
+	echo "PASS: edel settings lists $(echo $pages | wc -w) pages; Settings opened and photographed each of the $# it shows ($(echo $shown)) as settings-tour-PAGE-1.png, maximized, the rows far down a page by their key, and each again at 366 px, maximized, as settings-tour-PAGE-narrow.png; not shown yet, as Settings refuses them:${missing:- none}"
 }
 
 case_display() {
