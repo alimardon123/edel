@@ -64,6 +64,13 @@ pub fn app_not_started(name: &str, why: impl Display) -> String {
     format!("could not start {name}: {why}; check that it is installed")
 }
 
+/// An app the launcher started ended with a failure, before or after its
+/// window showed; its own output is not kept, so the line says where to
+/// see it.
+pub fn app_failed(name: &str, status: impl Display) -> String {
+    format!("{name} ended with {status}; start it from a terminal to see what it said")
+}
+
 /// A website typed in the launcher cannot be made a web app (M6.4); the
 /// launcher stays open so the address can be changed.
 pub fn web_app_not_added(url: &str, why: impl Display) -> String {
@@ -463,6 +470,13 @@ pub fn access_too_many(app: &str, waiting: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_app_that_failed_says_its_status_and_where_to_look() {
+        let line = app_failed("Bazaar", "exit status: 1");
+        assert!(line.starts_with("Bazaar ended with exit status: 1; "));
+        assert!(line.ends_with("start it from a terminal to see what it said"));
+    }
 
     #[test]
     fn the_access_dialog_that_cannot_be_drawn_says_what_follows() {
