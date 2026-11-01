@@ -7,6 +7,10 @@
 //! answers its input. The panels, the desktop's surfaces and the lock
 //! screen are not cards: they keep their own paths in `main.rs`.
 
+use std::time::Duration;
+
+use smithay_client_toolkit::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay_client_toolkit::reexports::client::protocol::wl_keyboard::WlKeyboard;
 use smithay_client_toolkit::reexports::client::protocol::wl_surface::WlSurface;
 use smithay_client_toolkit::seat::pointer::{BTN_LEFT, PointerEvent, PointerEventKind};
 
@@ -336,6 +340,34 @@ impl Shell {
             }
             _ => {}
         }
+    }
+}
+
+/// How long a let-go keyboard is still held: longer than any key repeat's
+/// first delay, after which its repeat timer has surely ended.
+const KEYBOARD_HELD: Duration = Duration::from_secs(10);
+
+impl Shell {
+    /// Lets go of a card's keyboard (the lock screen's and the launcher's
+    /// too). smithay-client-toolkit's key repeat timer keeps a copy of the
+    /// keyboard, and when that copy is the last one, the timer's end drops
+    /// the keyboard inside the event loop's own dispatch, whose removal of
+    /// the timer then panics ("already borrowed") and shell-ui ends: seen
+    /// after every unlock with Enter, whose release never came. So a copy
+    /// is kept here for a while and dropped from an idle callback, outside
+    /// the dispatch, where the removal is harmless.
+    pub fn let_go(&self, keyboard: &WlKeyboard) {
+        keyboard.release();
+        let mut kept = Some(keyboard.clone());
+        let idle = self.handle.clone();
+        let _ = self
+            .handle
+            .insert_source(Timer::from_duration(KEYBOARD_HELD), move |_, _, _| {
+                if let Some(keyboard) = kept.take() {
+                    idle.insert_idle(move |_| drop(keyboard));
+                }
+                TimeoutAction::Drop
+            });
     }
 }
 
