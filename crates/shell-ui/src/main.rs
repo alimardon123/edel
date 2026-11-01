@@ -37,6 +37,7 @@ mod aside;
 mod backdrop;
 mod banner;
 mod calendar;
+mod cards;
 mod centre;
 mod clipboard;
 mod clipboard_card;
@@ -2377,42 +2378,8 @@ impl LayerShellHandler for Shell {
     /// and the compositor starts it again, every panel afresh. The
     /// launcher just closes.
     fn closed(&mut self, _: &Connection, _: &QueueHandle<Self>, surface: &LayerSurface) {
-        if self.is_launcher(surface.wl_surface()) {
-            self.close_launcher();
-        } else if self.is_clipboard(surface.wl_surface()) {
-            self.close_clipboard();
-        } else if self.is_styles(surface.wl_surface()) {
-            self.close_styles();
-        } else if self.is_in_use(surface.wl_surface()) {
-            self.close_in_use();
-        } else if self.is_app_windows(surface.wl_surface()) {
-            self.close_app_windows();
-        } else if self.is_panel_menu(surface.wl_surface()) {
-            self.close_panel_menu();
-        } else if self.is_editor(surface.wl_surface()) {
-            self.close_editor(false);
-        } else if self.is_lock_editor(surface.wl_surface()) {
-            self.close_lock_editor(false);
-        } else if self.is_lock_looks(surface.wl_surface()) {
-            self.close_lock_looks();
-        } else if self.is_undo_bar(surface.wl_surface()) {
-            self.hide_undo_bar();
-        } else if self.is_quick(surface.wl_surface()) {
-            self.close_quick();
-        } else if self.is_banner(surface.wl_surface()) {
-            self.hide_banner();
-        } else if self.is_osd(surface.wl_surface()) {
-            self.hide_osd();
-        } else if self.is_centre(surface.wl_surface()) {
-            self.close_centre();
-        } else if self.is_tray_grid(surface.wl_surface()) {
-            self.close_tray_grid();
-        } else if self.is_tooltip(surface.wl_surface()) {
-            self.hide_tooltip();
-        } else if self.is_switcher(surface.wl_surface()) {
-            self.hide_switcher();
-        } else if self.is_access(surface.wl_surface()) {
-            self.close_access();
+        if let Some(card) = self.card_of(surface.wl_surface()) {
+            self.close_card(card);
         } else if let Some((i, _)) = self.desktop_surface(surface.wl_surface()) {
             self.desktop_closed(i);
         } else {
@@ -2428,104 +2395,8 @@ impl LayerShellHandler for Shell {
         configure: LayerSurfaceConfigure,
         _: u32,
     ) {
-        if self.is_access(surface.wl_surface()) {
-            if let Some(card) = &mut self.access {
-                card.popup.configured();
-            }
-            return self.draw_access();
-        }
-        if self.is_panel_menu(surface.wl_surface()) {
-            if let Some(menu) = &mut self.panel_menu {
-                menu.popup.configured();
-            }
-            return self.draw_panel_menu();
-        }
-        if self.is_editor(surface.wl_surface()) {
-            if let Some(editor) = &mut self.editor {
-                editor.popup.configured();
-            }
-            return self.draw_editor();
-        }
-        if self.is_lock_editor(surface.wl_surface()) {
-            return self.lock_editor_configured(configure.new_size);
-        }
-        if self.is_lock_looks(surface.wl_surface()) {
-            return self.lock_looks_configured(configure.new_size);
-        }
-        if self.is_undo_bar(surface.wl_surface()) {
-            if let Some(bar) = &mut self.undo_bar {
-                bar.popup.configured();
-            }
-            return self.draw_undo_bar();
-        }
-        if self.is_launcher(surface.wl_surface()) {
-            if let Some(menu) = &mut self.menu {
-                menu.popup.configured();
-            }
-            return self.draw_launcher();
-        }
-        if self.is_clipboard(surface.wl_surface()) {
-            if let Some(popup) = self.clipboard_popup() {
-                popup.configured();
-            }
-            return self.draw_clipboard();
-        }
-        if self.is_styles(surface.wl_surface()) {
-            if let Some(menu) = &mut self.styles {
-                menu.popup.configured();
-            }
-            return self.draw_styles();
-        }
-        if self.is_in_use(surface.wl_surface()) {
-            if let Some(menu) = &mut self.in_use_menu {
-                menu.popup.configured();
-            }
-            return self.draw_in_use();
-        }
-        if self.is_app_windows(surface.wl_surface()) {
-            if let Some(menu) = &mut self.app_windows {
-                menu.popup.configured();
-            }
-            return self.draw_app_windows();
-        }
-        if self.is_quick(surface.wl_surface()) {
-            if let Some(card) = &mut self.quick {
-                card.popup_mut().configured();
-            }
-            return self.draw_quick();
-        }
-        if self.is_banner(surface.wl_surface()) {
-            if let Some(card) = &mut self.banner {
-                card.popup_mut().configured();
-            }
-            return self.draw_banner();
-        }
-        if self.is_osd(surface.wl_surface()) {
-            if let Some(card) = &mut self.osd {
-                card.popup.configured();
-            }
-            return self.draw_osd();
-        }
-        if self.is_centre(surface.wl_surface()) {
-            return self.centre_configured(configure.new_size);
-        }
-        if self.is_tray_grid(surface.wl_surface()) {
-            if let Some(card) = &mut self.tray_grid {
-                card.popup.configured();
-            }
-            return self.draw_tray_grid();
-        }
-        if self.is_tooltip(surface.wl_surface()) {
-            if let Some(tip) = &mut self.tooltip {
-                tip.popup.configured();
-            }
-            return self.draw_tooltip();
-        }
-        if self.is_switcher(surface.wl_surface()) {
-            if let Some(flip) = &mut self.flip {
-                flip.configured();
-            }
-            return self.draw_switcher();
+        if let Some(card) = self.card_of(surface.wl_surface()) {
+            return self.card_configured(card, configure.new_size);
         }
         if let Some((i, area)) = self.desktop_surface(surface.wl_surface()) {
             return if area {
@@ -2554,107 +2425,8 @@ impl CompositorHandler for Shell {
         surface: &wl_surface::WlSurface,
         factor: i32,
     ) {
-        if self.is_access(surface) {
-            if let Some(card) = &mut self.access {
-                card.popup.set_scale(factor);
-            }
-            return self.draw_access();
-        }
-        if self.is_launcher(surface) {
-            if let Some(menu) = &mut self.menu {
-                menu.popup.set_scale(factor);
-            }
-            return self.draw_launcher();
-        }
-        if self.is_clipboard(surface) {
-            if let Some(popup) = self.clipboard_popup() {
-                popup.set_scale(factor);
-            }
-            return self.draw_clipboard();
-        }
-        if self.is_panel_menu(surface) {
-            if let Some(menu) = &mut self.panel_menu {
-                menu.popup.set_scale(factor);
-            }
-            return self.draw_panel_menu();
-        }
-        if self.is_editor(surface) {
-            if let Some(editor) = &mut self.editor {
-                editor.popup.set_scale(factor);
-            }
-            return self.draw_editor();
-        }
-        if self.is_lock_editor(surface) {
-            return self.lock_editor_scaled(factor);
-        }
-        if self.is_lock_looks(surface) {
-            return self.lock_looks_scaled(factor);
-        }
-        if self.is_undo_bar(surface) {
-            if let Some(bar) = &mut self.undo_bar {
-                bar.popup.set_scale(factor);
-            }
-            return self.draw_undo_bar();
-        }
-        if self.is_styles(surface) {
-            if let Some(menu) = &mut self.styles {
-                menu.popup.set_scale(factor);
-            }
-            return self.draw_styles();
-        }
-        if self.is_in_use(surface) {
-            if let Some(menu) = &mut self.in_use_menu {
-                menu.popup.set_scale(factor);
-            }
-            return self.draw_in_use();
-        }
-        if self.is_app_windows(surface) {
-            if let Some(menu) = &mut self.app_windows {
-                menu.popup.set_scale(factor);
-            }
-            return self.draw_app_windows();
-        }
-        if self.is_quick(surface) {
-            if let Some(card) = &mut self.quick {
-                card.popup_mut().set_scale(factor);
-            }
-            return self.draw_quick();
-        }
-        if self.is_banner(surface) {
-            if let Some(card) = &mut self.banner {
-                card.popup_mut().set_scale(factor);
-            }
-            return self.draw_banner();
-        }
-        if self.is_osd(surface) {
-            if let Some(card) = &mut self.osd {
-                card.popup.set_scale(factor);
-            }
-            return self.draw_osd();
-        }
-        if self.is_centre(surface) {
-            if let Some(card) = &mut self.centre {
-                card.popup_mut().set_scale(factor);
-            }
-            return self.draw_centre();
-        }
-        if self.is_tray_grid(surface) {
-            if let Some(card) = &mut self.tray_grid {
-                card.popup.set_scale(factor);
-            }
-            return self.draw_tray_grid();
-        }
-        if self.is_tooltip(surface) {
-            if let Some(tip) = &mut self.tooltip {
-                tip.popup.set_scale(factor);
-            }
-            return self.draw_tooltip();
-        }
-        if self.is_switcher(surface) {
-            if let Some(flip) = &mut self.flip {
-                flip.set_scale(factor);
-            }
-            return self.draw_switcher();
+        if let Some(card) = self.card_of(surface) {
+            return self.card_scaled(card, factor);
         }
         if let Some((i, false)) = self.desktop_surface(surface) {
             return self.desktop_scaled(i, factor);
@@ -2684,107 +2456,8 @@ impl CompositorHandler for Shell {
         surface: &wl_surface::WlSurface,
         _: u32,
     ) {
-        if self.is_access(surface) {
-            if let Some(card) = &mut self.access {
-                card.popup.framed();
-            }
-            return self.draw_access();
-        }
-        if self.is_launcher(surface) {
-            if let Some(menu) = &mut self.menu {
-                menu.popup.framed();
-            }
-            return self.draw_launcher();
-        }
-        if self.is_clipboard(surface) {
-            if let Some(popup) = self.clipboard_popup() {
-                popup.framed();
-            }
-            return self.draw_clipboard();
-        }
-        if self.is_panel_menu(surface) {
-            if let Some(menu) = &mut self.panel_menu {
-                menu.popup.framed();
-            }
-            return self.draw_panel_menu();
-        }
-        if self.is_editor(surface) {
-            if let Some(editor) = &mut self.editor {
-                editor.popup.framed();
-            }
-            return self.draw_editor();
-        }
-        if self.is_lock_editor(surface) {
-            return self.lock_editor_framed();
-        }
-        if self.is_lock_looks(surface) {
-            return self.lock_looks_framed();
-        }
-        if self.is_undo_bar(surface) {
-            if let Some(bar) = &mut self.undo_bar {
-                bar.popup.framed();
-            }
-            return self.draw_undo_bar();
-        }
-        if self.is_styles(surface) {
-            if let Some(menu) = &mut self.styles {
-                menu.popup.framed();
-            }
-            return self.draw_styles();
-        }
-        if self.is_in_use(surface) {
-            if let Some(menu) = &mut self.in_use_menu {
-                menu.popup.framed();
-            }
-            return self.draw_in_use();
-        }
-        if self.is_app_windows(surface) {
-            if let Some(menu) = &mut self.app_windows {
-                menu.popup.framed();
-            }
-            return self.draw_app_windows();
-        }
-        if self.is_quick(surface) {
-            if let Some(card) = &mut self.quick {
-                card.popup_mut().framed();
-            }
-            return self.draw_quick();
-        }
-        if self.is_banner(surface) {
-            if let Some(card) = &mut self.banner {
-                card.popup_mut().framed();
-            }
-            return self.draw_banner();
-        }
-        if self.is_osd(surface) {
-            if let Some(card) = &mut self.osd {
-                card.popup.framed();
-            }
-            return self.draw_osd();
-        }
-        if self.is_centre(surface) {
-            if let Some(card) = &mut self.centre {
-                card.popup_mut().framed();
-            }
-            return self.draw_centre();
-        }
-        if self.is_tray_grid(surface) {
-            if let Some(card) = &mut self.tray_grid {
-                card.popup.framed();
-            }
-            return self.draw_tray_grid();
-        }
-        if self.is_tooltip(surface) {
-            if let Some(tip) = &mut self.tooltip {
-                tip.popup.framed();
-            }
-            return self.draw_tooltip();
-        }
-        if self.is_switcher(surface) {
-            if let Some(flip) = &mut self.flip {
-                flip.framed();
-            }
-            return self.draw_switcher();
+        if let Some(card) = self.card_of(surface) {
+            return self.card_framed(card);
         }
         if let Some((i, _)) = self.desktop_surface(surface) {
             return self.desktop_settled(i);
@@ -2915,144 +2588,12 @@ impl PointerHandler for Shell {
         events: &[PointerEvent],
     ) {
         for event in events {
-            if self.is_access(&event.surface) {
-                self.access_pointer(event);
-                continue;
-            }
-            if self.is_clipboard(&event.surface) {
-                self.clipboard_pointer(event);
-                continue;
-            }
-            if self.is_launcher(&event.surface) {
-                // From the card's corner, inside the shadow's room.
-                let room = self.menu.as_ref().map_or(0, |m| m.popup.room()) as f32;
-                let (x, y) = (
-                    event.position.0 as f32 - room,
-                    event.position.1 as f32 - room,
-                );
-                let row = launcher::row_at(y, &self.tokens).filter(|_| x >= 0.0);
-                match &event.kind {
-                    PointerEventKind::Motion { .. } => {
-                        if let Some(row) = row.filter(|r| *r < self.launcher.view().names.len()) {
-                            self.launcher.selected = row;
-                            self.draw_launcher();
-                        }
-                    }
-                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
-                        if let Some(url) = self.launcher.install_url(row) {
-                            self.install_web_app(&url);
-                        } else if row.is_some() && self.launcher.start(row).is_some() {
-                            self.close_launcher();
-                        }
-                    }
-                    _ => {}
-                }
-                continue;
-            }
             if self.is_lock(&event.surface) {
                 self.lock_pointer(event);
                 continue;
             }
-            if self.is_panel_menu(&event.surface) {
-                self.panel_menu_pointer(event);
-                continue;
-            }
-            if self.is_lock_editor(&event.surface) {
-                self.lock_editor_pointer(event);
-                continue;
-            }
-            if self.is_lock_looks(&event.surface) {
-                self.lock_looks_pointer(event);
-                continue;
-            }
-            if self.is_editor(&event.surface) {
-                self.editor_pointer(event);
-                continue;
-            }
-            if self.is_undo_bar(&event.surface) {
-                self.undo_pointer(event);
-                continue;
-            }
-            if self.is_in_use(&event.surface) {
-                let room = self.in_use_menu.as_ref().map_or(0, |m| m.popup.room()) as f32;
-                let (x, y) = (
-                    event.position.0 as f32 - room,
-                    event.position.1 as f32 - room,
-                );
-                match &event.kind {
-                    PointerEventKind::Motion { .. } => self.in_use_motion(x, y),
-                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
-                        self.in_use_press(x, y)
-                    }
-                    _ => {}
-                }
-                continue;
-            }
-            if self.is_app_windows(&event.surface) {
-                let room = self.app_windows.as_ref().map_or(0, |m| m.popup.room()) as f32;
-                let count = self.app_windows.as_ref().map_or(0, |m| m.view.titles.len());
-                let (x, y) = (
-                    event.position.0 as f32 - room,
-                    event.position.1 as f32 - room,
-                );
-                let row = app_windows::row_at(y, count, &self.tokens).filter(|_| x >= 0.0);
-                match &event.kind {
-                    PointerEventKind::Motion { .. } => {
-                        if let (Some(row), Some(menu)) = (row, &mut self.app_windows) {
-                            menu.view.lit = row;
-                            self.draw_app_windows();
-                        }
-                    }
-                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
-                        if let Some(row) = row {
-                            self.choose_app_window(row);
-                        }
-                    }
-                    _ => {}
-                }
-                continue;
-            }
-            if self.is_styles(&event.surface) {
-                let room = self.styles.as_ref().map_or(0, |m| m.popup.room()) as f32;
-                let (x, y) = (
-                    event.position.0 as f32 - room,
-                    event.position.1 as f32 - room,
-                );
-                let row = styles::row_at(y, &self.tokens).filter(|_| x >= 0.0);
-                match &event.kind {
-                    PointerEventKind::Motion { .. } => {
-                        if let (Some(row), Some(menu)) = (row, &mut self.styles) {
-                            menu.view.lit = row;
-                            self.draw_styles();
-                        }
-                    }
-                    PointerEventKind::Press { button, .. } if *button == BTN_LEFT => {
-                        if let Some(row) = row {
-                            self.choose_style(row);
-                        }
-                    }
-                    _ => {}
-                }
-                continue;
-            }
-            if self.is_quick(&event.surface) {
-                self.quick_pointer(event);
-                continue;
-            }
-            if self.is_banner(&event.surface) {
-                self.banner_pointer(event);
-                continue;
-            }
-            if self.is_osd(&event.surface) {
-                self.osd_pointer(event);
-                continue;
-            }
-            if self.is_centre(&event.surface) {
-                self.centre_pointer(event);
-                continue;
-            }
-            if self.is_tray_grid(&event.surface) {
-                self.tray_pointer(event);
+            if let Some(card) = self.card_of(&event.surface) {
+                self.card_pointer(card, event);
                 continue;
             }
             let Some(i) = self.panel_of(&event.surface) else {
@@ -3170,30 +2711,8 @@ impl KeyboardHandler for Shell {
         surface: &wl_surface::WlSurface,
         _: u32,
     ) {
-        if self.is_launcher(surface) {
-            self.close_launcher();
-        } else if self.is_clipboard(surface) {
-            self.close_clipboard();
-        } else if self.is_styles(surface) {
-            self.close_styles();
-        } else if self.is_in_use(surface) {
-            self.close_in_use();
-        } else if self.is_app_windows(surface) {
-            self.close_app_windows();
-        } else if self.is_panel_menu(surface) {
-            self.close_panel_menu();
-        } else if self.is_editor(surface) {
-            self.close_editor(false);
-        } else if self.is_lock_editor(surface) {
-            self.close_lock_editor(false);
-        } else if self.is_lock_looks(surface) {
-            self.close_lock_looks();
-        } else if self.is_quick(surface) {
-            self.close_quick();
-        } else if self.is_centre(surface) {
-            self.close_centre();
-        } else if self.is_tray_grid(surface) {
-            self.close_tray_grid();
+        if let Some(card) = self.card_of(surface) {
+            self.card_left(card);
         }
     }
 
