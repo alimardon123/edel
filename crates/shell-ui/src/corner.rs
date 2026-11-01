@@ -78,10 +78,6 @@ pub const ROW_ICON: f32 = 16.0;
 pub const ROW_TEXT: f32 = 14.0;
 /// The quiet note at a row's right end.
 pub const NOTE_TEXT: f32 = 11.0;
-/// The menu's corners.
-pub const MENU_RADIUS: f32 = 16.0;
-/// A row's corners.
-pub const ROW_RADIUS: f32 = 10.0;
 /// The session menu's header line, "Desktop for this login" (M5.10c3b).
 pub const HEADER_H: f32 = 28.0;
 /// The header's text.
@@ -348,12 +344,20 @@ pub fn paint(
     }
     if let Some(menu) = l.menu {
         let (x, y, w, h) = menu.device(s);
-        let r = MENU_RADIUS * s;
+        let r = tokens.radius_card as f32 * s;
         crate::lock::frosted(pixmap, (x, y, w, h), r, s, tokens);
         for (i, (choice, row)) in CHOICES.iter().zip(&l.rows).enumerate() {
             let (rx, ry, rw, rh) = row.device(s);
             if view.hover == Some(Hit::Row(i)) {
-                fill(pixmap, rx, ry, rw, rh, ROW_RADIUS * s, hover_tint);
+                fill(
+                    pixmap,
+                    rx,
+                    ry,
+                    rw,
+                    rh,
+                    tokens.radius_window as f32 * s,
+                    hover_tint,
+                );
             }
             let side = ROW_ICON * s;
             let iy = (row.y + (ROW - ROW_ICON) / 2.0) * s;
@@ -380,7 +384,13 @@ pub fn paint(
     }
     if let Some(menu) = l.sessions {
         let (x, y, w, h) = menu.device(s);
-        crate::lock::frosted(pixmap, (x, y, w, h), MENU_RADIUS * s, s, tokens);
+        crate::lock::frosted(
+            pixmap,
+            (x, y, w, h),
+            tokens.radius_card as f32 * s,
+            s,
+            tokens,
+        );
         // The header sits in the menu's top padding, quiet, as the notes do.
         let left = (menu.x + MENU_PAD + ROW_ICON_LEFT) * s;
         let room = (menu.w - 2.0 * MENU_PAD - 2.0 * ROW_ICON_LEFT) * s;
@@ -396,7 +406,15 @@ pub fn paint(
         for (i, (name, row)) in l.session_names.iter().zip(&l.session_rows).enumerate() {
             let (rx, ry, rw, rh) = row.device(s);
             if view.hover == Some(Hit::Session(i)) || chosen == Some(i) {
-                fill(pixmap, rx, ry, rw, rh, ROW_RADIUS * s, hover_tint);
+                fill(
+                    pixmap,
+                    rx,
+                    ry,
+                    rw,
+                    rh,
+                    tokens.radius_window as f32 * s,
+                    hover_tint,
+                );
             }
             let iy = (row.y + (ROW - ROW_ICON) / 2.0) * s;
             icon(

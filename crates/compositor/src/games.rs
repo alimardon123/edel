@@ -302,10 +302,7 @@ fn keep_record(ended: &Recording) {
 fn write_record(dir: &Path, app: &str, record: edel::smoothness::Record) -> std::io::Result<()> {
     let path = dir.join(edel::places::GAMES);
     let text = std::fs::read_to_string(&path).unwrap_or_default();
-    let new = dir.join(format!("{}.new", edel::places::GAMES));
-    std::fs::create_dir_all(dir)?;
-    std::fs::write(&new, edel::smoothness::with(&text, app, record))?;
-    std::fs::rename(&new, &path)
+    edel::files::replace(&path, edel::smoothness::with(&text, app, record).as_bytes())
 }
 
 pub fn create_global(display: &DisplayHandle) {

@@ -2,7 +2,9 @@
 # Alpine's greetd PAM file, plus pam_rundir (roadmap M4.1): every session
 # gets /run/user/UID, mode 0700, without logind. pam_exec runs edel-seat
 # (the seat feature) as each session opens and closes, which gives the
-# controllers to the person at the screen alone (M8.37).
+# controllers to the person at the screen alone (M8.37). edel boot keyring
+# hands the session its keyring key as it opens and takes it back as it
+# closes (M7.18, the keyring feature).
 
 auth include base-auth
 account include base-account
@@ -10,3 +12,4 @@ password include base-password
 session include base-session
 session optional pam_rundir.so
 session optional pam_exec.so quiet /usr/libexec/edel-seat
+session optional pam_exec.so quiet /usr/bin/edel boot keyring

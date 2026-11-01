@@ -27,8 +27,6 @@ pub const WIDTH: u32 = 360;
 /// A screen narrower than this is Compact (M5.6c's size classes), as
 /// quick settings count it.
 pub const COMPACT_BELOW: u32 = crate::quick::COMPACT_BELOW;
-/// The card's corner radius, logical pixels.
-pub const RADIUS: f32 = 22.0;
 
 /// Where across the screen a banner lies (M5.9j).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,10 +102,10 @@ pub fn layout(view: &View) -> Layout {
 }
 
 /// The card a banner holds, as `notify_card.rs` gives its popup.
-pub fn card(layout: &Layout) -> Card {
+pub fn card(layout: &Layout, tokens: &Tokens) -> Card {
     Card {
         rect: Rect::new(0.0, 0.0, layout.size.0 as f32, layout.size.1 as f32),
-        radius: RADIUS,
+        radius: tokens.radius_banner as f32,
     }
 }
 
@@ -149,7 +147,7 @@ pub fn paint(
     scale: f32,
 ) {
     let l = layout(view);
-    popup::cards(pixmap, tokens, scale, &[card(&l)]);
+    popup::cards(pixmap, tokens, scale, &[card(&l, tokens)]);
     notice::paint(
         pixmap,
         tokens,
@@ -158,7 +156,7 @@ pub fn paint(
         &view.item,
         &l.notice,
         (view.hover, None),
-        (false, RADIUS),
+        (false, tokens.radius_banner as f32),
         view.compact,
         scale,
     );
@@ -228,7 +226,7 @@ mod tests {
     #[test]
     fn the_card_is_the_banner_with_its_corners() {
         let l = layout(&view(&update(), 1280, six));
-        let c = card(&l);
+        let c = card(&l, &Tokens::built_in());
         assert_eq!(c.radius, 22.0);
         assert_eq!(c.rect, Rect::new(0.0, 0.0, 360.0, l.size.1 as f32));
     }

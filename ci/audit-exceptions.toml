@@ -36,4 +36,4 @@ reason = "Unsound: `swap_columns` of `Matrix2`, `Matrix3` and `Matrix4` with two
 id = "RUSTSEC-2026-0192"
 crate = "ttf-parser 0.25.1"
 date = "2026-10-07"
-reason = "Unmaintained. Pulled in by fontdb 0.23.0 under cosmic-text (shell-ui's text) and by fontdue 0.9.4 (the compositor's title bars). No fix exists: both have to move to another parser. Exposed only to the font files installed on the machine, which come from the image or from the person; it reads no network data."
+reason = "Unmaintained. Pulled in by fontdb 0.23.0 under cosmic-text (`edel::text`, shell-ui's text and the compositor's title bars since M8.21). No fix exists: it has to move to another parser. Exposed only to the font files installed on the machine, which come from the image or from the person; it reads no network data."

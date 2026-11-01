@@ -203,7 +203,7 @@ fn write_files(changes: &[(String, bool)]) {
 
 /// Writes the app's override file in `dir` with the files choice laid on
 /// it (`ask` takes the home away, else gives it back). Only what differs is
-/// written, through `files::replace`. A file left with nothing in it is
+/// written, through `edel::files::replace`. A file left with nothing in it is
 /// removed. Says whether it wrote. An id that is no Flatpak id writes
 /// nothing, so no path can leave the folder.
 fn write_override(dir: &Path, app: &str, ask: bool) -> std::io::Result<bool> {
@@ -214,7 +214,7 @@ fn write_override(dir: &Path, app: &str, ask: bool) -> std::io::Result<bool> {
 }
 
 /// Lays `change` on the Flatpak override file at `path` (an absent file is
-/// empty text) and writes what it gives with `files::replace`; None from
+/// empty text) and writes what it gives with `edel::files::replace`; None from
 /// `change` writes nothing, and empty text removes the file. Says whether
 /// it wrote.
 /// `apps_colours.rs` writes the person's global file with it (M6.18).
@@ -237,7 +237,7 @@ pub fn write_changed(
             Err(e) => Err(e),
         };
     }
-    crate::files::replace(path, text.as_bytes())?;
+    edel::files::replace(path, text.as_bytes())?;
     Ok(true)
 }
 

@@ -4,9 +4,6 @@
 //! main loop never waits on a disk (ADR-002); when states arrive faster
 //! than it writes, only the newest is written.
 
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write as _};
-use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 use std::sync::mpsc::{Sender, channel};
 use std::thread;
@@ -39,7 +36,7 @@ impl StateFile {
                     while let Ok(newer) = receiver.try_recv() {
                         text = newer;
                     }
-                    if let Err(e) = replace(Path::new(PATH), &text) {
+                    if let Err(e) = edel::files::replace(Path::new(PATH), text.as_bytes()) {
                         eprintln!("edel-compositor: {}", messages::state_not_written(PATH, e));
                     }
                 }
@@ -60,26 +57,4 @@ impl StateFile {
             let _ = sender.send(text);
         }
     }
-}
-
-/// Writes `path` whole under a new name, `path.new`, then renames it over
-/// the old file, so readers never see half a file, and the greeter's and
-/// the person's compositors each replace the other's (M4.7b). Other
-/// people's sessions write in the same directory: the new file is only
-/// ever created, never opened, so a link planted under its name is
-/// refused, not followed.
-pub fn replace(path: &Path, text: &str) -> io::Result<()> {
-    let mut temporary = path.as_os_str().to_owned();
-    temporary.push(".new");
-    match fs::remove_file(&temporary) {
-        Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
-        _ => {}
-    }
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o644)
-        .open(&temporary)?;
-    file.write_all(text.as_bytes())?;
-    fs::rename(&temporary, path)
 }

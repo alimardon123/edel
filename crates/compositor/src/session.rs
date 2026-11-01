@@ -1,7 +1,7 @@
 //! The session's own programs (roadmap M5.7b): what the preset's
 //! `[session] start` lists (`edel::presets::Session`), by default the
 //! sound system, PipeWire, WirePlumber and the PulseAudio server apps
-//! speak to it through. They run for this person only, as the person, so
+//! speak to it through, then the keyring (`edel boot keyring`, M7.18). They run for this person only, as the person, so
 //! nothing of them runs on a machine nobody is using, and they start once
 //! the desktop is on screen, after shell-ui, in the order listed (each
 //! needs the one before).

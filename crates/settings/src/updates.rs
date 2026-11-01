@@ -47,6 +47,7 @@ const INSTALL: Ask = Ask {
     button: n_("Install"),
     args: actions::UPDATE.args,
     detail: &[],
+    note: None,
     name: false,
     danger: false,
 };
@@ -58,6 +59,7 @@ const GO_BACK: Ask = Ask {
     button: n_("Go back"),
     args: actions::ROLLBACK.args,
     detail: &[],
+    note: None,
     name: false,
     danger: false,
 };

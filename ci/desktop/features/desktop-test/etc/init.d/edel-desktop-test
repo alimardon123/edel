@@ -35,6 +35,13 @@ pw_setting() {
 	as_ci pw-metadata -n settings 0 "$1" 2>&1 | sed -n "s/.*key:'$1' value:'\([0-9]*\)'.*/\1/p" | head -n 1
 }
 
+# What the keyring left (M7.18): the keys, the session's copy, the daemon,
+# and the lines the login, the compositor (the session's `edel boot
+# keyring`, its start and its end) and the daemon itself logged.
+keyring_diag() {
+	say "keyring_diag keys: $(ls -ln "$keyring_keys" 2>&1 | tr '\n' ' ') run: $(ls -ln "$keyring_run" 2>&1 | tr '\n' ' ') daemon: $(for pid in $(pidof oo7-daemon); do printf '%s ' "$pid"; tr '\0' ' ' <"/proc/$pid/cmdline"; done) logs: $(grep -ihE 'oo7|keyring|secret|pam_exec|edel-compositor: (started )?edel[ ,]' "$session_log" /tmp/compositor.log /var/log/greetd.log "$system_log" /var/log/messages 2>/dev/null | tail -n 25 | tr '\n' '|')"
+}
+
 # The session's D-Bus address, from shell-ui's environment.
 session_bus() {
 	tr '\0' '\n' <"/proc/$(pidof edel-shell-ui | cut -d' ' -f1)/environ" | sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p'
@@ -508,6 +515,48 @@ commands() {
 		# The settings portal (M5.5a): what an app hears when it asks
 		# xdg-desktop-portal, which D-Bus starts on this first call, for the
 		# colour scheme and the accent.
+		# The keyring (M7.18): whether its daemon runs, a secret stored and
+		# read back as ci through the Secret Service with oo7-cli, and the
+		# daemon stopped and started again with the session's key.
+		# pidof, not pgrep -x: the session starts the daemon by its whole
+		# path, and busybox's pgrep -x compares that, not the name.
+		'keyring running')
+			running=$(pidof oo7-daemon >/dev/null && echo yes || echo no)
+			# What the login, the session and the daemon left, when it is gone.
+			[ "$running" = yes ] || keyring_diag
+			say "keyring_running $running"
+			;;
+		'keyring store')
+			bus=$(session_bus)
+			printf edel-keyring-test | as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 30 oo7-cli store CI edel=ci" >/tmp/keyring.log 2>&1
+			stored=$?
+			# What the login and the daemon left, for a failed store.
+			[ "$stored" = 0 ] || keyring_diag
+			say "keyring_store $stored $(tr '\n' ' ' </tmp/keyring.log)"
+			;;
+		'keyring lookup')
+			bus=$(session_bus)
+			out=$(as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' timeout 30 oo7-cli lookup --secret-only edel=ci" </dev/null 2>&1 | tr '\n' ' ')
+			say "keyring_lookup $out"
+			;;
+		'keyring start')
+			# As the login does, in the session: the daemon again, given the
+			# session's key, with no app asking.
+			bus=$(session_bus)
+			as_ci "DBUS_SESSION_BUS_ADDRESS='$bus' setsid edel boot keyring </dev/null >/dev/null 2>&1 &"
+			n=0
+			while [ "$n" -lt 20 ] && ! pidof oo7-daemon >/dev/null; do
+				sleep 0.5
+				n=$((n + 1))
+			done
+			sleep 2
+			say "keyring_started $(pidof oo7-daemon >/dev/null && echo yes || echo no)"
+			;;
+		'keyring stop')
+			kill $(pidof oo7-daemon)
+			sleep 1
+			say "keyring_stopped $(pidof oo7-daemon >/dev/null && echo no || echo yes)"
+			;;
 		'portal read')
 			bus=$(session_bus)
 			for key in color-scheme accent-color; do

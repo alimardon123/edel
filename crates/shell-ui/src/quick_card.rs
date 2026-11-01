@@ -575,7 +575,7 @@ impl Shell {
         }
         // The card is the rounded shape the mockups draw, its shadow round it.
         card.popup
-            .set_cards(quick::cards(&layout), &self.compositor);
+            .set_cards(quick::cards(&layout, &self.tokens), &self.compositor);
         let Some(mut pixmap) = card.popup.canvas(&view) else {
             return;
         };

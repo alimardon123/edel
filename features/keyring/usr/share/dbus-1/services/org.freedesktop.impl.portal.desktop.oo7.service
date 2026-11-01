@@ -1,0 +1,6 @@
+# The Secret portal's backend (M7.18), for Flatpak apps, started by the
+# session's D-Bus only when an app asks. Alpine's file starts it through
+# systemd, which Edel OS has not, so this one replaces it.
+[D-BUS Service]
+Name=org.freedesktop.impl.portal.desktop.oo7
+Exec=/usr/libexec/oo7-portal
