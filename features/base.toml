@@ -18,8 +18,8 @@ repositories = ["main", "community"]
 # (ci.yml reads both from here), so a build runs in an image someone looked
 # at. The registry moves the tag at every Alpine point release; refresh with
 # `docker buildx imagetools inspect alpine:3.24` (the multi-architecture
-# index's Digest, branch as above) and say so in the PR. Last read 2026-10-07.
-image_digest = "sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6"
+# index's Digest, branch as above) and say so in the PR. Last read 2026-11-01.
+image_digest = "sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a"
 
 # The id of every system account (an id from 100 to 999) the images' and
 # the add-ons' packages add or Alpine's base layout ships. busybox hands
