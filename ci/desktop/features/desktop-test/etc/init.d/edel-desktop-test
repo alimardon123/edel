@@ -1815,9 +1815,7 @@ ieee80211w=2' channel=6 ;;
 			path=$(tr '\0' '\n' <"/proc/$(pgrep -u ci -x edel-compositor | head -n 1)/environ" 2>/dev/null | sed -n 's/^PATH=//p')
 			deb=$(as_ci "env PATH='$path' edel-hello-deb" </dev/null 2>&1 | tail -n 1)
 			app=$(as_ci 'distrobox enter dev -- /opt/edel-hello/edel-hello.AppImage --appimage-extract-and-run' </dev/null 2>&1 | tail -n 1)
-			# podman in the box is Edel OS's (M7.19), so it lists the box.
-			pod=$(as_ci "distrobox enter dev -- podman ps --format '{{.Names}}'" </dev/null 2>&1 | tr '\n' ' ')
-			say "dev_box_run path=$path; pod=$pod; deb=$deb; app=$app"
+			say "dev_box_run path=$path; deb=$deb; app=$app"
 			;;
 		'dev box clean')
 			as_ci 'distrobox rm --force dev' </dev/null >/dev/null 2>&1
