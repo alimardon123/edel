@@ -251,6 +251,8 @@ const ERASE: Ask = Ask {
             "Stays: the default apps and this version of Edel OS, so the computer starts as new, offline too, and can still roll back.",
         ),
     ],
+    // What the command says first on encrypted data: the passphrase stays.
+    note: Some(|| edel::security::Data::now().after_reset()),
     name: true,
     danger: true,
 };
