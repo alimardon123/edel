@@ -504,7 +504,7 @@ jobs:
           key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
           restore-keys: apt-${{ github.job }}-
       - name: Install QEMU and UEFI firmware
-        run: sh ci/apt.sh qemu-system-x86 ovmf
+        run: sh ci/apt.sh qemu-system-x86 ovmf squashfs-tools
 
       - name: Time three boots of the one image against their budgets
         # Before the lane's tests, alone on this runner, so other VMs do not
@@ -591,7 +591,7 @@ jobs:
               default-apps-keys respawn workspaces-dynamic app-workspaces overview web-app input-method
               default-apps app-permissions in-use location profiles flatpak suspend lid another-base
           - part: D
-            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer profile-gaming ai-agents poweroff
+            cases: one-screen release-pictures wakeups device-power screen-off saver memory language settings-tour theme office-fonts profile-office profile-creative profile-developer dev-box profile-gaming ai-agents poweroff
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -635,7 +635,7 @@ jobs:
           key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
           restore-keys: apt-${{ github.job }}-
       - name: Install QEMU and UEFI firmware
-        run: sh ci/apt.sh qemu-system-x86 ovmf
+        run: sh ci/apt.sh qemu-system-x86 ovmf squashfs-tools
 
       # A failed case's part runs once more; a pass then names it flaky (M6.17).
       - name: Test part ${{ matrix.part }} of the desktop image on a virtual GPU

@@ -1759,6 +1759,63 @@ ieee80211w=2' channel=6 ;;
 			rm -f /tmp/edel-container.tar.gz
 			say "podman_clean $(as_ci 'podman images -q' </dev/null 2>/dev/null | wc -l)"
 			;;
+		# The dev box (M7.17): the containers add-on named with ci an
+		# admin, the default box image that the runner serves loaded for ci
+		# (ci/dev-box-files.sh), and `distrobox create` with no image or
+		# name, so the add-on's own distrobox.conf picks both (and the
+		# box's own launcher entry, Dev, opens a terminal in it); then a
+		# first enter, which sets the box up for ci.
+		'dev box make')
+			{
+				edel settings set addons.installed+=containers users.ci.admin=true &&
+					edel settings apply &&
+					wget -q -O /tmp/dev-box.tar http://10.0.2.2:8002/dev-box/dev-box.tar &&
+					chmod 644 /tmp/dev-box.tar &&
+					as_ci 'podman load -q -i /tmp/dev-box.tar' &&
+					as_ci 'distrobox create --yes' &&
+					as_ci 'distrobox enter dev -- true'
+			} </dev/null >/tmp/dev-box.log 2>&1
+			status=$?
+			rm -f /tmp/dev-box.tar
+			say "dev_box_make $status $(as_ci "podman ps -a --format '{{.Names}}'" </dev/null 2>/dev/null | tr '\n' ' ') $(tail -n 5 /tmp/dev-box.log | tr '\n' ';')"
+			;;
+		# In the box, as a person would: the .deb with dpkg, the AppImage
+		# copied to /opt with the desktop file it carries (its Exec pointed
+		# at it, run without FUSE), then distrobox-export for the launcher
+		# and the .deb's command for the PATH.
+		'dev box apps')
+			for f in edel-hello.deb edel-hello.AppImage; do
+				wget -q -O "/home/ci/$f" "http://10.0.2.2:8002/dev-box/$f" && chown ci "/home/ci/$f"
+			done
+			chmod 755 /home/ci/edel-hello.AppImage
+			as_ci 'distrobox enter dev -- sh -c "
+				sudo dpkg -i ~/edel-hello.deb &&
+				distrobox-export --app edel-hello-deb &&
+				distrobox-export --bin /usr/bin/edel-hello-deb --export-path ~/.local/bin &&
+				cd /tmp && rm -rf squashfs-root && ~/edel-hello.AppImage --appimage-extract edel-hello-appimage.desktop >/dev/null &&
+				test -s squashfs-root/edel-hello-appimage.desktop &&
+				sudo install -D -m 755 ~/edel-hello.AppImage /opt/edel-hello/edel-hello.AppImage &&
+				sed \"s|^Exec=.*|Exec=/opt/edel-hello/edel-hello.AppImage --appimage-extract-and-run|\" squashfs-root/edel-hello-appimage.desktop |
+					sudo tee /usr/share/applications/edel-hello-appimage.desktop >/dev/null &&
+				distrobox-export --app /usr/share/applications/edel-hello-appimage.desktop"' </dev/null >/tmp/dev-box.log 2>&1
+			status=$?
+			say "dev_box_apps $status $(ls /home/ci/.local/share/applications 2>&1 | grep -c edel-hello) $(tail -n 5 /tmp/dev-box.log | tr '\n' ';')"
+			;;
+		# The .deb app's command with the session's own PATH, read from the
+		# compositor ci's session runs, and the AppImage run in the box.
+		'dev box run')
+			path=$(tr '\0' '\n' <"/proc/$(pgrep -u ci -x edel-compositor | head -n 1)/environ" 2>/dev/null | sed -n 's/^PATH=//p')
+			deb=$(as_ci "env PATH='$path' edel-hello-deb" </dev/null 2>&1 | tail -n 1)
+			app=$(as_ci 'distrobox enter dev -- /opt/edel-hello/edel-hello.AppImage --appimage-extract-and-run' </dev/null 2>&1 | tail -n 1)
+			say "dev_box_run path=$path; deb=$deb; app=$app"
+			;;
+		'dev box clean')
+			as_ci 'distrobox rm --force dev' </dev/null >/dev/null 2>&1
+			as_ci 'podman rmi -f -a' </dev/null >/dev/null 2>&1
+			rm -f /home/ci/edel-hello.deb /home/ci/edel-hello.AppImage /home/ci/.local/share/applications/dev-edel-hello-* /home/ci/.local/share/applications/dev.desktop /home/ci/.local/bin/edel-hello-deb
+			edel settings set addons.installed-=containers </dev/null >/dev/null 2>&1 && edel settings reset users.ci.admin </dev/null >/dev/null 2>&1 && edel settings apply </dev/null >/dev/null 2>&1
+			say "dev_box_clean $? $(as_ci 'podman ps -a -q' </dev/null 2>/dev/null | wc -l)"
+			;;
 		'flatpak apps')
 			edel settings set 'apps.installed=["io.mpv.Mpv"]' users.ci.admin=true >/tmp/flatpak-apply.log 2>&1 &&
 				edel settings apply >>/tmp/flatpak-apply.log 2>&1
@@ -2292,6 +2349,12 @@ rolled_back() {
 	if echo "$slots" | grep -q '^running: A' && echo "$slots" | grep -q '^B: ok=0' &&
 		grep -q '^from = "B"' "$last_fallback" 2>/dev/null; then
 		say "rollback: PASS: back on slot A, slot B switched off and the fallback recorded"
+		# The dev box made before the update (M7.17): still listed and
+		# still runs what it has, on slot A after the fallback. This boot
+		# reads no commands, so the check runs here.
+		ci_runs="XDG_RUNTIME_DIR=/run/user/$(id -u ci)"
+		out=$(su -s /bin/sh ci -c "$ci_runs distrobox enter dev -- sh -c 'command -v dpkg >/dev/null && echo box ok'" </dev/null 2>&1 | tail -n 1)
+		say "dev_box_check $(su -s /bin/sh ci -c "$ci_runs podman ps -a --format '{{.Names}}'" </dev/null 2>/dev/null | tr '\n' ' ') $out"
 	else
 		say "rollback: FAIL: not back on slot A with slot B off"
 		cat "$last_fallback" >/dev/console 2>&1

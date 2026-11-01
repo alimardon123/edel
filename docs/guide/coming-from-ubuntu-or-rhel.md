@@ -10,6 +10,7 @@ Edel OS does the same jobs with fewer, different tools. Its system is read-only 
 | `apt install` or `dnf install` an app | Flatpak from Flathub, or `edel settings set apps.installed+=ID` for everyone ([Commands](commands.md)) |
 | `apt install` a server | an OCI container with Podman (the `containers` add-on, or the Developer profile) |
 | `apt install` build tools | a dev container, so each project has its own tools and the system stays clean |
+| a vendor's `.deb` or `.rpm`, an AppImage, Homebrew | the dev box (the `containers` add-on): `distrobox create` makes an Ubuntu LTS box, `distrobox enter` opens it (or Dev in the launcher), and `distrobox-export --app NAME` or `--bin PATH` puts what you install there in the launcher and on your `PATH` |
 | `apt upgrade`, `dnf upgrade` | `edel update`, which installs the next release beside this one; `edel rollback` goes back |
 | `/etc` files by hand | one settings file, `edel settings set`, `diff`, `export` and `apply`; a file copies a machine to another |
 | `sudo` | `doas`; an administrator runs `edel` through it with no password, and `edel` asks for one before a change that could break or open the machine (an install, an update) |
