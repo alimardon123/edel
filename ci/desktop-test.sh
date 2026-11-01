@@ -225,6 +225,9 @@
 #               card token's colour; kept as updates.png (M5.8c); the
 #               About page (edel-settings --page about) likewise, kept
 #               as about.png (M5.8d)
+#   keyring     oo7's daemon absent until a secret is stored as ci, then
+#               running, opened by the session's key; stopped, the next
+#               ask starts it again and reads the same secret (M7.18)
 #   tray        a StatusNotifierItem from edel-testclient --sni (a
 #               #33aa66 pixmap) registers with shell-ui's watcher and its
 #               icon lies in the panel's tray; AT-SPI names it, a click
@@ -6289,8 +6292,11 @@ case_frame_rate() {
 	*'shows '[0-9]*' fps, '[0-9]*.[0-9]' ms   1% '[0-9]*.[0-9]' ms') ;;
 	*) fail "the overlay's numbers do not read as a frame rate, a frame time and the slowest 1 percent: $numbers" ;;
 	esac
-	shot frame-rate 100 24 '!7a3fb0' >/dev/null || fail "the upper left corner shows the game, not the overlay (frame-rate.png)"
-	shot frame-rate 640 600 7a3fb0 >/dev/null || fail "the middle of the screen is not the game's colour with the overlay on (frame-rate.png)"
+	# The stand-in draws its colour and the colour's inverse on alternate
+	# frames (--busy), so either is the game; a picture can catch either.
+	corner=$(shot frame-rate 100 24 '!7a3fb0') && [ "$corner" != 85c04f ] ||
+		fail "the upper left corner shows the game, not the overlay (frame-rate.png)"
+	shot frame-rate 640 600 '7a3fb0|85c04f' >/dev/null || fail "the middle of the screen is not the game's colour with the overlay on (frame-rate.png)"
 	ended=$(count 'edel-compositor: the game ended; the desktop is back')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 || fail "Super+Q did not end the game stand-in"
@@ -6324,6 +6330,38 @@ case_frame_rate() {
 		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on a game's frames had p99 $3 ms, $1 times the median $2 ms (budget $limit times)." >>"$GITHUB_STEP_SUMMARY"
 	fi
 	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on a game's frames had p99 $3 ms, $1 times its median $2 ms (budget $limit times); Super+Shift+G hid it"
+}
+
+case_keyring() {
+	# The keyring (M7.18): the session starts oo7's daemon, opened with no
+	# prompt by the key the login handed it; a secret stored as ci through
+	# the Secret Service, the daemon stopped and started again as a login
+	# does, the secret, kept in ci's home, reads back the same.
+	asked=$(count 'DESKTOP-TEST: keyring_running ')
+	guest 'keyring running'
+	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
+	[ "$(value keyring_running)" = yes ] || fail "the session did not start oo7-daemon, or it ended; what was there: $(value keyring_diag)"
+	asked=$(count 'DESKTOP-TEST: keyring_store ')
+	guest 'keyring store'
+	wait_more 'DESKTOP-TEST: keyring_store ' "$asked" 60 || fail "the service did not store a secret"
+	case "$(value keyring_store)" in
+	"0 "* | 0) ;;
+	*) fail "oo7-cli store failed as ci: $(value keyring_store); what was there: $(value keyring_diag)" ;;
+	esac
+	asked=$(count 'DESKTOP-TEST: keyring_stopped ')
+	guest 'keyring stop'
+	wait_more 'DESKTOP-TEST: keyring_stopped ' "$asked" || fail "the service did not stop the keyring"
+	[ "$(value keyring_stopped)" = yes ] || fail "oo7-daemon did not stop"
+	asked=$(count 'DESKTOP-TEST: keyring_started ')
+	guest 'keyring start'
+	wait_more 'DESKTOP-TEST: keyring_started ' "$asked" 30 || fail "the service did not start the keyring again"
+	[ "$(value keyring_started)" = yes ] || fail "edel boot keyring did not start oo7-daemon again"
+	asked=$(count 'DESKTOP-TEST: keyring_lookup ')
+	guest 'keyring lookup'
+	wait_more 'DESKTOP-TEST: keyring_lookup ' "$asked" 60 || fail "the service did not read the secret back"
+	got=$(value keyring_lookup | sed 's/ *$//')
+	[ "$got" = edel-keyring-test ] || fail "the keyring, started again, did not give back the secret: $got"
+	echo "PASS: the session started oo7, opened with no prompt by the session's key; a secret stored as ci read back the same after the daemon stopped and started again with that key"
 }
 
 case_portal() {
@@ -9907,7 +9945,7 @@ case_another_base() {
 	echo "PASS: a new system on the first one's data partition listed mpv for ci, mapped it with the title ci's setting gives (another-base-mpv.png), and edel settings diff had nothing to apply"
 }
 
-[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer dev-box profile-gaming flatpak suspend another-base
+[ "$#" -gt 0 ] || set -- background completion dmabuf floating titlebar tiling depth text cursor console pointer outputs compositor panel xwayland layers animations descriptors flash shortcuts workspaces windows launcher quick switcher presets own-presets buttons styles scroll sandbox activation taskbar app-windows dock pins panels panel-edit dockhide fullscreen keyboard settings settings-panels settings-workspaces settings-appearance settings-wallpaper settings-theme settings-shortcuts settings-unknown factory-reset welcome theme display sound network firewall power updates portal keyring own-bars capture tray scheme terminal contrast scale taps respawn workspaces-dynamic app-workspaces web-app input-method default-apps app-permissions in-use location office-fonts release-pictures wakeups device-power screen-off saver memory profiles profile-office profile-creative profile-developer dev-box profile-gaming flatpak suspend another-base
 # Every case is a case_NAME function, so this list is the functions
 # themselves and cannot miss one (the sandbox case was once left out).
 cases=$(sed -n 's/^case_\([a-z_]*\)() {$/\1/p' "$0" | tr '_' '-' | sort | tr '\n' ' ')

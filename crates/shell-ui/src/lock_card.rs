@@ -900,7 +900,7 @@ fn paint_player(
     if draw.over && !draw.view.playing {
         let close = close_rect(card);
         let (cx, cy, cw, ch) = close.device(s);
-        fill(pixmap, cx, cy, cw, ch, cw / 2.0, tokens.lock_glass);
+        fill(pixmap, cx, cy, cw, ch, cw / 2.0, tokens.glass);
         icon_in(pixmap, "close", CLOSE_GLYPH, close, s, tokens.backdrop_text);
     }
     parts

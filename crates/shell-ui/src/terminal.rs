@@ -22,7 +22,7 @@ pub fn theme_text(dark: bool) -> &'static str {
     }
 }
 
-/// Writes `dir`'s theme file for `dark` with `files::replace`, and only when
+/// Writes `dir`'s theme file for `dark` with `edel::files::replace`, and only when
 /// its text differs from what is there.
 /// Says whether it wrote.
 pub fn write_theme(dir: &Path, dark: bool) -> std::io::Result<bool> {
@@ -31,7 +31,7 @@ pub fn write_theme(dir: &Path, dark: bool) -> std::io::Result<bool> {
     if std::fs::read_to_string(&path).is_ok_and(|have| have == text) {
         return Ok(false);
     }
-    crate::files::replace(&path, text.as_bytes())?;
+    edel::files::replace(&path, text.as_bytes())?;
     Ok(true)
 }
 

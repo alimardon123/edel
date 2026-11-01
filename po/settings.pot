@@ -95,10 +95,31 @@ msgstr ""
 msgid "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart."
 msgstr ""
 
-msgid "Serves this computer's hardware"
+msgid "Found in this computer"
+msgstr ""
+
+msgid "Not found in this computer"
+msgstr ""
+
+msgid "Extras"
+msgstr ""
+
+msgid "Hardware support"
+msgstr ""
+
+msgid "Take the desktop away?"
+msgstr ""
+
+msgid "At the next restart this computer starts with a console only. Your files and settings stay, and turning this switch on again brings the desktop back."
 msgstr ""
 
 msgid "This version of Edel OS has no add-ons to choose."
+msgstr ""
+
+msgid "Use the desktop"
+msgstr ""
+
+msgid "Take away"
 msgstr ""
 
 msgid "What it may use"
@@ -717,6 +738,12 @@ msgid "Restart, take out the USB stick, and your computer starts Edel OS."
 msgstr ""
 
 msgid "Edel OS is installed on {disk}. Restart, and take the stick out when the screen goes dark."
+msgstr ""
+
+msgid "Edel OS could not restart the computer. Restart it from the power menu."
+msgstr ""
+
+msgid "Edel OS could not restart the computer: {why}. Restart it from the power menu."
 msgstr ""
 
 msgid "The bars and docks along the screen's edges, and what they hold."

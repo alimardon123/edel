@@ -89,6 +89,8 @@ pub mod sound;
 #[cfg(feature = "os")]
 pub mod speakers;
 pub mod sun;
+#[cfg(feature = "text")]
+pub mod text;
 pub mod theme_file;
 pub mod themes;
 pub mod timezones;

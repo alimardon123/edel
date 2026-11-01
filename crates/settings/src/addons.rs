@@ -1,5 +1,8 @@
 //! The Add-ons page (roadmap M7.2b, ADR-007 level 2): one switch for each
-//! add-on the image was built with, in one group. Each row's title is the
+//! add-on the image was built with, the extras in one group and the
+//! hardware packs in Hardware support, the desktop on the System page
+//! (M8.21, T2), whose switch asks before it takes the desktop away. Each
+//! row's title is the
 //! add-on's name and its line the add-on's summary, then where it stands
 //! (`edel::addon_state`, the reading `edel addon list` shows too). A switch
 //! is `addons.installed+=NAME` or `-=NAME` as root through doas
@@ -11,8 +14,9 @@
 //! command gives the line that reproduces the state shown. It follows the
 //! settings files and the add-ons' folders while it is open, and the page is
 //! read again each time it is shown, as a pending add-on changes without a
-//! file change. A row names a hardware pack that serves this computer while
-//! it is not chosen (M7.11). It runs nothing on a timer.
+//! file change. A hardware pack's row says whether this computer has the
+//! hardware it serves (M7.11), read once when the page is made. It runs
+//! nothing on a timer.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -22,7 +26,7 @@ use gtk::glib;
 use gtk::prelude::*;
 
 use edel::addon_state::{self, Facts, State};
-use edel::hardware::{self, Pack};
+use edel::hardware;
 use edel::i18n::{n_, tr};
 use edel::places;
 use edel::settings::PAGES;
@@ -39,9 +43,23 @@ const INTRO: &str = n_(
     "Signed extras to the system, each added or taken away with one switch. A new one downloads once this computer is online and starts at the next restart.",
 );
 
-/// The words a row adds when the hardware pack it names serves this computer
-/// and is not chosen (M7.11).
-const SERVES: &str = n_("Serves this computer's hardware");
+/// The words a hardware pack's row adds when this computer has hardware it
+/// serves (M7.11), and when it has none (M8.21, T2).
+const FOUND: &str = n_("Found in this computer");
+const NOT_FOUND: &str = n_("Not found in this computer");
+
+/// The add-on every desktop is made of, shown on the System page alone.
+const DESKTOP: &str = "desktop";
+
+/// The Add-ons page's two groups (M8.21, T2).
+const EXTRAS: &str = n_("Extras");
+const HARDWARE: &str = n_("Hardware support");
+
+/// What the Desktop switch asks before it takes the desktop away.
+const TAKE_DESKTOP: &str = n_("Take the desktop away?");
+const TAKE_DESKTOP_DETAIL: &str = n_(
+    "At the next restart this computer starts with a console only. Your files and settings stay, and turning this switch on again brings the desktop back.",
+);
 
 /// What the page says when the image has no add-on to offer.
 const NONE: &str = n_("This version of Edel OS has no add-ons to choose.");
@@ -74,8 +92,10 @@ struct Add {
     row: widgets::Row,
     /// The state the files gave at the last read, for the line.
     state: Cell<State>,
-    /// Whether the packs file names it and it is not chosen (M7.11).
-    serves: Cell<bool>,
+    /// For a hardware pack, whether this computer has hardware it serves.
+    found: Option<bool>,
+    /// Whether turning the switch off asks first (the desktop).
+    ask_off: bool,
     /// A refused change's message, which replaces the line until the next change.
     problem: RefCell<String>,
 }
@@ -88,10 +108,10 @@ impl Add {
         if problem.is_empty() {
             self.row.subtitle.remove_css_class("edel-error");
             let state = tr(self.state.get().line());
-            let line = if self.serves.get() {
-                format!("{} · {} · {state}", self.summary, tr(SERVES))
-            } else {
-                format!("{} · {state}", self.summary)
+            let line = match self.found {
+                Some(true) => format!("{} · {} · {state}", self.summary, tr(FOUND)),
+                Some(false) => format!("{} · {} · {state}", self.summary, tr(NOT_FOUND)),
+                None => format!("{} · {state}", self.summary),
             };
             self.row.subtitle.set_label(&line);
         } else {
@@ -115,15 +135,10 @@ struct Ui {
 /// switches are free.
 fn update(ui: &Rc<Ui>) {
     let facts = Facts::read();
-    let packs: Vec<Pack> = std::fs::read_to_string(places::PACKS_FILE)
-        .map(|text| hardware::read_packs(&text))
-        .unwrap_or_default();
     ui.quiet.set(true);
     for add in &ui.rows {
         let state = addon_state::state(&add.name, &facts);
         add.state.set(state);
-        add.serves
-            .set(!state.chosen() && packs.iter().any(|pack| pack.name == add.name));
         add.switch.set_active(state.chosen());
         add.switch.set_sensitive(!ui.busy.get());
         add.show();
@@ -191,7 +206,7 @@ fn change(ui: &Rc<Ui>, at: usize, on: bool) {
 /// (logical pixels), as `edel-settings: addons group places NAME X+Y+WxH,
 /// ...`. The view settles over a few frames, so it logs once two frames
 /// agree.
-fn log_places(page: &gtk::Widget, switches: Vec<(String, gtk::Switch)>) {
+fn log_places(page: &gtk::Widget, switches: Vec<(String, gtk::Switch)>, what: &'static str) {
     let last = RefCell::new(String::new());
     page.add_tick_callback(move |page, _| {
         let Some(window) = page.root().and_downcast::<gtk::Window>() else {
@@ -207,9 +222,9 @@ fn log_places(page: &gtk::Widget, switches: Vec<(String, gtk::Switch)>) {
             })
             .collect();
         let line = if places.is_empty() {
-            "edel-settings: addons group places none".to_string()
+            format!("edel-settings: {what} group places none")
         } else {
-            format!("edel-settings: addons group places {}", places.join(", "))
+            format!("edel-settings: {what} group places {}", places.join(", "))
         };
         if last.replace(line.clone()) != line {
             return glib::ControlFlow::Continue;
@@ -220,41 +235,110 @@ fn log_places(page: &gtk::Widget, switches: Vec<(String, gtk::Switch)>) {
 }
 
 /// The Add-ons page (M7.2b): one row for each add-on the image was built
-/// with, in the order of the feature files' names.
+/// with, in the order of the feature files' names, the extras in one group
+/// and the hardware packs in Hardware support (M8.21, T2). The desktop is
+/// left to the System page's own row ([`desktop`]).
 pub fn page() -> gtk::Widget {
     let title = PAGES
         .iter()
         .find(|p| p.section == "addons")
         .map_or("", |p| p.title);
     let (page, content, _problem) = widgets::page(tr(title), tr(INTRO));
-    let group = widgets::group(&content);
-
-    let offered = addon_state::offered();
-    if offered.is_empty() {
-        widgets::text_row(&group, tr(NONE));
-    }
-    let rows: Vec<Add> = offered
+    let (packs, extras): (Vec<Offer>, Vec<Offer>) = offers()
         .into_iter()
-        .map(|(name, summary)| {
-            let switch = gtk::Switch::new();
-            let control = switch.clone().upcast::<gtk::Widget>();
-            let row = widgets::row(&group, &name, &control);
-            Add {
-                name,
-                summary,
-                switch,
-                row,
-                state: Cell::new(State::Off),
-                serves: Cell::new(false),
-                problem: RefCell::new(String::new()),
-            }
+        .filter(|offer| offer.name != DESKTOP)
+        .partition(|offer| offer.pack);
+    if packs.is_empty() && extras.is_empty() {
+        widgets::text_row(&widgets::group(&content), tr(NONE));
+    }
+    let devices = if packs.is_empty() {
+        Vec::new()
+    } else {
+        hardware::devices()
+    };
+    let mut rows = Vec::new();
+    for (heading, offers) in [(EXTRAS, extras), (HARDWARE, packs)] {
+        if offers.is_empty() {
+            continue;
+        }
+        widgets::heading(&content, tr(heading));
+        let group = widgets::group(&content);
+        for offer in offers {
+            let found = offer
+                .pack
+                .then(|| hardware::serves(&offer.hardware, &devices));
+            rows.push(add(&group, offer, found, false));
+        }
+    }
+    follow(&page, rows, "addons");
+    page
+}
+
+/// The System page's Desktop group (M8.21, T2): the desktop add-on's
+/// switch on its own, as taking it away leaves a console at the next
+/// restart, which the switch asks about first. Nothing when the image
+/// does not offer the desktop.
+pub fn desktop(page: &gtk::Widget, content: &gtk::Box) {
+    let Some(offer) = offers().into_iter().find(|offer| offer.name == DESKTOP) else {
+        return;
+    };
+    widgets::heading(content, tr("Desktop"));
+    let group = widgets::group(content);
+    let row = add(&group, offer, None, true);
+    follow(page, vec![row], "system desktop");
+}
+
+/// The add-ons the image offers, with whether each is a hardware pack.
+fn offers() -> Vec<Offer> {
+    addon_state::offered_features_in(std::path::Path::new(places::OFFERED_ADDONS_DIR))
+        .into_iter()
+        .map(|(name, feature)| Offer {
+            name,
+            summary: feature.summary,
+            pack: !feature.hardware.is_empty(),
+            hardware: feature.hardware,
         })
-        .collect();
+        .collect()
+}
+
+/// One add-on as the page offers it.
+struct Offer {
+    name: String,
+    summary: String,
+    /// Whether it is a hardware pack, matched by `hardware`.
+    pack: bool,
+    hardware: Vec<String>,
+}
+
+/// Puts `offer`'s row in `group`.
+fn add(group: &gtk::Box, offer: Offer, found: Option<bool>, ask_off: bool) -> Add {
+    let switch = gtk::Switch::new();
+    let control = switch.clone().upcast::<gtk::Widget>();
+    let title = if ask_off {
+        tr("Use the desktop")
+    } else {
+        offer.name.as_str()
+    };
+    let row = widgets::row(group, title, &control);
+    Add {
+        name: offer.name,
+        summary: offer.summary,
+        switch,
+        row,
+        found,
+        ask_off,
+        state: Cell::new(State::Off),
+        problem: RefCell::new(String::new()),
+    }
+}
+
+/// Makes `rows` follow the files while `page` is open and act on their
+/// switches; `what` names the rows in the places line CI reads.
+fn follow(page: &gtk::Widget, rows: Vec<Add>, what: &'static str) {
     let switches: Vec<(String, gtk::Switch)> = rows
         .iter()
         .map(|add| (add.name.clone(), add.switch.clone()))
         .collect();
-
     let ui = Rc::new(Ui {
         rows,
         quiet: Cell::new(false),
@@ -275,9 +359,34 @@ pub fn page() -> gtk::Widget {
         let weak = Rc::downgrade(&ui);
         add.switch.connect_active_notify(move |switch| {
             let Some(ui) = weak.upgrade() else { return };
-            if !ui.quiet.get() {
-                change(&ui, at, switch.is_active());
+            if ui.quiet.get() {
+                return;
             }
+            let on = switch.is_active();
+            if on || !ui.rows[at].ask_off {
+                change(&ui, at, on);
+                return;
+            }
+            // Asked first: the switch stays on until the answer is yes.
+            ui.quiet.set(true);
+            switch.set_active(true);
+            ui.quiet.set(false);
+            let weak = Rc::downgrade(&ui);
+            widgets::confirm(
+                switch.upcast_ref(),
+                tr(TAKE_DESKTOP),
+                tr(TAKE_DESKTOP_DETAIL),
+                tr("Take away"),
+                true,
+                move || {
+                    if let Some(ui) = weak.upgrade() {
+                        ui.quiet.set(true);
+                        ui.rows[at].switch.set_active(false);
+                        ui.quiet.set(false);
+                        change(&ui, at, false);
+                    }
+                },
+            );
         });
         add.row.reset.set_visible(false);
         let name = add.name.clone();
@@ -302,17 +411,15 @@ pub fn page() -> gtk::Widget {
         if !placed.replace(true) {
             let page = page.clone();
             let switches = switches.clone();
-            glib::idle_add_local_once(move || log_places(&page, switches));
+            glib::idle_add_local_once(move || log_places(&page, switches, what));
         }
     });
 
-    // The page's state lives as long as the page does: its callbacks hold
+    // The rows' state lives as long as the page does: its callbacks hold
     // only weak references.
-    let keep = ui.clone();
     page.connect_destroy(move |_| {
-        let _ = &keep;
+        let _ = &ui;
     });
-    page
 }
 
 #[cfg(test)]

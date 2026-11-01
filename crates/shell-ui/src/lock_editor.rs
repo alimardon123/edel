@@ -106,7 +106,6 @@ const HEADING_SIZE: f32 = 10.5;
 const HEADING_SHARE: f32 = 0.50;
 const NAME_SIZE: f32 = 13.5;
 const NOTE_SHARE: f32 = 0.55;
-const THUMB_RADIUS: f32 = 10.0;
 const THUMB_EDGE: f32 = 0.16;
 /// The wallpaper's picture is the screen's 16 to 10 (`THUMB`).
 const WALLPAPER_SHARE: f32 = 10.0 / 16.0;
@@ -1461,9 +1460,22 @@ pub fn paint_wallpaper_panel(
     let (x, y, w, h) = picture_at.device(s);
     match picture {
         Some(picture) => {
-            paint_kit::rounded_picture(pixmap, picture, (x, y, w, h), THUMB_RADIUS * s);
+            paint_kit::rounded_picture(
+                pixmap,
+                picture,
+                (x, y, w, h),
+                tokens.radius_window as f32 * s,
+            );
         }
-        None => fill(pixmap, x, y, w, h, THUMB_RADIUS * s, ink.raised),
+        None => fill(
+            pixmap,
+            x,
+            y,
+            w,
+            h,
+            tokens.radius_window as f32 * s,
+            ink.raised,
+        ),
     }
     let edge = Colour {
         a: THUMB_EDGE,
@@ -1472,7 +1484,7 @@ pub fn paint_wallpaper_panel(
     edit_kit::stroke(
         pixmap,
         (x, y, w, h),
-        THUMB_RADIUS * s,
+        tokens.radius_window as f32 * s,
         BAR_LINE * s,
         edge,
         None,
@@ -1604,7 +1616,7 @@ pub fn paint_drawer(pixmap: &mut Pixmap, view: &View, tokens: &Tokens, text: &mu
     // whole screen: the layer below has no room round the sheet. A bare strip
     // has no sheet, so it has no shadow either.
     if !view.drawer.bare {
-        lock::lift(pixmap, place, edit_kit::SHEET_RADIUS, s, tokens);
+        lock::lift(pixmap, place, tokens.radius_sheet as f32, s, tokens);
     }
     if let Some(mut layer) = Pixmap::new(
         (layout.size.0 as f32 * s).ceil() as u32,

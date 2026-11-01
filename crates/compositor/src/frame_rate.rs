@@ -178,7 +178,7 @@ fn paint(shown: &Shown, scale: f64, tokens: &Tokens, text: &mut Text) -> Option<
     };
     pixmap.stroke_path(
         &panel,
-        &paint_of(tokens.lock_glass_edge),
+        &paint_of(tokens.glass_rim),
         &edge,
         Transform::identity(),
         None,
@@ -203,7 +203,7 @@ fn paint(shown: &Shown, scale: f64, tokens: &Tokens, text: &mut Text) -> Option<
     let track = rounded(left, graph_top, room, GRAPH * s, 3.0 * s)?;
     pixmap.fill_path(
         &track,
-        &paint_of(tokens.lock_glass),
+        &paint_of(tokens.glass),
         FillRule::Winding,
         Transform::identity(),
         None,

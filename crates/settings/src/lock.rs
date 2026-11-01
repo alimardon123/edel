@@ -858,13 +858,7 @@ fn person(cr: &Context, rect: (f64, f64, f64, f64), scale: f64, t: &Tokens) {
     let (x, y, w, h) = rect;
     let pill = PILL_H * scale;
     let top = y + h - pill;
-    plate(
-        cr,
-        (x, top, w, pill),
-        pill / 2.0,
-        t.lock_glass,
-        t.lock_glass_edge,
-    );
+    plate(cr, (x, top, w, pill), pill / 2.0, t.glass, t.glass_rim);
     if h >= 2.5 * pill {
         let r = pill / 2.0;
         let (cx, cy) = (x + w / 2.0, top - pill * 0.3 - r);
@@ -872,8 +866,8 @@ fn person(cr: &Context, rect: (f64, f64, f64, f64), scale: f64, t: &Tokens) {
             cr,
             (cx - r, cy - r, 2.0 * r, 2.0 * r),
             r,
-            t.lock_glass,
-            t.lock_glass_edge,
+            t.glass,
+            t.glass_rim,
         );
     }
 }

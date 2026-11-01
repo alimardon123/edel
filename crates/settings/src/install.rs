@@ -1024,15 +1024,23 @@ impl Ui {
                 ui.erase_pressed();
             }
         });
-        self.restart.connect_clicked(|button| {
+        let weak = Rc::downgrade(self);
+        self.restart.connect_clicked(move |button| {
             button.set_sensitive(false);
             let button = button.clone();
+            let weak = weak.clone();
             glib::spawn_future_local(async move {
-                if let Ok(run) = gio::spawn_blocking(cmd::restart).await {
-                    if !run.ok {
-                        button.set_sensitive(true);
-                        eprintln!("edel-settings: install restart failed: {}", run.shown());
-                    }
+                // A restart that fails says why on the page, not only in
+                // the log (the review of 2026-10-25, again on 2026-10-31).
+                let why = match gio::spawn_blocking(cmd::restart).await {
+                    Ok(run) if run.ok => return,
+                    Ok(run) => run.shown(),
+                    Err(_) => String::new(),
+                };
+                button.set_sensitive(true);
+                eprintln!("edel-settings: install restart failed: {why}");
+                if let Some(ui) = weak.upgrade() {
+                    ui.say_problem(&restart_failed(&why));
                 }
             });
         });
@@ -1653,6 +1661,20 @@ impl Ui {
             disk_block(&run.out, &name).unwrap_or_default(),
             false,
         );
+    }
+}
+
+/// What the page says when Restart now fails: what happened, why, and
+/// the other way to restart (docs/MESSAGES.md).
+fn restart_failed(why: &str) -> String {
+    let why = why.trim();
+    if why.is_empty() {
+        tr("Edel OS could not restart the computer. Restart it from the power menu.").to_string()
+    } else {
+        trf(
+            "Edel OS could not restart the computer: {why}. Restart it from the power menu.",
+            &[("why", why)],
+        )
     }
 }
 
