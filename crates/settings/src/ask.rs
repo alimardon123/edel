@@ -7,7 +7,8 @@
 //! and says so; any other result is given to the page once, and the
 //! dialog closes. CI reads the line `edel-settings: update asked, exit N`
 //! (and `rollback asked` for going back). The System page's Erase
-//! everything (M8.38) uses it too, with what goes and what stays listed,
+//! everything (M8.38) uses it too, with what goes and what stays listed
+//! (on encrypted data also that the passphrase stays, as the command says),
 //! the machine's name to type and its button in the problem colour, which
 //! waits until both are typed (`edel-settings: factory-reset ready
 //! true`).
@@ -38,6 +39,9 @@ pub struct Ask {
     /// Lines under the prompt, such as what goes and what stays (`n_`
     /// marked); none for most.
     pub detail: &'static [&'static str],
+    /// A line of this machine's own after the detail, such as what stays
+    /// of encrypted data; none for most.
+    pub note: Option<fn() -> Option<&'static str>>,
     /// Whether the person types the machine's name too, as for a step
     /// nobody can undo; the button waits for it and a password.
     pub name: bool,
@@ -84,6 +88,15 @@ pub fn ask(
                 .build()
         })
         .collect();
+    // Already in the person's language, as the command says it.
+    let note = what.note.and_then(|note| note()).map(|line| {
+        gtk::Label::builder()
+            .label(line)
+            .xalign(0.0)
+            .wrap(true)
+            .css_classes(["edel-source"])
+            .build()
+    });
     // The machine's name, typed as `edel factory-reset` asks for it.
     let machine = edel::install::machine_name();
     let name = what.name.then(|| {
@@ -118,7 +131,7 @@ pub fn ask(
     let buttons = widgets::dialog_buttons(&[&cancel, &run]);
     let body = widgets::dialog_body(12);
     body.append(&prompt);
-    for line in &detail {
+    for line in detail.iter().chain(&note) {
         body.append(line);
     }
     if let Some((label, typed)) = &name {
