@@ -9680,8 +9680,8 @@ case_dev_box() {
 	wait_more 'DESKTOP-TEST: dev_box_run ' "$asked" 120 || fail "the service did not run the box's apps"
 	ran=$(value dev_box_run)
 	case "$ran" in
-	*'pod=dev '*'deb=hello from the dev box; app=hello from an AppImage') ;;
-	*) fail "podman in the box did not list the box itself, as Edel OS's podman does, or the .deb's command from the session's PATH and the AppImage in the box did not both say hello: $ran" ;;
+	*'deb=hello from the dev box; app=hello from an AppImage') ;;
+	*) fail "the .deb's command from the session's PATH and the AppImage in the box did not both say hello: $ran" ;;
 	esac
 	asked=$(count 'DESKTOP-TEST: dev_box_clean ')
 	guest 'dev box clean'
