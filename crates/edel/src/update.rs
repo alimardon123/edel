@@ -24,8 +24,6 @@ use edel::i18n::{tr, trf};
 const MIB: u64 = 1 << 20;
 /// Where edel keeps its runtime files; a tmpfs, so they vanish at reboot.
 const RUN_DIR: &str = edel::places::RUN_DIR;
-/// The environment block, relative to the EFI system partition.
-const ENV_FILE: &str = "EFI/edel/grubenv";
 
 /// A partition of the disk the system runs from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -244,7 +242,7 @@ impl Esp {
     fn mount(disk: &Disk) -> Result<Esp> {
         let dir = Path::new(RUN_DIR).join(format!("esp.{}", std::process::id()));
         fs::create_dir_all(&dir)?;
-        let dev = disk.device(1)?;
+        let dev = disk.device(crate::boot::ESP_PARTITION)?;
         // Name the character set: Alpine's virt kernel defaults to utf8 for
         // FAT but does not ship that module. dirsync writes every directory
         // change at once, so a rename in the loader swap never leaves an
@@ -268,7 +266,12 @@ impl Esp {
                 "{}",
                 trf(
                     "the EFI system partition has no {file}, so the slots cannot be read; this disk was not made by edel install, or it is damaged",
-                    &[("file", ENV_FILE)]
+                    &[(
+                        "file",
+                        &edel::places::on_esp(Path::new("/"), edel::places::GRUBENV)
+                            .display()
+                            .to_string(),
+                    )]
                 )
             );
         }
@@ -276,7 +279,7 @@ impl Esp {
     }
 
     fn env_path(&self) -> PathBuf {
-        self.dir.join(ENV_FILE)
+        edel::places::on_esp(&self.dir, edel::places::GRUBENV)
     }
 
     fn load(&self) -> Result<Env> {
@@ -333,54 +336,78 @@ impl Drop for Esp {
 /// One writer at a time: two installs would write the same slot, two
 /// applies the same account files. `name` names the lock file; `what`, the
 /// command taking it, is written beside the pid, so a refused command says
-/// who holds the lock.
-pub(crate) struct Lock(PathBuf);
+/// who holds the lock. The lock is the kernel's (`flock`) on the open
+/// file, held for the life of `Lock` and let go when the process ends,
+/// however it ends, so a killed updater leaves no lock and two commands
+/// can never both hold it; the file itself stays, and only its words
+/// change.
+pub(crate) struct Lock {
+    _held: File,
+}
 
 impl Lock {
     pub(crate) fn take(name: &str, what: &str) -> Result<Lock> {
         fs::create_dir_all(RUN_DIR)
             .map_err(|err| io_failure(err, &trf("could not write {path}", &[("path", RUN_DIR)])))?;
-        let path = Path::new(RUN_DIR).join(format!("{name}.lock"));
-        for _ in 0..2 {
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
-                Ok(mut file) => {
-                    writeln!(file, "{} {what}", std::process::id())?;
-                    return Ok(Lock(path));
-                }
-                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                    if !is_stale(&path) {
-                        let held = fs::read_to_string(&path).unwrap_or_default();
-                        bail!(
-                            "{}",
-                            trf(
-                                "{command} has to wait: {holder}; try again when it is done",
-                                &[("command", what), ("holder", &holder(&held))]
-                            )
-                        );
-                    }
-                    // A process killed mid-install leaves its lock behind;
-                    // the kernel no longer knows its pid.
-                    fs::remove_file(&path)?;
-                }
-                Err(err) => {
-                    return Err(io_failure(
-                        err,
-                        &trf(
-                            "could not take the lock {path}",
-                            &[("path", &path.display().to_string())],
-                        ),
-                    ));
-                }
-            }
-        }
-        bail!(
-            "{}",
-            trf(
-                "could not take the lock {path}: another edel command took it first; try again",
-                &[("path", &path.display().to_string())]
-            )
-        )
+        Lock::take_at(&Path::new(RUN_DIR).join(format!("{name}.lock")), what)
     }
+
+    fn take_at(path: &Path, what: &str) -> Result<Lock> {
+        let failed = |err| {
+            io_failure(
+                err,
+                &trf(
+                    "could not take the lock {path}",
+                    &[("path", &path.display().to_string())],
+                ),
+            )
+        };
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(failed)?;
+        if !try_flock(&file).map_err(failed)? {
+            let mut held = String::new();
+            let _ = file.read_to_string(&mut held);
+            bail!(
+                "{}",
+                trf(
+                    "{command} has to wait: {holder}; try again when it is done",
+                    &[("command", what), ("holder", &holder(&held))]
+                )
+            );
+        }
+        file.set_len(0)?;
+        file.write_all_at(format!("{} {what}\n", std::process::id()).as_bytes(), 0)?;
+        Ok(Lock { _held: file })
+    }
+}
+
+/// Takes the kernel's exclusive lock on `file` without waiting: whether
+/// it was free.
+fn try_flock(file: &File) -> std::io::Result<bool> {
+    use std::os::fd::AsRawFd;
+    // SAFETY: flock only reads the descriptor, which `file` keeps open.
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+        return Ok(true);
+    }
+    let err = std::io::Error::last_os_error();
+    if err.raw_os_error() == Some(libc::EWOULDBLOCK) {
+        Ok(false)
+    } else {
+        Err(err)
+    }
+}
+
+/// Whether a command holds the lock file at `path` now, by trying the
+/// kernel's lock on it (let go again at once).
+pub(crate) fn is_held(path: &Path) -> bool {
+    File::open(path)
+        .and_then(|file| try_flock(&file))
+        .is_ok_and(|free| !free)
 }
 
 /// `err` as the message for what failed (`doing`): a refusal by the system
@@ -428,35 +455,6 @@ fn holder(held: &str) -> String {
 /// the compositor's state file, M7.7c).
 pub(crate) fn alive(pid: u32) -> bool {
     Path::new("/proc").join(pid.to_string()).exists()
-}
-
-/// Whether `pid` is a running edel: only edel takes these locks, so a
-/// process of another name has the pid of a killed updater, not its lock.
-fn edel_runs(pid: u32) -> bool {
-    fs::read_to_string(Path::new("/proc").join(pid.to_string()).join("comm"))
-        .is_ok_and(|comm| comm.trim_end() == "edel")
-}
-
-/// A lock whose pid no longer runs. A lock with no pid yet is only stale
-/// once it is a few seconds old, since its holder writes the pid right
-/// after creating it.
-pub(crate) fn is_stale(path: &Path) -> bool {
-    match fs::read_to_string(path).ok().and_then(|t| {
-        t.split_whitespace()
-            .next()
-            .and_then(|p| p.parse::<u32>().ok())
-    }) {
-        Some(pid) => !edel_runs(pid),
-        None => fs::metadata(path)
-            .and_then(|m| m.modified())
-            .is_ok_and(|t| t.elapsed().is_ok_and(|age| age.as_secs() > 5)),
-    }
-}
-
-impl Drop for Lock {
-    fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
-    }
 }
 
 pub(crate) fn run(cmd: &mut Command) -> Result<()> {
@@ -1337,6 +1335,44 @@ mod tests {
             "edel update (pid 812) is running"
         );
         assert_eq!(holder(""), "another command is starting");
+    }
+
+    #[test]
+    fn one_command_at_a_time_holds_a_lock_even_after_a_crash() {
+        let dir = std::env::temp_dir().join(format!("edel-lock-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("update.lock");
+        // A killed updater leaves its words but not the kernel's lock.
+        fs::write(&path, "999999999 edel update\n").unwrap();
+        assert!(!is_held(&path));
+        let first = Lock::take_at(&path, "edel update").unwrap();
+        assert!(is_held(&path));
+        // Two takers at once, as the timer's update and the person's: only
+        // one may hold it, and the other is told who does.
+        let refused = std::thread::scope(|s| {
+            let a = s.spawn(|| Lock::take_at(&path, "edel rollback").map(|_| ()));
+            let b = s.spawn(|| Lock::take_at(&path, "edel update --automatic").map(|_| ()));
+            [a.join().unwrap(), b.join().unwrap()]
+        });
+        for err in refused {
+            let text = err.unwrap_err().to_string();
+            assert!(
+                text.contains(&format!(
+                    "edel update (pid {}) is running",
+                    std::process::id()
+                )),
+                "{text}"
+            );
+        }
+        drop(first);
+        assert!(!is_held(&path));
+        let second = Lock::take_at(&path, "edel rollback").unwrap();
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            format!("{} edel rollback\n", std::process::id())
+        );
+        drop(second);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

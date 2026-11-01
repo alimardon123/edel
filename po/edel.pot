@@ -1280,6 +1280,18 @@ msgstr ""
 msgid "the password for {ssid} was missing or wrong; try again with the right one"
 msgstr ""
 
+msgid "this NVIDIA card has no driver yet; add NVIDIA graphics (graphics-nvidia) in Settings, Add-ons, or with edel settings set addons.installed+=graphics-nvidia, then restart"
+msgstr ""
+
+msgid "this NVIDIA card (GTX 16, RTX 20 or newer) runs at full speed on the open driver, with NVIDIA's GSP firmware"
+msgstr ""
+
+msgid "this NVIDIA card (GTX 750 to GTX 10 series) works but stays at its slowest clocks, as NVIDIA lets only its own driver raise them: fine for the desktop and video, slow for games"
+msgstr ""
+
+msgid "this NVIDIA card (GTX 700 series or older) gets the basics on the open driver: the screen, video and light 3D"
+msgstr ""
+
 msgid "there is no panel {panel}"
 msgstr ""
 
@@ -1695,6 +1707,9 @@ msgid "not encrypted"
 msgstr ""
 
 msgid "no data partition"
+msgstr ""
+
+msgid "This computer's data stays encrypted with the same passphrase, the password it was installed with, which every start asks for. To give the computer to someone else, install Edel OS on it from a stick instead."
 msgstr ""
 
 msgid "on"
@@ -3098,13 +3113,10 @@ msgstr ""
 msgid "GRUB's environment block has no directory"
 msgstr ""
 
-msgid "{command} has to wait: {holder}; try again when it is done"
-msgstr ""
-
 msgid "could not take the lock {path}"
 msgstr ""
 
-msgid "could not take the lock {path}: another edel command took it first; try again"
+msgid "{command} has to wait: {holder}; try again when it is done"
 msgstr ""
 
 msgid "{doing}: permission denied; {command} changes the system, so it needs an administrator: doas {command}"
@@ -3201,9 +3213,6 @@ msgid "could not make the web app's profile in {path}"
 msgstr ""
 
 msgid "could not make the applications folder {path}"
-msgstr ""
-
-msgid "could not put {path} in place"
 msgstr ""
 
 msgid "no web app named {key}; edel web-app list shows yours"
@@ -3314,7 +3323,7 @@ msgstr ""
 msgid "Go back to the version in the other slot, the one before the last update; it starts at the next restart"
 msgstr ""
 
-msgid "Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new"
+msgid "Erase every account, every person's files and this machine's settings, keeping the default apps and the version of Edel OS, and restart into a first start: the machine as new; encrypted data keeps its passphrase, so to give the computer away, install Edel OS on it from a stick instead"
 msgstr ""
 
 msgid "Erase without asking for the machine's name, for scripts"

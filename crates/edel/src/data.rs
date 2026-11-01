@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::sleep;
@@ -166,25 +166,10 @@ fn merge_accounts(slot: &str, machine: &str) -> Option<String> {
 /// directory, keeping its mode and owner (`shadow` stays 0640
 /// root:shadow), so a power cut leaves the old or the new file.
 fn replace_keeping_mode(path: &Path, text: &str) -> Result<()> {
-    let meta = fs::metadata(path)?;
-    let new = PathBuf::from(format!("{}.edel-new", path.display()));
-    // Private from the start, as it holds password hashes; one left by a
-    // cut is made again.
-    let _ = fs::remove_file(&new);
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&new)?;
-    file.write_all(text.as_bytes())?;
-    std::os::unix::fs::chown(&new, Some(meta.uid()), Some(meta.gid()))?;
-    fs::set_permissions(&new, meta.permissions())?;
-    file.sync_all()?;
-    fs::rename(&new, path)?;
-    if let Some(dir) = path.parent() {
-        fs::File::open(dir)?.sync_all()?;
-    }
-    Ok(())
+    // Never more open than the file while written, as it holds password
+    // hashes (`edel::files`).
+    fs::metadata(path)?;
+    Ok(edel::files::replace(path, text.as_bytes())?)
 }
 
 /// Mounts an overlay on `/etc`: the slot's `/etc` below, this machine's

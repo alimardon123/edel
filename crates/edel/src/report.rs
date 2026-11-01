@@ -431,6 +431,9 @@ struct Pci {
     class: String,
     /// The bound driver, or `none`
     driver: String,
+    /// What an NVIDIA card can do on the open driver (M8.39c)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    says: Option<String>,
 }
 
 fn read_trimmed(path: &Path) -> String {
@@ -452,11 +455,17 @@ fn pci_devices(devices: &Path) -> Vec<Pci> {
                 .ok()
                 .and_then(|link| link.file_name().map(|n| n.to_string_lossy().into_owned()))
                 .unwrap_or_else(|| "none".into());
+            let (vendor, device, class) = (
+                read_trimmed(&dir.join("vendor")),
+                read_trimmed(&dir.join("device")),
+                read_trimmed(&dir.join("class")),
+            );
             Pci {
                 address: entry.file_name().to_string_lossy().into_owned(),
-                vendor: read_trimmed(&dir.join("vendor")),
-                device: read_trimmed(&dir.join("device")),
-                class: read_trimmed(&dir.join("class")),
+                says: edel::nvidia::says(&vendor, &class, &device, &driver),
+                vendor,
+                device,
+                class,
                 driver,
             }
         })
@@ -686,9 +695,11 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         let gpu = dir.join("0000:00:02.0");
         let wifi = dir.join("0000:00:14.3");
+        let nvidia = dir.join("0000:01:00.0");
         for (path, vendor, device, class) in [
             (&gpu, "0x8086", "0x9a49", "0x030000"),
             (&wifi, "0x8086", "0xa0f0", "0x028000"),
+            (&nvidia, "0x10de", "0x2504", "0x030000"),
         ] {
             fs::create_dir_all(path).unwrap();
             fs::write(path.join("vendor"), format!("{vendor}\n")).unwrap();
@@ -698,10 +709,19 @@ mod tests {
         std::os::unix::fs::symlink("../../../bus/pci/drivers/i915", gpu.join("driver")).unwrap();
         let devices = pci_devices(&dir);
         fs::remove_dir_all(&dir).unwrap();
-        assert_eq!(devices.len(), 2);
+        assert_eq!(devices.len(), 3);
         assert_eq!(devices[0].driver, "i915");
         assert_eq!(devices[0].device, "0x9a49");
+        assert_eq!(devices[0].says, None);
         assert_eq!(devices[1].driver, "none");
+        // An NVIDIA card without its pack says how to give it a driver
+        // (M8.39c).
+        assert!(
+            devices[2]
+                .says
+                .as_deref()
+                .is_some_and(|s| s.contains("graphics-nvidia"))
+        );
     }
 
     #[test]
@@ -788,6 +808,7 @@ mod tests {
                 device: "0x9a49".into(),
                 class: "0x030000".into(),
                 driver: "i915".into(),
+                says: None,
             }],
             missing_firmware: vec![Missing {
                 driver: "iwlwifi".into(),
