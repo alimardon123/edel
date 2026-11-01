@@ -177,6 +177,10 @@ pub fn page() -> gtk::Widget {
     // The machine's profile (M7.6), after developer mode.
     crate::profiles::group(&content);
 
+    // The desktop add-on (M8.21, T2), on its own rather than among the
+    // Add-ons page's extras.
+    crate::addons::desktop(&page, &content);
+
     // Erase everything (M8.38), last, as the step nobody undoes.
     erase(&content);
 
