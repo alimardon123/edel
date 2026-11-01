@@ -37,16 +37,24 @@
 # its tests, alone on its runner, so other VMs do not slow the boots it times.
 set -u
 
+# free: the free disk where the lane writes, so a runner that runs out
+# can be told from a test that fills it (on 2026-11-01 a live lane's
+# runner ran out of disk and its log was lost with it).
+free() {
+	df -Pk . | awk 'NR == 2 { printf "%.1f GiB", $4 / 1048576 }'
+}
+
 # lane SCRIPT...: runs each ci/SCRIPT in order until one fails; a SCRIPT
 # may carry its arguments, as in 'desktop-test.sh rollback'.
 lane() {
 	for script in "$@"; do
-		echo "== sh ci/$script"
+		echo "== sh ci/$script (free disk: $(free))"
 		sh ci/$script || {
-			echo "FAIL: sh ci/$script"
+			echo "FAIL: sh ci/$script (free disk: $(free))"
 			return 1
 		}
 	done
+	echo "== the lane's tests ended (free disk: $(free))"
 }
 
 # run_lane LANE: the lane's tests, in order.
