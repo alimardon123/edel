@@ -11,283 +11,454 @@ use crate::tokens::Colour;
 
 /// Each icon's name and its file.
 pub const BUILT_IN: [(&str, &str); 81] = [
-    ("menu", include_str!("../../../design/icons/menu.svg")),
-    ("more", include_str!("../../../design/icons/more.svg")),
+    (
+        "menu",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/menu.svg")),
+    ),
+    (
+        "more",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/more.svg")),
+    ),
     // Customize, a look's edit (M5.10c7b).
-    ("edit", include_str!("../../../design/icons/edit.svg")),
+    (
+        "edit",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/edit.svg")),
+    ),
     // An app with no icon of its own, in the window list (M5.29).
     (
         "app-generic",
-        include_str!("../../../design/icons/app-generic.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/app-generic.svg"
+        )),
     ),
     (
         "layout-floating",
-        include_str!("../../../design/icons/layout-floating.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/layout-floating.svg"
+        )),
     ),
     (
         "layout-tiling",
-        include_str!("../../../design/icons/layout-tiling.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/layout-tiling.svg"
+        )),
     ),
     (
         "minimize",
-        include_str!("../../../design/icons/minimize.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/minimize.svg")),
     ),
     (
         "maximize",
-        include_str!("../../../design/icons/maximize.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/maximize.svg")),
     ),
-    ("restore", include_str!("../../../design/icons/restore.svg")),
-    ("close", include_str!("../../../design/icons/close.svg")),
+    (
+        "restore",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/restore.svg")),
+    ),
+    (
+        "close",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/close.svg")),
+    ),
     // Settings' (M5.6a): its pages, its search field, Copy as command,
     // the chosen card, the way back from a page on a narrow window and a
     // value chosen from a few.
     (
         "page-layout",
-        include_str!("../../../design/icons/page-layout.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-layout.svg"
+        )),
     ),
     // The Panels, Workspaces and Appearance pages' (M5.2q).
     (
         "page-panels",
-        include_str!("../../../design/icons/page-panels.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-panels.svg"
+        )),
     ),
     (
         "page-workspaces",
-        include_str!("../../../design/icons/page-workspaces.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-workspaces.svg"
+        )),
     ),
     (
         "page-appearance",
-        include_str!("../../../design/icons/page-appearance.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-appearance.svg"
+        )),
     ),
     (
         "page-displays",
-        include_str!("../../../design/icons/page-displays.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-displays.svg"
+        )),
     ),
     (
         "page-about",
-        include_str!("../../../design/icons/page-about.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/page-about.svg")),
     ),
     // Settings' Lock screen page (M5.32c).
     (
         "page-lock-screen",
-        include_str!("../../../design/icons/page-lock-screen.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-lock-screen.svg"
+        )),
     ),
     // The Sound page's (M5.7b).
     (
         "page-sound",
-        include_str!("../../../design/icons/page-sound.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/page-sound.svg")),
     ),
     // The Network and Bluetooth pages' (M5.8a), and the padlock of a Wi-Fi
     // network that asks for a password.
     (
         "page-network",
-        include_str!("../../../design/icons/page-network.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-network.svg"
+        )),
     ),
     (
         "page-bluetooth",
-        include_str!("../../../design/icons/page-bluetooth.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-bluetooth.svg"
+        )),
     ),
     // Settings' Region page (M6.11): a globe.
     (
         "page-region",
-        include_str!("../../../design/icons/page-region.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-region.svg"
+        )),
     ),
-    ("lock", include_str!("../../../design/icons/lock.svg")),
+    (
+        "lock",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/lock.svg")),
+    ),
     // The Power and Users pages' (M5.8b).
     (
         "page-power",
-        include_str!("../../../design/icons/page-power.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/page-power.svg")),
     ),
     (
         "page-users",
-        include_str!("../../../design/icons/page-users.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/page-users.svg")),
     ),
     // Settings' installer page, shown on a stick (M6.6a).
     (
         "page-install",
-        include_str!("../../../design/icons/page-install.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-install.svg"
+        )),
     ),
     // The Updates and System pages' (M5.8c).
     (
         "page-updates",
-        include_str!("../../../design/icons/page-updates.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-updates.svg"
+        )),
     ),
     (
         "page-system",
-        include_str!("../../../design/icons/page-system.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-system.svg"
+        )),
     ),
     // The Add-ons page's (M7.2b).
     (
         "page-addons",
-        include_str!("../../../design/icons/page-addons.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/page-addons.svg"
+        )),
     ),
-    ("search", include_str!("../../../design/icons/search.svg")),
-    ("copy", include_str!("../../../design/icons/copy.svg")),
-    ("check", include_str!("../../../design/icons/check.svg")),
-    ("back", include_str!("../../../design/icons/back.svg")),
-    ("updown", include_str!("../../../design/icons/updown.svg")),
+    (
+        "search",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/search.svg")),
+    ),
+    (
+        "copy",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/copy.svg")),
+    ),
+    (
+        "check",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/check.svg")),
+    ),
+    (
+        "back",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/back.svg")),
+    ),
+    (
+        "updown",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/updown.svg")),
+    ),
     // The Updates page's big status icons (M5.8d).
     (
         "status-ok",
-        include_str!("../../../design/icons/status-ok.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/status-ok.svg")),
     ),
     (
         "status-sync",
-        include_str!("../../../design/icons/status-sync.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/status-sync.svg"
+        )),
     ),
     (
         "status-new",
-        include_str!("../../../design/icons/status-new.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/status-new.svg")),
     ),
     (
         "status-restart",
-        include_str!("../../../design/icons/status-restart.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/status-restart.svg"
+        )),
     ),
     (
         "status-problem",
-        include_str!("../../../design/icons/status-problem.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/status-problem.svg"
+        )),
     ),
     // The panel's status area and quick settings (M5.9a): the network by
     // its kind and signal, the volume by its level, the battery and the
     // marks of a charging one, and the tiles' and buttons' own.
     (
         "net-wired",
-        include_str!("../../../design/icons/net-wired.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/net-wired.svg")),
     ),
     (
         "net-wifi-1",
-        include_str!("../../../design/icons/net-wifi-1.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/net-wifi-1.svg")),
     ),
     (
         "net-wifi-2",
-        include_str!("../../../design/icons/net-wifi-2.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/net-wifi-2.svg")),
     ),
     (
         "net-wifi-3",
-        include_str!("../../../design/icons/net-wifi-3.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/net-wifi-3.svg")),
     ),
     (
         "net-offline",
-        include_str!("../../../design/icons/net-offline.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/net-offline.svg"
+        )),
     ),
     (
         "airplane",
-        include_str!("../../../design/icons/airplane.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/airplane.svg")),
     ),
     (
         "volume-muted",
-        include_str!("../../../design/icons/volume-muted.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/volume-muted.svg"
+        )),
     ),
     (
         "volume-low",
-        include_str!("../../../design/icons/volume-low.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/volume-low.svg")),
     ),
     (
         "volume-medium",
-        include_str!("../../../design/icons/volume-medium.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/volume-medium.svg"
+        )),
     ),
     (
         "volume-high",
-        include_str!("../../../design/icons/volume-high.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/volume-high.svg"
+        )),
     ),
     (
         "brightness",
-        include_str!("../../../design/icons/brightness.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/brightness.svg")),
     ),
-    ("battery", include_str!("../../../design/icons/battery.svg")),
+    (
+        "battery",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/battery.svg")),
+    ),
     (
         "battery-level",
-        include_str!("../../../design/icons/battery-level.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/battery-level.svg"
+        )),
     ),
     (
         "battery-bolt",
-        include_str!("../../../design/icons/battery-bolt.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/battery-bolt.svg"
+        )),
     ),
-    ("moon", include_str!("../../../design/icons/moon.svg")),
+    (
+        "moon",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/moon.svg")),
+    ),
     // Power: the lock screen's corner button and its menu (M5.10c).
-    ("power", include_str!("../../../design/icons/power.svg")),
-    ("restart", include_str!("../../../design/icons/restart.svg")),
-    ("person", include_str!("../../../design/icons/person.svg")),
+    (
+        "power",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/power.svg")),
+    ),
+    (
+        "restart",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/restart.svg")),
+    ),
+    (
+        "person",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/person.svg")),
+    ),
     (
         "arrow-right",
-        include_str!("../../../design/icons/arrow-right.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/arrow-right.svg"
+        )),
     ),
     (
         "caps-lock",
-        include_str!("../../../design/icons/caps-lock.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/caps-lock.svg")),
     ),
     (
         "chevron-right",
-        include_str!("../../../design/icons/chevron-right.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/chevron-right.svg"
+        )),
     ),
     (
         "chevron-down",
-        include_str!("../../../design/icons/chevron-down.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/chevron-down.svg"
+        )),
     ),
     (
         "chevron-up",
-        include_str!("../../../design/icons/chevron-up.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/chevron-up.svg")),
     ),
-    ("gear", include_str!("../../../design/icons/gear.svg")),
+    (
+        "gear",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/gear.svg")),
+    ),
     // The game mode pop-up's pill (M7.7).
-    ("game", include_str!("../../../design/icons/game.svg")),
+    (
+        "game",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/game.svg")),
+    ),
     // The notification centre's and the Do not disturb tile's (M5.9b).
-    ("bell", include_str!("../../../design/icons/bell.svg")),
+    (
+        "bell",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/bell.svg")),
+    ),
     // What an app may use (M6.14a), each permission's own; the bell is
     // the notifications'.
-    ("camera", include_str!("../../../design/icons/camera.svg")),
+    (
+        "camera",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/camera.svg")),
+    ),
     (
         "location",
-        include_str!("../../../design/icons/location.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/location.svg")),
     ),
     (
         "microphone",
-        include_str!("../../../design/icons/microphone.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/microphone.svg")),
     ),
     (
         "screenshot",
-        include_str!("../../../design/icons/screenshot.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/screenshot.svg")),
     ),
-    ("folder", include_str!("../../../design/icons/folder.svg")),
+    (
+        "folder",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/folder.svg")),
+    ),
     (
         "do-not-disturb",
-        include_str!("../../../design/icons/do-not-disturb.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/do-not-disturb.svg"
+        )),
     ),
     // Developer mode in effect, in the panel's status pill (M7.1).
     (
         "developer",
-        include_str!("../../../design/icons/developer.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/developer.svg")),
     ),
     (
         "chevron-left",
-        include_str!("../../../design/icons/chevron-left.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/chevron-left.svg"
+        )),
     ),
     // Now playing's buttons (M5.9d): play, pause and the two track buttons.
     (
         "media-play",
-        include_str!("../../../design/icons/media-play.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/media-play.svg")),
     ),
     (
         "media-pause",
-        include_str!("../../../design/icons/media-pause.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/media-pause.svg"
+        )),
     ),
     (
         "media-previous",
-        include_str!("../../../design/icons/media-previous.svg"),
+        include_str!(concat!(
+            env!("EDEL_SOURCE"),
+            "/design/icons/media-previous.svg"
+        )),
     ),
     (
         "media-next",
-        include_str!("../../../design/icons/media-next.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/media-next.svg")),
     ),
     // The edit mode's parts (M5.10c6c3): the lock screen's clock, date,
     // message, picture and now playing, in its drawer and on its tiles.
-    ("clock", include_str!("../../../design/icons/clock.svg")),
+    (
+        "clock",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/clock.svg")),
+    ),
     (
         "calendar",
-        include_str!("../../../design/icons/calendar.svg"),
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/calendar.svg")),
     ),
-    ("message", include_str!("../../../design/icons/message.svg")),
-    ("picture", include_str!("../../../design/icons/picture.svg")),
-    ("music", include_str!("../../../design/icons/music.svg")),
+    (
+        "message",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/message.svg")),
+    ),
+    (
+        "picture",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/picture.svg")),
+    ),
+    (
+        "music",
+        include_str!(concat!(env!("EDEL_SOURCE"), "/design/icons/music.svg")),
+    ),
 ];
 
 /// The icon `name` drawn `px` pixels square in `colour`; none for a name
