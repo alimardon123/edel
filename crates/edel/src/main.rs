@@ -220,9 +220,9 @@ enum Commands {
         /// List the disks Edel OS could install on, and change nothing
         #[arg(long)]
         list: bool,
-        /// Look on every other disk for a settings file to install with
-        /// (the settings file, at its top or in EFI/edel)
-        /// and print it, changing nothing
+        /// Look on every other disk, or on the Edel OS stick's own EDEL-ESP
+        /// drive, for a settings file to install with (the settings file,
+        /// at its top or in EFI/edel) and print it, changing nothing
         #[arg(long)]
         find_settings: bool,
         /// Only show the plan: what would be erased and written; change

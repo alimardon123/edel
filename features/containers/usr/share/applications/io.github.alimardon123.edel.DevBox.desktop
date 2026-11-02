@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Dev box
+Comment=A terminal in your dev box, for software that is not on Flathub
+Exec=edel-dev-box
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;System;
+Keywords=distrobox;container;deb;rpm;appimage;toolbox;

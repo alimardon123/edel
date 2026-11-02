@@ -2,10 +2,8 @@
 # Runs the VM tests in lanes. CI runs each lane on a runner of its own, fed
 # the images the build job made as one archive per lane (CI speed-ups,
 # 2026-10-16), so the lanes run at once and none slows another:
-#   installed  install-test.sh, ab-test.sh (it boots the disk the first
-#              installed), then apps-test.sh, the default apps across an
-#              update, then updates-test.sh, an update with nobody typing
-#              (M7.5)
+#   installed  install-test.sh, then ab-test.sh (it boots the disk the
+#              first installed)
 #   system     boot-test.sh, system-test.sh, developer-test.sh (M7.1),
 #              flatpak-test.sh, then
 #              `desktop-test.sh rollback`, which restarts the desktop VM
@@ -16,7 +14,11 @@
 #   fleet      fleet-test.sh, the fleet images and the stick that installs
 #              itself (M7.3), then server-test.sh, the seeded server and
 #              the cloud instance (M7.4), then upgrade-test.sh, an old
-#              release's disk updated to this build (M3.5)
+#              release's disk updated to this build (M3.5), then
+#              apps-test.sh, the default apps across an update, then
+#              updates-test.sh, an update with nobody typing (M7.5); these
+#              two left installed on 2026-11-01, as that lane ended the run
+#              8 minutes after fleet
 # Each lane runs its tests in order and stops at the first failure.
 #
 #   sh ci/vm-tests.sh             every lane on this machine: installed beside
@@ -60,11 +62,11 @@ lane() {
 # run_lane LANE: the lane's tests, in order.
 run_lane() {
 	case "$1" in
-	installed) lane install-test.sh ab-test.sh apps-test.sh updates-test.sh ;;
+	installed) lane install-test.sh ab-test.sh ;;
 	system) lane boot-test.sh system-test.sh developer-test.sh flatpak-test.sh 'desktop-test.sh rollback' ;;
 	live) lane 'desktop-test.sh live' ;;
 	fresh) lane 'desktop-test.sh fresh' ;;
-	fleet) lane fleet-test.sh server-test.sh upgrade-test.sh ;;
+	fleet) lane fleet-test.sh server-test.sh upgrade-test.sh apps-test.sh updates-test.sh ;;
 	*) no_lane "$1" ;;
 	esac
 }
@@ -84,10 +86,10 @@ archive() {
 # files LANE: what the lane's tests read from out/, as build.sh made it.
 files() {
 	case "$1" in
-	installed) echo out/install-test out/ab-test out/apps-repo out/apps-test out/updates-test ;;
+	installed) echo out/install-test out/ab-test ;;
 	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-x86_64.img out/install-file.img ;;
-	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/upgrade-test out/keys out/edel-container-x86_64.tar.gz ;;
+	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/upgrade-test out/keys out/edel-container-x86_64.tar.gz out/apps-repo out/apps-test out/updates-test out/ab-test/update ;;
 	*) no_lane "$1" ;;
 	esac
 }

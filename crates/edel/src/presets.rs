@@ -1175,7 +1175,9 @@ mod tests {
         assert_eq!(windows.windows.buttons, Side::Right);
         assert_eq!(
             windows.apps.pinned,
-            ["files", "browser", "terminal", "mail", "music", "store"]
+            [
+                "install", "files", "browser", "terminal", "mail", "music", "store"
+            ]
         );
         let panel = &windows.panels[0];
         assert_eq!(panel.edge, Edge::Bottom);
@@ -1184,7 +1186,7 @@ mod tests {
         // Classic and Hive pin nothing: they have no apps widget.
         assert_eq!(
             named(None).0.apps.pinned,
-            ["browser", "files", "editor", "terminal", "store"]
+            ["install", "browser", "files", "editor", "terminal", "store"]
         );
     }
 

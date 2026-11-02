@@ -213,6 +213,12 @@ pub const LIVE_USER: &str = "live";
 pub const LIVE_UID: u32 = 990;
 /// greetd's config with the live session (M3.6).
 pub const GREETD_LIVE: &str = run!("/greetd.toml");
+/// The stick's own launcher entries (the install button): a folder outside
+/// the launcher's paths, linked into the live account's applications by
+/// `edel boot live` only on a stick.
+pub const LIVE_APPS_DIR: &str = share!("/live");
+/// The install button's desktop file id, the stick's first pin.
+pub const INSTALL_APP: &str = "io.github.alimardon123.edel.Install.desktop";
 /// Who the session at the screen belongs to, the one person the
 /// controllers and `/dev/uinput` are given to (M8.37): written by
 /// `edel-seat` when greetd opens a session and taken out when it closes.
@@ -419,6 +425,7 @@ pub fn shell_vars() -> Vec<(&'static str, String)> {
         ("screen_file", SCREEN.to_string()),
         ("started_file", STARTED.to_string()),
         ("greetd_live", GREETD_LIVE.to_string()),
+        ("live_apps_dir", LIVE_APPS_DIR.to_string()),
         ("seat_owner", SEAT_OWNER.to_string()),
         ("last_fallback", LAST_FALLBACK.to_string()),
         ("addons_dir", ADDONS_DIR.to_string()),

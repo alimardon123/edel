@@ -1,0 +1,34 @@
+#!/bin/sh
+# VSCodium in the dev box (M7.19): the launcher's VSCodium. Its first open
+# makes the box (edel-dev-box) and installs VSCodium in it from VSCodium's
+# own Debian repository, signed by the key beside distrobox.conf, so the
+# editor, its terminal, its builds and its language tools all run in the
+# box, on the person's home. Later opens start it at once and, at most once
+# a day, bring it up to date in the background, as Flatpak apps are; nothing
+# runs while the editor is closed.
+set -eu
+key=/run/host/usr/share/distrobox/vscodium.asc
+repo="deb [signed-by=/etc/apt/keyrings/vscodium.asc] https://download.vscodium.com/debs vscodium main"
+stamp="${XDG_STATE_HOME:-$HOME/.local/state}/edel/codium-updated"
+if ! edel-dev-box sh -c 'command -v codium' >/dev/null 2>&1; then
+	# Opened from the launcher: the install shows in a terminal window,
+	# which closes when the editor starts.
+	if [ ! -t 1 ]; then
+		exec foot --title "Installing VSCodium" "$0" "$@"
+	fi
+	echo "Installing VSCodium in your dev box. This happens once and needs the internet."
+	edel-dev-box sh -c "sudo install -D -m 644 $key /etc/apt/keyrings/vscodium.asc &&
+		echo '$repo' | sudo tee /etc/apt/sources.list.d/vscodium.list >/dev/null &&
+		sudo apt-get update -q && sudo apt-get install -y -q codium" || {
+		echo "VSCodium could not be installed in the dev box; the lines above say why."
+		echo "Open VSCodium again to try once more, for example when the internet is back."
+		exit 1
+	}
+	mkdir -p "$(dirname "$stamp")" && touch "$stamp"
+elif [ -z "$(find "$stamp" -mtime -1 2>/dev/null)" ]; then
+	mkdir -p "$(dirname "$stamp")" && touch "$stamp"
+	edel-dev-box sh -c 'sudo apt-get update -q && sudo apt-get install -y -q --only-upgrade codium' \
+		>/dev/null 2>&1 &
+fi
+# Wayland itself, not XWayland, so text is sharp at every scale.
+exec edel-dev-box codium --ozone-platform-hint=auto "$@"

@@ -139,6 +139,11 @@ pub struct Alpine {
     /// The same for system groups.
     #[serde(default)]
     pub groups: BTreeMap<String, u32>,
+    /// Repositories of Alpine edge, written tagged `@edge`, so a feature
+    /// can take one package from edge (`NAME@edge`) while the branch lacks
+    /// a fix it needs; apk takes nothing else from them.
+    #[serde(default)]
+    pub edge: Vec<String>,
 }
 
 /// OpenRC services to enable, by runlevel.
@@ -395,8 +400,10 @@ fn is_step(s: &str) -> bool {
     }
 }
 
-/// Alpine package names: lowercase letters, digits and `-_.+`.
+/// Alpine package names: lowercase letters, digits and `-_.+`, with
+/// `@edge` after one taken from Alpine edge (`Alpine::edge`).
 fn is_package(s: &str) -> bool {
+    let s = s.strip_suffix("@edge").unwrap_or(s);
     !s.is_empty()
         && !s.starts_with('-')
         && s.chars().all(|c| {
