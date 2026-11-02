@@ -488,6 +488,9 @@ msgstr ""
 msgid "{id} (not installed)"
 msgstr ""
 
+msgid "The apps that open your web links, files, text, terminal and mail."
+msgstr ""
+
 msgid "Opaque"
 msgstr ""
 
@@ -1932,6 +1935,9 @@ msgid "Remove {app}"
 msgstr ""
 
 msgid "Add an app"
+msgstr ""
+
+msgid "Apps that open by themselves after you log in."
 msgstr ""
 
 msgid "Checking for updates..."

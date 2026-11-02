@@ -197,9 +197,16 @@ fn monitors() -> Vec<gio::FileMonitor> {
 }
 
 pub fn page() -> gtk::Widget {
-    let words = PAGES.iter().find(|p| p.section == "startup");
-    let (title, about) = words.map_or(("", ""), |p| (p.title, p.about));
-    let (page, content, problem) = widgets::page(tr(title), tr(about));
+    let title = PAGES
+        .iter()
+        .find(|p| p.section == "startup")
+        .map_or("", |p| p.title);
+    // A sentence of its own, as every page has: the page table's `about`
+    // is a lower-case phrase for `edel settings` lists.
+    let (page, content, problem) = widgets::page(
+        tr(title),
+        tr("Apps that open by themselves after you log in."),
+    );
     let source = widgets::section(&content, rows::title(KEY));
     let group = widgets::group(&content);
     let ui = Rc::new(Ui {
