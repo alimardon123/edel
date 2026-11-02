@@ -10034,6 +10034,7 @@ if [ "$*" = live ]; then
 	# stick wrote on its data partition (M5.28a).
 	stick="$dir/stick.img"
 	cp --sparse=always out/edel-x86_64.img "$stick"
+	flush_copy "$stick"
 	# stick_logs: the session's, greetd's and the system's logs from the
 	# stick's data partition (partition 4), which /home and /var live on.
 	stick_logs() {
@@ -10181,12 +10182,9 @@ sys.stdout.buffer.write(bytes(out))
 		echo "  Settings mapped about $i s after Return in the launcher ($1)"
 		sleep 5
 	}
-	# What the runner brings to the try walk, which varied from 7.5 to
-	# 14.1 s (2026-11-02) while the kernel's own part stayed near 1.2 s:
-	# how much of the stick the runner's page cache holds, and, after the
-	# boot, its share of processor time spent waiting on disks or taken
-	# by its own host, with the boot's longest waits (stamped log).
-	fincore "$stick" 2>/dev/null | sed 's/^/  runner page cache: /'
+	# What the runner brings to the try walk: after the boot, its share
+	# of processor time spent waiting on disks or taken by its own host,
+	# with the boot's longest waits (stamped log).
 	load_before=$(host_load)
 	# Offline (M6.2): the stick reaches nothing beyond the VM's own
 	# network, so the default apps must start from what it carries.
@@ -10518,6 +10516,7 @@ if [ "$*" = fresh ]; then
 	rm -f "$QMP"
 	fresh="$dir/fresh.img"
 	cp --sparse=always out/edel-x86_64.img "$fresh"
+	flush_copy "$fresh"
 	fresh_log=out/desktop-fresh.log
 	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
 	# for debugfs, its journal replayed on the copy.
@@ -10636,6 +10635,7 @@ fi
 grown="$dir/edel-desktop-grown.img"
 cp --sparse=always "$dir/edel-desktop-x86_64.img" "$grown"
 truncate -s +4G "$grown"
+flush_copy "$grown"
 trap 'rm -f "$grown"' EXIT
 
 # Any restart ends the VM, so a crash is never missed, except in rollback,
