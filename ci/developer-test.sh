@@ -17,7 +17,7 @@ run_vm "$log" 'DEVELOPER-TEST: (PASS|FAIL)' "${DEVELOPER_TEST_TIMEOUT:-900}" -sn
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 cat "$log"
 log_has() {
-	tr -d '\r' <"$log" | grep -q "$1"
+	tr -d '\r' <"$log" 2>/dev/null | grep -q "$1"
 }
 # The hang's start: the guard restarted once more, as the layer was on.
 if ! log_has 'edel guard: health not reached after'; then

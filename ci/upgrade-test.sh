@@ -117,11 +117,11 @@ upgrade() {
 	kill "$server" 2>/dev/null || true
 	cat "$out"
 	log_has() {
-		tr -d '\r' <"$out" | grep -q "$1"
+		tr -d '\r' <"$out" 2>/dev/null | grep -q "$1"
 	}
 	log_has 'UPGRADE-TEST: installed, restarting' || fail "$name ($old, $channel) did not install this build"
 	{ [ "$found" = 1 ] && log_has 'edel update: slot B confirmed'; } || fail "$name: this build did not start and confirm in slot B after the update"
-	loader=$(tr -d '\r' <"$out" | sed -n 's/.*edel update: \(boot loader updated to .*\)$/\1/p' | head -n 1)
+	loader=$(tr -d '\r' <"$out" 2>/dev/null | sed -n '/.*edel update: \(boot loader updated to .*\)$/{s//\1/p;q;}')
 
 	# Once more, under the loader slot B left on the old disk.
 	run_vm "$again" 'edel update: slot B confirmed' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
