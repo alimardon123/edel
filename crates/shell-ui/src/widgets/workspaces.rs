@@ -28,7 +28,7 @@ use edel::tokens::{Colour, Tokens};
 use tiny_skia::{FillRule, LineCap, LineJoin, PathBuilder, Pixmap, PixmapPaint, Stroke, Transform};
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{Face, Text, fill, mix, paint_of, rounded};
+use crate::paint::{Face, Text, fill, paint_of, rounded};
 
 pub const WIDGET: Widget = Widget {
     name: edel::widgets::WORKSPACES.name,
@@ -548,7 +548,7 @@ fn button(
         let ink = if on {
             tokens.accent_text
         } else {
-            mix(tokens.panel_text, tokens.panel, 0.3)
+            super::dim(tokens, 0.3)
         };
         text.draw(pixmap, &mut line, tx, ty, ink);
     }
@@ -650,7 +650,7 @@ fn draw_numbers(canvas: &mut Canvas, view: &View, x: f32) {
         );
     }
     let strip = (end_width(view.ends) * s).round();
-    let muted = mix(tokens.panel_text, tokens.panel, 0.3);
+    let muted = super::dim(tokens, 0.3);
     // `arrows`: a bare arrow at each end, near the buttons, in the text's
     // colour where more lie that way and faint where none do, so the strip
     // keeps its width and shape as the view moves.
@@ -1272,5 +1272,87 @@ mod tests {
                     .unwrap();
             }
         }
+    }
+
+    /// On a see-through panel (Glass) over a blue wallpaper, the unchosen
+    /// numbers keep a readable contrast with their button (at least 4.5:1,
+    /// WCAG's for text), where dimming them towards the panel's colour gave
+    /// 2.4:1 in CI's `glass.png`. The backdrop is that picture's pixel.
+    #[test]
+    fn unchosen_numbers_stay_readable_on_glass() {
+        let luminance = |p: [u8; 3]| {
+            let c = p.map(|v| {
+                let v = v as f32 / 255.0;
+                if v <= 0.04045 {
+                    v / 12.92
+                } else {
+                    ((v + 0.055) / 1.055).powf(2.4)
+                }
+            });
+            0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        };
+        let mut text = Text::load(&Tokens::built_in().font);
+        let live = Live {
+            workspaces: (0..3).map(|i| ((i + 1).to_string(), i == 0)).collect(),
+            workspaces_look: Look::Numbers,
+            workspaces_shown: DEFAULT_SHOWN,
+            workspaces_ends: Ends::Arrows,
+            ..Live::default()
+        };
+        let shown = shows(&live);
+        let mut ratios = Vec::new();
+        for (name, opacity) in [("glass-before", 100), ("glass-after", 40)] {
+            let mut tokens = Tokens::built_in_scheme(edel::tokens::Scheme::Light);
+            tokens.panel_opacity = opacity;
+            let mut pixmap = Pixmap::new(200, 48).unwrap();
+            pixmap.fill(tiny_skia::Color::from_rgba8(0x85, 0xb9, 0xd7, 255));
+            let mut canvas = Canvas {
+                pixmap: &mut pixmap,
+                tokens: &tokens,
+                text: Some(&mut text),
+                icons: None,
+                scale: 2.0,
+                top: 0.0,
+                height: 48.0,
+                dock: false,
+                along_top: false,
+            };
+            draw(&mut canvas, &shown, 0.0);
+            // The darkest and the most common pixel of the unchosen buttons'
+            // half: the figures and their button.
+            let w = pixmap.width() as usize;
+            let mut seen = std::collections::HashMap::new();
+            for (n, px) in pixmap.pixels().iter().enumerate() {
+                let x = n % w;
+                if x < w / 2 || px.alpha() == 0 {
+                    continue;
+                }
+                *seen.entry([px.red(), px.green(), px.blue()]).or_insert(0) += 1;
+            }
+            let pill = *seen
+                .iter()
+                .filter(|(c, _)| **c != [0x85, 0xb9, 0xd7])
+                .max_by_key(|(_, n)| **n)
+                .unwrap()
+                .0;
+            let ink = *seen
+                .keys()
+                .min_by(|a, b| luminance(**a).total_cmp(&luminance(**b)))
+                .unwrap();
+            ratios.push((luminance(pill) + 0.05) / (luminance(ink) + 0.05));
+            if let Some(dir) = std::env::var_os("EDEL_SWITCHER_PNG") {
+                let dir = std::path::PathBuf::from(dir);
+                std::fs::create_dir_all(&dir).unwrap();
+                pixmap
+                    .save_png(dir.join(format!("switcher-{name}.png")))
+                    .unwrap();
+            }
+        }
+        if text.line("1", 14.0).width == 0.0 {
+            return; // no fonts here, so no figures to measure
+        }
+        eprintln!("unchosen numbers on glass, before and after: {ratios:?}");
+        assert!(ratios[1] >= 4.5, "{ratios:?}");
+        assert!(ratios[1] > ratios[0], "{ratios:?}");
     }
 }
