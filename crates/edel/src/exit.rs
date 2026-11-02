@@ -27,7 +27,12 @@ pub const CLOSED_PIPE: u8 = 141;
 pub fn quiet_on_closed_pipe() {
     let others = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if info.payload_as_str().is_some_and(closed_pipe) {
+        let payload = info.payload();
+        let words = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied());
+        if words.is_some_and(closed_pipe) {
             std::process::exit(i32::from(CLOSED_PIPE));
         }
         others(info);
