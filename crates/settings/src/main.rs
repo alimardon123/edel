@@ -918,12 +918,18 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
         // A page low in the list (System, Users) is below the sidebar's
         // fold at first, and the focus above came before the list had its
         // size, so nothing scrolled: once the row is laid out, its focus
-        // again scrolls the sidebar to it.
-        list.add_tick_callback(move |_, _| {
+        // again scrolls the sidebar to it. A control the page was asked
+        // for (`--page sound.volume`) has taken the keyboard by then, and
+        // keeps it: the focus goes back to it once the sidebar scrolled.
+        list.add_tick_callback(move |list, _| {
             if row.height() == 0 {
                 return gtk::glib::ControlFlow::Continue;
             }
+            let before = list.root().and_then(|root| root.focus());
             row.grab_focus();
+            if let Some(before) = before.filter(|w| w != row.upcast_ref::<gtk::Widget>()) {
+                before.grab_focus();
+            }
             gtk::glib::ControlFlow::Break
         });
     }
