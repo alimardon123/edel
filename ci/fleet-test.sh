@@ -45,7 +45,7 @@ settings_of() {
 }
 # The first line of $1 that holds $2, by number; empty when none does.
 line_of() {
-	tr -d '\r' <"$1" | grep -n -F "$2" | head -n 1 | cut -d: -f1
+	tr -d '\r' <"$1" 2>/dev/null | grep -n -m 1 -F "$2" | cut -d: -f1
 }
 
 # 1. Device A.
@@ -85,7 +85,7 @@ run_vm "$log" 'fleet-b login:' "${BOOT_TIMEOUT:-300}" -no-reboot \
 	-drive if=none,id=disk0,format=raw,file="$target",snapshot=on \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 [ "$found" = 1 ] || fail "$log" "the installed disk did not boot to fleet-b"
-if tr -d '\r' <"$log" | grep -q 'edel install: installing'; then
+if tr -d '\r' <"$log" 2>/dev/null | grep -q 'edel install: installing'; then
 	fail "$log" "the installed machine installed itself again"
 fi
 echo "the installed disk booted alone to fleet-b (${waited}s)"

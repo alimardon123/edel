@@ -80,7 +80,7 @@ run_vm "$log" 'ci-cloud login:' "${BOOT_TIMEOUT:-300}" -snapshot -vga none \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 cat out/server-metadata.log 2>/dev/null || echo 'the metadata address was never asked'
 [ "$found" = 1 ] || fail "$log" "the instance did not start as ci-cloud from its user data"
-tr -d '\r' <"$log" | grep -q "edel boot cloud: kept AWS's user data as" ||
+tr -d '\r' <"$log" 2>/dev/null | grep -q "edel boot cloud: kept AWS's user data as" ||
 	fail "$log" "edel boot cloud did not say it kept the user data"
 cat "$log"
 echo "PASS: the instance read AWS's user data with an IMDSv2 token, kept it as its settings file and started as ci-cloud (${waited}s)"
