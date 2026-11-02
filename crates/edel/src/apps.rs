@@ -27,6 +27,18 @@ pub struct App {
     keywords: Vec<String>,
 }
 
+impl App {
+    /// Whether the app runs in Flatpak's sandbox: its desktop file, as
+    /// Flatpak exports it, runs `flatpak run`. Its id alone does not say:
+    /// apps of the image such as Settings and Fcitx 5 have reverse-DNS ids
+    /// too and run with everything the person can reach.
+    pub fn sandboxed(&self) -> bool {
+        let program = self.argv.first().map(|p| Path::new(p).file_name());
+        program == Some(Some(std::ffi::OsStr::new("flatpak")))
+            && self.argv.get(1).is_some_and(|w| w == "run")
+    }
+}
+
 /// The default apps' Flatpak installation (M6.2), by the id Flatpak's
 /// `--installation=` takes; it lies at `places::DEFAULT_APPS`.
 pub const INSTALLATION: &str = "edel";

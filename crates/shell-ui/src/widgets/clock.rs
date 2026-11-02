@@ -13,7 +13,7 @@ use accesskit::Role;
 use jiff::Zoned;
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{Face, fill, mix};
+use crate::paint::{Face, fill};
 
 pub const WIDGET: Widget = Widget {
     name: edel::widgets::CLOCK.name,
@@ -108,7 +108,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
     // the time's size apart, as a web page's line height would.
     let block = big * LEADING + small * LEADING;
     let top = canvas.top + ((canvas.height - block) / 2.0).round();
-    let dim = mix(tokens.panel_text, tokens.panel, 0.3);
+    let dim = super::dim(tokens, 0.3);
     let ink = tokens.panel_text;
     let Some(text) = canvas.text.as_deref_mut() else {
         return;

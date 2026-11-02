@@ -100,6 +100,18 @@ stop_vm() {
 	fi
 }
 
+# flush_copy FILE: writes a disk image copy the runner just made out to
+# its disk before a VM boots it, and says how long that took. Otherwise
+# the copy's gigabytes are still waiting in the page cache, and the
+# guest's first flush makes QEMU wait while all of them are written: a
+# boot then measures the runner's disk (the stick's try walk read 6.2
+# to 14.1 s on 2026-11-02, slowest on the runners slowest to copy).
+flush_copy() {
+	flush_began=$(date +%s%N)
+	sync "$1"
+	echo "  wrote the copy $1 out in $((($(date +%s%N) - flush_began) / 1000000)) ms before booting it"
+}
+
 # partition_out DISK N FILE: partition N of the disk image DISK, copied
 # into the sparse file FILE (for debugfs); returns 1 when DISK has no
 # partition N. Only the parts of DISK that hold data are copied (the

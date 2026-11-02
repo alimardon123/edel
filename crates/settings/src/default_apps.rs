@@ -224,9 +224,16 @@ fn monitors() -> Vec<gio::FileMonitor> {
 }
 
 pub fn page() -> gtk::Widget {
-    let words = PAGES.iter().find(|p| p.section == SECTION);
-    let (title, about) = words.map_or(("", ""), |p| (p.title, p.about));
-    let (page, content, problem) = widgets::page(tr(title), tr(about));
+    let title = PAGES
+        .iter()
+        .find(|p| p.section == SECTION)
+        .map_or("", |p| p.title);
+    // A sentence of its own, as every page has: the page table's `about`
+    // is a lower-case phrase for `edel settings` lists.
+    let (page, content, problem) = widgets::page(
+        tr(title),
+        tr("The apps that open your web links, files, text, terminal and mail."),
+    );
     let group = widgets::group(&content);
     let mut rows = Vec::new();
     for (role, key) in apps::DEFAULT_APP_KEYS.iter().copied() {

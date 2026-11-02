@@ -638,8 +638,13 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
     shown.append(&holder);
     content.set_child(Some(&shown));
     let show: Rc<dyn Fn(usize)> = {
-        let (pages, built, theme, content) =
-            (pages.clone(), built.clone(), theme.clone(), content.clone());
+        let (pages, built, theme, content, holder) = (
+            pages.clone(),
+            built.clone(),
+            theme.clone(),
+            content.clone(),
+            holder.clone(),
+        );
         Rc::new(move |at: usize| {
             let Some(page) = pages.get(at) else { return };
             let widget = built.borrow_mut()[at]
@@ -738,6 +743,40 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
             }
             gtk::glib::ControlFlow::Break
         });
+    }
+    {
+        // The page shown always follows the row chosen, however it was
+        // chosen: a click, Return, or the arrow keys and Tab moving the
+        // choice down the list, which before showed About chosen beside
+        // the System page.
+        let (show, rows) = (show.clone(), rows.clone());
+        list.connect_row_selected(move |_, row| {
+            if let Some(Row::Page(at)) = row.and_then(|row| rows.get(row.index().max(0) as usize)) {
+                show(*at);
+            }
+        });
+    }
+    {
+        // Tab goes from the list to the page beside it, as in every app
+        // with a sidebar; GTK's own list would move it to the next row,
+        // and so to the next page, so Tab never reached a page's buttons.
+        // Shift+Tab comes back to the chosen row; the arrow keys walk the
+        // list.
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let holder = holder.clone();
+        keys.connect_key_pressed(move |_, key, _, state| {
+            if key == gtk::gdk::Key::Tab
+                && !state.intersects(
+                    gtk::gdk::ModifierType::SHIFT_MASK | gtk::gdk::ModifierType::CONTROL_MASK,
+                )
+                && holder.child_focus(gtk::DirectionType::TabForward)
+            {
+                return gtk::glib::Propagation::Stop;
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        list.add_controller(keys);
     }
     {
         let (split, show, rows) = (split.clone(), show.clone(), rows.clone());
@@ -849,11 +888,12 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
                 return;
             };
             show(at);
-            list.select_row(
-                row_of(&rows, at)
-                    .and_then(|row| list.row_at_index(row))
-                    .as_ref(),
-            );
+            let row = row_of(&rows, at).and_then(|row| list.row_at_index(row));
+            list.select_row(row.as_ref());
+            // Its focus scrolls the sidebar to it, as at the start.
+            if let Some(row) = row {
+                row.grab_focus();
+            }
             split.set_show_content(true);
         });
     }
@@ -875,6 +915,23 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
     // quiet; it is a click away, or Ctrl+F.
     if let Some(row) = row_of(&rows, start).and_then(|row| list.row_at_index(row)) {
         row.grab_focus();
+        // A page low in the list (System, Users) is below the sidebar's
+        // fold at first, and the focus above came before the list had its
+        // size, so nothing scrolled: once the row is laid out, its focus
+        // again scrolls the sidebar to it. A control the page was asked
+        // for (`--page sound.volume`) has taken the keyboard by then, and
+        // keeps it: the focus goes back to it once the sidebar scrolled.
+        list.add_tick_callback(move |list, _| {
+            if row.height() == 0 {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            let before = list.root().and_then(|root| root.focus());
+            row.grab_focus();
+            if let Some(before) = before.filter(|w| w != row.upcast_ref::<gtk::Widget>()) {
+                before.grab_focus();
+            }
+            gtk::glib::ControlFlow::Break
+        });
     }
 }
 

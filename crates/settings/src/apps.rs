@@ -395,9 +395,10 @@ fn table_text(
     Ok(Some(format!("{{ {} }}", pairs.join(", "))))
 }
 
-/// Whether an app is sandboxed: a Flatpak app, by its id.
+/// Whether an app is sandboxed: one Flatpak runs, not merely one whose id
+/// looks like a Flatpak app's (`App::sandboxed`).
 fn sandboxed(app: &App) -> bool {
-    apps::is_flatpak_id(&app.id)
+    app.sandboxed()
 }
 
 fn unsandboxed(app: &App) -> bool {
@@ -919,6 +920,13 @@ mod tests {
         app
     }
 
+    /// An app as Flatpak exports it: its desktop file runs `flatpak run`.
+    fn flatpak_app(id: &str) -> App {
+        let mut app = desktop_app(id);
+        app.argv = ["/usr/bin/flatpak", "run", id].map(String::from).to_vec();
+        app
+    }
+
     #[test]
     fn the_choice_without_an_entry_is_the_first_item() {
         assert_eq!(
@@ -1058,10 +1066,13 @@ mod tests {
     #[test]
     fn an_app_page_shows_one_part_for_its_kind() {
         let shown = |app: &App| SECTIONS.iter().filter(|s| (s.shown)(app, &[])).count();
-        let flatpak = desktop_app("io.mpv.Mpv");
+        let flatpak = flatpak_app("io.mpv.Mpv");
         let plain = desktop_app("example");
+        // An app of the image with a reverse-DNS id is not sandboxed.
+        let ours = desktop_app("io.github.alimardon123.edel.Settings");
         assert!(sandboxed(&flatpak));
         assert!(!sandboxed(&plain));
+        assert!(!sandboxed(&ours));
         assert_eq!(shown(&flatpak), 1);
         assert_eq!(shown(&plain), 1);
     }
@@ -1091,7 +1102,7 @@ mod tests {
     fn an_app_outside_flatpak_is_known_by_its_program_too() {
         let plain = desktop_app("example-id");
         assert_eq!(record_ids(&plain), ["example-id", "example"]);
-        let flatpak = desktop_app("io.mpv.Mpv");
+        let flatpak = flatpak_app("io.mpv.Mpv");
         assert_eq!(record_ids(&flatpak), ["io.mpv.Mpv"]);
         let uses = [one_use("example")];
         assert_eq!(app_use::of_app(&uses, &record_ids(&plain)).len(), 1);
