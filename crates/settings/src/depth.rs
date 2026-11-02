@@ -58,9 +58,7 @@ fn values_of(t: &Tokens) -> Shown {
 /// The values that apply now, with the shape the files set on top of the
 /// release.
 fn now(files: &Files) -> Shown {
-    let machine = shape::read_file(&files.machine);
-    let person = files.person.as_deref().and_then(shape::read_file);
-    let keys = Keys::between(machine.as_ref(), person.as_ref());
+    let keys = Keys::of(&files.layers().merged().appearance);
     values_of(&Tokens::built_in().with_shape(&keys).0)
 }
 
