@@ -849,11 +849,12 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
                 return;
             };
             show(at);
-            list.select_row(
-                row_of(&rows, at)
-                    .and_then(|row| list.row_at_index(row))
-                    .as_ref(),
-            );
+            let row = row_of(&rows, at).and_then(|row| list.row_at_index(row));
+            list.select_row(row.as_ref());
+            // Its focus scrolls the sidebar to it, as at the start.
+            if let Some(row) = row {
+                row.grab_focus();
+            }
             split.set_show_content(true);
         });
     }
@@ -875,6 +876,17 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
     // quiet; it is a click away, or Ctrl+F.
     if let Some(row) = row_of(&rows, start).and_then(|row| list.row_at_index(row)) {
         row.grab_focus();
+        // A page low in the list (System, Users) is below the sidebar's
+        // fold at first, and the focus above came before the list had its
+        // size, so nothing scrolled: once the row is laid out, its focus
+        // again scrolls the sidebar to it.
+        list.add_tick_callback(move |_, _| {
+            if row.height() == 0 {
+                return gtk::glib::ControlFlow::Continue;
+            }
+            row.grab_focus();
+            gtk::glib::ControlFlow::Break
+        });
     }
 }
 
