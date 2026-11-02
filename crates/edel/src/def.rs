@@ -594,14 +594,21 @@ impl ImageDef {
     }
 
     /// Repository URLs, one per line, as Alpine's `/etc/apk/repositories`
-    /// expects them.
+    /// expects them; edge's last, tagged `@edge`, so apk takes from them
+    /// only a package named `NAME@edge`.
     pub fn repositories_file(&self) -> String {
         let mirror = self.alpine.mirror.trim_end_matches('/');
-        self.alpine
+        let branch = self
+            .alpine
             .repositories
             .iter()
-            .map(|repo| format!("{mirror}/{}/{repo}\n", self.alpine.branch))
-            .collect()
+            .map(|repo| format!("{mirror}/{}/{repo}\n", self.alpine.branch));
+        let edge = self
+            .alpine
+            .edge
+            .iter()
+            .map(|repo| format!("@edge {mirror}/edge/{repo}\n"));
+        branch.chain(edge).collect()
     }
 
     /// File name stem shared by every output of this image.
@@ -986,11 +993,21 @@ mod tests {
 
     #[test]
     fn writes_repositories_without_double_slashes() {
-        let def = parse(VM).unwrap();
+        let mut def = parse(VM).unwrap();
+        def.alpine.edge.clear();
         assert_eq!(
             def.repositories_file(),
             "https://dl-cdn.alpinelinux.org/alpine/v3.24/main\n\
              https://dl-cdn.alpinelinux.org/alpine/v3.24/community\n"
+        );
+        let mut edge = parse(VM).unwrap();
+        edge.alpine.edge = vec!["community".into()];
+        assert!(
+            edge.repositories_file().ends_with(
+                "/v3.24/community\n@edge https://dl-cdn.alpinelinux.org/alpine/edge/community\n"
+            ),
+            "{}",
+            edge.repositories_file()
         );
     }
 
