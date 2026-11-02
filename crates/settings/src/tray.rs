@@ -246,7 +246,9 @@ impl Card {
     fn redraw(self: &Rc<Self>) {
         let kept = self.kept.borrow().clone();
         let wanted = order(self.wanted(), &kept);
-        let same = {
+        // Nothing built yet is never the same: an empty tray still shows
+        // its note.
+        let same = self.group.first_child().is_some() && {
             let shown = self.shown.borrow();
             shown.len() == wanted.len()
                 && shown
