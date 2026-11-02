@@ -1,9 +1,8 @@
 #!/bin/sh
 # Makes a tiny Flatpak repository for the default apps' tests (roadmap
 # M6.2), with no network: a runtime, org.edel.TestPlatform branch 1, that
-# holds musl, the libraries edel-testclient needs, pw-record (M6.14b) and
-# parecord,
-# taken from this
+# holds musl, the libraries edel-testclient needs, pw-record (M6.14b),
+# parecord and secret-tool (M7.18), taken from this
 # Alpine container, and two apps of branch stable, org.edel.TestA and
 # org.edel.TestB, each edel-testclient showing a window, titled test-a in
 # #3399cc and test-b in #33aa66, so a test can swap one default app for
@@ -50,6 +49,10 @@ pw_files="$pw_files /usr/lib/spa-0.2/support/libspa-support.so /usr/lib/spa-0.2/
 # --socket=pulseaudio as an app built on libpulse does; libpulse needs no
 # module of its own.
 pw_files="$pw_files /usr/bin/parecord"
+# secret-tool (M7.18), so Test A keeps a secret as a sandboxed app does:
+# libsecret in a sandbox asks the Secret portal for the app's own key and
+# keeps the secret in the app's data folder, never on the session's bus.
+pw_files="$pw_files /usr/bin/secret-tool"
 for file in $pw_files; do
 	# The runtime is mounted at /usr, so /usr/X is the runtime's usr/X.
 	mkdir -p "$work/runtime/$(dirname "${file#/}")"

@@ -225,9 +225,10 @@
 #               card token's colour; kept as updates.png (M5.8c); the
 #               About page (edel-settings --page about) likewise, kept
 #               as about.png (M5.8d)
-#   keyring     oo7's daemon absent until a secret is stored as ci, then
-#               running, opened by the session's key; stopped, the next
-#               ask starts it again and reads the same secret (M7.18)
+#   keyring     oo7's daemon started by the session, opened by its key;
+#               a secret stored as ci and one by Test A through the
+#               Secret portal; both read back the same after the daemon
+#               and the portal stop and start again (M7.18)
 #   tray        a StatusNotifierItem from edel-testclient --sni (a
 #               #33aa66 pixmap) registers with shell-ui's watcher and its
 #               icon lies in the panel's tray; AT-SPI names it, a click
@@ -6370,8 +6371,9 @@ case_frame_rate() {
 case_keyring() {
 	# The keyring (M7.18): the session starts oo7's daemon, opened with no
 	# prompt by the key the login handed it; a secret stored as ci through
-	# the Secret Service, the daemon stopped and started again as a login
-	# does, the secret, kept in ci's home, reads back the same.
+	# the Secret Service and one by a Flatpak app through the Secret portal,
+	# the daemon and the portal stopped and started again as a login does,
+	# the secrets, kept in ci's home, read back the same.
 	asked=$(count 'DESKTOP-TEST: keyring_running ')
 	guest 'keyring running'
 	wait_more 'DESKTOP-TEST: keyring_running ' "$asked" || fail "the service did not look for the keyring"
@@ -6382,6 +6384,15 @@ case_keyring() {
 	case "$(value keyring_store)" in
 	"0 "* | 0) ;;
 	*) fail "oo7-cli store failed as ci: $(value keyring_store); what was there: $(value keyring_diag)" ;;
+	esac
+	# A Flatpak app's secret goes through the Secret portal into the app's
+	# own keyring file, opened by a key the portal keeps in ci's keyring.
+	asked=$(count 'DESKTOP-TEST: keyring_app_store ')
+	guest 'keyring app store'
+	wait_more 'DESKTOP-TEST: keyring_app_store ' "$asked" 90 || fail "the service did not store a secret for Test A"
+	case "$(value keyring_app_store)" in
+	"0 default.keyring"*) ;;
+	*) fail "Test A's secret-tool did not keep a secret through the Secret portal: $(value keyring_app_store); what was there: $(value keyring_diag)" ;;
 	esac
 	asked=$(count 'DESKTOP-TEST: keyring_stopped ')
 	guest 'keyring stop'
@@ -6396,7 +6407,12 @@ case_keyring() {
 	wait_more 'DESKTOP-TEST: keyring_lookup ' "$asked" 60 || fail "the service did not read the secret back"
 	got=$(value keyring_lookup | sed 's/ *$//')
 	[ "$got" = edel-keyring-test ] || fail "the keyring, started again, did not give back the secret: $got"
-	echo "PASS: the session started oo7, opened with no prompt by the session's key; a secret stored as ci read back the same after the daemon stopped and started again with that key"
+	asked=$(count 'DESKTOP-TEST: keyring_app_lookup ')
+	guest 'keyring app lookup'
+	wait_more 'DESKTOP-TEST: keyring_app_lookup ' "$asked" 90 || fail "the service did not read Test A's secret back"
+	got=$(value keyring_app_lookup | sed 's/ *$//')
+	[ "$got" = edel-keyring-app ] || fail "Test A, with the keyring and the portal started again, did not get its secret back: $got"
+	echo "PASS: the session started oo7, opened with no prompt by the session's key; a secret stored as ci through the Secret Service and one Test A stored through the Secret portal read back the same after the daemon and the portal stopped and started again with that key"
 }
 
 case_portal() {

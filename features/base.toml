@@ -14,6 +14,12 @@ modules = ["ext4", "overlay"]
 branch = "v3.24"
 mirror = "https://dl-cdn.alpinelinux.org/alpine"
 repositories = ["main", "community"]
+# Alpine edge's community, tagged @edge, for one package taken from edge
+# while the branch lacks its fix: oo7-portal (the keyring feature), which
+# in v3.24 cannot answer an app that hands it a pipe, as libsecret does
+# (upstream's fix of 2026-06-26, edge's 0.6.0_git20260709, same musl).
+# Empty it at the next branch bump (M8.4), which carries the fix.
+edge = ["community"]
 # The digest of CI's build container, `alpine:` plus the branch above
 # (ci.yml reads both from here), so a build runs in an image someone looked
 # at. The registry moves the tag at every Alpine point release; refresh with
