@@ -117,6 +117,17 @@ pub fn shell_ui_kept_for_lock(name: &str, how: &str, secs: f32) -> String {
     )
 }
 
+/// What a program of the session's list serves, for the messages that say
+/// it stops: sound for the sound system, the keyring for the keyring
+/// (which D-Bus starts again when an app asks), else in general.
+fn serves(name: &str) -> &'static str {
+    match name {
+        "pipewire" | "wireplumber" | "pipewire-pulse" => "sound",
+        "edel boot keyring" => "the keyring, until an app asks for a password,",
+        _ => "what it serves",
+    }
+}
+
 /// A program of the session's list (`[session] start`) is not in this image.
 pub fn session_program_missing(name: &str) -> String {
     format!(
@@ -133,7 +144,8 @@ pub fn session_program_not_started(name: &str, why: impl Display) -> String {
 /// signal someone sent, so it is left stopped.
 pub fn session_program_stopped(name: &str, how: &str) -> String {
     format!(
-        "{name} {how} after running a while, stopped by a signal, and is not started again; what it served (sound, for PipeWire) is off until the next login"
+        "{name} {how} after running a while, stopped by a signal, and is not started again; {} is off until the next login",
+        serves(name)
     )
 }
 
@@ -158,14 +170,16 @@ pub fn session_program_follows(name: &str, how: &str, cause: &str, time: u32, of
 /// more than it may be started again.
 pub fn session_program_crashed_too_often(name: &str, how: &str, times: u32) -> String {
     format!(
-        "{name} {how} again after being started again {times} times this session, and is left; what it served (sound, for PipeWire) is off until the next login, and the lines above say why"
+        "{name} {how} again after being started again {times} times this session, and is left; {} is off until the next login, and the lines above say why",
+        serves(name)
     )
 }
 
 /// A program of the session's list keeps failing and is left alone.
 pub fn session_program_given_up(name: &str, how: &str, tries: u32, secs: u64) -> String {
     format!(
-        "{name} {how}, and failed {tries} times in a row within {secs} s of starting; it is not started again, so what it served (sound, for PipeWire) is missing until the next login, and the lines above say why"
+        "{name} {how}, and failed {tries} times in a row within {secs} s of starting; it is not started again, so {} is missing until the next login, and the lines above say why",
+        serves(name)
     )
 }
 
@@ -435,10 +449,26 @@ mod tests {
     }
 
     #[test]
+    fn a_stopped_program_says_what_it_served() {
+        assert!(
+            session_program_stopped("pipewire", "ended")
+                .ends_with("; sound is off until the next login")
+        );
+        assert!(
+            session_program_stopped("edel boot keyring", "ended")
+                .contains("; the keyring, until an app asks for a password, is off")
+        );
+        assert!(
+            session_program_crashed_too_often("foot", "ended", 3)
+                .contains("; what it serves is off")
+        );
+    }
+
+    #[test]
     fn a_session_program_that_fails_says_what_stops() {
         assert_eq!(
             session_program_given_up("wireplumber", "ended (exit status: 1)", 4, 5),
-            "wireplumber ended (exit status: 1), and failed 4 times in a row within 5 s of starting; it is not started again, so what it served (sound, for PipeWire) is missing until the next login, and the lines above say why"
+            "wireplumber ended (exit status: 1), and failed 4 times in a row within 5 s of starting; it is not started again, so sound is missing until the next login, and the lines above say why"
         );
         assert!(session_program_missing("pipewire").starts_with("pipewire is not in this image"));
     }

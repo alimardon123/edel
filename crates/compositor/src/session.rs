@@ -442,12 +442,7 @@ fn ended(
     began: Instant,
     status: Option<ExitStatus>,
 ) {
-    let name = end
-        .command
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_string();
+    let name = label(&end.command);
     let failed = status.is_none_or(|s| !s.success());
     let how = status.map_or_else(|| "was lost".to_string(), |s| format!("ended ({s})"));
     let Runs {
@@ -505,12 +500,7 @@ fn ended(
         };
         again(handle, end.command, runs, end.env);
         for later in with {
-            let later_name = later
-                .command
-                .split_whitespace()
-                .next()
-                .unwrap_or_default()
-                .to_string();
+            let later_name = label(&later.command);
             follow(handle, &later_name, "ended (exit status: 0)", &name, later);
         }
         return;
@@ -552,6 +542,17 @@ fn follow(handle: &LoopHandle<'static, Edel>, name: &str, how: &str, cause: &str
     again(handle, end.command, runs, end.env);
 }
 
+/// The name a session program goes by in the log: its program, or the
+/// whole command for one of `edel`'s own (`edel boot keyring`).
+fn label(command: &str) -> String {
+    let mut words = command.split_whitespace();
+    match words.next() {
+        Some("edel") => command.split_whitespace().collect::<Vec<_>>().join(" "),
+        Some(name) => name.to_string(),
+        None => String::new(),
+    }
+}
+
 /// Starts `command` again after [`AGAIN`].
 fn again(handle: &LoopHandle<'static, Edel>, command: String, runs: Runs, env: Env) {
     let later = handle.clone();
@@ -584,6 +585,13 @@ mod tests {
         assert!(!was_stopped(by(Signal::SEGV)));
         assert!(!was_stopped(Some(ExitStatus::from_raw(1 << 8))), "exit 1");
         assert!(!was_stopped(None), "lost");
+    }
+
+    #[test]
+    fn a_session_program_goes_by_its_program_or_edels_whole_command() {
+        assert_eq!(label("pipewire"), "pipewire");
+        assert_eq!(label("wireplumber -d"), "wireplumber");
+        assert_eq!(label("edel  boot keyring"), "edel boot keyring");
     }
 
     #[test]
