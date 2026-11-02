@@ -1809,7 +1809,10 @@ impl Line {
         let reset = if self.machine {
             !matches!(
                 source,
-                edel::settings::Source::Release | edel::settings::Source::Profile(_)
+                edel::settings::Source::Release
+                    | edel::settings::Source::Profile(_)
+                    | edel::settings::Source::Preset(_)
+                    | edel::settings::Source::Theme(_)
             )
         } else {
             rows::resettable(source)

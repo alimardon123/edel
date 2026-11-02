@@ -1595,27 +1595,17 @@ pub const OWN_LOOKS: &str = "lock_screen.looks";
 
 /// The lock screen's settings as the person's file sets them over the
 /// machine's, with the looks of both (M5.10c7h): what the lock, its edit
-/// mode, the looks switcher and Settings read, one merge (ADR-010). A text
-/// that does not read counts as empty.
+/// mode, the looks switcher and Settings read, one merge through
+/// [`crate::settings::Layers`] (ADR-010), where each look of the person's
+/// replaces the machine's of its name. A text that does not read counts as
+/// empty; no looks at all is none.
 pub fn lock_over(machine: Option<&str>, person: Option<&str>) -> crate::settings::LockScreen {
-    let (machine, person) = (lock_of(machine), lock_of(person));
-    let mut looks = machine.looks.clone().unwrap_or_default();
-    looks.extend(person.looks.clone().unwrap_or_default());
-    crate::settings::LockScreen {
-        parts: person.parts.or(machine.parts),
-        look: person.look.or(machine.look),
-        background: person.background.or(machine.background),
-        dim: person.dim.or(machine.dim),
-        notifications: person.notifications.or(machine.notifications),
-        looks: (!looks.is_empty()).then_some(looks),
-    }
-}
-
-/// The `[lock_screen]` table of one settings text, leniently.
-fn lock_of(text: Option<&str>) -> crate::settings::LockScreen {
-    text.and_then(|t| crate::settings::read(t).ok())
-        .map(|read| read.file.lock_screen)
-        .unwrap_or_default()
+    let mut lock = crate::settings::Layers::read(machine, person)
+        .merged()
+        .lock_screen
+        .clone();
+    lock.looks = lock.looks.filter(|looks| !looks.is_empty());
+    lock
 }
 
 /// Whether the person's own text sets `key` (not the machine's alone).
@@ -1685,7 +1675,9 @@ pub fn saved_as_text(
     base: &str,
 ) -> Result<(String, String), String> {
     let lock = lock_over(machine, Some(person));
-    let own = lock_of(Some(person)).looks;
+    let own = crate::settings::read(person)
+        .ok()
+        .and_then(|read| read.file.lock_screen.looks);
     let taken = |name: &str| own.as_ref().is_some_and(|own| own.contains_key(name));
     let name = new_look_name(base, taken);
     let mut text = person.to_string();
