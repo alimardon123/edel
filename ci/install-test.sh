@@ -137,7 +137,7 @@ fi
 if grep -q edel-ci-tty "$crypt_log"; then
 	fail "$crypt_log" "the passphrase was echoed on the console"
 fi
-tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1 >out/install-live-key
+tr -d '\r' <"$log" 2>/dev/null | sed -n '/.*INSTALL-TEST: host key /{s///p;q;}' >out/install-live-key
 [ -s out/install-live-key ] || fail "$log" "the live image printed no ssh host key"
 # The install walk (M8.15a): the guest times `edel install --yes` itself.
 set -- $(value 'walk install')

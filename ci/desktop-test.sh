@@ -529,7 +529,7 @@ s.close()' "$commands" "$1"
 # matching PATTERN.
 wait_for() {
 	i=0
-	while ! tr -d '\r' <"$log" | grep -qE "$1"; do
+	while ! tr -d '\r' <"$log" 2>/dev/null | grep -qE "$1"; do
 		i=$((i + 1))
 		[ "$i" -lt $((${2:-20} * 5)) ] || return 1
 		sleep 0.2
@@ -1701,8 +1701,8 @@ case_sound() {
 	# The speaker profile (M6.15): the VM's firmware names the model the
 	# test's table matches (-smbios above), so edel boot speakers linked
 	# ci-test.conf at boot and the session's PipeWire runs its filter.
-	tr -d '\r' <"$log" | grep -qa 'edel boot speakers: Edel Speaker Test uses the speaker profile ci-test' ||
-		fail "edel boot speakers did not give the VM's model its speaker profile: $(tr -d '\r' <"$log" | grep -a 'edel boot speakers' | head -n 3)"
+	tr -d '\r' <"$log" 2>/dev/null | grep -qa 'edel boot speakers: Edel Speaker Test uses the speaker profile ci-test' ||
+		fail "edel boot speakers did not give the VM's model its speaker profile: $(tr -d '\r' <"$log" 2>/dev/null | grep -a -m 3 'edel boot speakers')"
 	case "$(value sound_status)" in
 	*'CI speaker profile'* | *edel-speakers*) ;;
 	*) fail "the speaker profile's filter is not in the sound system: $(value sound_status)" ;;
@@ -4039,7 +4039,7 @@ case_launcher() {
 	python3 ci/qmp.py key ret
 	wait_more 'edel-compositor: mapped window foot' "$opened" || fail "typing foot and Return did not open foot"
 	wait_more 'edel-shell-ui: launcher hidden' "$hidden" || fail "the launcher did not close when foot started"
-	tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: launched Foot (foot)' || fail "the launcher did not start foot's own command"
+	tr -d '\r' <"$log" 2>/dev/null | grep -aq 'edel-shell-ui: launched Foot (foot)' || fail "the launcher did not start foot's own command"
 	closed=$(count 'edel-compositor: unmapped window foot')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window foot' "$closed" || fail "Super+Q did not close foot, which should have had the keyboard"
@@ -4346,7 +4346,7 @@ case_location() {
 	case "$answer" in 'location 41.3333 69.3000 '*) ;; *) fail "Test A was not told Tashkent's place: $answer" ;; esac
 	# The sign follows GeoClue's InUse (with shell-ui as its agent), not
 	# shell-ui's fallback for a GeoClue that never says it is in use.
-	if tr -d '\r' <"$log" | grep -aq 'GeoClue does not say the place is in use\|GeoClue did not take the shell as its agent'; then
+	if tr -d '\r' <"$log" 2>/dev/null | grep -aq 'GeoClue does not say the place is in use\|GeoClue did not take the shell as its agent'; then
 		fail "GeoClue did not count Test A's place as in use: $(tr -d '\r' <"$log" | grep -a 'edel-shell-ui: GeoClue' | tail -n 2)"
 	fi
 	# Never: the portal gives Test A nothing.
@@ -4670,9 +4670,9 @@ case_notify() {
 	# console ("edel-shell-ui: notification " then the compositor's own line,
 	# then "1 from ci-test: Hello from CI"), so the whole line, or its two
 	# halves, will do.
-	tr -d '\r' <"$log" | grep -aEq 'edel-shell-ui: notification [0-9]+ from ci-test: Hello from CI' ||
-		{ tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: notification ' &&
-			tr -d '\r' <"$log" | grep -aq 'ci-test: Hello from CI'; } ||
+	tr -d '\r' <"$log" 2>/dev/null | grep -aEq 'edel-shell-ui: notification [0-9]+ from ci-test: Hello from CI' ||
+		{ tr -d '\r' <"$log" 2>/dev/null | grep -aq 'edel-shell-ui: notification ' &&
+			tr -d '\r' <"$log" 2>/dev/null | grep -aq 'ci-test: Hello from CI'; } ||
 		fail "shell-ui did not log the notification it was sent: $(tr -d '\r' <"$log" | grep -a 'Hello from CI' | tail -n 2)"
 	shot notify 1200 745 "$panel" >/dev/null || fail "the banner is not drawn at 1200,745 in the panel's colour"
 	i=0
@@ -5068,7 +5068,7 @@ case_presets() {
 	guest 'preset hive'
 	wait_more 'edel-shell-ui: panel edel-panel along the top' "$top" ||
 		fail "edel settings set layout.preset=hive did not bring shell-ui's bar to the top"
-	tr -d '\r' <"$log" | grep -aq 'edel-shell-ui: follows the settings: the preset is now hive' ||
+	tr -d '\r' <"$log" 2>/dev/null | grep -aq 'edel-shell-ui: follows the settings: the preset is now hive' ||
 		fail "shell-ui did not follow the Hive preset"
 	wait_more 'edel-compositor: windows now tiling' "$tiled" || fail "the Hive preset did not tile the windows"
 	shot preset-hive 640 12 "$panel" >/dev/null || fail "Hive's bar is not at 640,12 in the panel's colour"
@@ -8300,7 +8300,7 @@ case_rollback() {
 	wait_for 'DESKTOP-TEST: rollback: (PASS|FAIL)' "${DESKTOP_ROLLBACK_TIMEOUT:-240}" ||
 		fail "the VM did not come back on slot A: $(tr -d '\r' <"$log" | grep -a -E 'rollback|edel guard|running:' | tail -n 6)"
 	value rollback: | grep -q '^PASS' || fail "$(value rollback:)"
-	tr -d '\r' <"$log" | grep -q 'DESKTOP-TEST: rollback: slot B runs' ||
+	tr -d '\r' <"$log" 2>/dev/null | grep -q 'DESKTOP-TEST: rollback: slot B runs' ||
 		fail "slot B never ran, so its fallback proves nothing"
 	# Slot A's boot after the fallback checks the box itself, as it reads
 	# no commands.
@@ -9995,7 +9995,7 @@ case_another_base() {
 		tail -n 100 "$log"
 		fail "the new system on the first one's data partition gave no results (out/desktop-another-base.log)"
 	fi
-	tr -d '\r' <"$log" | grep -qa 'edel update: slot A confirmed' || fail "the new system did not confirm its own slot A"
+	tr -d '\r' <"$log" 2>/dev/null | grep -qa 'edel update: slot A confirmed' || fail "the new system did not confirm its own slot A"
 	asked=$(count 'DESKTOP-TEST: another_base_apps ')
 	guest 'another base apps'
 	wait_more 'DESKTOP-TEST: another_base_apps ' "$asked" 60 || fail "the service did not list ci's apps"
@@ -10223,9 +10223,9 @@ sys.stdout.buffer.write(bytes(out))
 		printf "  the boot took %s s from /init; the runner waited on disks %.0f percent of its processor time and gave %.0f percent to its host; its longest waits:\n", s, 100 * ($5 - $2) / all, 100 * ($6 - $3) / all }'
 	boot_gaps "$log" 6
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
-	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
+	tr -d '\r' <"$log" 2>/dev/null | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
-	tr -d '\r' <"$log" | grep -qa "edel boot live: Install Edel OS is first in live's panel and in the launcher" ||
+	tr -d '\r' <"$log" 2>/dev/null | grep -qa "edel boot live: Install Edel OS is first in live's panel and in the launcher" ||
 		fail "edel boot live did not put the install button in the stick's panel"
 	python3 ci/qmp.py screendump "$dir/live.png"
 	size=$(python3 ci/qmp.py size "$dir/live.png")
@@ -10295,13 +10295,13 @@ sys.stdout.buffer.write(bytes(out))
 		"Edel OS ${EDEL_VERSION:-0.1}, channel " 'edel guard: using the hardware watchdog' \
 		'edel report: wrote /EFI/edel/report.toml on the EFI system partition'; do
 		i=0
-		while ! tr -d '\r' <"$log" | grep -qaF "$line" && [ "$i" -lt 60 ]; do
+		while ! tr -d '\r' <"$log" 2>/dev/null | grep -qaF "$line" && [ "$i" -lt 60 ]; do
 			i=$((i + 1))
 			sleep 1
 		done
-		tr -d '\r' <"$log" | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
+		tr -d '\r' <"$log" 2>/dev/null | grep -qaF "$line" || fail "the stick's serial log has no \"$line\""
 	done
-	! tr -d '\r' <"$log" | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
+	! tr -d '\r' <"$log" 2>/dev/null | grep -qa 'Starting sshd' || fail "the desktop stick started sshd, but images/edel.toml ships ssh off"
 	lap "the Welcome, the screen and the serial log"
 	# The browser offline (M6.2): Super, "firefox" and Return start the
 	# default apps' Firefox from the stick's own installation with no
@@ -10495,20 +10495,20 @@ sys.stdout.buffer.write(bytes(out))
 		-device usb-storage,bus=xhci.0,drive=installed,removable=on,bootindex=0
 	[ "$found" = 1 ] || { cat "$installed_log"; fail "the disk the installer page wrote did not confirm its slot"; }
 	i=0
-	until tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
+	until tr -d '\r' <"$installed_log" 2>/dev/null | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
 		i=$((i + 1))
 		sleep 1
 	done
 	stop_vm
 	tr -d '\r' <"$installed_log" | grep -a 'edel boot live: '
-	tr -d '\r' <"$installed_log" | grep -qa 'edel boot live: sd[a-z] is a removable disk Edel OS was installed on, not a stick, and people have accounts, so the greeter asks who logs in' ||
+	tr -d '\r' <"$installed_log" 2>/dev/null | grep -qa 'edel boot live: sd[a-z] is a removable disk Edel OS was installed on, not a stick, and people have accounts, so the greeter asks who logs in' ||
 		fail "the disk installed onto a removable USB disk did not leave the login to the greeter: it was taken for a stick, or nobody had an account"
-	! tr -d '\r' <"$installed_log" | grep -qa 'Starting sshd' || fail "the installed disk started sshd"
-	tr -d '\r' <"$installed_log" | grep -qa 'network.hostname: set to from-file' ||
+	! tr -d '\r' <"$installed_log" 2>/dev/null | grep -qa 'Starting sshd' || fail "the installed disk started sshd"
+	tr -d '\r' <"$installed_log" 2>/dev/null | grep -qa 'network.hostname: set to from-file' ||
 		fail "the disk installed from the settings file did not take its computer name, from-file"
 	# The page answered the time zone the file leaves open, the language's
 	# own (en_US: America/New_York), and the first boot applies it.
-	tr -d '\r' <"$installed_log" | grep -qa 'region.timezone: set to America/New_York' ||
+	tr -d '\r' <"$installed_log" 2>/dev/null | grep -qa 'region.timezone: set to America/New_York' ||
 		fail "the installed disk did not take the time zone the page answered, America/New_York"
 	rm -f "$stick" "$dir/data.img" "$dir/data-meta.img" "$target" "$dir/target-data.img" "$dir/install-file.img"
 	lap "the install from a settings file and its first start"
@@ -10560,9 +10560,9 @@ if [ "$*" = fresh ]; then
 		-drive if=none,id=fresh,format=raw,file="$fresh" \
 		-device virtio-blk-pci,drive=fresh,bootindex=0
 	[ "$found" = 1 ] || { cat "$fresh_log"; fail "the released image as a computer's own disk did not confirm its slot"; }
-	tr -d '\r' <"$fresh_log" | grep -qa 'edel boot live: nobody has an account yet, so live logs in by itself' ||
+	tr -d '\r' <"$fresh_log" 2>/dev/null | grep -qa 'edel boot live: nobody has an account yet, so live logs in by itself' ||
 		fail "the released image on a computer's own disk with nobody on it did not log live in by itself"
-	if tr -d '\r' <"$fresh_log" | grep -qa 'edel boot live: Install Edel OS is first'; then
+	if tr -d '\r' <"$fresh_log" 2>/dev/null | grep -qa 'edel boot live: Install Edel OS is first'; then
 		fail "the released image on a computer's own disk showed the stick's install button"
 	fi
 	fresh_wait 'edel-settings: welcome page language' 120
@@ -10632,12 +10632,12 @@ if [ "$*" = fresh ]; then
 		-device virtio-blk-pci,drive=fresh,bootindex=0
 	[ "$found" = 1 ] || { cat "$fresh_again"; fail "the disk the Welcome set up did not start again"; }
 	i=0
-	until tr -d '\r' <"$fresh_again" | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
+	until tr -d '\r' <"$fresh_again" 2>/dev/null | grep -qa 'edel boot live: ' || [ "$i" -ge 60 ]; do
 		i=$((i + 1))
 		sleep 1
 	done
 	stop_vm
-	tr -d '\r' <"$fresh_again" | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
+	tr -d '\r' <"$fresh_again" 2>/dev/null | grep -qa 'edel boot live: vd[a-z] is not a removable disk and people have accounts, so the greeter asks who logs in' ||
 		fail "after the Welcome made cleo, the disk did not leave the login to the greeter"
 	rm -f "$fresh" "$dir/fresh-data.img"
 	greeter=$(walk_boot_seconds "$fresh_again")
