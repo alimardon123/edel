@@ -66,7 +66,7 @@ fn draw(canvas: &mut Canvas, _: &str, x: f32) {
     let fy = canvas.top + ((canvas.height - fh) / 2.0).round();
     let field = mix(tokens.panel, tokens.panel_text, 0.1);
     fill(canvas.pixmap, fx, fy, fw, fh, fh / 2.0, field);
-    let ink = mix(tokens.panel_text, tokens.panel, 0.3);
+    let ink = super::dim(tokens, 0.3);
     // The magnifier: a ring and its handle, from a 14-unit square.
     let unit = GLASS * s / 14.0;
     let (gx, gy) = (fx + PAD * s, fy + (fh - GLASS * s) / 2.0);

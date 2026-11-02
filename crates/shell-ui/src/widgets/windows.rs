@@ -25,7 +25,7 @@ use tiny_skia::{FilterQuality, PixmapPaint, Transform};
 use edel::tokens::Colour;
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{Face, fill, mix};
+use crate::paint::{Face, fill};
 
 pub const WIDGET: Widget = Widget {
     name: edel::widgets::WINDOWS.name,
@@ -256,7 +256,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         // The last button, when windows are left over, counts them.
         if more > 0 && i + 1 == widths.len() {
             if let Some(text) = canvas.text.as_deref_mut() {
-                let ink = mix(tokens.panel_text, tokens.panel, 0.3);
+                let ink = super::dim(tokens, 0.3);
                 let mut line = text.fit_in(&format!("+{}", more + 1), size, bw, Face::MEDIUM);
                 let ty = y + (height - size * 1.25) / 2.0;
                 let lx = bx + (bw - line.width) / 2.0;
@@ -271,10 +271,10 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         // Text, then the mark, a little dimmer as a window matters less.
         let (ink, foot) = match mark {
             '*' => (tokens.panel_text, Some((LINE, tokens.accent))),
-            '-' => (mix(tokens.panel_text, tokens.panel, 0.55), None),
+            '-' => (super::dim(tokens, 0.55), None),
             _ => (
-                mix(tokens.panel_text, tokens.panel, 0.3),
-                Some((DOT, mix(tokens.panel_text, tokens.panel, 0.55))),
+                super::dim(tokens, 0.3),
+                Some((DOT, super::dim(tokens, 0.55))),
             ),
         };
         if let Some((w, colour)) = foot {
@@ -317,7 +317,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         if !found {
             let generic = Colour {
                 a: if mark == '-' { FADED } else { 1.0 },
-                ..mix(tokens.panel_text, tokens.panel, 0.35)
+                ..super::dim(tokens, 0.35)
             };
             crate::paint::icon(canvas.pixmap, "app-generic", px, ix, iy, generic);
         }

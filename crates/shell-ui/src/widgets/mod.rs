@@ -30,9 +30,9 @@ use accesskit::Role;
 use tiny_skia::Pixmap;
 
 use edel::app_use::Kind;
-use edel::tokens::Tokens;
+use edel::tokens::{Colour, Tokens};
 
-use crate::paint::Text;
+use crate::paint::{Text, mix};
 
 /// Where a widget draws: the panel's pixmap, with the panel's row in it.
 pub struct Canvas<'a> {
@@ -240,6 +240,19 @@ pub enum Action {
 }
 
 /// For widgets that take no input.
+/// The panel's text dimmed `t` (0 to 1) towards the panel's colour, for a
+/// date under the time, an unchosen button or a placeholder. On a
+/// see-through panel (Glass) the wallpaper shows where the panel's colour
+/// would, so text dimmed by the whole `t` turned faint against it (the
+/// unchosen workspace numbers at 2.4:1 on a blue wallpaper). There it is
+/// dimmed by the square of the panel's opacity: 16 percent of `t` at the
+/// Glass's 40, which keeps such text above 4.5:1 there, and all of `t`,
+/// the same look as before, on an opaque panel.
+pub fn dim(tokens: &Tokens, t: f32) -> Colour {
+    let opaque = tokens.panel_opacity.min(100) as f32 / 100.0;
+    mix(tokens.panel_text, tokens.panel, t * opaque * opaque)
+}
+
 pub fn no_input(_: &mut Canvas, _: &str, _: Input) -> Option<Action> {
     None
 }

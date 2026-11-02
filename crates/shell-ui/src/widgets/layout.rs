@@ -11,7 +11,7 @@ use edel::i18n::{tr, trf};
 use edel::tokens::Tokens;
 
 use super::{Action, Canvas, Input, Live, Widget};
-use crate::paint::{self, fill, lit, mix};
+use crate::paint::{self, fill, lit};
 
 pub const WIDGET: Widget = Widget {
     name: edel::widgets::LAYOUT.name,
@@ -76,7 +76,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
         fill(canvas.pixmap, bx, by, bw, bh, r, lit(tokens));
         tokens.accent
     } else {
-        mix(tokens.panel_text, tokens.panel, 0.25)
+        super::dim(tokens, 0.25)
     };
     let name = if tiled {
         "layout-tiling"
