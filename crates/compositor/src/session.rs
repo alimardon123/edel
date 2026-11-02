@@ -13,7 +13,10 @@
 //! PipeWire, is started again too, up to [`REVIVES`] times a session, so
 //! sound comes back by itself; one that someone stopped with a signal
 //! (`kill`, so SIGTERM, or SIGKILL, SIGINT or SIGHUP) is left stopped, as
-//! asked, and so is one that ended well. The log says each. They end with the
+//! asked, and so is one that ended well, unless a program before it in
+//! the list crashed within a few seconds: WirePlumber ends well when the
+//! PipeWire it serves goes, so it is started again with PipeWire, or sound
+//! would stay off (found in CI on 2026-11-02). The log says each. They end with the
 //! compositor, the kernel sending each SIGTERM when it goes, a crash
 //! included, so the next session never meets a second sound system. A
 //! change of preset does not start or end them until the next login.
@@ -62,9 +65,46 @@ const AGAIN: Duration = Duration::from_millis(500);
 #[derive(Default)]
 pub struct Services {
     started: bool,
+    /// The last program of the list to crash and be started again, so the
+    /// ones after it that end well with it start again too.
+    crashed: Option<Crash>,
+    /// Programs that ended well lately, in case a program before them
+    /// turns out to have crashed: the two ends can be heard in either
+    /// order.
+    ended_well: Vec<Ended>,
     /// The input method the compositor runs, while the settings name one
     /// (M6.8).
     input_method: Option<Input>,
+}
+
+/// A program of the list that crashed and was started again.
+#[derive(Clone)]
+struct Crash {
+    order: usize,
+    name: String,
+    at: Instant,
+}
+
+/// A program of the list that ended well.
+struct Ended {
+    command: String,
+    runs: Runs,
+    at: Instant,
+    env: Env,
+}
+
+/// Whether a program at `order` in the list that ended well at `at` ended
+/// because of `crash`: a program before it crashed within [`QUICK`] of
+/// its end, either side of it.
+fn follows(crash: Option<&Crash>, order: usize, at: Instant) -> bool {
+    crash.is_some_and(|crash| {
+        let apart = if at > crash.at {
+            at - crash.at
+        } else {
+            crash.at - at
+        };
+        crash.order < order && apart < QUICK
+    })
 }
 
 /// The input method's program, as `region.input_method` names it (M6.8).
@@ -87,8 +127,13 @@ pub fn start(handle: &LoopHandle<'static, Edel>, state: &mut Edel) {
     state.services.started = true;
     follow_low_latency(state);
     let env = state.cursors.env();
-    for command in state.settings.session_start() {
-        spawn(handle, command, 1, 0, env.clone());
+    for (order, command) in state.settings.session_start().into_iter().enumerate() {
+        let runs = Runs {
+            order,
+            run: 1,
+            revived: 0,
+        };
+        spawn(handle, command, runs, env.clone());
     }
     follow_input_method(handle, state);
     // A game session (M8.26) opens its game alone.
@@ -310,7 +355,7 @@ fn ends_with_us(process: &mut Command) {
     }
 }
 
-fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived: u32, env: Env) {
+fn spawn(handle: &LoopHandle<'static, Edel>, command: String, runs: Runs, env: Env) {
     let mut words = command.split_whitespace();
     let Some(name) = words.next().map(str::to_string) else {
         return;
@@ -339,10 +384,15 @@ fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived:
     let began = Instant::now();
     let (sender, receiver) = channel::channel::<Option<ExitStatus>>();
     let again = handle.clone();
-    let inserted = handle.insert_source(receiver, move |event, _, _: &mut Edel| {
+    let inserted = handle.insert_source(receiver, move |event, _, state: &mut Edel| {
         if let Event::Msg(status) = event {
-            let runs = Runs { run, revived };
-            ended(&again, command.clone(), runs, began, status, env.clone());
+            let end = Ended {
+                command: command.clone(),
+                runs,
+                at: Instant::now(),
+                env: env.clone(),
+            };
+            ended(&again, state, end, began, status);
         }
     });
     if let Err(e) = inserted {
@@ -359,11 +409,13 @@ fn spawn(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived:
     }
 }
 
-/// How often a program of the session has run: `run` counts quick
-/// failures in a row, the first run included, and `revived` the times it
-/// was started again after failing once it had run a while.
+/// A program of the session: `order` is its place in the list, `run`
+/// counts quick failures in a row, the first run included, and `revived`
+/// the times it was started again after failing once it had run a while,
+/// or after ending with a program before it.
 #[derive(Clone, Copy)]
 struct Runs {
+    order: usize,
     run: u32,
     revived: u32,
 }
@@ -381,27 +433,41 @@ fn was_stopped(status: Option<ExitStatus>) -> bool {
 
 /// A program of the session ended: tried again if it failed right after
 /// starting, or if it failed after a while without being stopped, up to
-/// [`REVIVES`] times; said so either way.
+/// [`REVIVES`] times, and if it ended well with a program before it that
+/// crashed; said so either way.
 fn ended(
     handle: &LoopHandle<'static, Edel>,
-    command: String,
-    runs: Runs,
+    state: &mut Edel,
+    end: Ended,
     began: Instant,
     status: Option<ExitStatus>,
-    env: Env,
 ) {
-    let name = command
+    let name = end
+        .command
         .split_whitespace()
         .next()
         .unwrap_or_default()
         .to_string();
     let failed = status.is_none_or(|s| !s.success());
     let how = status.map_or_else(|| "was lost".to_string(), |s| format!("ended ({s})"));
+    let Runs {
+        order,
+        run,
+        revived,
+    } = end.runs;
     if !failed {
+        let crash = state.services.crashed.clone();
+        if follows(crash.as_ref(), order, end.at) && revived < REVIVES {
+            let cause = crash.map(|c| c.name).unwrap_or_default();
+            follow(handle, &name, &how, &cause, end);
+            return;
+        }
         eprintln!("edel-compositor: {name} {how}");
+        let services = &mut state.services;
+        services.ended_well.retain(|e| e.at.elapsed() < QUICK);
+        services.ended_well.push(end);
         return;
     }
-    let Runs { run, revived } = runs;
     if began.elapsed() >= QUICK {
         if was_stopped(status) {
             eprintln!(
@@ -421,7 +487,32 @@ fn ended(
             "edel-compositor: {}",
             messages::session_program_revived(&name, &how, revived + 1, REVIVES)
         );
-        again(handle, command, 1, revived + 1, env);
+        let crash = Crash {
+            order,
+            name: name.clone(),
+            at: end.at,
+        };
+        // The ones after it that ended well first, heard before its end.
+        let (with, rest): (Vec<Ended>, Vec<Ended>) = std::mem::take(&mut state.services.ended_well)
+            .into_iter()
+            .partition(|e| follows(Some(&crash), e.runs.order, e.at) && e.runs.revived < REVIVES);
+        state.services.ended_well = rest;
+        state.services.crashed = Some(crash);
+        let runs = Runs {
+            order,
+            run: 1,
+            revived: revived + 1,
+        };
+        again(handle, end.command, runs, end.env);
+        for later in with {
+            let later_name = later
+                .command
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            follow(handle, &later_name, "ended (exit status: 0)", &name, later);
+        }
         return;
     }
     if run >= TRIES {
@@ -432,11 +523,37 @@ fn ended(
         return;
     }
     eprintln!("edel-compositor: {name} {how}; starting it again");
-    again(handle, command, run + 1, revived, env);
+    again(
+        handle,
+        end.command,
+        Runs {
+            order,
+            run: run + 1,
+            revived,
+        },
+        end.env,
+    );
+}
+
+/// Starts again a program that ended well with `cause`, a program before
+/// it that crashed; if `cause` is not back yet, its quick failures are
+/// tried again as at the start.
+fn follow(handle: &LoopHandle<'static, Edel>, name: &str, how: &str, cause: &str, end: Ended) {
+    let revived = end.runs.revived + 1;
+    eprintln!(
+        "edel-compositor: {}",
+        messages::session_program_follows(name, how, cause, revived, REVIVES)
+    );
+    let runs = Runs {
+        order: end.runs.order,
+        run: 1,
+        revived,
+    };
+    again(handle, end.command, runs, end.env);
 }
 
 /// Starts `command` again after [`AGAIN`].
-fn again(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived: u32, env: Env) {
+fn again(handle: &LoopHandle<'static, Edel>, command: String, runs: Runs, env: Env) {
     let later = handle.clone();
     let name = command
         .split_whitespace()
@@ -444,7 +561,7 @@ fn again(handle: &LoopHandle<'static, Edel>, command: String, run: u32, revived:
         .unwrap_or_default()
         .to_string();
     let timer = handle.insert_source(Timer::from_duration(AGAIN), move |_, _, _: &mut Edel| {
-        spawn(&later, command.clone(), run, revived, env.clone());
+        spawn(&later, command.clone(), runs, env.clone());
         TimeoutAction::Drop
     });
     if let Err(e) = timer {
@@ -467,6 +584,45 @@ mod tests {
         assert!(!was_stopped(by(Signal::SEGV)));
         assert!(!was_stopped(Some(ExitStatus::from_raw(1 << 8))), "exit 1");
         assert!(!was_stopped(None), "lost");
+    }
+
+    #[test]
+    fn a_program_that_ends_well_with_one_before_it_that_crashed_follows_it() {
+        let now = Instant::now();
+        let crash = Crash {
+            order: 0,
+            name: "pipewire".into(),
+            at: now,
+        };
+        let soon = now + Duration::from_secs(1);
+        assert!(
+            follows(Some(&crash), 1, soon),
+            "wireplumber after pipewire's end"
+        );
+        assert!(follows(Some(&crash), 1, now), "at the same moment");
+        let before = now.checked_sub(Duration::from_secs(1)).unwrap();
+        let crash_later = Crash {
+            at: soon,
+            ..crash.clone()
+        };
+        assert!(
+            follows(Some(&crash_later), 1, before + Duration::from_secs(1)),
+            "heard first"
+        );
+        assert!(!follows(Some(&crash), 0, soon), "itself");
+        assert!(
+            !follows(
+                Some(&Crash {
+                    order: 2,
+                    ..crash.clone()
+                }),
+                1,
+                soon
+            ),
+            "a program after it"
+        );
+        assert!(!follows(Some(&crash), 1, now + QUICK), "long after");
+        assert!(!follows(None, 1, soon), "nothing crashed");
     }
 
     #[test]

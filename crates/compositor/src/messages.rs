@@ -145,6 +145,15 @@ pub fn session_program_revived(name: &str, how: &str, time: u32, of: u32) -> Str
     )
 }
 
+/// A program of the session's list ended well because one before it,
+/// which it needs, crashed (WirePlumber when PipeWire goes), so it is
+/// started again with it (2026-11-02).
+pub fn session_program_follows(name: &str, how: &str, cause: &str, time: u32, of: u32) -> String {
+    format!(
+        "{name} {how} as {cause}, which it needs, crashed; starting it again with {cause} ({time} of {of} times this session)"
+    )
+}
+
 /// A program of the session's list failed after running a while once
 /// more than it may be started again.
 pub fn session_program_crashed_too_often(name: &str, how: &str, times: u32) -> String {

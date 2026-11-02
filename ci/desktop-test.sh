@@ -185,7 +185,8 @@
 #               sound.png; the seed's sound.low_latency links ci's PipeWire
 #               drop-in to the low-latency file, and pw-metadata shows its
 #               quantum, a wrong value is refused in words, and reset takes
-#               the link out (M7.6b)
+#               the link out (M7.6b); PipeWire crashed on purpose comes
+#               back with WirePlumber, and a sink with them
 #   network     NetworkManager and BlueZ (M5.8a): nmcli -t general status
 #               reports connected (the VM's user-mode network, by
 #               NetworkManager's own DHCP), ci, in group seat, may change the
@@ -1765,7 +1766,23 @@ case_sound() {
 	closed=$(count 'edel-compositor: unmapped window Settings')
 	python3 ci/qmp.py key meta_l-q
 	wait_more 'edel-compositor: unmapped window Settings' "$closed" || fail "Super+Q did not close Settings"
-	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, edel boot speakers gave the VM's model its speaker profile and its filter runs in the sound system, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib)), the seed's sound.low_latency linked ci's PipeWire drop-in and pw-metadata showed clock.quantum and clock.max-quantum $quantum, a wrong value was refused in words and reset took the link out"
+	# PipeWire crashing (2026-11-02, CI): the compositor starts it again,
+	# and WirePlumber, which ends well when PipeWire goes, with it, so the
+	# sink comes back.
+	revived=$(count 'edel-compositor: pipewire ended \(signal: 6 \(SIGABRT\)\) after running a while; starting it again')
+	followed=$(count 'edel-compositor: wireplumber ended \(exit status: 0\) as pipewire, which it needs, crashed; starting it again')
+	guest 'sound crash'
+	wait_more 'edel-compositor: pipewire ended \(signal: 6 \(SIGABRT\)\) after running a while; starting it again' "$revived" 20 ||
+		fail "the compositor did not start PipeWire again after it crashed: $(tr -d '\r' <"$log" | grep -a -E 'edel-compositor: (pipewire|wireplumber) ' | tail -n 4)"
+	wait_more 'edel-compositor: wireplumber ended \(exit status: 0\) as pipewire, which it needs, crashed; starting it again' "$followed" 20 ||
+		fail "WirePlumber was not started again with PipeWire: $(tr -d '\r' <"$log" | grep -a -E 'edel-compositor: (pipewire|wireplumber) ' | tail -n 4)"
+	i=0
+	while [ -z "$(sink_volume)" ]; do
+		i=$((i + 1))
+		[ "$i" -lt 20 ] || fail "after PipeWire crashed and both came back, wpctl status lists no sink in use: $(value sound_status)"
+		sleep 3
+	done
+	echo "PASS: the compositor started pipewire and wireplumber, PipeWire served the PulseAudio socket itself, edel boot speakers gave the VM's model its speaker profile and its filter runs in the sound system, Settings opened on its Sound page with the slider focused, and Home with six presses of Right set the sink to 0.30 as wpctl status shows (sound system resident, KiB: $(value sound_rss_kib)), the seed's sound.low_latency linked ci's PipeWire drop-in and pw-metadata showed clock.quantum and clock.max-quantum $quantum, a wrong value was refused in words and reset took the link out, and after PipeWire crashed the compositor started it and WirePlumber again and a sink was back in use"
 }
 
 case_network() {

@@ -1182,6 +1182,13 @@ commands() {
 			say "sound_sinks $(echo "$status" | awk '/Sinks:/ { on = 1; next } /Sink endpoints:|Sources:|Filters:|Streams:|Video/ { on = 0 } on && /vol:/ { sub(/^[^0-9*]*/, ""); printf "%s;", $0 }')"
 			say "sound_status $(echo "$status" | tr '\n' ';')"
 			;;
+		# A crash of PipeWire (an assertion's SIGABRT): the compositor
+		# starts it again, and WirePlumber, which ends well when PipeWire
+		# goes, with it.
+		'sound crash')
+			kill -ABRT $(pidof pipewire)
+			say "sound_crashed $?"
+			;;
 		'sound memory')
 			say "sound_rss_kib $(for p in pipewire wireplumber; do echo "$p $(awk '/^VmRSS:/ { print $2 }' "/proc/$(pidof $p | cut -d' ' -f1)/status" 2>/dev/null)"; done | tr '\n' ' ')"
 			;;
@@ -1915,7 +1922,11 @@ ieee80211w=2' channel=6 ;;
 		'in use off')
 			pkill -f 'gst-launch-1.0 -q pipewiresrc'
 			pkill -f 'edel-test-mic /tmp/in-use.wav'
-			as_ci "pw-cli destroy edel-test-camera; pw-cli destroy edel-test-mic; edel settings reset apps.microphone" </dev/null >/dev/null 2>&1
+			# The fake camera stays: PipeWire 1.6's videotestsrc, which no real
+			# camera uses, adds its timer to the main loop and takes it out of
+			# the data loop when destroyed, which aborts PipeWire (CI,
+			# 2026-11-02); with nobody linked to it, nothing shows it in use.
+			as_ci "pw-cli destroy edel-test-mic; edel settings reset apps.microphone" </dev/null >/dev/null 2>&1
 			say "in_use_off $?"
 			;;
 		# Location (M6.14c): the machine's city, as root, written for
