@@ -10095,6 +10095,30 @@ if [ "$*" = live ]; then
 		[ -n "$at" ] || return 1
 		[ "$(od -An -tu4 -j$((at + 28)) -N4 "$dir/target-esp.img" | tr -d ' ')" -gt 0 ]
 	}
+	# install_done OLD_ESP USER SHOT HOW: waits until the install that began
+	# after the start-up partition's serial was OLD_ESP has written its
+	# boot loader, then reads the data partition once, which must hold
+	# USER's first password. The installer unmounts the data partition
+	# before it writes the boot loader (installer.rs), so that look sees
+	# the install whole; looking at the data partition every 10 s while
+	# it was written took about 13 s a look. SHOT names the pictures,
+	# HOW the install in a failure.
+	install_done() {
+		i=0
+		until esp_done "$1"; do
+			i=$((i + 1))
+			if [ "$i" -ge 300 ]; then
+				python3 ci/qmp.py screendump "$dir/$3-failed.png"
+				stick_logs
+				fail "Settings' installer page $4 wrote no boot loader within 900 s ($3-plan.png, $3-failed.png)"
+			fi
+			sleep 3
+		done
+		target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q "^$2:\\\$6\\\$" || {
+			stick_logs
+			fail "Settings' installer page $4 wrote its boot loader, but the data partition holds no first password for $2"
+		}
+	}
 	# stick_session: the live session's log, read from a copy of the
 	# stick's data partition while the stick runs (the journal replayed
 	# on the copy), as the session writes it there.
@@ -10382,34 +10406,12 @@ sys.stdout.buffer.write(bytes(out))
 	sleep 1
 	press key ret
 	install_began=$(date +%s)
-	i=0
-	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^ali:\$6\$'; do
-		i=$((i + 1))
-		if [ "$i" -ge 60 ]; then
-			python3 ci/qmp.py screendump "$dir/install-failed.png"
-			stick_logs
-			fail "Settings' installer page did not install on the blank disk within 600 s (install-page.png, install-plan.png, install-failed.png)"
-		fi
-		sleep 10
-	done
-	# The data partition comes before the default apps and the boot
-	# loader; the second install waits for this one to finish.
-	i=0
-	until esp_done "$first_esp"; do
-		i=$((i + 1))
-		if [ "$i" -ge 90 ]; then
-			python3 ci/qmp.py screendump "$dir/install-failed.png"
-			stick_logs
-			fail "Settings' installer page wrote the data partition on the blank disk but no boot loader within 900 s (install-failed.png)"
-		fi
-		sleep 10
-	done
+	install_done "$first_esp" ali install "on the blank disk"
 	lap "the first install"
 	echo "  the first install took about $(($(date +%s) - install_began)) s from its confirmation to its boot loader, the default apps' copy included"
 	walk install-page "steps=$walk_steps" || fail "installing from Settings' installer page took more steps than its budget (walk install-page, docs/REVIEW-experience.md)"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-done.png"
-	target_data || fail "the installed disk has no data partition"
 	installed=$(debugfs -R "cat ${data_dir#/data}/$settings_name" "$dir/target-data.img" 2>/dev/null)
 	echo "$installed" | sed 's/^/  installed settings: /'
 	echo "$installed" | grep -q '^\[users.ali\]' || fail "the installed settings file has no [users.ali]"
@@ -10417,26 +10419,15 @@ sys.stdout.buffer.write(bytes(out))
 	! echo "$installed" | grep -q 'classic' || fail "the installed settings file names Classic, which applies anyway"
 	! echo "$installed" | grep -q 'edel-install-test' || fail "the password is in the installed settings file"
 	# The desktop add-on the stick runs goes straight beside the new slot,
-	# in its version's folder, not to be tried (M8.17c). The installer
-	# copies it last, after the default apps, so the test waits until the
-	# file is there and its size holds between two looks.
+	# in its version's folder, not to be tried (M8.17c), written before
+	# the boot loader, so the look install_done took holds it whole.
 	carried=''
 	size=''
-	i=0
-	while [ "$i" -lt 30 ]; do
-		target_data
-		was=$size
-		carried=''
-		size=''
-		for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
-			found=$(debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 == "desktop.ext4" { print $7 }')
-			[ -n "$found" ] && carried=$version size=$found
-		done
-		[ -n "$carried" ] && [ "${size:-0}" -gt 0 ] && [ "$size" = "$was" ] && break
-		i=$((i + 1))
-		sleep 10
+	for version in $(debugfs -R "ls -p $addons_dir_on_data" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 != "." && $6 != ".." && $6 != "" { print $6 }'); do
+		found=$(debugfs -R "ls -p $addons_dir_on_data/$version" "$dir/target-data.img" 2>/dev/null | awk -F/ '$6 == "desktop.ext4" { print $7 }')
+		[ -n "$found" ] && carried=$version size=$found
 	done
-	if [ -z "$carried" ] || [ "$size" != "$was" ]; then
+	if [ -z "$carried" ] || [ "${size:-0}" -eq 0 ]; then
 		debugfs -R "ls -l $addons_dir_on_data" "$dir/target-data.img" 2>&1 | sed 's/^/  target addons: /'
 		stick_logs
 		fail "the installed disk has no desktop add-on beside its slot"
@@ -10467,30 +10458,10 @@ sys.stdout.buffer.write(bytes(out))
 	python3 ci/qmp.py key ret
 	sleep 1
 	python3 ci/qmp.py key ret
-	i=0
-	until target_data && debugfs -R "cat ${first_passwords#/data}" "$dir/target-data.img" 2>/dev/null | grep -q '^bea:\$6\$'; do
-		i=$((i + 1))
-		if [ "$i" -ge 60 ]; then
-			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
-			stick_logs
-			fail "Settings' installer page did not install from the settings file on the stick within 600 s (install-file.png, install-file-plan.png, install-file-failed.png)"
-		fi
-		sleep 10
-	done
-	i=0
-	until esp_done "$old_esp"; do
-		i=$((i + 1))
-		if [ "$i" -ge 90 ]; then
-			python3 ci/qmp.py screendump "$dir/install-file-failed.png"
-			stick_logs
-			fail "Settings' installer page wrote the data partition but no boot loader within 900 s (install-file-failed.png)"
-		fi
-		sleep 10
-	done
+	install_done "$old_esp" bea install-file "from the settings file on the stick"
 	sleep 5
 	python3 ci/qmp.py screendump "$dir/install-file-done.png"
 	stop_vm
-	target_data || fail "the disk installed from the file has no data partition"
 	# The default apps came along, so the machine has them offline.
 	case "$(debugfs -R "stat /edel/apps/exports/share/icons/hicolor/icon-theme.cache" "$dir/target-data.img" 2>&1)" in
 	*"File not found"* | '') stick_logs; fail "the disk installed from the file has no default apps: the installer's copy of them failed" ;;
