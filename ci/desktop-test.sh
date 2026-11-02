@@ -10034,6 +10034,7 @@ if [ "$*" = live ]; then
 	# stick wrote on its data partition (M5.28a).
 	stick="$dir/stick.img"
 	cp --sparse=always out/edel-x86_64.img "$stick"
+	flush_copy "$stick"
 	# stick_logs: the session's, greetd's and the system's logs from the
 	# stick's data partition (partition 4), which /home and /var live on.
 	stick_logs() {
@@ -10181,9 +10182,13 @@ sys.stdout.buffer.write(bytes(out))
 		echo "  Settings mapped about $i s after Return in the launcher ($1)"
 		sleep 5
 	}
+	# What the runner brings to the try walk: after the boot, its share
+	# of processor time spent waiting on disks or taken by its own host,
+	# with the boot's longest waits (stamped log).
+	load_before=$(host_load)
 	# Offline (M6.2): the stick reaches nothing beyond the VM's own
 	# network, so the default apps must start from what it carries.
-	vm_net=",restrict=on" keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+	vm_stamp=1 vm_net=",restrict=on" keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-qmp unix:"$QMP",server=on,wait=off \
 		-device qemu-xhci,id=xhci \
@@ -10197,6 +10202,9 @@ sys.stdout.buffer.write(bytes(out))
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
 	started=$(walk_boot_seconds "$log")
+	echo "$load_before $(host_load)" | awk -v s="$started" '{ all = $4 - $1 + 1
+		printf "  the boot took %s s from /init; the runner waited on disks %.0f percent of its processor time and gave %.0f percent to its host; its longest waits:\n", s, 100 * ($5 - $2) / all, 100 * ($6 - $3) / all }'
+	boot_gaps "$log" 6
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
@@ -10508,6 +10516,7 @@ if [ "$*" = fresh ]; then
 	rm -f "$QMP"
 	fresh="$dir/fresh.img"
 	cp --sparse=always out/edel-x86_64.img "$fresh"
+	flush_copy "$fresh"
 	fresh_log=out/desktop-fresh.log
 	# fresh_data: the disk's data partition, copied to $dir/fresh-data.img
 	# for debugfs, its journal replayed on the copy.
@@ -10626,6 +10635,7 @@ fi
 grown="$dir/edel-desktop-grown.img"
 cp --sparse=always "$dir/edel-desktop-x86_64.img" "$grown"
 truncate -s +4G "$grown"
+flush_copy "$grown"
 trap 'rm -f "$grown"' EXIT
 
 # Any restart ends the VM, so a crash is never missed, except in rollback,
