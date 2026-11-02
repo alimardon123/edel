@@ -10181,9 +10181,16 @@ sys.stdout.buffer.write(bytes(out))
 		echo "  Settings mapped about $i s after Return in the launcher ($1)"
 		sleep 5
 	}
+	# What the runner brings to the try walk, which varied from 7.5 to
+	# 14.1 s (2026-11-02) while the kernel's own part stayed near 1.2 s:
+	# how much of the stick the runner's page cache holds, and, after the
+	# boot, its share of processor time spent waiting on disks or taken
+	# by its own host, with the boot's longest waits (stamped log).
+	fincore "$stick" 2>/dev/null | sed 's/^/  runner page cache: /'
+	load_before=$(host_load)
 	# Offline (M6.2): the stick reaches nothing beyond the VM's own
 	# network, so the default apps must start from what it carries.
-	vm_net=",restrict=on" keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
+	vm_stamp=1 vm_net=",restrict=on" keep_vm=1 run_vm "$log" 'Started in [0-9.]+ s' "${DESKTOP_TEST_TIMEOUT:-300}" -no-reboot \
 		-m 2048 -smp 4 -vga std \
 		-qmp unix:"$QMP",server=on,wait=off \
 		-device qemu-xhci,id=xhci \
@@ -10197,6 +10204,9 @@ sys.stdout.buffer.write(bytes(out))
 		fail "the desktop image started from a USB stick did not confirm its slot"
 	fi
 	started=$(walk_boot_seconds "$log")
+	echo "$load_before $(host_load)" | awk -v s="$started" '{ all = $4 - $1 + 1
+		printf "  the boot took %s s from /init; the runner waited on disks %.0f percent of its processor time and gave %.0f percent to its host; its longest waits:\n", s, 100 * ($5 - $2) / all, 100 * ($6 - $3) / all }'
+	boot_gaps "$log" 6
 	grep -a 'edel boot live: ' "$log" | tr -d '\r'
 	tr -d '\r' <"$log" | grep -qa 'edel boot live: started from a removable disk, sd[a-z]*, so live logs in by itself' ||
 		fail "edel boot live did not take the USB stick for one"
