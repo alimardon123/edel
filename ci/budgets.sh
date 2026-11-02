@@ -24,6 +24,26 @@ walk_boot_seconds() {
 		END { if (init != "" && started != "") printf "%.2f\n", started - init }'
 }
 
+# boot_gaps LOG N: the N longest waits between two lines of a boot in LOG
+# from /init to `Started in`, with the line that ended each, for a log
+# run_vm stamped (vm_stamp=1), so a slow walk shows where its seconds
+# went. Prints nothing for a log without stamps.
+boot_gaps() {
+	tr -d '\r' <"$1" | awk '
+		$1 !~ /^[0-9]+[.][0-9]+$/ { next }
+		/\] Run \/init as init process/ { on = 1; last = $1; next }
+		on { printf "%7.3f %s\n", $1 - last, $0; last = $1 }
+		on && /Started in [0-9.]+ s/ { exit }' | sort -rn | head -n "$2" |
+		sed 's/^/  waited /'
+}
+
+# host_load: the runner's processor time so far, all, waiting on disks
+# (iowait) and taken by its own host (steal), in clock ticks, from
+# /proc/stat; two readings give a span's share of each.
+host_load() {
+	awk '/^cpu / { print $2 + $3 + $4 + $5 + $6 + $7 + $8 + $9, $6, $9; exit }' /proc/stat
+}
+
 # Every key press, typed word or click a person makes on a walk goes through
 # press, so the steps are counted where they are made.
 walk_steps=0
