@@ -785,13 +785,67 @@ jobs:
             out/channel/release.toml
             out/channel/release.toml.sig
             out/channel/signer
+            out/keys/throwaway/*.pub
+
+  # Rehearses the release (M3.4) on every run that signs one, publishing
+  # nothing and given no secret: an installed older Edel OS verifies the
+  # list the sign job signed, laid over the update images as the publish
+  # job lays them, and updates from it (ci/rehearse.sh). After the four
+  # checks a merge waits for, so it never holds one up; the publish job
+  # waits for it, so only a release a machine took is published.
+  rehearse:
+    name: Rehearse the release
+    needs: [sign]
+    runs-on: ubuntu-latest
+    # actions: read takes the fleet lane's archive and main's desktop image.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Take the update images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/vm-tests.sh take fleet ${{ github.run_id }}
+      - name: Take the lists as the sign job signed them
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: edel-signed
+          path: out
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Name this month's package cache
+        id: apt
+        run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
+      - name: Keep the Ubuntu packages this job installs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/edel-apt
+          key: apt-${{ github.job }}-${{ steps.apt.outputs.month }}
+          restore-keys: apt-${{ github.job }}-
+      - name: Install QEMU and UEFI firmware
+        run: sh ci/apt.sh qemu-system-x86 ovmf
+      - name: An older Edel OS updates from the signed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: sh ci/rehearse.sh
+      - name: Keep the rehearsal's logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: edel-rehearsal
+          if-no-files-found: ignore
+          path: out/upgrade-test-*.log
 
   # Publishes what the images job built and tested (M3.4): the preview on
   # every merge to main, a draft release for a v* tag. Off until Alimardon
   # sets the repository variable EDEL_PUBLISH to yes (docs/RELEASE.md).
   publish:
     name: Publish the release
-    needs: [rust, images, desktop, sign]
+    needs: [rust, images, desktop, sign, rehearse]
     if: (github.event_name == 'push' || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
     # One publish per ref at a time, never cancelled halfway: two merges in
     # a row upload one after the other, and ci/release.sh keeps the newer.
