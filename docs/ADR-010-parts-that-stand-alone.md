@@ -66,6 +66,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | An image's facts (name, kernel, slot size) | `images/*.toml` | `edel image build`, CI |
 | Budgets | `ci/budgets.toml` | `ci/sizes.sh`, desktop-test |
 | Settings keys, defaults, values, pages | `edel::settings` (`tests/keys.txt` its append-only record) | `edel`, the compositor, shell-ui, Settings, the settings reference (generated, M6.11) |
+| How the person's settings file lays over the machine's: profiles, own presets and themes in use, then key by key, and where each value comes from | `edel::settings::Layers` (the architecture review of 2026-10-31) | the compositor, shell-ui, Settings, `edel settings get`, the tokens |
 | Shortcuts | `edel::shortcuts` | the compositor, Settings, `docs/SHORTCUTS.md` (generated) |
 | Paths and file names, the settings file's name included | `edel::places` | every part; `ci/names.sh`, held equal by a test (M5.25, M5.27) |
 | How the desktop draws a corner, a shadow and a colour mix | `edel::draw` (and `edel::tokens::Colour::towards`) | the compositor and shell-ui (M6.17) |
