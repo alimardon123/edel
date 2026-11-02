@@ -269,7 +269,7 @@ fn draw(canvas: &mut Canvas, shown: &str, x: f32) {
                 text.draw(canvas.pixmap, &mut line, lx, ly, tokens.panel);
             }
         }
-        let faded = mix(tokens.panel_text, tokens.panel, 0.45);
+        let faded = super::dim(tokens, 0.45);
         if dock {
             // A round dot under the icon: the accent for the focused app.
             let colour = match cell.state {
