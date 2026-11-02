@@ -2,11 +2,14 @@
 # The monthly security rebuild (roadmap M8.3, docs/SECURITY.md), run by the
 # workflow "Monthly rebuild" on the first of each month.
 #
-#   sh ci/monthly.sh prepare BODY  refresh the build container's digest in
-#                                  features/base.toml and write the pull
-#                                  request's body, with the package diff, to
-#                                  BODY
-#   sh ci/monthly.sh branch        the rebuild's branch, monthly/YYYY-MM
+#   sh ci/monthly.sh prepare BODY [BASE]  refresh the build container's
+#                                  digest in features/base.toml and write
+#                                  the pull request's body, with the package
+#                                  diff, to BODY; BASE is main or a kept
+#                                  release/YYYY branch (M8.5), checked out
+#   sh ci/monthly.sh branch [BASE] the rebuild's branch, monthly/YYYY-MM for
+#                                  main, monthly/release-YYYY/YYYY-MM for
+#                                  release/YYYY
 #   sh ci/monthly.sh tag BRANCH    the release a merged BRANCH tags,
 #                                  vYYYY.MM.0
 #   sh ci/monthly.sh --self-test   check the names and the package diff
@@ -19,9 +22,17 @@
 # branch's current versions from apk inside the new container.
 set -eu
 
-# branch: monthly/YYYY-MM for this month (UTC).
+# branch [BASE]: this month's (UTC) rebuild of BASE, monthly/YYYY-MM for
+# main and monthly/release-YYYY/YYYY-MM for a kept release/YYYY.
 branch() {
-	echo "monthly/$(date -u +%Y-%m)"
+	case "${1:-main}" in
+	main) echo "monthly/$(date -u +%Y-%m)" ;;
+	release/*) echo "monthly/release-${1#release/}/$(date -u +%Y-%m)" ;;
+	*)
+		echo "monthly.sh: $1 is neither main nor a kept release/YYYY branch" >&2
+		return 1
+		;;
+	esac
 }
 
 # tag BRANCH: the release a merged monthly/YYYY-MM tags, vYYYY.MM.0; the
@@ -57,7 +68,7 @@ package_diff() {
 }
 
 prepare() {
-	body=$1
+	body=$1 base=${2:-main}
 	alpine=$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)
 	[ -n "$alpine" ] || {
 		echo "monthly.sh: features/base.toml names no Alpine branch" >&2
@@ -89,11 +100,19 @@ prepare() {
 		break
 	done
 
-	month=$(branch)
+	month=$(branch "$base")
+	# A kept release's rebuild tags nothing yet: which channel its
+	# machines follow, so the newest release never reaches them as an
+	# older one, waits for Alimardon (M8.5).
+	if [ "$base" = main ]; then
+		merged="Merging it tags the release \`$(tag "$month")\`, whose CI run makes its draft release."
+	else
+		merged="Merging it rebuilds the kept release \`$base\` (M8.5); it tags no release until its channel is decided."
+	fi
 	{
 		echo "Before: the images were last rebuilt with the build container \`$old\`."
 		echo
-		echo "After: the monthly security rebuild (roadmap M8.3, \`docs/SECURITY.md\`) builds every image again from Alpine's \`v$alpine\` branch as it is today, in its current container \`$digest\`, and this pull request's CI run tests them all. Merging it tags the release \`$(tag "$month")\`, whose CI run makes its draft release."
+		echo "After: the monthly security rebuild (roadmap M8.3, \`docs/SECURITY.md\`) builds every image again from Alpine's \`v$alpine\` branch as it is today, in its current container \`$digest\`, and this pull request's CI run tests them all. $merged"
 		echo
 		echo "How: \`ci/monthly.sh prepare\` read the digest of \`alpine:$alpine\` and wrote it into \`features/base.toml\`."
 		echo
@@ -134,6 +153,9 @@ self_test() {
 		fails=$((fails + 1))
 		;;
 	esac
+	check "a kept release's rebuild branch" "$(branch release/2026)" "monthly/release-2026/$(date -u +%Y-%m)"
+	check "a kept release's rebuild tags nothing yet" "$(tag "$(branch release/2026)" 2>/dev/null || echo none)" none
+	check "a lane is not rebuilt" "$(branch lane/ci 2>/dev/null || echo none)" none
 	tmp=$(mktemp -d)
 	printf '%s\n' musl-1.2.5-r10 libgcc-14.2.0-r6 xz-libs-5.8.1-r0 gone-1.0-r0 >"$tmp/old"
 	printf '%s\n' musl-1.2.5-r11 libgcc-14.2.0-r6 xz-libs-5.8.1-r1 xz-5.8.1-r1 >"$tmp/new"
@@ -147,12 +169,12 @@ self_test() {
 }
 
 case "${1:-}" in
-prepare) prepare "${2:?usage: sh ci/monthly.sh prepare BODY}" ;;
-branch) branch ;;
+prepare) prepare "${2:?usage: sh ci/monthly.sh prepare BODY [BASE]}" "${3:-main}" ;;
+branch) branch "${2:-main}" ;;
 tag) tag "${2:?usage: sh ci/monthly.sh tag BRANCH}" ;;
 --self-test) self_test ;;
 *)
-	echo "usage: sh ci/monthly.sh prepare BODY | branch | tag BRANCH | --self-test" >&2
+	echo "usage: sh ci/monthly.sh prepare BODY [BASE] | branch [BASE] | tag BRANCH | --self-test" >&2
 	exit 2
 	;;
 esac
