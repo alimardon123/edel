@@ -150,11 +150,14 @@ impl Ui {
         let state = std::fs::read_to_string(edel::places::STATE_FILE).ok();
         let list = screens::list(state.as_deref(), &files.displays());
         let shape: Vec<Shape> = list.iter().map(shape_of).collect();
-        let rebuild = *self.shape.borrow() != shape;
+        // The first reading builds the rows even with no screen, so the
+        // page says why it is empty instead of showing a blank box.
+        let rebuild = *self.shape.borrow() != shape || self.holder.first_child().is_none();
         if rebuild || *self.shown.borrow() != list {
             *self.shown.borrow_mut() = list.clone();
             self.picture.queue_draw();
         }
+        self.picture.set_visible(!list.is_empty());
         if rebuild {
             *self.shape.borrow_mut() = shape;
             self.build(&list);
