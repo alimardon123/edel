@@ -4,7 +4,9 @@
 # nothing else of the old release changes, and no image ever has it. Once
 # the slot is confirmed it updates to the build under test, served on the
 # host as 10.0.2.2, with the old release's own edel, then restarts. Slot
-# B, the new build, does not have it.
+# B, the new build, does not have it. When ci/upgrade-test.sh serves a
+# list for another channel, /etc/conf.d/edel-upgrade-test sets channel,
+# which the update takes once, as a person would with --channel.
 
 description="CI only: update this old release to the build under test"
 
@@ -18,7 +20,7 @@ start() {
 		# An update waits while the running slot is not yet confirmed,
 		# so it is tried again for up to 5 minutes.
 		i=0
-		until /usr/bin/edel update --allow-http http://10.0.2.2:8000/release.toml >/dev/console 2>&1; do
+		until /usr/bin/edel update ${channel:+--channel "$channel"} --allow-http http://10.0.2.2:8000/release.toml >/dev/console 2>&1; do
 			i=$((i + 1))
 			if [ "$i" -ge 60 ]; then
 				echo "UPGRADE-TEST: FAIL: the old release did not install the update" >/dev/console
