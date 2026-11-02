@@ -23,6 +23,8 @@ The workflow "Monthly rebuild" (`.github/workflows/monthly.yml`) runs at 03:17 U
 
 The rebuild changes no look and no default: only the build container's digest and the packages move. Its lists are signed afresh, so a machine's release list never runs out (lists expire 60 days after signing).
 
+**A kept release (M8.5)** is rebuilt the same way: the workflow does each of `main` and every `release/YYYY` branch in turn, with the branch `monthly/release-YYYY/YYYY-MM` and a pull request into that release's branch, tested by the full run. Its merge tags nothing yet: which channel a kept release's machines follow, so a newer base never reaches them as an update and an older one never reaches the newer base's, is Alimardon's to decide when the first release is cut. CI on `release/*` refuses a commit changing `design/` or `presets/` unless its subject starts `look-fix:` (`ci/look-fix.sh`), and never gives a `release/*` push the release key.
+
 A pull request or tag made by a workflow's own token starts no workflow, so the monthly workflow starts "CI" itself (`workflow_dispatch`), on the branch and on the tag. A dispatched run on a tag is signed and published as a pushed tag is; a dispatched run on a branch is a dry run, as a pull request's is.
 
 **One switch for Alimardon:** GitHub lets a workflow open pull requests only once the repository allows it (Settings, Actions, General, Workflow permissions, "Allow GitHub Actions to create and approve pull requests"). Until then the rebuild still pushes its branch and runs CI, and its run summary links the page where the pull request is opened by hand with one button.

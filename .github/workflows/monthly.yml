@@ -1,12 +1,14 @@
 name: Monthly rebuild
 
 # The monthly security rebuild (roadmap M8.3, docs/SECURITY.md). On the first
-# of each month it refreshes the build container's digest in
-# features/base.toml, pushes the branch monthly/YYYY-MM, opens a pull request
-# with the package changes since the last release, and starts the workflow
-# "CI" on that branch, whose full run builds and tests every image from
-# Alpine's branch as it is that day. Merging the pull request tags the
-# release vYYYY.MM.0 and starts "CI" on the tag, which makes its draft
+# of each month, for main and for every kept release/YYYY branch (M8.5), it
+# refreshes the build container's digest in features/base.toml, pushes the
+# branch monthly/YYYY-MM (monthly/release-YYYY/YYYY-MM for a kept release),
+# opens a pull request into that base with the package changes since the
+# last release, and starts the workflow "CI" on that branch, whose full run builds and tests every image from
+# Alpine's branch as it is that day. Merging main's pull request tags the
+# release vYYYY.MM.0 (a kept release's tags nothing until its channel is
+# decided) and starts "CI" on the tag, which makes its draft
 # release once publishing is on (docs/RELEASE.md). One small job each, so
 # the shared limit of 20 jobs at once is left to the full run.
 #
@@ -38,32 +40,39 @@ jobs:
       actions: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - name: Refresh the build container and write the package changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: sh ci/monthly.sh prepare out/monthly/body.md
-      - name: Push the branch, open the pull request and start CI on it
+      - name: Rebuild main and every kept release branch
+        # For each base, main and every release/YYYY (M8.5): refresh the
+        # build container and write the package changes (ci/monthly.sh
+        # prepare), push the base's rebuild branch, open its pull request
+        # and start CI on it.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          branch=$(sh ci/monthly.sh branch)
-          title="Rebuild every image from this month's Alpine packages ($branch)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$branch"
-          git diff --quiet || git commit -q -m "$title" -- features/base.toml
-          # The month's branch is this workflow's own: a second run that
-          # month replaces it.
-          git push -q --force origin "HEAD:refs/heads/$branch"
-          number=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$number" ]; then
-            gh pr edit "$number" --body-file out/monthly/body.md
-          elif ! gh pr create --base main --head "$branch" --title "$title" --body-file out/monthly/body.md; then
-            # GitHub refuses until the repository allows it (docs/SECURITY.md).
-            echo "Open the pull request by hand: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/main...$branch?expand=1" | tee -a "$GITHUB_STEP_SUMMARY"
-          fi
-          gh workflow run ci.yml --ref "$branch"
-          cat out/monthly/body.md >>"$GITHUB_STEP_SUMMARY"
+          bases="main $(git ls-remote --heads origin 'release/*' | sed 's|.*refs/heads/||')"
+          for base in $bases; do
+            git fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base"
+            git checkout -q -B "rebuild" "origin/$base"
+            sh ci/monthly.sh prepare out/monthly/body.md "$base"
+            branch=$(sh ci/monthly.sh branch "$base")
+            title="Rebuild every image from this month's Alpine packages ($branch)"
+            git checkout -q -B "$branch"
+            git diff --quiet || git commit -q -m "$title" -- features/base.toml
+            # The month's branch is this workflow's own: a second run that
+            # month replaces it.
+            git push -q --force origin "HEAD:refs/heads/$branch"
+            number=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
+            if [ -n "$number" ]; then
+              gh pr edit "$number" --body-file out/monthly/body.md
+            elif ! gh pr create --base "$base" --head "$branch" --title "$title" --body-file out/monthly/body.md; then
+              # GitHub refuses until the repository allows it (docs/SECURITY.md).
+              echo "Open the pull request by hand: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/compare/$base...$branch?expand=1" | tee -a "$GITHUB_STEP_SUMMARY"
+            fi
+            gh workflow run ci.yml --ref "$branch"
+            cat out/monthly/body.md >>"$GITHUB_STEP_SUMMARY"
+            rm -rf out/monthly
+          done
 
   tag:
     name: Tag the month's release

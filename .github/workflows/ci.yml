@@ -2,7 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # release/*: a kept release (M8.5), tested on every push, never
+    # signed with the release key nor published from (yet).
+    branches: [main, "release/*"]
     tags: ["v*"]
   pull_request:
     # ready_for_review: a draft runs Rust checks only (ci/changes.sh), so
@@ -124,6 +126,30 @@ jobs:
         run: sh ci/release-checklist.sh --self-test
       - name: The monthly rebuild names its branch, tag and package diff (M8.3)
         run: sh ci/monthly.sh --self-test
+      - name: A kept release changes no look without look-fix (M8.5)
+        # On a pull request into a release/* branch or a push to one, every
+        # commit changing design/ or presets/ says look-fix: (ADR-008); the
+        # check catching one that does not is proven on every run.
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after }}
+        run: |
+          sh ci/look-fix.sh --self-test
+          case "$GITHUB_EVENT_NAME:$BASE_REF:$GITHUB_REF" in
+          pull_request:release/*)
+            git fetch -q --unshallow origin 2>/dev/null || git fetch -q origin
+            # HEAD is the merge into the base; its second parent is the pull request.
+            sh ci/look-fix.sh "origin/$BASE_REF" HEAD^2
+            ;;
+          push::refs/heads/release/*)
+            git fetch -q --unshallow origin 2>/dev/null || git fetch -q origin
+            case "$BEFORE" in
+            *[!0]*) sh ci/look-fix.sh "$BEFORE" "$AFTER" ;;
+            *) sh ci/look-fix.sh "$(git merge-base origin/main "$AFTER")" "$AFTER" ;;
+            esac
+            ;;
+          esac
       - name: Visible defaults changed
         # The diff of design/, presets/ and docs/defaults.md against the
         # last kept release, or main before there is one, in the run's
@@ -244,7 +270,7 @@ jobs:
           else
             version=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y.%m).$GITHUB_RUN_NUMBER
             echo "EDEL_VERSION=$version" >> "$GITHUB_ENV"
-            if [ "$GITHUB_EVENT_NAME" = push ]; then
+            if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then
               echo "EDEL_CHANNEL=preview" >> "$GITHUB_ENV"
               echo "EDEL_TAG=preview" >> "$GITHUB_ENV"
             else
@@ -417,7 +443,7 @@ jobs:
           case "$EDEL_TAG" in v*) sh ci/release.sh dry-run "$EDEL_TAG" && sh ci/channel.sh dry-run "$EDEL_TAG" ;; esac
 
       - name: Keep the release for the publish job
-        if: (github.event_name == 'push' || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: edel-release
@@ -733,17 +759,18 @@ jobs:
   # only the two lists come from the build, and the signer is built here
   # from the locked sources (Cargo.lock's checksums pin every crate), with
   # nothing cached, so nothing the build made runs while the key is here.
-  # Only a push, or a run on a tag (the monthly rebuild starts one, M8.3),
-  # gets the key, in the GitHub environment "release", which Alimardon can
-  # make wait for their approval; pull requests sign with a throwaway key,
-  # which proves the path.
+  # Only a push to main, or a run on a tag (the monthly rebuild starts one,
+  # M8.3), gets the key, in the GitHub environment "release", which
+  # Alimardon can make wait for their approval; pull requests and pushes
+  # to a kept release/* branch (M8.5) sign with a throwaway key, which
+  # proves the path.
   sign:
     name: Sign the release
     # After every test, so only a tested build is ever signed (the review
     # of 2026-10-25).
     needs: [build, rust, images, desktop]
     runs-on: ubuntu-latest
-    environment: ${{ (github.event_name == 'push' || github.ref_type == 'tag') && 'release' || '' }}
+    environment: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.ref_type == 'tag') && 'release' || '' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -770,7 +797,7 @@ jobs:
         env:
           # Empty until Alimardon adds the secret (docs/RELEASE.md), and
           # always empty for pull requests and branches' dispatched runs.
-          EDEL_RELEASE_KEY: ${{ (github.event_name == 'push' || github.ref_type == 'tag') && secrets.EDEL_RELEASE_KEY || '' }}
+          EDEL_RELEASE_KEY: ${{ ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.ref_type == 'tag') && secrets.EDEL_RELEASE_KEY || '' }}
           EDEL: target/release/edel
         run: sh ci/sign.sh
       - name: Hand the signed lists to the publish job
@@ -846,7 +873,7 @@ jobs:
   publish:
     name: Publish the release
     needs: [rust, images, desktop, sign, rehearse]
-    if: (github.event_name == 'push' || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
+    if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || github.ref_type == 'tag') && vars.EDEL_PUBLISH == 'yes'
     # One publish per ref at a time, never cancelled halfway: two merges in
     # a row upload one after the other, and ci/release.sh keeps the newer.
     concurrency:
