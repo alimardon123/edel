@@ -638,8 +638,13 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
     shown.append(&holder);
     content.set_child(Some(&shown));
     let show: Rc<dyn Fn(usize)> = {
-        let (pages, built, theme, content) =
-            (pages.clone(), built.clone(), theme.clone(), content.clone());
+        let (pages, built, theme, content, holder) = (
+            pages.clone(),
+            built.clone(),
+            theme.clone(),
+            content.clone(),
+            holder.clone(),
+        );
         Rc::new(move |at: usize| {
             let Some(page) = pages.get(at) else { return };
             let widget = built.borrow_mut()[at]
@@ -738,6 +743,40 @@ pub(crate) fn window(app: &adw::Application, start: usize, asked: bool) {
             }
             gtk::glib::ControlFlow::Break
         });
+    }
+    {
+        // The page shown always follows the row chosen, however it was
+        // chosen: a click, Return, or the arrow keys and Tab moving the
+        // choice down the list, which before showed About chosen beside
+        // the System page.
+        let (show, rows) = (show.clone(), rows.clone());
+        list.connect_row_selected(move |_, row| {
+            if let Some(Row::Page(at)) = row.and_then(|row| rows.get(row.index().max(0) as usize)) {
+                show(*at);
+            }
+        });
+    }
+    {
+        // Tab goes from the list to the page beside it, as in every app
+        // with a sidebar; GTK's own list would move it to the next row,
+        // and so to the next page, so Tab never reached a page's buttons.
+        // Shift+Tab comes back to the chosen row; the arrow keys walk the
+        // list.
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        let holder = holder.clone();
+        keys.connect_key_pressed(move |_, key, _, state| {
+            if key == gtk::gdk::Key::Tab
+                && !state.intersects(
+                    gtk::gdk::ModifierType::SHIFT_MASK | gtk::gdk::ModifierType::CONTROL_MASK,
+                )
+                && holder.child_focus(gtk::DirectionType::TabForward)
+            {
+                return gtk::glib::Propagation::Stop;
+            }
+            gtk::glib::Propagation::Proceed
+        });
+        list.add_controller(keys);
     }
     {
         let (split, show, rows) = (split.clone(), show.clone(), rows.clone());
