@@ -46,6 +46,7 @@ mod settings_source;
 mod shell;
 mod speaker_boot;
 mod system_power;
+mod trust;
 mod update;
 mod xattrs;
 
