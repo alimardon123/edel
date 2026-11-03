@@ -1631,6 +1631,9 @@ msgstr ""
 msgid "could not check the add-on's feature file {path}"
 msgstr ""
 
+msgid "warning: release.toml says no last day of fixes, as features/base.toml was not found here or names none; run edel release make from the repository's root"
+msgstr ""
+
 msgid "the last update did not start, so the machine went back to the slot before; the system log is {log}, and edel report gathers it with the rest"
 msgstr ""
 
@@ -3144,6 +3147,15 @@ msgid "{program} stopped with code {code}"
 msgstr ""
 
 msgid "cannot read {path}"
+msgstr ""
+
+msgid "until {day} (channel {channel})"
+msgstr ""
+
+msgid "ended on {day} (channel {channel}); doas edel settings set updates.channel={newest} moves on, keeping apps, files and settings"
+msgstr ""
+
+msgid "ended on {day} (channel {channel}); the next version gets them again, so check with edel update --check"
 msgstr ""
 
 msgid "the versions installed are shown to administrators only: doas edel status"

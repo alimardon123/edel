@@ -275,6 +275,30 @@ impl Shell {
         }
     }
 
+    /// After each update check (`main.rs`, the same timing as the update
+    /// notice, with no network of its own): the day this version gets
+    /// fixes until is told once for each version, from the os-release
+    /// file (M8.44).
+    pub fn tell_fixes(&mut self) {
+        let os_release = std::fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+        let (year, month, day) = calendar::today();
+        let today = format!("{year:04}-{month:02}-{day:02}");
+        let shown = telling::read_stamp(telling::FIXES_SEEN);
+        let Some(n) = telling::fixes_notice(&os_release, &today, shown.as_deref()) else {
+            return;
+        };
+        let version =
+            edel::version::os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+        self.notified(n);
+        eprintln!("edel-shell-ui: fixes notice shown for {version}");
+        if let Err(e) = telling::write_stamp(telling::FIXES_SEEN, &version) {
+            eprintln!(
+                "edel-shell-ui: {}",
+                messages::stamp_not_kept(telling::FIXES_SEEN, e)
+            );
+        }
+    }
+
     /// Every notification leaves the list.
     fn clear_all(&mut self) {
         if self.notifications.is_empty() {

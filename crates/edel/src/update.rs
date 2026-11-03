@@ -532,11 +532,49 @@ pub fn platform_status() -> Result<()> {
 }
 
 /// Prints both slots and which one is running.
+/// What `edel status` says after `fixes:` (M8.44): until when the running
+/// version gets fixes, from its os-release, on `today` (`YYYY-MM-DD`), and
+/// once that day has passed, how to move on. None for an image from before
+/// M8.44, which does not know.
+fn fixes_line(os_release: &str, today: &str, channel: &str) -> Option<String> {
+    let day = edel::version::fixes_until(os_release)?;
+    let args = [("day", day.as_str()), ("channel", channel)];
+    // Days written YYYY-MM-DD order as text.
+    if today <= day.as_str() {
+        return Some(trf("until {day} (channel {channel})", &args));
+    }
+    // A kept year (M8.5) is named by its year; it moves on to the newest.
+    let kept = channel.bytes().all(|b| b.is_ascii_digit());
+    Some(if kept {
+        trf(
+            "ended on {day} (channel {channel}); doas edel settings set updates.channel={newest} moves on, keeping apps, files and settings",
+            &[
+                ("day", day.as_str()),
+                ("channel", channel),
+                ("newest", edel::settings::DEFAULT_CHANNEL),
+            ],
+        )
+    } else {
+        trf(
+            "ended on {day} (channel {channel}); the next version gets them again, so check with edel update --check",
+            &args,
+        )
+    })
+}
+
 pub fn status() -> Result<()> {
     // The three facts a person reads first (M8.14), before anything that
     // needs root, so a person without it sees them too.
     for line in edel::security::now().lines() {
         println!("{line}");
+    }
+    // Until when this version gets fixes (M8.44), for everyone too.
+    if let Some(line) = fixes_line(
+        &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
+        &crate::release::today_text(),
+        &crate::release::machine_channel(),
+    ) {
+        println!("fixes: {line}");
     }
     // The versions installed need the start-up partition, which only root
     // reads; a person sees the facts above and how to see the rest (the
@@ -1335,6 +1373,30 @@ mod tests {
             "edel update (pid 812) is running"
         );
         assert_eq!(holder(""), "another command is starting");
+    }
+
+    #[test]
+    fn status_says_until_when_this_version_gets_fixes() {
+        let os = "VERSION_ID=2027.10.1\nSUPPORT_END=2029-05-01\n";
+        assert_eq!(
+            fixes_line(os, "2029-05-01", "2027").unwrap(),
+            "until 2029-05-01 (channel 2027)"
+        );
+        let kept = fixes_line(os, "2029-05-02", "2027").unwrap();
+        assert!(
+            kept.starts_with("ended on 2029-05-01 (channel 2027); doas edel settings set updates.channel=stable moves on"),
+            "{kept}"
+        );
+        let newest = fixes_line(os, "2029-05-02", "stable").unwrap();
+        assert!(
+            newest.contains("the next version gets them again"),
+            "{newest}"
+        );
+        // An image from before M8.44 says nothing.
+        assert_eq!(
+            fixes_line("VERSION_ID=2026.10.1\n", "2026-11-03", "stable"),
+            None
+        );
     }
 
     #[test]
