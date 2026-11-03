@@ -77,6 +77,9 @@ jobs:
       CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Make room on the disk
+        # The crates' cache unpacks to several GB (ci/disk.sh).
+        run: sh ci/disk.sh free 25
       - name: Name this month's package cache
         id: apt
         run: echo "month=$(date +%Y-%m)" >> "$GITHUB_OUTPUT"
@@ -192,6 +195,10 @@ jobs:
         # mdBook, at the version ci/site.sh names, builds docs/ into
         # out/site (M8.10a); publishing it waits for EDEL_SITE below.
         run: sh ci/site.sh build
+      - name: How much disk was left
+        # The measure the thresholds of ci/disk.sh free are set by.
+        if: always()
+        run: sh ci/disk.sh report
 
 
   elsewhere:
@@ -246,6 +253,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Make room on the disk
+        # The images, their archives and Docker's layers (ci/disk.sh).
+        run: sh ci/disk.sh free 25
 
       - name: Keep the Rust build between runs
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -476,6 +487,10 @@ jobs:
             out/*.packages
             out/*.cdx.json
             out/desktop-live/*.png
+      - name: How much disk was left
+        # The measure the thresholds of ci/disk.sh free are set by.
+        if: always()
+        run: sh ci/disk.sh report
 
   # The VM tests, a lane per runner (CI speed-ups, 2026-10-16), each fed its
   # images by the build job's archive; ci/vm-tests.sh names the lanes and
@@ -498,6 +513,9 @@ jobs:
         lane: ${{ fromJSON(needs.changes.outputs.lanes) }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Make room on the disk
+        # This lane's images and the disks the tests make (ci/disk.sh).
+        run: sh ci/disk.sh free 15
 
       - name: Number this build
         # As the build job numbered it: boot-test wants the version, which
@@ -559,6 +577,10 @@ jobs:
           path: |
             out/*.log
             out/desktop-live/*.png
+      - name: How much disk was left
+        # The measure the thresholds of ci/disk.sh free are set by.
+        if: always()
+        run: sh ci/disk.sh report
 
   # Joins the build and its VM test lanes into the one check a merge waits
   # for, which passes when ci/changes.sh found nothing they could test.
@@ -624,6 +646,10 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Make room on the disk
+        # The Rust build and the desktop image (ci/disk.sh).
+        run: sh ci/disk.sh free 15
+
       - name: Keep the Rust build between runs
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
@@ -683,6 +709,10 @@ jobs:
             out/desktop-test/*.png
             out/desktop-test/first/
             out/desktop-test/passed
+      - name: How much disk was left
+        # The measure the thresholds of ci/disk.sh free are set by.
+        if: always()
+        run: sh ci/disk.sh report
 
   # Joins the four parts, so one check says whether the desktop tests passed,
   # and prints the basics checklist from every part's passed cases.
