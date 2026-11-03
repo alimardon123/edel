@@ -107,14 +107,8 @@ pub fn with_version(
     out
 }
 
-/// `YYYY.MM.N` and the like: numbers joined by dots, as
-/// `release::compare_versions` orders them.
-pub fn is_version(version: &str) -> bool {
-    !version.is_empty()
-        && version
-            .split('.')
-            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
-}
+/// `YYYY.MM.N` and the like (`edel::version::is_version`).
+pub use edel::version::is_version;
 
 /// How many times the build fetches a file from the network before it
 /// fails, and how long it waits between tries.

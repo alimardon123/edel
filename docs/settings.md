@@ -470,7 +470,7 @@ This page has no key in the file.
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
 | `updates.channel` | The release channel whose updates this machine takes, such as stable or preview. | the image's | image |
-| `updates.version` | A release to stay on instead of following the channel; this release does not act on it yet. | follows the channel | release |
+| `updates.version` | The version to stay on, such as 2027.10.1: edel update takes its fixes but no newer branch until this version's fixes end. | follows the channel | release |
 | `updates.automatic` | Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due. | off | release |
 | `updates.restart_window` | The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour. | any hour | release |
 

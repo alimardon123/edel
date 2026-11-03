@@ -991,7 +991,15 @@ fn run(command: Commands) -> Result<()> {
             } else {
                 // A release that is the running version is no failure:
                 // edel update says so and ends well (M8.15).
+                // Nor is a release updates.version holds back (M8.41).
                 let system = update::install(&location, &accept, unsigned).or_else(|err| {
+                    let err = match err.downcast::<release::Held>() {
+                        Ok(held) => {
+                            println!("edel update: {held}");
+                            return Ok(());
+                        }
+                        Err(err) => err,
+                    };
                     let up = err.downcast::<release::UpToDate>()?;
                     println!("edel update: {up}");
                     Ok(())
