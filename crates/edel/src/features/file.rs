@@ -153,17 +153,14 @@ pub struct Alpine {
 }
 
 impl Alpine {
-    /// The day an image of this branch stops getting fixes: the earliest
-    /// end among the repositories it takes packages from, as one package
-    /// past its end is enough to leave a machine unfixed. None when a
-    /// repository has no date.
+    /// The day an image of this branch stops getting fixes: main's, the
+    /// branch's own end. Community's comes sooner on paper, as Alpine fixes
+    /// it until the next branch is out, which the newest channel moves to;
+    /// a kept year that keeps community packages past it is M8.5's to say
+    /// (a seam: once the package record names each package's repository,
+    /// the earliest among those an image holds). None without main's day.
     pub fn fixes_until(&self) -> Option<&str> {
-        self.repositories
-            .iter()
-            .map(|repo| self.fixes_until.get(repo).map(String::as_str))
-            .collect::<Option<Vec<_>>>()?
-            .into_iter()
-            .min()
+        self.fixes_until.get("main").map(String::as_str)
     }
 }
 
