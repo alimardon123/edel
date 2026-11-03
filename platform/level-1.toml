@@ -18,6 +18,21 @@ kernel = "6.18"
 # runs the newest branch Flathub serves on every change.
 runtimes = ["org.freedesktop.Platform"]
 
+# The oldest processor each architecture's images run on (M8.45): the
+# instruction set Alpine builds its packages for, and the QEMU model with
+# only those instructions, on which CI boots the image under emulation, as
+# KVM would hand the guest the runner's newer instructions. Only a new
+# level, said months ahead, may raise it.
+[[cpu]]
+arch = "x86_64"
+baseline = "x86-64"
+qemu = "qemu64"
+
+[[cpu]]
+arch = "aarch64"
+baseline = "armv8-a"
+qemu = "cortex-a53"
+
 # The app platform's own packages, each at least this version wherever it
 # is in an image, and always in an image with the feature named.
 
