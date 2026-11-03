@@ -239,7 +239,9 @@ elif [ "${DRAFT:-}" = true ] && [ "${FULL_CI:-}" != true ]; then
 	images=no
 	desktop=no
 	reason="a draft runs Rust checks only; mark it ready, or add the label full-ci and push, for the rest (or lane-NAME for one VM test lane)"
-elif [ -n "${BASE_REF:-}" ] && [ "$BASE_REF" != main ]; then
+	# A pull request into a kept release/* branch (M8.5) is not a lane's
+	# step: it changes a release, so it runs everything, as into main.
+elif [ -n "${BASE_REF:-}" ] && [ "$BASE_REF" != main ] && [ "${BASE_REF#release/}" = "$BASE_REF" ]; then
 	images=no
 	desktop=no
 	reason="a step into the lane branch $BASE_REF runs Rust checks only; the lane's pull request to main runs the rest"

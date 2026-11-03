@@ -18,7 +18,6 @@
 
 use std::cell::{Cell, RefCell};
 use std::f64::consts::TAU;
-use std::path::Path;
 use std::rc::{Rc, Weak};
 use std::time::Duration;
 
@@ -58,7 +57,7 @@ const PAD: i32 = 14;
 const COLUMNS: i32 = 4;
 
 /// The six values, in the order `settings::SHAPE_KEYS` lists their keys.
-const RADIUS: usize = 0;
+pub(crate) const RADIUS: usize = 0;
 const GAPS: usize = 1;
 const GAPS_OUTER: usize = 2;
 const BORDER: usize = 3;
@@ -82,18 +81,9 @@ fn values_of(t: &Tokens) -> Shown {
 
 /// The values that apply now, with the shape the files set on top of the
 /// release, and the keys the files set.
-fn now(files: &Files) -> Shown {
-    let machine = read_file(&files.machine);
-    let person = files.person.as_deref().and_then(read_file);
-    let keys = Keys::between(machine.as_ref(), person.as_ref());
+pub(crate) fn now(files: &Files) -> Shown {
+    let keys = Keys::of(&files.layers().merged().appearance);
     values_of(&Tokens::built_in().with_shape(&keys).0)
-}
-
-/// A settings file read leniently, as the desktop reads it; none when it
-/// is missing or not TOML.
-pub(crate) fn read_file(path: &Path) -> Option<settings::SettingsFile> {
-    let text = std::fs::read_to_string(path).ok()?;
-    settings::read(&text).ok().map(|read| read.file)
 }
 
 /// What a slider's end shows for its value: `10 px`, `Square` for corners
@@ -905,6 +895,7 @@ pub(crate) fn log_places(
 mod tests {
     use super::*;
     use edel::tokens::Scheme;
+    use std::path::Path;
 
     /// The release's values and the largest ones the keys allow, and the
     /// smallest of the rest.

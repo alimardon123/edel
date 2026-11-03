@@ -18,7 +18,7 @@ run_vm "$log" 'edel update: slot B confirmed' "${UPDATES_TEST_TIMEOUT:-600}" -sn
 	-drive if=none,id=disk0,format=raw,file=out/updates-test/edel-vm-x86_64.img \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 log_has() {
-	tr -d '\r' <"$log" | grep -q "$1"
+	tr -d '\r' <"$log" 2>/dev/null | grep -q "$1"
 }
 fail() {
 	cat "$log"

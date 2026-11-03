@@ -18,6 +18,13 @@
 # edel-try-x86_64, docs/TRY-IT.md), when GH_TOKEN can read it; with
 # neither, the test says so and passes.
 #
+# With UPGRADE_TEST_LIST set to a directory holding a signed release.toml
+# and its update images (ci/rehearse.sh, the release as the sign job
+# signed it), that directory is served instead, the old disk trusting
+# UPGRADE_TEST_KEY, or only the keys it was built with when that is
+# empty; a list for another channel than the old disk's is taken once,
+# with the updater's own --channel, through /etc/conf.d/edel-upgrade-test.
+#
 #   sh ci/upgrade-test.sh   logs in out/upgrade-test-N.log and out/upgrade-test-N-again.log, per disk
 set -eu
 . ci/vm.sh
@@ -26,6 +33,8 @@ set -eu
 dir=out/upgrade-test
 image=edel-x86_64.img.gz
 repo=${GITHUB_REPOSITORY:-alimardon123/edel}
+list=${UPGRADE_TEST_LIST:-}
+if [ -n "$list" ]; then key=${UPGRADE_TEST_KEY:-}; else key=out/keys/ci-1.pub; fi
 
 fail() {
 	echo "FAIL: $*"
@@ -59,31 +68,47 @@ upgrade() {
 	partition_out "$disk" 2 "$slot" || fail "$name: the disk has no slot A"
 	channel=$(os_value "$slot" EDEL_CHANNEL)
 	old=$(os_value "$slot" VERSION_ID)
-	[ -f "$dir/$channel/release.toml" ] ||
-		fail "$name is version $old on channel '$channel', which this build makes no update list for (ci/build.sh)"
-	new=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$dir/$channel/release.toml" | head -n 1)
+	if [ -n "$list" ]; then
+		served=$list
+		take=$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$served/release.toml" | head -n 1)
+	else
+		served=$dir/$channel take=$channel
+		[ -f "$served/release.toml" ] ||
+			fail "$name is version $old on channel '$channel', which this build makes no update list for (ci/build.sh)"
+	fi
+	new=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$served/release.toml" | head -n 1)
 	[ "$(printf '%s\n%s\n' "$old" "$new" | sort -V | tail -n 1)" = "$new" ] && [ "$old" != "$new" ] ||
 		fail "$name is version $old, not older than this build's $new, so no release would update it (set EDEL_VERSION for ci/build.sh)"
-	# A slot is shrunk to its files (M2.5); two more need a little room.
+	# A slot is shrunk to its files (M2.5); the test's files need a little room.
 	free=$(dumpe2fs -h "$slot" 2>/dev/null | sed -n 's/^Free blocks: *//p')
 	if [ "${free:-0}" -lt 256 ]; then resize2fs -f "$slot" >/dev/null 2>&1; fi
-	debugfs -w -f - "$slot" >/dev/null 2>&1 <<-EOF
-		mkdir $keys_dir
-		write out/keys/ci-1.pub $keys_dir/upgrade-test.pub
-		sif $keys_dir/upgrade-test.pub uid 0
-		sif $keys_dir/upgrade-test.pub gid 0
-		write ci/upgrade-test/edel-upgrade-test /etc/init.d/edel-upgrade-test
-		sif /etc/init.d/edel-upgrade-test mode 0100755
-		sif /etc/init.d/edel-upgrade-test uid 0
-		sif /etc/init.d/edel-upgrade-test gid 0
-		symlink /etc/runlevels/default/edel-upgrade-test /etc/init.d/edel-upgrade-test
-	EOF
+	{
+		if [ -n "$key" ]; then
+			echo "mkdir $keys_dir"
+			echo "write $key $keys_dir/upgrade-test.pub"
+			echo "sif $keys_dir/upgrade-test.pub uid 0"
+			echo "sif $keys_dir/upgrade-test.pub gid 0"
+		fi
+		if [ "$take" != "$channel" ]; then
+			echo "channel=$take" >"$dir/conf"
+			echo "write $dir/conf /etc/conf.d/edel-upgrade-test"
+			echo "sif /etc/conf.d/edel-upgrade-test mode 0100644"
+			echo "sif /etc/conf.d/edel-upgrade-test uid 0"
+			echo "sif /etc/conf.d/edel-upgrade-test gid 0"
+		fi
+		echo "write ci/upgrade-test/edel-upgrade-test /etc/init.d/edel-upgrade-test"
+		echo "sif /etc/init.d/edel-upgrade-test mode 0100755"
+		echo "sif /etc/init.d/edel-upgrade-test uid 0"
+		echo "sif /etc/init.d/edel-upgrade-test gid 0"
+		echo "symlink /etc/runlevels/default/edel-upgrade-test /etc/init.d/edel-upgrade-test"
+	} | debugfs -w -f - "$slot" >/dev/null 2>&1
+	rm -f "$dir/conf"
 	debugfs -R "stat /etc/init.d/edel-upgrade-test" "$slot" 2>/dev/null | grep -q 'Mode: *0755' ||
 		fail "$name: the test's service could not be written into slot A"
 	partition_in "$slot" "$disk" 2
 	rm -f "$slot"
 
-	python3 -m http.server 8000 --bind 127.0.0.1 --directory "$dir/$channel" >"$dir/http.log" 2>&1 &
+	python3 -m http.server 8000 --bind 127.0.0.1 --directory "$served" >"$dir/http.log" 2>&1 &
 	server=$!
 	# Slot A starts, updates and restarts; slot B starts and is confirmed.
 	run_vm "$out" 'edel update: slot B confirmed|UPGRADE-TEST: FAIL' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
@@ -92,11 +117,11 @@ upgrade() {
 	kill "$server" 2>/dev/null || true
 	cat "$out"
 	log_has() {
-		tr -d '\r' <"$out" | grep -q "$1"
+		tr -d '\r' <"$out" 2>/dev/null | grep -q "$1"
 	}
 	log_has 'UPGRADE-TEST: installed, restarting' || fail "$name ($old, $channel) did not install this build"
 	{ [ "$found" = 1 ] && log_has 'edel update: slot B confirmed'; } || fail "$name: this build did not start and confirm in slot B after the update"
-	loader=$(tr -d '\r' <"$out" | sed -n 's/.*edel update: \(boot loader updated to .*\)$/\1/p' | head -n 1)
+	loader=$(tr -d '\r' <"$out" 2>/dev/null | sed -n '/.*edel update: \(boot loader updated to .*\)$/{s//\1/p;q;}')
 
 	# Once more, under the loader slot B left on the old disk.
 	run_vm "$again" 'edel update: slot B confirmed' "${UPGRADE_TEST_TIMEOUT:-900}" -m 1024 -vga none \
@@ -105,21 +130,21 @@ upgrade() {
 	cat "$again"
 	rm -f "$disk"
 	[ "$found" = 1 ] || fail "$name: slot B did not start again after the update"
-	echo "PASS: $name ($old, $channel) updated to this build, slot B started and was confirmed twice; ${loader:-the boot loader was the same}"
+	echo "PASS: $name ($old, $channel) updated to this build from $served/release.toml ($take), slot B started and was confirmed twice; ${loader:-the boot loader was the same}"
 }
 
 mkdir -p "$dir"
-list=$(sources)
-if [ -z "$list" ]; then
+disks=$(sources)
+if [ -z "$disks" ]; then
 	if main_image "$dir/main.img.gz"; then
-		list="main-build $dir/main.img.gz"
+		disks="main-build $dir/main.img.gz"
 	else
 		echo "SKIP: no release is kept and no preview is published (M3.4), and no desktop image of main could be read (GH_TOKEN), so there is nothing to upgrade from"
 		exit 0
 	fi
 fi
 n=0
-echo "$list" | while read -r name url; do
+echo "$disks" | while read -r name url; do
 	n=$((n + 1))
 	case "$url" in
 	https://*)

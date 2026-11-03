@@ -23,7 +23,7 @@ run_vm "$log" 'AB-TEST: (PASS|FAIL)' "${AB_TEST_TIMEOUT:-1500}" -snapshot \
 	-drive if=none,id=disk0,format=raw,file=out/install-target.img \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 cat "$log"
-installed_key=$(tr -d '\r' <"$log" | sed -n 's/.*INSTALL-TEST: host key //p' | head -n 1)
+installed_key=$(tr -d '\r' <"$log" 2>/dev/null | sed -n '/.*INSTALL-TEST: host key /{s///p;q;}')
 first_boot() {
 	grep -q 'edel settings: network.hostname: set to ci-installed' "$log" &&
 		grep -q 'edel update: slot A confirmed' "$log" &&
@@ -36,8 +36,8 @@ fi
 # M6.17: slot B's root was on no partition; Alpine's initramfs said so
 # and, under panic=, exited instead of waiting in its rescue shell, so the
 # kernel panicked and restarted.
-if ! tr -d '\r' <"$log" | grep -q 'Mounting root: failed' ||
-	! tr -d '\r' <"$log" | grep -q 'Attempted to kill init'; then
+if ! tr -d '\r' <"$log" 2>/dev/null | grep -q 'Mounting root: failed' ||
+	! tr -d '\r' <"$log" 2>/dev/null | grep -q 'Attempted to kill init'; then
 	echo "FAIL: slot B with no root did not fail to mount it and panic, which restarts the machine"
 	exit 1
 fi
@@ -47,13 +47,13 @@ if ! grep -q 'edel guard: this version of Edel OS did not finish starting in .*;
 	exit 1
 fi
 # M1.11: slot B named its own health check, network, which never passed.
-if ! tr -d '\r' <"$log" | grep -q 'edel guard: health not reached after [0-9]* s: network$'; then
+if ! tr -d '\r' <"$log" 2>/dev/null | grep -q 'edel guard: health not reached after [0-9]* s: network$'; then
 	echo "FAIL: slot B's guard did not wait for its own health check, network, alone"
 	exit 1
 fi
 # M6.17: with no slot left with a try, slot B's guard kept the machine
 # running instead of restarting it.
-if ! tr -d '\r' <"$log" | grep -q 'edel guard: Edel OS did not finish starting in [0-9]* s (network did not start), and no version has a start left, so the computer keeps running'; then
+if ! tr -d '\r' <"$log" 2>/dev/null | grep -q 'edel guard: Edel OS did not finish starting in [0-9]* s (network did not start), and no version has a start left, so the computer keeps running'; then
 	echo "FAIL: with no slot left with a try, slot B's guard did not say it keeps the machine running"
 	exit 1
 fi

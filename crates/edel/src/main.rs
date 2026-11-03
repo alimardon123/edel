@@ -678,6 +678,8 @@ struct BuildArgs {
 }
 
 fn main() -> std::process::ExitCode {
+    // `edel status | grep -q ...` stops reading early: end without a panic.
+    edel::exit::quiet_on_closed_pipe();
     // The language `region.language` names, for every word below.
     i18n::init("edel");
     let matches = translated(cli_command()).get_matches();
