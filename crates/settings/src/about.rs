@@ -23,7 +23,7 @@ use edel::{places, session_log};
 
 use crate::{actions, rows, widgets};
 
-const OS_RELEASE: &str = "/usr/lib/os-release";
+pub(crate) const OS_RELEASE: &str = "/usr/lib/os-release";
 
 /// What the settings file is, said once for every page.
 const SETTINGS_NOTE: &str = n_(

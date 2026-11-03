@@ -2036,6 +2036,15 @@ msgstr ""
 msgid "Security"
 msgstr ""
 
+msgid "Fixes"
+msgstr ""
+
+msgid "Gets fixes until {date}"
+msgstr ""
+
+msgid "Fixes ended on {date}"
+msgstr ""
+
 msgid "Copy this machine to another, or set it up from a file."
 msgstr ""
 
