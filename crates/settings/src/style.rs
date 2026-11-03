@@ -255,6 +255,7 @@ window.edel {{ background-color: {window}; color: {text}; font-family: "{font}";
 .edel-touch .edel-row {{ padding: 8px 16px; min-height: {target}px; }}
 .edel-touch .edel-pages > row:not(.edel-heading) {{ min-height: {target}px; margin-bottom: 4px; }}
 .edel-row + .edel-row {{ border-top: 1px solid {line}; }}
+.edel-rows + .edel-row {{ border-top: 1px solid {line}; }}
 .edel-row-subtitle {{ color: {muted}; font-size: {tiny}px; }}
 .edel-row-subtitle.edel-error {{ color: {error}; margin-top: 0; }}
 .edel-row-subtitle.edel-warn {{ color: {amber}; }}
