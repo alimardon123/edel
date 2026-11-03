@@ -6,7 +6,7 @@
 #               is valid against its 1.6 schema. The validator package
 #               carries the schemas, so nothing is downloaded.
 #   advisories  in the Alpine build container, as root: checks every
-#               image's packages against Alpine's security database
+#               image's and every add-on's packages (M8.42) against Alpine's security database
 #               (secdb) for the branch in features/base.toml. An image that
 #               lacks a fix Alpine already ships fails, as a rebuild takes
 #               the newest packages; a fix Alpine has not published yet is
@@ -256,12 +256,20 @@ JSON
 ]}
 JSON
 	sed 's/3\.0\.0-r0/3.0.2-r0/; s/"1\.3-r0"/"1.3.1-r0"/' "$tmp/one/edel-test-x86_64.cdx.json" > "$tmp/two/edel-test-x86_64.cdx.json"
-	printf 'libcrypto3 3.0.2-r0\nzlib 1.3-r0\nbusybox 1.0-r0\n' > "$tmp/available.txt"
+	# An add-on's own packages (M8.42), IMAGE.ADDON.cdx.json, are checked
+	# the same way.
+	cat > "$tmp/one/edel-test-x86_64.desktop.cdx.json" <<'JSON'
+{"bomFormat": "CycloneDX", "specVersion": "1.6", "version": 1, "components": [
+ {"type": "library", "bom-ref": "d", "name": "libssl3", "version": "3.0.1-r0", "properties": [{"name": "apk:origin", "value": "openssl"}]}
+]}
+JSON
+	printf 'libcrypto3 3.0.2-r0\nlibssl3 3.0.2-r0\nzlib 1.3-r0\nbusybox 1.0-r0\n' > "$tmp/available.txt"
 
 	status=0
-	check "$tmp/secdb" "$tmp/available.txt" "$tmp/one/edel-test-x86_64.cdx.json" > "$tmp/first.md" 2> "$tmp/first.err" || status=$?
+	check "$tmp/secdb" "$tmp/available.txt" "$tmp/one/edel-test-x86_64.cdx.json" "$tmp/one/edel-test-x86_64.desktop.cdx.json" > "$tmp/first.md" 2> "$tmp/first.err" || status=$?
 	[ "$status" -eq 1 ] || selftest_fail "the first run wanted exit 1, got $status"
 	want "$tmp/first.md" "| edel-test-x86_64 | openssl | libcrypto3 | 3.0.0-r0 | 3.0.2-r0 | CVE-2099-0001, CVE-2099-0002 | fix shipped, rebuild |" "openssl's fixes are not reported as shipped"
+	want "$tmp/first.md" "| edel-test-x86_64.desktop | openssl | libssl3 | 3.0.1-r0 | 3.0.2-r0 | CVE-2099-0002 | fix shipped, rebuild |" "the add-on's missing openssl fix is not reported"
 	want "$tmp/first.md" "| edel-test-x86_64 | zlib | zlib | 1.3-r0 | 1.3.1-r0 | CVE-2099-0003 | waiting for Alpine's package |" "zlib's unpublished fix is not reported as waiting"
 	if grep -F busybox "$tmp/first.md" >/dev/null; then
 		selftest_fail "busybox is reported, but its only fix is 0 (never affected)"

@@ -67,6 +67,32 @@ pub fn parse_installed(text: &str) -> Vec<Package> {
     packages
 }
 
+/// The package list a release carries beside each image and add-on
+/// (`out/NAME.packages`): one `name-version` a line, sorted.
+pub fn list(packages: &[Package]) -> String {
+    let mut lines: Vec<String> = packages
+        .iter()
+        .map(|p| format!("{}-{}\n", p.name, p.version))
+        .collect();
+    lines.sort_unstable();
+    lines.concat()
+}
+
+/// The packages of `after` that `before` lacks at the same version: what
+/// an add-on, built from a copy of the image's root, installs itself
+/// (M8.42).
+pub fn added(before: &[Package], after: &[Package]) -> Vec<Package> {
+    after
+        .iter()
+        .filter(|p| {
+            !before
+                .iter()
+                .any(|b| b.name == p.name && b.version == p.version)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Writes the CycloneDX 1.6 document of an image. `image` is the image's
 /// stem, `version` the build's version (empty leaves it out), `distro` the
 /// purl's distro qualifier (`alpine-3.24`). Nothing in it changes between
@@ -166,6 +192,28 @@ fn purl_part(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn package(name: &str, version: &str) -> Package {
+        Package {
+            name: name.to_string(),
+            version: version.to_string(),
+            arch: "x86_64".to_string(),
+            licence: String::new(),
+            origin: name.to_string(),
+        }
+    }
+
+    #[test]
+    fn an_addon_records_only_the_packages_it_adds() {
+        let image = [package("musl", "1.2.6-r0"), package("zlib", "1.3.1-r2")];
+        let addon = [
+            package("gtk4.0", "4.22.0-r0"),
+            package("musl", "1.2.6-r0"),
+            package("zlib", "1.3.1-r3"),
+        ];
+        let own = added(&image, &addon);
+        assert_eq!(list(&own), "gtk4.0-4.22.0-r0\nzlib-1.3.1-r3\n");
+    }
 
     #[test]
     fn reads_each_record_of_the_installed_database() {
