@@ -140,7 +140,7 @@ mod tests {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        let key = PrivateKeyDer::from_pem_file(format!("{dir}/server.key")).unwrap();
+        let key = PrivateKeyDer::from_pem_file(format!("{dir}/server-key.pem")).unwrap();
         let config = std::sync::Arc::new(
             rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
                 rustls::crypto::ring::default_provider(),
