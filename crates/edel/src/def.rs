@@ -1438,9 +1438,9 @@ mod tests {
     }
 
     /// M8.44: each repository's last day of fixes is the base's, checked
-    /// there, and an image's is the earliest among its repositories.
+    /// there, and an image's is main's, the branch's own.
     #[test]
-    fn the_alpine_fixes_until_dates_are_checked_and_the_earliest_counts() {
+    fn the_alpine_fixes_until_dates_are_checked_and_main_s_counts() {
         let with = |dates: &str| {
             let text = FEATURES[0].1.replace(
                 "repositories = [\"main\", \"community\"]",
@@ -1451,7 +1451,7 @@ mod tests {
             ImageDef::merge(VM, found)
         };
         let def = with("main = \"2028-06-01\", community = \"2026-11-01\"").unwrap();
-        assert_eq!(def.alpine.fixes_until(), Some("2026-11-01"));
+        assert_eq!(def.alpine.fixes_until(), Some("2028-06-01"));
         assert_eq!(parse(VM).unwrap().alpine.fixes_until(), None);
         let missing = with("main = \"2028-06-01\"").unwrap_err().to_string();
         assert!(
