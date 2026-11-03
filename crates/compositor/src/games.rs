@@ -29,7 +29,11 @@
 //! its app's in the person's `games.toml`, which `edel report` shows, and
 //! the log says it in one line. The same frames feed the frame rate
 //! overlay (M8.27, `frame_rate.rs`): `Recording::recent` keeps the last
-//! seconds of them, and `Game::live` gives what it shows.
+//! seconds of them, and `Game::live` gives what it shows. Beside them it
+//! keeps how long the compositor itself took to draw each frame on the
+//! game's screen (`frame_rendered`), our own work per frame, which the
+//! record's log line ends with: CI's smoothness gate reads it (M7.7e), as
+//! the time between frames on a shared runner is mostly the runner's.
 
 use std::cell::{Cell, RefCell};
 use std::path::Path;
@@ -50,7 +54,7 @@ use smithay::reexports::wayland_server::{
 };
 use smithay::wayland::compositor::with_states;
 
-use edel::smoothness::Frames;
+use edel::smoothness::{Frames, Work};
 use edel_compositor::frame_times::{Recent, Shown};
 use edel_compositor::game::{GameMode, When};
 
@@ -87,6 +91,8 @@ struct Recording {
     frames: Frames,
     /// Its last frames, for the overlay (M8.27).
     recent: Recent,
+    /// How long we took to draw each frame of its screen (M7.7e).
+    work: Work,
 }
 
 impl Game {
@@ -112,6 +118,16 @@ impl Game {
             if recording.output == output && std::mem::take(&mut recording.fresh) {
                 recording.frames.shown(at);
                 recording.recent.shown(at);
+            }
+        }
+    }
+
+    /// The compositor drew a frame of the screen named `output` in `took`
+    /// (M7.7e): our own work, kept while a game plays there.
+    pub fn frame_rendered(&self, output: &str, took: Duration) {
+        if let Some(recording) = self.recording.borrow_mut().as_mut() {
+            if recording.output == output {
+                recording.work.drawn(took);
             }
         }
     }
@@ -236,6 +252,7 @@ impl Edel {
                 fresh: false,
                 frames: Frames::default(),
                 recent: Recent::default(),
+                work: Work::default(),
             })
         });
     }
@@ -279,12 +296,15 @@ fn keep_record(ended: &Recording) {
         ended.app.as_str()
     };
     eprintln!(
-        "edel-compositor: game {app}: {} frames in {} s, average {} fps, slowest 1% {} ms, slowest 0.1% {} ms",
+        "edel-compositor: game {app}: {} frames in {} s, average {} fps, slowest 1% {} ms, slowest 0.1% {} ms, our work per frame median {} ms, slowest 1% {} ms over {} frames",
         record.frames,
         record.seconds,
         record.average_fps,
         record.slowest_1_percent_ms,
-        record.slowest_0_1_percent_ms
+        record.slowest_0_1_percent_ms,
+        ended.work.median_ms(),
+        ended.work.slowest_1_percent_ms(),
+        ended.work.frames()
     );
     let Some(dir) = edel::places::person_state_dir() else {
         return;

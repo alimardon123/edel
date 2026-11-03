@@ -883,6 +883,9 @@ impl Gpu {
                 screen.locked_frame = state.locked.is_some();
                 state.last_frame = Some(Instant::now());
                 state.telemetry.frame(started.elapsed(), true);
+                state
+                    .game
+                    .frame_rendered(&screen.output.name(), started.elapsed());
                 state.frame_drawn(
                     started.elapsed(),
                     crate::tiers::refresh_interval(&screen.output),
