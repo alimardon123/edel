@@ -521,6 +521,26 @@ impl ImageDef {
                 );
             }
         }
+        let ends = &self.alpine.fixes_until;
+        if !ends.is_empty() {
+            for (repo, day) in ends {
+                if !edel::version::is_date(day) {
+                    bail!(
+                        "alpine.fixes_until.{repo} {day:?} must be a day written YYYY-MM-DD, the repository's eol_date in alpinelinux.org/releases.json"
+                    );
+                }
+            }
+            if let Some(repo) = self
+                .alpine
+                .repositories
+                .iter()
+                .find(|r| !ends.contains_key(*r))
+            {
+                bail!(
+                    "alpine.fixes_until has no date for the repository {repo:?}; add `{repo} = \"YYYY-MM-DD\"`, its eol_date in alpinelinux.org/releases.json"
+                );
+            }
+        }
         crate::account_ids::check(&self.alpine.users, &self.alpine.groups)?;
         if self.packages.is_empty() {
             bail!("the features install no package; list the base feature");
@@ -1415,6 +1435,35 @@ mod tests {
                 "{bad}"
             );
         }
+    }
+
+    /// M8.44: each repository's last day of fixes is the base's, checked
+    /// there, and an image's is the earliest among its repositories.
+    #[test]
+    fn the_alpine_fixes_until_dates_are_checked_and_the_earliest_counts() {
+        let with = |dates: &str| {
+            let text = FEATURES[0].1.replace(
+                "repositories = [\"main\", \"community\"]",
+                &format!("repositories = [\"main\", \"community\"]\nfixes_until = {{ {dates} }}"),
+            );
+            let mut found = found();
+            found.insert("base".into(), listed("base", &text));
+            ImageDef::merge(VM, found)
+        };
+        let def = with("main = \"2028-06-01\", community = \"2026-11-01\"").unwrap();
+        assert_eq!(def.alpine.fixes_until(), Some("2026-11-01"));
+        assert_eq!(parse(VM).unwrap().alpine.fixes_until(), None);
+        let missing = with("main = \"2028-06-01\"").unwrap_err().to_string();
+        assert!(
+            missing.contains("no date for the repository \"community\""),
+            "{missing}"
+        );
+        let bad = with("main = \"2028-6-1\", community = \"2026-11-01\"")
+            .unwrap_err()
+            .to_string();
+        assert!(bad.contains("YYYY-MM-DD"), "{bad}");
+        // The repository's own base has a date for every repository.
+        assert!(repo_def("edel").alpine.fixes_until().is_some());
     }
 
     /// Roadmap M4.0: the container image made of features installs what

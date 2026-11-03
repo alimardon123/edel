@@ -46,6 +46,12 @@ pub struct Manifest {
     /// (M3.8); set when it is signed. A list from before M3.8 has none.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub expires: String,
+    /// The last day, `YYYY-MM-DD`, on which this version gets fixes
+    /// (M8.44): its Alpine branch's, from `features/base.toml`'s
+    /// `[alpine]`, as its images' os-release says too. A list from before
+    /// M8.44 has none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub fixes_until: String,
     #[serde(default)]
     pub images: Vec<ImageEntry>,
     /// The add-ons of this release (M7.2a), in the order they were given.
@@ -703,9 +709,12 @@ pub fn addon_parts(file_name: &str) -> Option<(&str, &str)> {
 /// it can be served from somewhere else (a channel, M3.4), and goes into
 /// `out_dir` when given. `addons` are add-on files beside the images, each
 /// with its feature file `IMAGE.NAME.toml` beside it (M7.2a).
+/// `fixes_until` is the base's last day of fixes ([`base_fixes_until`]).
+#[allow(clippy::too_many_arguments)]
 pub fn make(
     version: &str,
     channel: &str,
+    fixes_until: Option<&str>,
     base_url: Option<&str>,
     out_dir: Option<&Path>,
     images: &[PathBuf],
@@ -820,6 +829,7 @@ pub fn make(
         channel: channel.to_string(),
         date,
         expires: String::new(),
+        fixes_until: fixes_until.unwrap_or_default().to_string(),
         images: entries,
         addons: addon_entries,
         downloads: download_entries,
@@ -830,6 +840,30 @@ pub fn make(
     fs::write(&path, toml::to_string(&manifest)?)?;
     println!("{}", path.display());
     Ok(path)
+}
+
+/// The base's last day of fixes (M8.44), from the repository's
+/// `features/base.toml` when `edel release make` runs at its root, as CI's
+/// build does, beside the images built from that same tree. None, with a
+/// warning, anywhere else: the list then says no date, as one from before
+/// M8.44 does.
+pub fn base_fixes_until() -> Option<String> {
+    let day = crate::def::feature_dirs(Path::new("images"))
+        .and_then(|dirs| crate::def::find_features(&dirs))
+        .ok()
+        .and_then(|found| {
+            let alpine = found.get("base")?.feature.alpine.as_ref()?;
+            alpine.fixes_until().map(str::to_string)
+        });
+    if day.is_none() {
+        eprintln!(
+            "{}",
+            tr(
+                "warning: release.toml says no last day of fixes, as features/base.toml was not found here or names none; run edel release make from the repository's root"
+            )
+        );
+    }
+    day
 }
 
 /// `edel release sign`: writes `FILE.sig`; with `expires_in`, first sets
@@ -906,6 +940,7 @@ mod tests {
                 channel: String::new(),
                 date: String::new(),
                 expires: "2020-01-01".into(),
+                fixes_until: String::new(),
                 images: Vec::new(),
                 addons: Vec::new(),
                 downloads: Vec::new(),
@@ -1341,6 +1376,7 @@ mod tests {
         let path = make(
             "2026.10.1",
             "stable",
+            Some("2028-06-01"),
             None,
             None,
             std::slice::from_ref(&image),
@@ -1349,6 +1385,7 @@ mod tests {
         )
         .unwrap();
         let list = parse_manifest(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(list.fixes_until, "2028-06-01");
         // A download is listed by its bytes as downloaded, not unpacked.
         let download = &list.downloads[0];
         assert_eq!(download.file, "edel-vm-x86_64.img.gz");

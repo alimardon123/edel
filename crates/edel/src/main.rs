@@ -943,6 +943,7 @@ fn run(command: Commands) -> Result<()> {
             } => release::make(
                 &version,
                 &channel,
+                release::base_fixes_until().as_deref(),
                 base_url.as_deref(),
                 out.as_deref(),
                 &images,

@@ -144,6 +144,27 @@ pub struct Alpine {
     /// a fix it needs; apk takes nothing else from them.
     #[serde(default)]
     pub edge: Vec<String>,
+    /// The last day each repository of the branch gets fixes from Alpine
+    /// (M8.44), as `alpinelinux.org/releases.json` gives them: main's two
+    /// years, community's until the next branch. Copied at each branch
+    /// bump, never computed here.
+    #[serde(default)]
+    pub fixes_until: BTreeMap<String, String>,
+}
+
+impl Alpine {
+    /// The day an image of this branch stops getting fixes: the earliest
+    /// end among the repositories it takes packages from, as one package
+    /// past its end is enough to leave a machine unfixed. None when a
+    /// repository has no date.
+    pub fn fixes_until(&self) -> Option<&str> {
+        self.repositories
+            .iter()
+            .map(|repo| self.fixes_until.get(repo).map(String::as_str))
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .min()
+    }
 }
 
 /// OpenRC services to enable, by runlevel.

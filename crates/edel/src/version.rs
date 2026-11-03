@@ -29,6 +29,34 @@ pub fn os_release_value(text: &str, key: &str) -> Option<String> {
     })
 }
 
+/// The os-release key that says the last day a system gets fixes
+/// (freedesktop's `SUPPORT_END`, M8.44), written by the image builder from
+/// `features/base.toml`'s `[alpine]`.
+pub const SUPPORT_END: &str = "SUPPORT_END";
+
+/// The last day this system gets fixes, `YYYY-MM-DD`, from its os-release
+/// text; None for an image from before M8.44 or a value that is no date.
+pub fn fixes_until(os_release: &str) -> Option<String> {
+    os_release_value(os_release, SUPPORT_END).filter(|day| is_date(day))
+}
+
+/// Whether `text` is a day written `YYYY-MM-DD`, with a month from 1 to 12
+/// and a day from 1 to 31.
+pub fn is_date(text: &str) -> bool {
+    let parts: Vec<&str> = text.split('-').collect();
+    let number = |part: &str, len: usize| {
+        (part.len() == len && part.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| part.parse::<u32>().ok())
+            .flatten()
+    };
+    matches!(
+        parts.as_slice(),
+        [y, m, d] if number(y, 4).is_some()
+            && number(m, 2).is_some_and(|m| (1..=12).contains(&m))
+            && number(d, 2).is_some_and(|d| (1..=31).contains(&d))
+    )
+}
+
 /// Dotted parts compared one by one, a missing part as 0; within a part,
 /// runs of digits as numbers and the rest as text, so `rc10` follows `rc2`.
 fn dotted(a: &str, b: &str) -> Ordering {
@@ -79,6 +107,27 @@ fn natural(a: &str, b: &str) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_last_day_of_fixes_is_a_day_written_yyyy_mm_dd() {
+        assert!(is_date("2028-06-01") && is_date("2026-11-30"));
+        for bad in [
+            "",
+            "2028-6-1",
+            "2028-13-01",
+            "2028-06-32",
+            "28-06-01",
+            "2028/06/01",
+            "2028-06-01x",
+        ] {
+            assert!(!is_date(bad), "{bad}");
+        }
+        assert_eq!(
+            fixes_until("SUPPORT_END=\"2028-06-01\"\n").as_deref(),
+            Some("2028-06-01")
+        );
+        assert_eq!(fixes_until("SUPPORT_END=soon\n"), None);
+    }
 
     #[test]
     fn versions_compare_number_by_number() {
