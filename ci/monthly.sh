@@ -7,11 +7,17 @@
 #                                  the pull request's body, with the package
 #                                  diff, to BODY; BASE is main or a kept
 #                                  release/YYYY branch (M8.5), checked out
-#   sh ci/monthly.sh branch [BASE] the rebuild's branch, monthly/YYYY-MM for
-#                                  main, monthly/release-YYYY/YYYY-MM for
-#                                  release/YYYY
+#   sh ci/monthly.sh branch [BASE] [day]  the rebuild's branch,
+#                                  monthly/YYYY-MM for main,
+#                                  monthly/release-YYYY/YYYY-MM for
+#                                  release/YYYY; with day, the security
+#                                  watch's rebuild, -DD after the month
 #   sh ci/monthly.sh tag BRANCH    the release a merged BRANCH tags,
-#                                  vYYYY.MM.0
+#                                  vYYYY.MM.0, or vYYYY.MM.D for a day's
+#   sh ci/monthly.sh fetch BASE DIR  the security watch (M8.43): the bills
+#                                  of materials of BASE's newest published
+#                                  release into DIR; exits 4 when BASE has
+#                                  none to watch
 #   sh ci/monthly.sh --self-test   check the names and the package diff
 #
 # Every image is built from the Alpine branch features/base.toml names, so
@@ -22,12 +28,16 @@
 # branch's current versions from apk inside the new container.
 set -eu
 
-# branch [BASE]: this month's (UTC) rebuild of BASE, monthly/YYYY-MM for
-# main and monthly/release-YYYY/YYYY-MM for a kept release/YYYY.
+# branch [BASE] [day]: this month's (UTC) rebuild of BASE, monthly/YYYY-MM
+# for main and monthly/release-YYYY/YYYY-MM for a kept release/YYYY; with
+# day, the daily security watch's rebuild (M8.43), monthly/YYYY-MM-DD, so
+# it never replaces the month's after that one merged.
 branch() {
+	when=$(date -u +%Y-%m)
+	if [ "${2:-}" = day ]; then when=$(date -u +%Y-%m-%d); fi
 	case "${1:-main}" in
-	main) echo "monthly/$(date -u +%Y-%m)" ;;
-	release/*) echo "monthly/release-${1#release/}/$(date -u +%Y-%m)" ;;
+	main) echo "monthly/$when" ;;
+	release/*) echo "monthly/release-${1#release/}/$when" ;;
 	*)
 		echo "monthly.sh: $1 is neither main nor a kept release/YYYY branch" >&2
 		return 1
@@ -35,13 +45,19 @@ branch() {
 	esac
 }
 
-# tag BRANCH: the release a merged monthly/YYYY-MM tags, vYYYY.MM.0; the
-# month's first, so a second fix release that month is .1.
+# tag BRANCH: the release a merged monthly/YYYY-MM tags, vYYYY.MM.0, the
+# month's first; a security watch's monthly/YYYY-MM-DD tags vYYYY.MM.D,
+# later in the month than .0 and never the same twice.
 tag() {
 	case "$1" in
 	monthly/[0-9][0-9][0-9][0-9]-[0-1][0-9])
 		month=${1#monthly/}
 		echo "v${month%-*}.${month#*-}.0"
+		;;
+	monthly/[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9])
+		day=${1#monthly/}
+		month=${day%-*}
+		echo "v${month%-*}.${month#*-}.$(expr "${day##*-}" + 0)"
 		;;
 	*)
 		echo "monthly.sh: $1 is not a monthly rebuild's branch, monthly/YYYY-MM" >&2
@@ -65,6 +81,47 @@ package_diff() {
 			else if (now[n] != $1) { print "- " $1; print "+ " now[n] }
 		}
 	' "$2" "$1"
+}
+
+# download PATTERN DIR: the files matching PATTERN of main's newest
+# published release, else of the preview, into DIR; prints the release's
+# tag, or fails when neither has such files. gh is $GH, so the self-test
+# can stand in for it.
+download() {
+	for release in "$(${GH:-gh} api "repos/$GITHUB_REPOSITORY/releases?per_page=10" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty' 2>/dev/null)" preview; do
+		[ -n "$release" ] || continue
+		${GH:-gh} release download "$release" -R "$GITHUB_REPOSITORY" -p "$1" -D "$2" --clobber 2>/dev/null || continue
+		ls "$2"/$1 >/dev/null 2>&1 || continue
+		echo "$release"
+		return 0
+	done
+	return 1
+}
+
+# fetch BASE DIR: the security watch's input (M8.43), the bills of
+# materials of BASE's newest published release, images and add-ons, in
+# DIR. A kept release/YYYY publishes no release of its own yet (M8.5), so
+# it has nothing to watch; neither has main before its first release.
+fetch() {
+	base=$1 dir=$2
+	case "$base" in
+	main) ;;
+	release/*)
+		echo "monthly.sh: $base publishes no release yet, so the watch has nothing to check there"
+		return 4
+		;;
+	*)
+		echo "monthly.sh: $base is neither main nor a kept release/YYYY branch" >&2
+		return 1
+		;;
+	esac
+	mkdir -p "$dir"
+	if release=$(download '*.cdx.json' "$dir"); then
+		echo "monthly.sh: the watch checks $base's release $release"
+	else
+		echo "monthly.sh: $base has no published release with bills of materials yet, so the watch has nothing to check"
+		return 4
+	fi
 }
 
 prepare() {
@@ -92,13 +149,7 @@ prepare() {
 	docker run --rm "$ref@$digest" sh -c 'apk update -q >/dev/null && apk list --available 2>/dev/null' |
 		awk '{ print $1 }' >out/monthly/branch.list
 	# The last release's lists: the newest published release, else the preview.
-	from=''
-	for release in "$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=10" --jq '[.[] | select(.draft == false and .prerelease == false)][0].tag_name // empty' 2>/dev/null)" preview; do
-		[ -n "$release" ] || continue
-		gh release download "$release" -R "$GITHUB_REPOSITORY" -p '*.packages' -D out/monthly --clobber 2>/dev/null || continue
-		from=$release
-		break
-	done
+	from=$(download '*.packages' out/monthly) || from=''
 
 	month=$(branch "$base")
 	# A kept release's rebuild tags nothing yet: which channel its
@@ -156,6 +207,37 @@ self_test() {
 	check "a kept release's rebuild branch" "$(branch release/2026)" "monthly/release-2026/$(date -u +%Y-%m)"
 	check "a kept release's rebuild tags nothing yet" "$(tag "$(branch release/2026)" 2>/dev/null || echo none)" none
 	check "a lane is not rebuilt" "$(branch lane/ci 2>/dev/null || echo none)" none
+	check "the watch's rebuild of main" "$(branch main day)" "monthly/$(date -u +%Y-%m-%d)"
+	check "the watch's rebuild of a kept release" "$(branch release/2026 day)" "monthly/release-2026/$(date -u +%Y-%m-%d)"
+	check "the tag of the watch's monthly/2026-11-07" "$(tag monthly/2026-11-07)" v2026.11.7
+	check "the tag of the watch's monthly/2026-11-21" "$(tag monthly/2026-11-21)" v2026.11.21
+	# The watch's fetch, with gh stood in for: the newest release's bills of
+	# materials, the preview's when none is published, none for a kept
+	# release or before any release.
+	tmp=$(mktemp -d)
+	cat >"$tmp/gh" <<'GH'
+#!/bin/sh
+case "$1" in
+api) [ -z "$STUB_RELEASE" ] || echo "$STUB_RELEASE" ;;
+release)
+	[ "$3" = "$STUB_HAS" ] || exit 1
+	while [ "$1" != -D ]; do shift; done
+	echo '{}' >"$2/edel-x86_64.cdx.json"
+	;;
+esac
+GH
+	chmod +x "$tmp/gh"
+	got=$(GH=$tmp/gh STUB_RELEASE=v2026.12.0 STUB_HAS=v2026.12.0 GITHUB_REPOSITORY=o/r fetch main "$tmp/a")
+	check "the watch reads the newest release" "$got" "monthly.sh: the watch checks main's release v2026.12.0"
+	got=$(GH=$tmp/gh STUB_RELEASE='' STUB_HAS=preview GITHUB_REPOSITORY=o/r fetch main "$tmp/b")
+	check "the watch reads the preview when nothing is published" "$got" "monthly.sh: the watch checks main's release preview"
+	status=0
+	GH=$tmp/gh STUB_RELEASE='' STUB_HAS=none GITHUB_REPOSITORY=o/r fetch main "$tmp/c" >/dev/null || status=$?
+	check "no release, nothing to watch" "$status" 4
+	status=0
+	fetch release/2027 "$tmp/d" >/dev/null || status=$?
+	check "a kept release has nothing to watch yet" "$status" 4
+	rm -rf "$tmp"
 	tmp=$(mktemp -d)
 	printf '%s\n' musl-1.2.5-r10 libgcc-14.2.0-r6 xz-libs-5.8.1-r0 gone-1.0-r0 >"$tmp/old"
 	printf '%s\n' musl-1.2.5-r11 libgcc-14.2.0-r6 xz-libs-5.8.1-r1 xz-5.8.1-r1 >"$tmp/new"
@@ -170,11 +252,12 @@ self_test() {
 
 case "${1:-}" in
 prepare) prepare "${2:?usage: sh ci/monthly.sh prepare BODY [BASE]}" "${3:-main}" ;;
-branch) branch "${2:-main}" ;;
+branch) branch "${2:-main}" "${3:-}" ;;
+fetch) fetch "${2:?usage: sh ci/monthly.sh fetch BASE DIR}" "${3:?usage: sh ci/monthly.sh fetch BASE DIR}" ;;
 tag) tag "${2:?usage: sh ci/monthly.sh tag BRANCH}" ;;
 --self-test) self_test ;;
 *)
-	echo "usage: sh ci/monthly.sh prepare BODY [BASE] | branch [BASE] | tag BRANCH | --self-test" >&2
+	echo "usage: sh ci/monthly.sh prepare BODY [BASE] | branch [BASE] [day] | tag BRANCH | fetch BASE DIR | --self-test" >&2
 	exit 2
 	;;
 esac
