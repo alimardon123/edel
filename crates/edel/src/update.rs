@@ -679,6 +679,10 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
             if let Some(up) = err.downcast_ref::<crate::release::UpToDate>() {
                 crate::release::record_check(&up.version);
             }
+            // So is a release updates.version holds back (M8.41).
+            if err.downcast_ref::<crate::release::Held>().is_some() {
+                crate::release::record_check(&crate::release::running_version());
+            }
         })?;
         crate::release::record_check(&release.manifest.version);
         manifest = Some(release.manifest);
@@ -1049,6 +1053,15 @@ pub fn automatic(location: Option<String>, accept: &crate::release::Accept) -> R
             != std::cmp::Ordering::Greater
         {
             return Ok(());
+        }
+        // updates.version holds a newer branch back (M8.41).
+        match crate::release::hold_here(&manifest) {
+            crate::release::Hold::Held(line) => {
+                say(&line);
+                return Ok(());
+            }
+            crate::release::Hold::Take(Some(note)) => say(&note),
+            crate::release::Hold::Take(None) => {}
         }
         if mode == Automatic::Check {
             say(&trf(

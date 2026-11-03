@@ -1598,6 +1598,18 @@ msgstr ""
 msgid "Edel OS {version} is up to date; nothing to install"
 msgstr ""
 
+msgid "updates.version names {held}, not the running {running}, so it holds nothing; edel settings reset updates.version stops this note"
+msgstr ""
+
+msgid "{running}'s fixes ended on {day}, so updates.version no longer holds it and the newest version is taken; edel settings reset updates.version stops this note"
+msgstr ""
+
+msgid "holding {held} as updates.version says; it gets fixes until {day}, so {offered} waits"
+msgstr ""
+
+msgid "holding {held} as updates.version says, so {offered} waits"
+msgstr ""
+
 msgid "refused: version {version} is older than the running {running}; nothing was changed; pass --allow-downgrade to go back to it on purpose"
 msgstr ""
 
@@ -1623,6 +1635,9 @@ msgid "could not keep the time of this check in {path}: {cause}; edel status wil
 msgstr ""
 
 msgid "newer"
+msgstr ""
+
+msgid "held by updates.version"
 msgstr ""
 
 msgid "not newer"
@@ -2171,7 +2186,7 @@ msgstr ""
 msgid "The release channel whose updates this machine takes, such as stable or preview."
 msgstr ""
 
-msgid "A release to stay on instead of following the channel; this release does not act on it yet."
+msgid "The version to stay on, such as 2027.10.1: edel update takes its fixes but no newer branch until this version's fixes end."
 msgstr ""
 
 msgid "Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due."
@@ -2496,6 +2511,12 @@ msgid "{value} is not a channel name; use lowercase letters, digits and hyphens,
 msgstr ""
 
 msgid "a channel name in quotes, such as \"stable\""
+msgstr ""
+
+msgid "{value} is not a version; write one such as \"2027.10.1\", as edel status shows"
+msgstr ""
+
+msgid "a version in quotes, such as \"2027.10.1\""
 msgstr ""
 
 msgid "{value} is not a span of hours; write the start and the end in 24-hour time, such as \"02:00-04:00\""

@@ -260,6 +260,18 @@ msgstr ""
 msgid "Any hour"
 msgstr ""
 
+msgid "Takes each new version as it comes."
+msgstr ""
+
+msgid "Edel OS {version} and its fixes until {day}"
+msgstr ""
+
+msgid "Edel OS {version} and its fixes"
+msgstr ""
+
+msgid "Holding {held}, as the settings file says"
+msgstr ""
+
 msgid "When an update may restart this computer by itself, in local time."
 msgstr ""
 
@@ -1590,6 +1602,9 @@ msgid "Startup apps"
 msgstr ""
 
 msgid "Channel"
+msgstr ""
+
+msgid "Stay on this version"
 msgstr ""
 
 msgid "Automatic updates"

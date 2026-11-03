@@ -1,6 +1,8 @@
 //! Updates by themselves on the Updates page (roadmap M7.5b): the rows of
 //! `updates.automatic` and `updates.restart_window`, the machine's keys,
-//! under Channel in its card. A choice runs `edel settings set` and then
+//! under Channel in its card. The hold switch of `updates.version` (M8.41)
+//! sits there too: on, it holds the running version; off, it resets the key.
+//! A choice runs `edel settings set` and then
 //! `apply` as root through doas (`cmd::set_and_apply_as_root`), as the
 //! Region page's machine keys do, so the `updates` feature's crond starts
 //! or stops at once; the release's value is written as a reset, never as a
@@ -22,6 +24,7 @@ use crate::{cmd, rows};
 
 const MODE: &str = "updates.automatic";
 const WINDOW: &str = "updates.restart_window";
+const VERSION: &str = "updates.version";
 /// The mode the release gives, the absence of the key.
 const OFF: &str = "off";
 const AND_RESTART: &str = "install-and-restart";
@@ -62,6 +65,25 @@ pub fn window_label(span: &str) -> String {
     }
 }
 
+/// The hold's line under its row (M8.41): what the held version keeps, from
+/// the running version and its fixes' last day.
+fn hold_line(held: Option<&str>, running: &str, fixes_until: Option<&str>) -> String {
+    match (held, fixes_until) {
+        (None, _) => tr("Takes each new version as it comes.").to_string(),
+        (Some(held), fixes) if held == running => match fixes {
+            Some(day) => trf(
+                "Edel OS {version} and its fixes until {day}",
+                &[("version", running), ("day", day)],
+            ),
+            None => trf("Edel OS {version} and its fixes", &[("version", running)]),
+        },
+        (Some(held), _) => trf(
+            "Holding {held}, as the settings file says",
+            &[("held", held)],
+        ),
+    }
+}
+
 /// The words that write `key` as `value`: a reset when it is the
 /// release's own value, else a set.
 pub fn words(key: &str, value: &str) -> Vec<String> {
@@ -80,9 +102,21 @@ struct Ui {
     holder: gtk::Box,
     window: RefCell<Option<Rc<widgets::Choice>>>,
     spans: RefCell<Vec<String>>,
+    /// The hold switch, where the image says its version (M8.41).
+    hold: Option<Hold>,
     /// A refused change's message, by key, shown until the next change.
     problems: RefCell<Vec<(&'static str, String)>>,
     monitors: RefCell<Vec<gio::FileMonitor>>,
+}
+
+/// The hold switch of `updates.version` (M8.41).
+struct Hold {
+    row: widgets::Row,
+    switch: gtk::Switch,
+    /// The running release's `VERSION_ID`.
+    running: String,
+    /// The os-release text, for its `SUPPORT_END` day.
+    release: String,
 }
 
 /// Adds the two rows to `group` where the image updates by itself.
@@ -99,6 +133,21 @@ pub fn rows(group: &gtk::Box) {
     let mode_row = widgets::row(group, rows::title(MODE), &mode.widget());
     let holder = gtk::Box::builder().build();
     let window_row = widgets::row(group, rows::title(WINDOW), holder.upcast_ref());
+    let release = std::fs::read_to_string(crate::about::OS_RELEASE).unwrap_or_default();
+    let hold = edel::version::os_release_value(&release, "VERSION_ID").map(|running| {
+        let switch = gtk::Switch::new();
+        let row = widgets::row(
+            group,
+            rows::title(VERSION),
+            &switch.clone().upcast::<gtk::Widget>(),
+        );
+        Hold {
+            row,
+            switch,
+            running,
+            release: release.clone(),
+        }
+    });
     let ui = Rc::new(Ui {
         mode_row,
         mode,
@@ -107,6 +156,7 @@ pub fn rows(group: &gtk::Box) {
         holder,
         window: RefCell::new(None),
         spans: RefCell::new(Vec::new()),
+        hold,
         problems: RefCell::new(Vec::new()),
         monitors: RefCell::new(Vec::new()),
     });
@@ -117,7 +167,25 @@ pub fn rows(group: &gtk::Box) {
             change(&ui, MODE, words(MODE, mode));
         }
     });
-    for (key, row) in [(MODE, &ui.mode_row), (WINDOW, &ui.window_row)] {
+    if let Some(hold) = &ui.hold {
+        let weak = Rc::downgrade(&ui);
+        hold.switch.connect_active_notify(move |switch| {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some(hold) = ui.hold.as_ref() else { return };
+            let on = switch.is_active();
+            // A switch the page itself moves matches the file: no change.
+            if on == !value(VERSION).is_empty() {
+                return;
+            }
+            let set = words(VERSION, if on { &hold.running } else { "" });
+            change(&ui, VERSION, set);
+        });
+    }
+    let mut keyed = vec![(MODE, &ui.mode_row), (WINDOW, &ui.window_row)];
+    if let Some(hold) = &ui.hold {
+        keyed.push((VERSION, &hold.row));
+    }
+    for (key, row) in keyed {
         let weak = Rc::downgrade(&ui);
         row.reset.connect_clicked(move |_| {
             if let Some(ui) = weak.upgrade() {
@@ -194,10 +262,19 @@ fn show(ui: &Rc<Ui>) {
         choice.set_selected(spans.iter().position(|s| *s == span).unwrap_or(0));
     }
     let window_help = tr("When an update may restart this computer by itself, in local time.");
-    for (key, row, words) in [
-        (MODE, &ui.mode_row, mode_line(&mode)),
-        (WINDOW, &ui.window_row, window_help),
-    ] {
+    let mut lines = vec![
+        (MODE, &ui.mode_row, mode_line(&mode).to_string()),
+        (WINDOW, &ui.window_row, window_help.to_string()),
+    ];
+    if let Some(hold) = &ui.hold {
+        let held = value(VERSION);
+        let held = Some(held.as_str()).filter(|v| !v.is_empty());
+        let fixes = edel::version::fixes_until(&hold.release);
+        let line = hold_line(held, &hold.running, fixes.as_deref());
+        hold.switch.set_active(held.is_some());
+        lines.push((VERSION, &hold.row, line));
+    }
+    for (key, row, words) in lines {
         let source = files.source(key);
         let problem = ui
             .problems
@@ -271,6 +348,39 @@ mod tests {
         assert_eq!(
             words(WINDOW, "02:00-05:00"),
             ["settings", "set", "updates.restart_window=02:00-05:00"]
+        );
+    }
+
+    #[test]
+    fn the_hold_switch_sets_the_running_version_or_resets_it() {
+        assert_eq!(
+            words(VERSION, "2027.10.1"),
+            ["settings", "set", "updates.version=2027.10.1"]
+        );
+        assert_eq!(words(VERSION, ""), ["settings", "reset", VERSION]);
+    }
+
+    #[test]
+    fn the_hold_line_has_a_text_for_every_branch() {
+        assert_eq!(
+            hold_line(None, "2027.10.1", None),
+            "Takes each new version as it comes."
+        );
+        assert_eq!(
+            hold_line(None, "2027.10.1", Some("2027-12-31")),
+            "Takes each new version as it comes."
+        );
+        assert_eq!(
+            hold_line(Some("2027.10.1"), "2027.10.1", Some("2027-12-31")),
+            "Edel OS 2027.10.1 and its fixes until 2027-12-31"
+        );
+        assert_eq!(
+            hold_line(Some("2027.10.1"), "2027.10.1", None),
+            "Edel OS 2027.10.1 and its fixes"
+        );
+        assert_eq!(
+            hold_line(Some("2027.9.2"), "2027.10.1", Some("2027-12-31")),
+            "Holding 2027.9.2, as the settings file says"
         );
     }
 

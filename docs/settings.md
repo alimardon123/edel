@@ -231,7 +231,7 @@ When the key is unset, or names an app that is not installed, the shortcuts open
 | Key | Value | From |
 |---|---|---|
 | `updates.channel` | the channel whose release lists `edel update` takes, such as `"stable"` or `"preview"`: lowercase letters, digits and hyphens, up to 32; missing is the channel the image was built for. `edel update` with no release named takes this channel's list, and a list for another channel is refused unless `edel update --channel NAME` asks for it once. Settings' Updates page has it as the Channel row | M3.8, M5.8c |
-| `updates.version` | text, a release to stay on; missing follows the channel | M3.4 |
+| `updates.version` | a version, such as `"2027.10.1"`, whose branch `edel update` keeps (its fixes still taken) until its fixes end; missing follows the channel | M8.41 |
 | `updates.automatic` | `off`, `check`, `install` or `install-and-restart` | M7.5 |
 | `updates.restart_window` | text, hours for unattended restarts, such as `"02:00-04:00"` | M7.5 |
 | `apps.installed` | a list of Flatpak app ids from Flathub, such as `["io.mpv.Mpv"]` (an id is reverse-DNS: three or more parts joined by dots, the last with no `-`). For each admin person, apply adds Flathub if they have no remote and installs, with `flatpak --user` as that person, each id they lack; the boot leaves the installs to an apply, and says so. Taking an id out leaves its app installed, as the store (M6.4) removes apps. On the command line `edel settings set 'apps.installed=["io.mpv.Mpv"]'`, then `edel settings apply`; the file line is `apps.installed = ["io.mpv.Mpv"]` under `[apps]`. No Settings row yet: the store (M6.4) is this key's page | M6.1 |
@@ -470,7 +470,7 @@ This page has no key in the file.
 | Key | What it does | Default | Decided by |
 |---|---|---|---|
 | `updates.channel` | The release channel whose updates this machine takes, such as stable or preview. | the image's | image |
-| `updates.version` | A release to stay on instead of following the channel; this release does not act on it yet. | follows the channel | release |
+| `updates.version` | The version to stay on, such as 2027.10.1: edel update takes its fixes but no newer branch until this version's fixes end. | follows the channel | release |
 | `updates.automatic` | Whether updates are checked, installed, or installed and restarted by themselves, once an hour; a machine with a screen only says a restart is due. | off | release |
 | `updates.restart_window` | The hours when an update may restart the machine by itself, in local time, such as 02:00-04:00; without it, any hour. | any hour | release |
 

@@ -29,6 +29,15 @@ pub fn os_release_value(text: &str, key: &str) -> Option<String> {
     })
 }
 
+/// `YYYY.MM.N` and the like: numbers joined by dots, as
+/// [`compare`] orders them (M3.1; `updates.version` since M8.41).
+pub fn is_version(version: &str) -> bool {
+    !version.is_empty()
+        && version
+            .split('.')
+            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+}
+
 /// The os-release key that says the last day a system gets fixes
 /// (freedesktop's `SUPPORT_END`, M8.44), written by the image builder from
 /// `features/base.toml`'s `[alpine]`.
