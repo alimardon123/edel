@@ -31,7 +31,7 @@ A pull request or tag made by a workflow's own token starts no workflow, so the 
 
 ## Reading the package lists and the bills of materials
 
-Every image comes with two files, in the release and in each CI run's artefact `edel-images`:
+Every image comes with two files, in the release and in each CI run's artefact `edel-images`, and so does every add-on, as `IMAGE.ADDON.packages` and `IMAGE.ADDON.cdx.json`, holding only the packages the add-on adds to its image (M8.42); CI checks every one of them against Alpine's advisories:
 
 | File | What it holds | Use it to |
 |---|---|---|
