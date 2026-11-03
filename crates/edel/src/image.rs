@@ -311,19 +311,25 @@ impl Build<'_> {
         let packages = crate::bom::parse_installed(&text);
         let features: Vec<&str> = self.def.features.iter().map(|f| f.name.as_str()).collect();
         self.check_platform(&packages, &features)?;
-        let mut lines: Vec<String> = packages
-            .iter()
-            .map(|p| format!("{}-{}", p.name, p.version))
-            .collect();
-        lines.sort_unstable();
-        let list: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        let list = crate::bom::list(&packages);
         let inside = root.join(edel::places::PACKAGES_FILE.trim_start_matches('/'));
         fs::create_dir_all(inside.parent().unwrap_or(root))?;
         fs::write(&inside, &list)?;
-        fs::write(&beside, &list)?;
+        self.write_package_record(&stem, &packages)
+    }
+
+    /// Writes `out/<name>.packages`, one `name-version` a line, and the
+    /// bill of materials `out/<name>.cdx.json` (M8.12) for an image or,
+    /// named `IMAGE.ADDON`, for an add-on (M8.42), so CI's security check
+    /// and the release see every package a machine can run.
+    fn write_package_record(&self, name: &str, packages: &[crate::bom::Package]) -> Result<()> {
+        let beside = self.out.join(format!("{name}.packages"));
+        fs::write(&beside, crate::bom::list(packages))
+            .with_context(|| format!("writing the package list {}", beside.display()))?;
         let distro = format!("alpine-{}", self.def.alpine.branch.trim_start_matches('v'));
         let version = self.version.as_deref().unwrap_or("");
-        let document = crate::bom::cyclonedx(&stem, version, &distro, &packages);
+        let bom = self.out.join(format!("{name}.cdx.json"));
+        let document = crate::bom::cyclonedx(name, version, &distro, packages);
         fs::write(&bom, document)
             .with_context(|| format!("writing the bill of materials {}", bom.display()))?;
         Ok(())
@@ -1661,12 +1667,25 @@ impl Build<'_> {
             }
         }
         // A machine with the add-on keeps the platform level too (M8.17c):
-        // the desktop brings Flatpak and its portals.
+        // the desktop brings Flatpak and its portals. Its own packages, those
+        // `start` lacks, get their list and bill of materials (M8.42).
+        let record = format!("{}.{name}", self.def.stem());
+        self.runner.step(&format!(
+            "record add-on {name}'s own packages in {} and their bill of materials in {}",
+            self.out.join(format!("{record}.packages")).display(),
+            self.out.join(format!("{record}.cdx.json")).display()
+        ));
         if !self.runner.dry_run {
             let db = a_root.join(crate::bom::INSTALLED_DB);
             let text = fs::read_to_string(&db)
                 .with_context(|| format!("reading apk's record of add-on {name}"))?;
             let packages = crate::bom::parse_installed(&text);
+            let start_db = start.join(crate::bom::INSTALLED_DB);
+            let had = fs::read_to_string(&start_db)
+                .with_context(|| format!("reading apk's record of {}", start.display()))?;
+            let own = crate::bom::added(&crate::bom::parse_installed(&had), &packages);
+            self.write_package_record(&record, &own)
+                .with_context(|| format!("recording add-on {name}'s packages"))?;
             let features: Vec<&str> = self
                 .def
                 .features
