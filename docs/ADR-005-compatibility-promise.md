@@ -1,7 +1,7 @@
 # ADR-005: The long-term compatibility promise (platform levels)
 
 **Status:** Proposed
-**Date:** 2026-10-01, amended 2026-10-06 (the long channel's goal, ADR-009)
+**Date:** 2026-10-01, amended 2026-10-06 (the long channel's goal, ADR-009), amended 2026-11-03 (the long support design: kept years, dates shown, no module store)
 **Deciders:** Alimardon
 **Extends:** ADR-003 (which decouples apps from the base)
 
@@ -56,6 +56,8 @@ Why not promise 20 years forward: no operating system has done it, and over 20 y
 A base past its two years of fixes still runs apps, but it no longer gets security fixes, and the system says so clearly. The real goal is that nobody *needs* to stay on an old base: because every update is atomic and can be rolled back (ADR-006), updating is safe, and because apps don't depend on the base (ADR-003), updating doesn't break them. The 10-year forward promise is a safety net for frozen fleets and for devices that can no longer get new kernels, such as some phones.
 
 A longer-support base channel for enterprises, servers and fleets, with ten years as its goal, can be added later. It costs real maintenance, so it waits until someone can carry it (ADR-009, roadmap M11.5).
+
+**Long support decision (2026-11-03):** Alimardon asked for a system and apps that last 10 to 20 years, with "one fix ... applied to every other version", apps "backward and forward compatible" yet light and native, and Alpine's or another distribution's packages usable as apps. Two designs, web research and three reviews (`/mnt/project-files/reviews/2026-11-03-*`) ended where this ADR already stands, made concrete: machines and apps live long, versions do not. Every machine follows the newest version by default, updated whole and rolled back on its own (ADR-006); a kept year (M8.5) gives servers, appliances and fleets only fixes for two years, while desktops and laptops always take the newest (Alimardon, 2026-11-03, as the desktop's community packages get fixes for about six months), its channel named by its year, its machines staying on it until its date (Alimardon, 2026-11-03, 1A and 2A); `updates.version` holds one version within its dates (M8.41); every version shows the date its fixes end (M8.44); a daily watch and the monthly rebuild bring one fix to every live version (M8.43). Apps stay Flatpaks: their runtime travels with them, so old apps run on new systems and new apps on old ones as far as the app platform, kept current on every live version (section 1, M10.1), allows. Apps built from Alpine's or another distribution's packages come as Flatpaks too, once M10.10's measurement says so, never as a second format. Not built: a store of system modules, a frozen core kept for ten years, frozen drivers, apps loading the machine's graphics drivers. They cost more mechanisms than the gain, and the reviews found each breaks rollback, the add-ons' rule of never laying files over the slot, or ADR-003. A ten-year kernel for the long channel is M11.5's seam.
 
 ### 5. Other CPU types
 
