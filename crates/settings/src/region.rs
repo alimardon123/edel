@@ -592,6 +592,7 @@ pub fn page() -> gtk::Widget {
     let keyboard_line = Line::new(&group, KEYBOARD, &empty, "", false);
     let keyboard_rows = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
+        .css_classes(["edel-rows"])
         .build();
     group.append(&keyboard_rows);
 
@@ -612,9 +613,13 @@ pub fn page() -> gtk::Widget {
     zone.set_width(CONTROL_WIDTH);
     let zone_line = Line::new(&group, ZONE, &zone.widget(), "", true);
 
-    let servers_line = Line::new(&group, SERVERS, &empty, "", true);
+    // A control of its own: a widget has one parent, and `empty` is the
+    // keyboard row's.
+    let none = gtk::Box::new(gtk::Orientation::Horizontal, 0).upcast::<gtk::Widget>();
+    let servers_line = Line::new(&group, SERVERS, &none, "", true);
     let servers_rows = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
+        .css_classes(["edel-rows"])
         .build();
     group.append(&servers_rows);
 
