@@ -20,7 +20,12 @@ use edel::places;
 /// The machine's authorities, or none when `places::CA_BUNDLE` is missing,
 /// unreadable or holds no certificate.
 fn machine() -> Option<RootCerts> {
-    let pem = fs::read(places::CA_BUNDLE).ok()?;
+    list(places::CA_BUNDLE)
+}
+
+/// The authorities in the certificate list at `path`, if it holds any.
+fn list(path: &str) -> Option<RootCerts> {
+    let pem = fs::read(path).ok()?;
     let certs: Vec<_> = parse_pem(&pem)
         .filter_map(|item| match item {
             Ok(PemItem::Certificate(cert)) => Some(cert.to_owned()),
@@ -122,5 +127,72 @@ mod tests {
         );
         // No list of its own: the built-in one, once.
         assert_eq!(run(vec![Err(refused())], None), (None, vec![true]));
+    }
+
+    /// Serves one HTTPS answer on a free local port with the test
+    /// authority's certificate (`tests/tls`), and gives the address.
+    fn serve_once() -> String {
+        use rustls::pki_types::pem::PemObject;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+        use std::io::{Read, Write};
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/tls");
+        let certs = CertificateDer::pem_file_iter(format!("{dir}/server.pem"))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        let key = PrivateKeyDer::from_pem_file(format!("{dir}/server.key")).unwrap();
+        let config = std::sync::Arc::new(
+            rustls::ServerConfig::builder_with_provider(std::sync::Arc::new(
+                rustls::crypto::ring::default_provider(),
+            ))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .unwrap(),
+        );
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            // Each try is one connection: a refused one ends in the
+            // handshake, a trusted one gets its answer.
+            for stream in listener.incoming() {
+                let Ok(mut tcp) = stream else { return };
+                let Ok(mut tls) = rustls::ServerConnection::new(config.clone()) else {
+                    return;
+                };
+                let mut tls = rustls::Stream::new(&mut tls, &mut tcp);
+                let mut asked = [0u8; 1024];
+                if tls.read(&mut asked).is_ok() {
+                    let _ = tls.write_all(
+                        b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok",
+                    );
+                    let _ = tls.flush();
+                }
+            }
+        });
+        format!("https://localhost:{port}/release.toml")
+    }
+
+    fn download(url: &str, roots: RootCerts) -> Result<String, ureq::Error> {
+        let agent: ureq::Agent = ureq::Agent::config_builder()
+            .tls_config(ureq::tls::TlsConfig::builder().root_certs(roots).build())
+            .timeout_global(Some(std::time::Duration::from_secs(10)))
+            .build()
+            .into();
+        agent.get(url).call()?.body_mut().read_to_string()
+    }
+
+    #[test]
+    fn a_mirror_whose_authority_is_only_in_the_machine_list_is_trusted() {
+        let url = serve_once();
+        let ours = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/tls/ca.pem");
+        // The machine's list holds the mirror's authority: one try, trusted.
+        let got = either(list(ours), |roots| download(&url, roots));
+        assert_eq!(got.unwrap(), "ok");
+        // Without it, the built-in list does not know the mirror, and the
+        // download is refused for its certificate, not for the network.
+        let refused = either(None, |roots| download(&url, roots)).unwrap_err();
+        assert!(untrusted(&refused), "{refused}");
     }
 }
