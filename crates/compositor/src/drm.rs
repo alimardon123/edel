@@ -886,6 +886,7 @@ impl Gpu {
                 state
                     .game
                     .frame_rendered(&screen.output.name(), started.elapsed());
+                state.game.frame_queued(&screen.output.name());
                 state.frame_drawn(
                     started.elapsed(),
                     crate::tiers::refresh_interval(&screen.output),

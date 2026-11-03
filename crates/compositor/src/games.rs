@@ -23,8 +23,9 @@
 //! the compositor reads it once, at start, for the starting effects tier.
 //!
 //! Each game's smoothness is recorded (M7.7d): while a window plays, each
-//! of its commits that reaches its screen is one frame (`committed`, then
-//! `game_frame_shown` from the backend's page flip), kept in
+//! of its commits that reaches its screen is one frame (`committed`, the
+//! screen's next frame drawn, `frame_queued`, then `frame_shown` at its
+//! page flip), kept in
 //! `edel::smoothness::Frames`; when it stops playing, its record replaces
 //! its app's in the person's `games.toml`, which `edel report` shows, and
 //! the log says it in one line. The same frames feed the frame rate
@@ -55,7 +56,7 @@ use smithay::reexports::wayland_server::{
 use smithay::wayland::compositor::with_states;
 
 use edel::smoothness::{Frames, Work};
-use edel_compositor::frame_times::{Recent, Shown};
+use edel_compositor::frame_times::{NewFrames, Recent, Shown};
 use edel_compositor::game::{GameMode, When};
 
 use crate::state::Edel;
@@ -86,8 +87,8 @@ struct Recording {
     app: String,
     /// The screen it plays on.
     output: String,
-    /// Whether it committed since its last frame reached the screen.
-    fresh: bool,
+    /// Which of its screen's flips show a new frame of it.
+    new: NewFrames,
     frames: Frames,
     /// Its last frames, for the overlay (M8.27).
     recent: Recent,
@@ -101,21 +102,32 @@ impl Game {
         self.session || self.mode.on(|| self.on_battery)
     }
 
-    /// A surface committed (M7.7d): when it is the game's, its next page
-    /// flip shows a frame of it.
+    /// A surface committed (M7.7d): when it is the game's, the next frame
+    /// its screen draws shows it.
     pub fn committed(&self, surface: &WlSurface) {
         if let Some(recording) = self.recording.borrow_mut().as_mut() {
             if &recording.surface == surface {
-                recording.fresh = true;
+                recording.new.committed();
+            }
+        }
+    }
+
+    /// The screen named `output` drew a frame and handed it to the display
+    /// (M7.7d): it holds the game's commits since the last one.
+    pub fn frame_queued(&self, output: &str) {
+        if let Some(recording) = self.recording.borrow_mut().as_mut() {
+            if recording.output == output {
+                recording.new.queued();
             }
         }
     }
 
     /// A frame reached the screen named `output` at `at`, a monotonic time
-    /// (M7.7d): one of the game's when it plays there and committed since.
+    /// (M7.7d): one of the game's when it plays there and that frame held
+    /// a new commit of it.
     pub fn frame_shown(&self, output: &str, at: Duration) {
         if let Some(recording) = self.recording.borrow_mut().as_mut() {
-            if recording.output == output && std::mem::take(&mut recording.fresh) {
+            if recording.output == output && recording.new.shown() {
                 recording.frames.shown(at);
                 recording.recent.shown(at);
             }
@@ -249,7 +261,7 @@ impl Edel {
                 window,
                 surface,
                 output,
-                fresh: false,
+                new: NewFrames::default(),
                 frames: Frames::default(),
                 recent: Recent::default(),
                 work: Work::default(),

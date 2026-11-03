@@ -115,6 +115,39 @@ impl Shown {
     }
 }
 
+/// Which page flips show a new frame of the game (M7.7d). A commit is
+/// counted at the flip of the frame drawn after it, not at the next flip
+/// after it: a game that commits again while its last frame waits for the
+/// screen has made two frames, both shown, one flip apart. Counting "a
+/// commit since the last flip" took those two as one, so on a slow
+/// runner `edel report` showed 3 to 6 percent fewer frames than the game
+/// drew (main's CI on 2026-11-03).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NewFrames {
+    /// The game committed since its screen's last frame was drawn.
+    committed: bool,
+    /// The frame waiting for the screen holds a new commit of the game.
+    queued: bool,
+}
+
+impl NewFrames {
+    /// The game committed.
+    pub fn committed(&mut self) {
+        self.committed = true;
+    }
+
+    /// The game's screen drew a frame and handed it to the display.
+    pub fn queued(&mut self) {
+        self.queued = std::mem::take(&mut self.committed);
+    }
+
+    /// The screen showed its waiting frame: whether it was a new one of
+    /// the game.
+    pub fn shown(&mut self) -> bool {
+        std::mem::take(&mut self.queued)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,5 +233,27 @@ mod tests {
             recent.shown(Duration::from_micros(i * 100));
         }
         assert!(recent.frames.len() <= MOST);
+    }
+
+    #[test]
+    fn a_commit_counts_at_the_flip_of_the_frame_that_shows_it() {
+        let mut new = NewFrames::default();
+        // Drawn and queued, then the game commits again before the flip:
+        // the flip shows the first frame, the next one the second.
+        new.committed();
+        new.queued();
+        new.committed();
+        assert!(new.shown());
+        new.queued();
+        assert!(new.shown());
+        // A flip of a frame drawn for something else shows nothing new.
+        new.queued();
+        assert!(!new.shown());
+        // A commit after the frame was queued waits for the next one.
+        new.queued();
+        new.committed();
+        assert!(!new.shown());
+        new.queued();
+        assert!(new.shown());
     }
 }
