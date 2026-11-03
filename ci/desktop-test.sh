@@ -292,12 +292,12 @@
 #   smoothness  a fullscreen game stand-in in game mode times 1200 frames as
 #               the screen presented them, reported, while the compositor
 #               times its own work on each: its slowest 1 percent at most
-#               game_work_p99_ms, and the share that went straight to the
+#               game_work_p99_extra_ms after its median, and the share that went straight to the
 #               screen at least game_direct_percent_floor; one more run when
 #               the first is over (M7.7e)
 #   frame-rate  Super+Shift+G shows the frame rate overlay over a fullscreen
 #               game stand-in (frame-rate.png), the game timed again with it
-#               on, our work within game_work_p99_ms, and hidden again (M8.27)
+#               on, our work within game_work_p99_extra_ms, and hidden again (M8.27)
 #   lid         edel-testclient --lid shuts a lid switch on uinput for 8 s as
 #               root: the compositor hears it, shell-ui locks the screen and
 #               suspends the VM (QEMU reports it suspended), QMP's
@@ -6278,8 +6278,11 @@ case_smoothness() {
 	# (smooth.rs), and the compositor times its own work on each frame of
 	# the game's screen, from starting to draw it to handing it to the
 	# display, which its record of the game ends with (games.rs). The
-	# slowest 1 percent of our work may take at most game_work_p99_ms:
-	# that is the stutter our code can add, and what a person sees of it.
+	# slowest 1 percent of our work may come at most game_work_p99_extra_ms
+	# after its median: that is the stutter our drawing adds. Its median is
+	# the runner's pace, as CI's VM draws in software (about 11 ms a frame
+	# of 1280x800 under llvmpipe on 2026-11-03), so it is reported, not
+	# judged.
 	# The time between the frames is reported, not judged: the VM's screen
 	# has no refresh of its own, so it is the runner's pace, and a shared
 	# runner's hiccups put its p99 2.6 to 5.1 ms after the median on code
@@ -6288,7 +6291,7 @@ case_smoothness() {
 	# game_direct_percent_floor. A run over a budget is measured once more
 	# and the better run counts. No screenshot is taken while frames are
 	# timed, as one stalls the VM.
-	limit=$(budget game_work_p99_ms)
+	limit=$(budget game_work_p99_extra_ms)
 	floor=$(budget game_direct_percent_floor)
 	best=''
 	for run in 1 2; do
@@ -6308,6 +6311,7 @@ case_smoothness() {
 		wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 ||
 			fail "the desktop did not come back after the game stand-in ended (run $run)"
 		our_work "$kept"
+		late=$(awk -v p="$work_slow" -v m="$work_median" 'BEGIN { printf "%.2f", p - m }')
 		frames=$(echo "$line" | sed -n 's/.*frames=\([0-9]*\).*/\1/p')
 		median=$(echo "$line" | sed -n 's/.*median_ms=\([0-9.]*\).*/\1/p')
 		p99=$(echo "$line" | sed -n 's/.*p99_ms=\([0-9.]*\).*/\1/p')
@@ -6318,21 +6322,21 @@ case_smoothness() {
 		[ -n "$frames" ] && [ -n "$median" ] && [ -n "$p99" ] && [ -n "$direct" ] || fail "the game stand-in's line lacks a number (run $run): $line"
 		extra=$(awk -v p="$p99" -v m="$median" 'BEGIN { printf "%.1f", p - m }')
 		share=$(awk -v d="$direct" -v f="$frames" 'BEGIN { printf "%.1f", d * 100 / (f + 1) }')
-		echo "smoothness run $run: our work per frame median $work_median ms, slowest 1 percent $work_slow ms over $work_frames frames; between frames median $median ms, p99 $p99 ms ($extra ms slower than the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}; $(late_why "$line")"
-		# The better run: the less our slowest frames took.
-		if [ -z "$best" ] || awk -v p="$work_slow" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
-			best="$work_slow $slowest $share $discarded $median $p99 $work_median $work_frames $extra"
+		echo "smoothness run $run: our work per frame median $work_median ms, slowest 1 percent $work_slow ms ($late ms after the median) over $work_frames frames; between frames median $median ms, p99 $p99 ms ($extra ms slower than the median), slowest $slowest ms, $direct of $((frames + 1)) frames straight to the screen ($share percent), $discarded discarded; ${settle:-no start kept apart}; $(late_why "$line")"
+		# The better run: the less our slowest frames came after our median.
+		if [ -z "$best" ] || awk -v p="$late" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$late $slowest $share $discarded $median $p99 $work_median $work_frames $extra $work_slow"
 		fi
 		set -- $best
 		awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' && break
 	done
 	set -- $best
 	awk -v p="$1" -v b="$limit" -v s="$3" -v f="$floor" 'BEGIN { exit !(p != "" && p <= b && s >= f) }' ||
-		fail "our work on a game's frames or its frames straight to the screen are worse than their budgets in both runs: the better run's slowest 1 percent of our work took $1 ms (budget $limit ms, median $7 ms over $8 frames), $3 percent straight to the screen (floor $floor percent)"
+		fail "our work on a game's frames or its frames straight to the screen are worse than their budgets in both runs: the better run's slowest 1 percent of our work took $10 ms, $1 ms after its median $7 ms (budget $limit ms) over $8 frames, $3 percent straight to the screen (floor $floor percent)"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Smoothness (M7.7e): our work on a game's frames median $7 ms, slowest 1 percent $1 ms (budget $limit ms) over $8 frames; between frames median $5 ms, p99 $6 ms ($9 ms after the median, the runner's pace, not judged), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
+		echo "Smoothness (M7.7e): our work on a game's frames median $7 ms, slowest 1 percent $10 ms, $1 ms after the median (budget $limit ms) over $8 frames; between frames median $5 ms, p99 $6 ms ($9 ms after the median, the runner's pace, not judged), slowest $2 ms, $3 percent straight to the screen (floor $floor percent), $4 discarded." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: a fullscreen game stand-in in game mode: our work on its frames took median $7 ms, slowest 1 percent $1 ms (budget $limit ms) over $8 frames; between frames p99 $6 ms, $9 ms slower than the median $5 ms, slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
+	echo "PASS: a fullscreen game stand-in in game mode: our work on its frames took median $7 ms, slowest 1 percent $10 ms, $1 ms after the median (budget $limit ms) over $8 frames; between frames p99 $6 ms, $9 ms slower than the median $5 ms, slowest $2 ms, $3 percent straight to the screen (floor $floor percent)"
 }
 
 case_frame_rate() {
@@ -6343,10 +6347,10 @@ case_frame_rate() {
 	# the screen the game's colour; nothing is put into the game. With it
 	# on, the smoothness gate's game is timed again and the slowest 1
 	# percent of our work on its frames, the overlay's drawing included, may
-	# take at most game_work_p99_ms (the frames are composited now, so the
+	# come at most game_work_p99_extra_ms after its median (the frames are composited now, so the
 	# direct share is not asked); a run over is measured once more.
 	# Super+Shift+G hides it again.
-	limit=$(budget game_work_p99_ms)
+	limit=$(budget game_work_p99_extra_ms)
 	playing=$(count 'edel-compositor: a game is playing; the desktop steps aside')
 	guest 'frame rate game'
 	wait_more 'edel-compositor: a game is playing; the desktop steps aside' "$playing" 30 ||
@@ -6386,24 +6390,25 @@ case_frame_rate() {
 		wait_more 'edel-compositor: the game ended; the desktop is back' "$ended" 10 ||
 			fail "the desktop did not come back after the timed game stand-in ended (run $run)"
 		our_work "$kept"
+		late=$(awk -v p="$work_slow" -v m="$work_median" 'BEGIN { printf "%.2f", p - m }')
 		settle=$(echo "$line" | sed -n 's/.*opening_intervals=\([0-9]*\) opening_worst_ms=\([0-9.]*\).*/\1 intervals of the first 0.5 s apart, the slowest \2 ms/p')
 		extra=$(awk -v p="$p99" -v m="$median" 'BEGIN { printf "%.1f", p - m }')
-		echo "frame rate overlay on, run $run: our work per frame median $work_median ms, slowest 1 percent $work_slow ms over $work_frames frames; between frames median $median ms, p99 $p99 ms ($extra ms slower than the median); ${settle:-no start kept apart}; $(late_why "$line")"
-		if [ -z "$best" ] || awk -v p="$work_slow" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
-			best="$work_slow $work_median $work_frames $p99 $extra"
+		echo "frame rate overlay on, run $run: our work per frame median $work_median ms, slowest 1 percent $work_slow ms ($late ms after the median) over $work_frames frames; between frames median $median ms, p99 $p99 ms ($extra ms slower than the median); ${settle:-no start kept apart}; $(late_why "$line")"
+		if [ -z "$best" ] || awk -v p="$late" -v q="${best%% *}" 'BEGIN { exit !(p < q) }'; then
+			best="$late $work_median $work_frames $p99 $extra $work_slow"
 		fi
 		awk -v p="${best%% *}" -v b="$limit" 'BEGIN { exit !(p <= b) }' && break
 	done
 	set -- $best
 	awk -v p="$1" -v b="$limit" 'BEGIN { exit !(p <= b) }' ||
-		fail "with the frame rate overlay on, the slowest 1 percent of our work on a game's frames took $1 ms in the better of two runs (budget $limit ms, median $2 ms over $3 frames)"
+		fail "with the frame rate overlay on, the slowest 1 percent of our work on a game's frames took $6 ms, $1 ms after its median $2 ms, in the better of two runs (budget $limit ms) over $3 frames"
 	off=$(count 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]')
 	python3 ci/qmp.py key meta_l-shift-g
 	wait_more 'edel-compositor: the frame rate overlay off [(]Super[+]Shift[+]G[)]' "$off" || fail "Super+Shift+G did not turn the frame rate overlay off"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
-		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on our work on a game's frames took median $2 ms, slowest 1 percent $1 ms (budget $limit ms) over $3 frames; between frames p99 $4 ms, $5 ms after the median (not judged)." >>"$GITHUB_STEP_SUMMARY"
+		echo "Frame rate overlay (M8.27): ${numbers#*shows }; with it on our work on a game's frames took median $2 ms, slowest 1 percent $6 ms, $1 ms after the median (budget $limit ms) over $3 frames; between frames p99 $4 ms, $5 ms after the median (not judged)." >>"$GITHUB_STEP_SUMMARY"
 	fi
-	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on our work on a game's frames took median $2 ms, slowest 1 percent $1 ms (budget $limit ms) over $3 frames; Super+Shift+G hid it"
+	echo "PASS: Super+Shift+G showed the frame rate overlay over a fullscreen game in game mode (${numbers#*shows }, frame-rate.png), and with it on our work on a game's frames took median $2 ms, slowest 1 percent $6 ms, $1 ms after the median (budget $limit ms) over $3 frames; Super+Shift+G hid it"
 }
 
 case_keyring() {

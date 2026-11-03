@@ -104,32 +104,33 @@ desktop_behind_game_cpu_percent = 1
 
 # The smoothness gate (M7.7e, desktop-test smoothness): a fullscreen game
 # stand-in, edel-testclient --busy --smooth 1200, in game mode. Since
-# 2026-11-03 the gate is our own work: the slowest 1 percent of the time
-# the compositor took to draw each frame of the game's screen, from
-# starting to draw it to handing it to the display (`games.rs`, the end of
-# its record's log line), in ms; and the share of the game's frames that
-# went straight to the screen, in percent, which must not fall below the
-# floor. A stall our code adds shows in full: one dropped 60 Hz frame in 2
-# percent of frames puts the slowest 1 percent past 16 ms.
+# 2026-11-03 the gate is our own work: the time the compositor took to
+# draw each frame of the game's screen, from starting to draw it to
+# handing it to the display (`games.rs`, the end of its record's log
+# line), its slowest 1 percent at most this many ms after its median; and
+# the share of the game's frames that went straight to the screen, in
+# percent, which must not fall below the floor. A stall our drawing adds
+# shows in full: one dropped 60 Hz frame in 2 percent of frames puts the
+# slowest 1 percent 16 ms late. The median is not judged: CI's VM draws
+# the 1280x800 game in software, which took 10.8 to 11.0 ms a frame on
+# the first runs (PR #666), the runner's pace, where a real GPU takes
+# about 1 ms; those runs had the slowest 1 percent 1.4 to 2.1 ms after it.
 # Until then the gate was the time between the frames the screen
-# presented, which is reported still. CI's VM has no screen refresh, so a
-# frame takes as long as the runner needs, and a shared runner's own
-# stalls land between frames however good our code is. Its history: the
-# p99 alone, game_frame_p99_ms = 16.4 (PR #403), gave 11.2 to 19.1 ms
-# over 14 runs of the same code; from 2026-10-24 the p99 over the median
-# as a ratio, 1.24, which read fast runners as worse; from 2026-10-31 the
-# p99's ms after the median, game_frame_p99_extra_ms = 2.5, Alimardon's
-# choice over 2.1. That gap was 0.9 to 1.9 ms on 8 green runs of
-# 2026-11-02 and 2026-11-03, yet 2.6 and 5.1 ms on main on 2026-11-01 and
-# 2.7, 3.5 and 2.9 ms on PR #660, which changed nothing the desktop runs:
-# the runner, not our code. Alimardon chose to measure our frames instead
-# on 2026-11-03 (the roadmap's log). Our work per frame over a whole
-# session, the compositor's telemetry, had a p99 of 0.97 to 1.35 ms in
-# those runs, slow runners included; the budget is set from the game's own
-# measurements in the first CI runs of this gate.
+# presented, which is reported still: on the same runs 1.2 to 1.9 ms after
+# its median, as in VM it is mostly our drawing too, plus whatever the
+# runner does between frames. Its history: the p99 alone,
+# game_frame_p99_ms = 16.4 (PR #403), gave 11.2 to 19.1 ms over 14 runs of
+# the same code; from 2026-10-24 the p99 over the median as a ratio, 1.24,
+# which read fast runners as worse; from 2026-10-31 the p99's ms after the
+# median, game_frame_p99_extra_ms = 2.5, Alimardon's choice over 2.1. That
+# gap was 0.9 to 1.9 ms on 8 green runs of 2026-11-02 and 2026-11-03, yet
+# 2.6 and 5.1 ms on main on 2026-11-01 and 2.7, 3.5 and 2.9 ms on PR #660,
+# which changed nothing the desktop runs. Alimardon chose to measure our
+# frames instead on 2026-11-03 (the roadmap's log); the limit stays the
+# 2.5 ms they chose, now on our own work.
 # CI's VM gives the client shared memory buffers, which cannot go
 # straight to the screen, so the floor stays 0 there.
-game_work_p99_ms = 2.0
+game_work_p99_extra_ms = 2.5
 game_direct_percent_floor = 0
 
 # The compositor's and shell-ui's wakeups per second together, from their
