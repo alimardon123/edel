@@ -285,24 +285,17 @@ fn download(address: &str) -> Result<Vec<u8>> {
         .with_context(failed)
 }
 
-/// The HTTP client, trusting the machine's certificate authorities.
+/// The HTTP client, trusting the machine's certificate authorities, else
+/// the built-in ones ([`crate::trust::roots`]).
 fn agent() -> ureq::Agent {
-    use ureq::tls::{PemItem, RootCerts, TlsConfig, parse_pem};
+    use ureq::tls::TlsConfig;
 
-    let roots = fs::read(places::CA_BUNDLE)
-        .ok()
-        .map(|pem| {
-            parse_pem(&pem)
-                .filter_map(|item| match item {
-                    Ok(PemItem::Certificate(cert)) => Some(cert.to_owned()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        })
-        .filter(|certs| !certs.is_empty())
-        .map_or(RootCerts::WebPki, |certs| RootCerts::new_with_certs(&certs));
     ureq::Agent::config_builder()
-        .tls_config(TlsConfig::builder().root_certs(roots).build())
+        .tls_config(
+            TlsConfig::builder()
+                .root_certs(crate::trust::roots())
+                .build(),
+        )
         .timeout_connect(Some(Duration::from_secs(30)))
         .timeout_recv_response(Some(Duration::from_secs(60)))
         .build()
