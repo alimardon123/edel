@@ -1339,6 +1339,31 @@ mod tests {
 
     #[test]
     fn one_command_at_a_time_holds_a_lock_even_after_a_crash() {
+        // The kernel's lock belongs to the open file, and a process another
+        // test starts at the same moment gets a copy of every open file
+        // until it runs its program, the lock with it: then a lock let go
+        // here still looks held. So the test runs again alone, in a test
+        // process of its own, where nothing else starts a process.
+        const ALONE: &str = "EDEL_LOCK_TEST_ALONE";
+        if std::env::var_os(ALONE).is_none() {
+            let out = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "update::tests::one_command_at_a_time_holds_a_lock_even_after_a_crash",
+                    "--exact",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(ALONE, "1")
+                .output()
+                .unwrap();
+            let said = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success() && said.contains("1 passed"),
+                "{said}{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("edel-lock-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("update.lock");
