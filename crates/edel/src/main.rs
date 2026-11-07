@@ -14,6 +14,7 @@ macro_rules! eprintln {
 
 mod account_ids;
 mod addons;
+mod app_update;
 mod battery_report;
 mod bom;
 mod boot;
@@ -302,6 +303,29 @@ enum Commands {
     WebApp {
         #[command(subcommand)]
         command: WebAppCommands,
+    },
+    /// app: put an app back on its version before its last update, with its
+    /// data, or let it update again (your own apps; doas for the default apps)
+    App {
+        #[command(subcommand)]
+        command: AppCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum AppCommands {
+    /// Put an app back on its version before its last update, with its data
+    /// from just before it, and keep it there until edel app update
+    UndoUpdate {
+        /// The app's id, such as org.mozilla.firefox
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Let an app that stays on an older version update again, and update it now
+    Update {
+        /// The app's id, such as org.mozilla.firefox
+        #[arg(value_name = "ID")]
+        id: String,
     },
 }
 
@@ -732,6 +756,7 @@ impl Commands {
             Commands::Theme { .. } => "theme",
             Commands::Preset { .. } => "preset",
             Commands::WebApp { .. } => "web-app",
+            Commands::App { .. } => "app",
             Commands::Addon { .. } => "addon",
         }
     }
@@ -1110,6 +1135,13 @@ fn run(command: Commands) -> Result<()> {
             PresetCommands::Save { name } => machine::preset_save(&name),
             PresetCommands::Delete { name } => machine::preset_delete(&name),
         },
+        Commands::App { command } => {
+            let root = users::current() == Some(0);
+            match command {
+                AppCommands::UndoUpdate { id } => app_update::undo(&id, root),
+                AppCommands::Update { id } => app_update::update(&id, root),
+            }
+        }
         Commands::WebApp { command } => {
             refuse_root()?;
             match command {

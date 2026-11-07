@@ -136,6 +136,10 @@ pub fn need(command: &Commands) -> Need {
         Commands::Addon { .. } => Need::Anyone,
         // A web app is the person's own files, in their own home.
         Commands::WebApp { .. } => Need::Anyone,
+        // Run as a person, it changes their own apps and asks nothing; run
+        // as root, it changes the default apps everyone runs, as edel
+        // update does (M7.20).
+        Commands::App { .. } => Need::Password,
     }
 }
 
@@ -608,6 +612,14 @@ mod tests {
             (&["edel", "web-app", "add", "example.org"], Need::Anyone),
             (&["edel", "web-app", "list"], Need::Anyone),
             (&["edel", "web-app", "remove", "example.org"], Need::Anyone),
+            (
+                &["edel", "app", "undo-update", "org.mozilla.firefox"],
+                Need::Password,
+            ),
+            (
+                &["edel", "app", "update", "org.mozilla.firefox"],
+                Need::Password,
+            ),
         ];
         for (args, want) in cases {
             assert_eq!(need_of(args), *want, "{args:?}");
