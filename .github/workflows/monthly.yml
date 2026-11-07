@@ -13,12 +13,23 @@ name: Monthly rebuild
 # the shared limit of 20 jobs at once is left to the full run.
 #
 # A pull request or tag made with the workflow's own token starts no
-# workflow by itself, so both start "CI" with workflow_dispatch.
+# workflow by itself, so both start "CI" with workflow_dispatch. The
+# workflow "Security watch" (M8.43) starts it for one base with day=yes
+# when a published release lacks a fix Alpine ships.
 on:
   schedule:
     # 03:17 UTC on the 1st, off the hour most schedules take.
     - cron: "17 3 1 * *"
   workflow_dispatch:
+    inputs:
+      base:
+        description: "Rebuild only this base, main or release/YYYY (empty: every one)"
+        required: false
+        default: ""
+      day:
+        description: "yes for the security watch's rebuild (M8.43): a branch and tag of its own day"
+        required: false
+        default: "no"
   pull_request:
     types: [closed]
 
@@ -47,15 +58,17 @@ jobs:
         # and start CI on it.
         env:
           GH_TOKEN: ${{ github.token }}
+          ONLY: ${{ inputs.base }}
+          DAY: ${{ inputs.day == 'yes' && 'day' || '' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          bases="main $(git ls-remote --heads origin 'release/*' | sed 's|.*refs/heads/||')"
+          bases=${ONLY:-"main $(git ls-remote --heads origin 'release/*' | sed 's|.*refs/heads/||')"}
           for base in $bases; do
             git fetch -q origin "+refs/heads/$base:refs/remotes/origin/$base"
             git checkout -q -B "rebuild" "origin/$base"
             sh ci/monthly.sh prepare out/monthly/body.md "$base"
-            branch=$(sh ci/monthly.sh branch "$base")
+            branch=$(sh ci/monthly.sh branch "$base" $DAY)
             title="Rebuild every image from this month's Alpine packages ($branch)"
             git checkout -q -B "$branch"
             git diff --quiet || git commit -q -m "$title" -- features/base.toml
