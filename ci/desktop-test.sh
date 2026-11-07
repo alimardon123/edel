@@ -645,6 +645,12 @@ case_compositor() {
 	check 'Frames drawn while idle' "$(value idle_frames)" idle_frames ''
 	echo "memory in use, by part (MiB): $(value memory_parts)"
 	echo "memory in use, the most per process (Pss MiB): $(value memory_top)"
+	# Where the held memory sits (M8.46), reported only.
+	echo "memory held, by process (MiB): $(value memory_kinds)"
+	echo "memory in tmpfs (MiB): $(value memory_tmpfs)"
+	echo "memory shared through memfd, /dev/shm and SysV (MiB): $(value memory_memfd)"
+	echo "memory in the largest slab caches (MiB): $(value memory_slab)"
+	echo "memory of the kernel's own (MiB): $(value memory_kernel)"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		cat >>"$GITHUB_STEP_SUMMARY" <<-EOF
 			### Desktop budgets (our compositor under llvmpipe, M4.2b)

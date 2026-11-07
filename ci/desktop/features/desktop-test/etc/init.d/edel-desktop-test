@@ -171,6 +171,20 @@ report() {
 	# memory of their own (Pss, shared pages split between their users).
 	say "memory_parts $(awk '/^(AnonPages|Shmem|Slab|SUnreclaim|KernelStack|PageTables|Buffers|Cached):/ { printf "%s %.0f, ", $1, $2 / 1024 }' /proc/meminfo)"
 	say "memory_top $(for f in /proc/[0-9]*/smaps_rollup; do d=${f%/smaps_rollup}; awk -v n="$(cat "$d/comm" 2>/dev/null)" '/^Pss:/ { printf "%d %s\n", $2 / 1024, n }' "$f" 2>/dev/null; done | sort -rn | head -n 8 | tr '\n' ',')"
+	# Where the held memory sits (M8.46), so each cut aims at memory that
+	# is really held, not at file pages the kernel can drop: the ten
+	# processes with the most heap and shared memory, each with its heap
+	# (RssAnon), shared memory (RssShmem) and file pages (RssFile) in MiB.
+	say "memory_kinds $(for d in /proc/[0-9]*; do awk -v n="$(cat "$d/comm" 2>/dev/null)" '/^RssAnon:/ { a = $2 } /^RssFile:/ { f = $2 } /^RssShmem:/ { s = $2 } END { if (a + s > 0) printf "%d %s anon %.1f shmem %.1f file %.1f\n", a + s, n, a / 1024, s / 1024, f / 1024 }' "$d/status" 2>/dev/null; done | sort -rn | head -n 10 | cut -d' ' -f2- | tr '\n' ',')"
+	# What holds the shared memory: each tmpfs's used MiB, and the memfd,
+	# /dev/shm and SysV pages each process maps (the buffers apps and
+	# shell-ui share with the compositor), MiB.
+	say "memory_tmpfs $(awk '$3 == "tmpfs" || $3 == "devtmpfs" { print $2 }' /proc/mounts | while read -r m; do df -m "$m" 2>/dev/null | awk -v m="$m" 'NR == 2 && $3 > 0 { printf "%s %s, ", m, $3 }'; done)"
+	say "memory_memfd $(for d in /proc/[0-9]*; do awk -v n="$(cat "$d/comm" 2>/dev/null)" '/^[0-9a-f]+-[0-9a-f]+ / { m = ($6 ~ /^\/(memfd:|dev\/shm|SYSV)/) } m && /^Rss:/ { k += $2 } END { if (k >= 512) printf "%.1f %s\n", k / 1024, n }' "$d/smaps" 2>/dev/null; done | sort -rn | head -n 8 | tr '\n' ',')"
+	# The kernel's own: the five largest slab caches, vmalloc and per-CPU
+	# memory, and what zram holds compressed, MiB.
+	say "memory_slab $(awk 'NR > 2 { printf "%d %s\n", $3 * $4 / 1024, $1 }' /proc/slabinfo 2>/dev/null | sort -rn | head -n 5 | awk '{ printf "%s %.1f, ", $2, $1 / 1024 }')"
+	say "memory_kernel $(awk '/^(VmallocUsed|Percpu):/ { printf "%s %.0f, ", $1, $2 / 1024 }' /proc/meminfo)zram $(awk '{ printf "%.1f", $3 / 1048576 }' /sys/block/zram0/mm_stat 2>/dev/null)"
 	# Every screen's first frame, not only the first screen's (M4.6c).
 	grep 'edel-compositor: output .* ready' "$session_log" | while IFS= read -r line; do
 		say "screen ${line#edel-compositor: }"
