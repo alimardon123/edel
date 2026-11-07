@@ -11,7 +11,8 @@
 //! (on encrypted data also that the passphrase stays, as the command says),
 //! the machine's name to type and its button in the problem colour, which
 //! waits until both are typed (`edel-settings: factory-reset ready
-//! true`).
+//! true`). The Apps page's Undo update and Update (M7.20) use `ask_with`,
+//! which adds the app's id to the command's arguments.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -63,6 +64,18 @@ type Done = Box<dyn FnOnce(cmd::Outcome)>;
 pub fn ask(
     near: &gtk::Widget,
     what: &'static Ask,
+    running: impl Fn(bool) + 'static,
+    done: impl FnOnce(cmd::Outcome) + 'static,
+) {
+    ask_with(near, what, Vec::new(), running, done);
+}
+
+/// As [`ask`], but the command also gets `extra` after `what.args`, such as
+/// the id of the app an Apps page changes (M7.20).
+pub fn ask_with(
+    near: &gtk::Widget,
+    what: &'static Ask,
+    extra: Vec<String>,
     running: impl Fn(bool) + 'static,
     done: impl FnOnce(cmd::Outcome) + 'static,
 ) {
@@ -213,11 +226,20 @@ pub fn ask(
                 done.clone(),
                 running.clone(),
             );
-            let args = what.args;
+            let args: Vec<String> = what
+                .args
+                .iter()
+                .map(|word| word.to_string())
+                .chain(extra.iter().cloned())
+                .collect();
+            let first = what.args.first().copied().unwrap_or_default();
             let ready = ready.clone();
             glib::spawn_future_local(async move {
-                let Ok(outcome) =
-                    gio::spawn_blocking(move || cmd::edel_as_admin(args, password)).await
+                let Ok(outcome) = gio::spawn_blocking(move || {
+                    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+                    cmd::edel_as_admin(&words, password)
+                })
+                .await
                 else {
                     window.close();
                     return;
@@ -225,7 +247,7 @@ pub fn ask(
                 // CI clicks through the dialog and reads this line.
                 eprintln!(
                     "edel-settings: {} asked, exit {}",
-                    args.first().copied().unwrap_or_default(),
+                    first,
                     outcome.code.map_or("none".into(), |c| c.to_string())
                 );
                 entry.set_sensitive(true);

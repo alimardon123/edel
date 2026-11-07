@@ -53,6 +53,14 @@ pub const LAST_CHECK: &str = data!("/edel/last-check.toml");
 /// survive every update and rollback. `edel image build` fills it on the
 /// stick, `edel install` copies it, `edel update` updates it.
 pub const DEFAULT_APPS: &str = data!("/edel/apps");
+/// What `edel update` wrote down about each default app's last update
+/// (M7.20, `edel::app_undo`): one `ID.toml` each, root's, which `edel app
+/// undo-update` reads to put the app back.
+pub const APP_UNDO_DIR: &str = data!("/edel/app-undo");
+/// Where in a person's home the copies of an app's data taken before its
+/// update are (M7.20): `ID/data`, and `ID/newer`, the data an undo set
+/// aside. Made and moved as that person.
+pub const UNDO_IN_HOME: &str = ".local/share/edel/undo";
 /// The default apps the slot's image was built with and those a release
 /// dropped (M6.2), written by `edel image build`; `edel update` follows it.
 pub const DEFAULT_APPS_LIST: &str = share!("/default-apps.toml");

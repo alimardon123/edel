@@ -122,6 +122,21 @@ msgstr ""
 msgid "Take away"
 msgstr ""
 
+msgid "Undo update"
+msgstr ""
+
+msgid "Undoing the update of a default app changes it for everyone, so Edel OS asks for your password."
+msgstr ""
+
+msgid "Update"
+msgstr ""
+
+msgid "Updating a default app changes it for everyone, so Edel OS asks for your password."
+msgstr ""
+
+msgid "Version"
+msgstr ""
+
 msgid "What it may use"
 msgstr ""
 
@@ -171,6 +186,24 @@ msgid "Back to the apps"
 msgstr ""
 
 msgid "{what} for {app}"
+msgstr ""
+
+msgid "Looking for its last update"
+msgstr ""
+
+msgid "Its version could not be read"
+msgstr ""
+
+msgid "Stays on {version} until you update it"
+msgstr ""
+
+msgid "{version}; Undo update brings back the version before it, with your data as it is"
+msgstr ""
+
+msgid "{version}, updated on {date}; Undo update brings back {before} and your data from just before"
+msgstr ""
+
+msgid "{version}, updated on {date}; Undo update brings back {before}, your data as it is"
 msgstr ""
 
 msgid "This app is not sandboxed: it can use everything you can, so there is nothing to allow or refuse here."

@@ -1361,6 +1361,12 @@ fn execute(change: &Change, boot: bool) -> Result<()> {
     Ok(())
 }
 
+/// `account`'s session folder (`XDG_RUNTIME_DIR`), which pam_rundir makes
+/// at login: where `flatpak ps` finds the apps the person runs (M7.20).
+pub(crate) fn runtime_dir(account: &Account) -> String {
+    format!("/run/user/{}", account.uid)
+}
+
 /// `program` with `args`, run as `account` in its own home, with only its
 /// name, home and path as environment, as `su` gives them and `write_keys`
 /// runs its shell: root starts it, and the person owns everything it

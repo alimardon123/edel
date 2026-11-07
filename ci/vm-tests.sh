@@ -89,7 +89,7 @@ files() {
 	installed) echo out/install-test out/ab-test ;;
 	system) echo out/edel-x86_64.img out/keys out/system-test out/developer-test out/flatpak out/desktop-test ;;
 	live) echo out/edel-x86_64.img out/install-file.img ;;
-	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/upgrade-test out/keys out/edel-container-x86_64.tar.gz out/apps-repo out/apps-test out/updates-test out/ab-test/update ;;
+	fleet) echo out/fleet-a out/fleet-b out/fleet-seed.img out/server-test out/upgrade-test out/keys out/edel-container-x86_64.tar.gz out/apps-repo out/apps-repo-next out/apps-test out/updates-test out/ab-test/update ;;
 	*) no_lane "$1" ;;
 	esac
 }

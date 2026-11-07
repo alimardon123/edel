@@ -137,6 +137,72 @@ msgstr ""
 msgid "Location"
 msgstr ""
 
+msgid "the version of {date}"
+msgstr ""
+
+msgid "copied {person}'s data of {app} before its update ({mib} MiB in {seconds} s), so the update can be undone"
+msgstr ""
+
+msgid "could not copy {person}'s data of {app} before its update; it updates, and its undo brings back the version only"
+msgstr ""
+
+msgid "could not write {path}"
+msgstr ""
+
+msgid "refused"
+msgstr ""
+
+msgid "{app} is not an app id; write one such as org.mozilla.firefox, as edel settings get apps.installed shows them"
+msgstr ""
+
+msgid "{app} is one of the default apps, which an administrator changes: doas edel app {verb} {app}"
+msgstr ""
+
+msgid "{app} is not installed"
+msgstr ""
+
+msgid "{app} already stays on {version}; edel app update {app} updates it"
+msgstr ""
+
+msgid "no update of {app} that edel made can be undone: it was not updated since, or updated another way"
+msgstr ""
+
+msgid "{app} is open for {person}; close it, then undo its update"
+msgstr ""
+
+msgid "{app} is open; close it, then undo its update"
+msgstr ""
+
+msgid "{app} has no older version on its remote to go back to, or the network is not reachable"
+msgstr ""
+
+msgid "its version before"
+msgstr ""
+
+msgid "{app} {version} is downloaded again from its remote to undo its update, and that failed; connect to the network and try again ({why})"
+msgstr ""
+
+msgid "{app} is back on {version}; it stays there until edel app update {app}"
+msgstr ""
+
+msgid "the data of {people} is back from just before the update; the newer data is kept in {folder} until the app's next update"
+msgstr ""
+
+msgid "your"
+msgstr ""
+
+msgid "the data of {people} stays as it is, as no copy was taken before the update"
+msgstr ""
+
+msgid "could not bring back {person}'s data of {app}"
+msgstr ""
+
+msgid "{app} could not be updated; connect to the network and try again ({why})"
+msgstr ""
+
+msgid "{app} is on {version} and updates with the others again"
+msgstr ""
+
 msgid "Screen"
 msgstr ""
 
@@ -309,9 +375,6 @@ msgid "{assignment} names a person; first-boot makes only {name}, so leave it ou
 msgstr ""
 
 msgid "the new password on standard input is empty; nothing was changed"
-msgstr ""
-
-msgid "could not write {path}"
 msgstr ""
 
 msgid "no settings file to merge"
@@ -3642,4 +3705,19 @@ msgid "The app's name, as web-app list shows it"
 msgstr ""
 
 msgid "List your web apps, with their websites"
+msgstr ""
+
+msgid "app: put an app back on its version before its last update, with its data, or let it update again (your own apps; doas for the default apps)"
+msgstr ""
+
+msgid "Put an app back on its version before its last update, with its data from just before it, and keep it there until edel app update"
+msgstr ""
+
+msgid "The app's id, such as org.mozilla.firefox"
+msgstr ""
+
+msgid "Only say what an undo would bring back, changing nothing"
+msgstr ""
+
+msgid "Let an app that stays on an older version update again, and update it now"
 msgstr ""

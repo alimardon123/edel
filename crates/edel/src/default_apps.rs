@@ -6,7 +6,9 @@
 //! and takes out an app the release dropped, after giving it to each
 //! person who used it (their `~/.var/app/ID` exists) in their own
 //! installation, so swapping a default app never takes one away (ADR-008).
-//! Apps never roll back with the system: Flatpak keeps their own history.
+//! Apps never roll back with the system: Flatpak keeps their own history,
+//! and `edel app undo-update` puts one back with its data (M7.20,
+//! `app_update`), from the copies taken here just before each update.
 //! It also takes out the runtimes no app uses any more, never one that a
 //! person's own app takes from this installation (M6.2a).
 //! It keeps the translations of the languages the machine and its people
@@ -361,6 +363,9 @@ fn keep_for(account: &Account, id: &str, url: &str) -> Result<()> {
 /// update` after the slots. Each step that fails is said; the others go
 /// on, and the error names what failed.
 pub fn follow() -> Result<()> {
+    // One change to the apps at a time: `edel app undo-update` and `edel
+    // app update` take the same lock (M7.20).
+    let _lock = crate::update::Lock::take("apps", "edel update")?;
     let list = match fs::read_to_string(DEFAULT_APPS_LIST) {
         Ok(text) => DefaultApps::read(&text),
         Err(_) => return Ok(()),
@@ -400,6 +405,9 @@ pub fn follow() -> Result<()> {
         ));
         relied.extend(relied_on(&apps, &own, &ours));
     }
+    // And the runtimes an app ran on before its last update, so its undo
+    // finds them (M7.20).
+    relied.extend(crate::app_update::runtimes_to_keep());
     let used = used_by(&accounts, &list.flatpak_dropped);
     let mut failed = Vec::new();
     // The languages first, so installing and updating below fetch their
@@ -420,10 +428,15 @@ pub fn follow() -> Result<()> {
                     .args(["install", "--noninteractive", "-y", APPS_REMOTE])
                     .args(ids)),
             ),
-            Step::Update => (
-                tr("updating the default apps").to_string(),
-                run(flatpak().args(["update", "--noninteractive", "-y"])),
-            ),
+            Step::Update => (tr("updating the default apps").to_string(), {
+                // Each person's data first, so the update can be undone
+                // (M7.20); the whole installation then updates, its
+                // runtimes too, and held apps are left as they are.
+                let pending = crate::app_update::before_update(None);
+                let updated = run(flatpak().args(["update", "--noninteractive", "-y"]));
+                crate::app_update::after_update(pending);
+                updated
+            }),
             Step::Keep { person, id } => (
                 trf(
                     "keeping {app} for {person}, who used it, in their own apps",

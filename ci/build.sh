@@ -286,6 +286,9 @@ apps_test() {
 		--apps-from "file://$PWD/out/apps-repo" --apps-url http://10.0.2.2:8002/ --no-compress "$@"
 }
 apps_test "$version" --app org.edel.TestA --out out/apps-test
+# Served in its place by ci/apps-test.sh: TestA's update, which that test
+# undoes (M7.20), made after the images took TestA's first commit.
+sh ci/apps/next-commit.sh out/apps-repo out/apps-repo-next
 apps_test "$version.1" --app org.edel.TestB --dropped-app org.edel.TestA --out out/apps-test-update
 update=out/apps-test/update
 rm -rf "$update"
@@ -355,6 +358,6 @@ rm -f out/install-file.img
 mkfs.vfat -C -n EDEL-FILE out/install-file.img 4096
 mcopy -i out/install-file.img ci/desktop/install-file.toml "::$settings_name"
 
-hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/channel out/desktop-test out/developer-test out/desktop-test/update \
+hand_back out out/ab-test out/ab-test/update out/ab-test-update out/apps-test out/apps-test/update out/apps-test-update out/apps-repo-next out/channel out/desktop-test out/developer-test out/desktop-test/update \
 	out/desktop-container out/flatpak out/fleet-a out/fleet-b out/server-test out/updates-test out/upgrade-test out/install-test out/keys out/release out/repro out/system-test
 ls -ls out out/install-test
