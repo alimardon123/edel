@@ -320,6 +320,50 @@ fn which(id: &str, root: bool, verb: &str) -> Result<(Of, Installed)> {
     bail!(refused(trf("{app} is not installed", &[("app", id)])))
 }
 
+/// `edel app undo-update --check ID`: what an undo of the app would bring
+/// back, as `app_undo::Check`'s lines, for Settings' app page. Anyone may
+/// ask; a person's own copy of the app comes first, as Flatpak runs it.
+pub(crate) fn check(id: &str) -> Result<()> {
+    if !is_flatpak_id(id) {
+        bail!(refused(trf(
+            "{app} is not an app id; write one such as org.mozilla.firefox, as edel settings get apps.installed shows them",
+            &[("app", id)]
+        )));
+    }
+    let uid = edel::users::current();
+    let root = uid == Some(0);
+    let person = edel::users::read(uid)
+        .into_iter()
+        .find(|p| Some(p.uid) == uid)
+        .map(|p| p.name)
+        .unwrap_or_default();
+    let mine = if root {
+        None
+    } else {
+        installed(Of::Own).into_iter().find(|a| a.id == id)
+    };
+    let (of, app) = match mine {
+        Some(app) => (Of::Own, app),
+        None => (
+            Of::Default,
+            installed(Of::Default)
+                .into_iter()
+                .find(|a| a.id == id)
+                .ok_or_else(|| refused(trf("{app} is not installed", &[("app", id)])))?,
+        ),
+    };
+    let record = (of == Of::Default).then(|| app_undo::record(id)).flatten();
+    let check = app_undo::Check::of(
+        of == Of::Default,
+        &app.now,
+        held(of).contains(id),
+        record.as_ref(),
+        &person,
+    );
+    print!("{}", check.text());
+    Ok(())
+}
+
 /// `edel app undo-update ID`: puts the app back on the version before its
 /// last update, with each person's data from just before it when a copy
 /// was taken, and holds it there until `edel app update`.

@@ -259,6 +259,101 @@ pub fn runtimes_before(records: &[Record]) -> Vec<String> {
     kept.into_iter().map(String::from).collect()
 }
 
+/// What `edel app undo-update --check ID` says of an app, for Settings'
+/// app page (M7.20): lines a program reads, which stay English.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Check {
+    /// Whether it is one of the default apps, which an administrator
+    /// changes, rather than the person's own.
+    pub default: bool,
+    /// The version that runs, as [`version_words`] names it.
+    pub version: String,
+    /// Whether it stays on this version until `edel app update`.
+    pub held: bool,
+    /// The version an undo brings back, empty when the update cannot be
+    /// undone; for a person's own app, `before` (the version before the
+    /// one installed, which only its remote knows).
+    pub undo: String,
+    /// The day of the update, when edel made it.
+    pub date: String,
+    /// Whether the person's data comes back with it.
+    pub data: bool,
+}
+
+impl Check {
+    /// The check of an app that `now` runs: `record` is its last update's
+    /// when edel made it, `person` the one asking.
+    pub fn of(
+        default: bool,
+        now: &Point,
+        held: bool,
+        record: Option<&Record>,
+        person: &str,
+    ) -> Check {
+        let usable = record.filter(|r| r.undoes(&now.commit));
+        let undo = match (default, usable) {
+            (_, Some(r)) => version_words(&r.before, &r.date),
+            (false, None) => "before".to_string(),
+            (true, None) => String::new(),
+        };
+        Check {
+            default,
+            version: version_words(now, usable.map(|r| r.date.as_str()).unwrap_or("")),
+            held,
+            undo: if held { String::new() } else { undo },
+            date: usable.map(|r| r.date.clone()).unwrap_or_default(),
+            data: usable.is_some_and(|r| r.people.get(person) == Some(&Data::Copied)),
+        }
+    }
+
+    /// The lines the command prints.
+    pub fn text(&self) -> String {
+        let yes = |b: bool| if b { "yes" } else { "no" };
+        format!(
+            "installation: {}\nversion: {}\nheld: {}\nundo: {}\ndate: {}\ndata: {}\n",
+            if self.default { "default" } else { "own" },
+            self.version,
+            yes(self.held),
+            if self.undo.is_empty() {
+                "no"
+            } else {
+                &self.undo
+            },
+            self.date,
+            yes(self.data),
+        )
+    }
+
+    /// The check from the command's lines; none when they are not one.
+    pub fn read(text: &str) -> Option<Check> {
+        let mut check = Check::default();
+        let mut seen = 0;
+        for line in text.lines() {
+            let Some((key, value)) = line.split_once(": ").or_else(|| line.split_once(':')) else {
+                continue;
+            };
+            let value = value.trim();
+            match key {
+                "installation" => check.default = value == "default",
+                "version" => check.version = value.to_string(),
+                "held" => check.held = value == "yes",
+                "undo" => {
+                    check.undo = if value == "no" {
+                        String::new()
+                    } else {
+                        value.to_string()
+                    }
+                }
+                "date" => check.date = value.to_string(),
+                "data" => check.data = value == "yes",
+                _ => continue,
+            }
+            seen += 1;
+        }
+        (seen == 6).then_some(check)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -419,5 +514,35 @@ mod tests {
             ]),
             ["org.gnome.Platform/x86_64/47"]
         );
+    }
+
+    #[test]
+    fn the_check_says_what_an_undo_brings_back_and_reads_back() {
+        let record = Record {
+            format: FORMAT,
+            date: "2026-11-07".into(),
+            before: point("aaa", "127.0"),
+            after: Some(point("bbb", "128.0")),
+            people: BTreeMap::from([("ali".to_string(), Data::Copied)]),
+        };
+        let check = Check::of(true, &point("bbb", "128.0"), false, Some(&record), "ali");
+        assert_eq!(check.undo, "127.0");
+        assert!(check.data);
+        assert_eq!(Check::read(&check.text()), Some(check.clone()));
+        assert!(!Check::of(true, &point("bbb", "128.0"), false, Some(&record), "sam").data);
+        // Held: nothing to undo until it updates again.
+        assert_eq!(
+            Check::of(true, &point("aaa", "127.0"), true, Some(&record), "ali").undo,
+            ""
+        );
+        // Updated another way since: the record no longer undoes it.
+        assert_eq!(
+            Check::of(true, &point("ccc", "129.0"), false, Some(&record), "ali").undo,
+            ""
+        );
+        // A person's own app: the version before, its data as it is.
+        let own = Check::of(false, &point("ccc", "1.2"), false, None, "ali");
+        assert_eq!((own.undo.as_str(), own.data), ("before", false));
+        assert_eq!(Check::read("version: 1\n"), None);
     }
 }

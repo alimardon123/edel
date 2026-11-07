@@ -334,13 +334,14 @@ List your web apps, with their websites.
 
 app: put an app back on its version before its last update, with its data, or let it update again (your own apps; doas for the default apps).
 
-### `edel app undo-update ID`
+### `edel app undo-update ID [OPTIONS]`
 
 Put an app back on its version before its last update, with its data from just before it, and keep it there until edel app update.
 
 | | What it does |
 |---|---|
 | `ID` | The app's id, such as org.mozilla.firefox |
+| `--check` | Only say what an undo would bring back, changing nothing |
 
 ### `edel app update ID`
 

@@ -31,8 +31,8 @@ use edel::users::{self, ADMIN_GROUP};
 
 use crate::machine;
 use crate::{
-    BootCommands, Commands, ImageCommands, PresetCommands, ReleaseCommands, SettingsCommands,
-    ThemeCommands,
+    AppCommands, BootCommands, Commands, ImageCommands, PresetCommands, ReleaseCommands,
+    SettingsCommands, ThemeCommands,
 };
 
 /// The terminal a person types a password on, when there is one.
@@ -139,6 +139,9 @@ pub fn need(command: &Commands) -> Need {
         // Run as a person, it changes their own apps and asks nothing; run
         // as root, it changes the default apps everyone runs, as edel
         // update does (M7.20).
+        Commands::App {
+            command: AppCommands::UndoUpdate { check: true, .. },
+        } => Need::Anyone,
         Commands::App { .. } => Need::Password,
     }
 }

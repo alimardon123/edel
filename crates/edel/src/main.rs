@@ -320,6 +320,9 @@ enum AppCommands {
         /// The app's id, such as org.mozilla.firefox
         #[arg(value_name = "ID")]
         id: String,
+        /// Only say what an undo would bring back, changing nothing
+        #[arg(long)]
+        check: bool,
     },
     /// Let an app that stays on an older version update again, and update it now
     Update {
@@ -1138,7 +1141,8 @@ fn run(command: Commands) -> Result<()> {
         Commands::App { command } => {
             let root = users::current() == Some(0);
             match command {
-                AppCommands::UndoUpdate { id } => app_update::undo(&id, root),
+                AppCommands::UndoUpdate { id, check: true } => app_update::check(&id),
+                AppCommands::UndoUpdate { id, .. } => app_update::undo(&id, root),
                 AppCommands::Update { id } => app_update::update(&id, root),
             }
         }
