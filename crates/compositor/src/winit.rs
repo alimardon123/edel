@@ -157,6 +157,9 @@ fn draw(window: &mut Window, state: &mut Edel) {
                 eprintln!("edel-compositor: showing the frame failed: {e}");
             }
             state.telemetry.frame(started.elapsed(), !damage.is_empty());
+            state
+                .game
+                .frame_rendered(&window.output.name(), started.elapsed());
             state.lock_drawn(&window.output.name());
             state.frame_drawn(
                 started.elapsed(),
