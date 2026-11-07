@@ -5,12 +5,14 @@
 #               out/NAME.cdx.json beside it, and every CycloneDX document
 #               is valid against its 1.6 schema. The validator package
 #               carries the schemas, so nothing is downloaded.
-#   advisories  in the Alpine build container, as root: checks every
-#               image's and every add-on's packages (M8.42) against Alpine's security database
-#               (secdb) for the branch in features/base.toml. An image that
-#               lacks a fix Alpine already ships fails, as a rebuild takes
-#               the newest packages; a fix Alpine has not published yet is
-#               reported, not failed.
+#   advisories [DIR]  in the Alpine build container, as root: checks
+#               every image's and every add-on's packages (M8.42), in out/
+#               or in DIR (the security watch's, M8.43), against Alpine's
+#               security database (secdb) for the branch in
+#               features/base.toml. An image that lacks a fix Alpine
+#               already ships fails with status 3, as a rebuild takes the
+#               newest packages; a fix Alpine has not published yet is
+#               reported, not failed; any other failure is status 1.
 #   --self-test in the Alpine container: runs the same check on fixtures,
 #               so the logic is tested where it runs.
 #
@@ -86,7 +88,7 @@ flush_group() {
 
 # check SECDB_DIR INDEX FILE...
 # INDEX is apk's package list as "name version" lines. Writes the Markdown
-# section to stdout and returns 1 when a fix Alpine ships is missing from
+# section to stdout and returns 3 when a fix Alpine ships is missing from
 # one of the FILEs. Its errors are not stopped by set -e here (a function
 # run as `check ... || status=$?` ignores it), so every step that can fail
 # says so itself.
@@ -198,12 +200,13 @@ check() {
 	if [ -s "$w/shipped.txt" ]; then
 		n=$(sort -u "$w/shipped.txt" | awk 'END { print NR }')
 		echo "bom: FAIL: $n images lack a fix Alpine already ships; rebuild them (the build takes the newest packages)" >&2
-		return 1
+		return 3
 	fi
 	return 0
 }
 
 advisories() {
+	dir=${1:-out}
 	bom_branch=$(sed -n 's/^branch = "\(.*\)"$/\1/p' features/base.toml)
 	[ -n "$bom_branch" ] || die "features/base.toml names no branch"
 	tmp=$(mktemp -d)
@@ -218,8 +221,8 @@ advisories() {
 	need_jq
 	apk search -v > "$tmp/search.txt" || die "apk search failed"
 	sed 's/ - .*//; s/^\(.*\)-\([^-]*-r[0-9]*\)$/\1 \2/' "$tmp/search.txt" > "$tmp/available.txt" || die "could not read apk's package list"
-	set -- out/*.cdx.json
-	[ -f "$1" ] || die "no out/*.cdx.json; run edel image build first"
+	set -- "$dir"/*.cdx.json
+	[ -f "$1" ] || die "no $dir/*.cdx.json; run edel image build first"
 	status=0
 	check "$tmp/secdb" "$tmp/available.txt" "$@" || status=$?
 	exit "$status"
@@ -267,7 +270,7 @@ JSON
 
 	status=0
 	check "$tmp/secdb" "$tmp/available.txt" "$tmp/one/edel-test-x86_64.cdx.json" "$tmp/one/edel-test-x86_64.desktop.cdx.json" > "$tmp/first.md" 2> "$tmp/first.err" || status=$?
-	[ "$status" -eq 1 ] || selftest_fail "the first run wanted exit 1, got $status"
+	[ "$status" -eq 3 ] || selftest_fail "the first run wanted exit 3, got $status"
 	want "$tmp/first.md" "| edel-test-x86_64 | openssl | libcrypto3 | 3.0.0-r0 | 3.0.2-r0 | CVE-2099-0001, CVE-2099-0002 | fix shipped, rebuild |" "openssl's fixes are not reported as shipped"
 	want "$tmp/first.md" "| edel-test-x86_64.desktop | openssl | libssl3 | 3.0.1-r0 | 3.0.2-r0 | CVE-2099-0002 | fix shipped, rebuild |" "the add-on's missing openssl fix is not reported"
 	want "$tmp/first.md" "| edel-test-x86_64 | zlib | zlib | 1.3-r0 | 1.3.1-r0 | CVE-2099-0003 | waiting for Alpine's package |" "zlib's unpublished fix is not reported as waiting"
@@ -285,10 +288,10 @@ JSON
 
 case "${1:-}" in
 validate) validate ;;
-advisories) advisories ;;
+advisories) advisories "${2:-out}" ;;
 --self-test) selftest ;;
 *)
-	echo "usage: sh ci/bom.sh validate | advisories | --self-test" >&2
+	echo "usage: sh ci/bom.sh validate | advisories [DIR] | --self-test" >&2
 	exit 2
 	;;
 esac

@@ -25,6 +25,12 @@ The rebuild changes no look and no default: only the build container's digest an
 
 **A kept release (M8.5)** is rebuilt the same way: the workflow does each of `main` and every `release/YYYY` branch in turn, with the branch `monthly/release-YYYY/YYYY-MM` and a pull request into that release's branch, tested by the full run. Its merge tags nothing yet: which channel a kept release's machines follow, so a newer base never reaches them as an update and an older one never reaches the newer base's, is Alimardon's to decide when the first release is cut. CI on `release/*` refuses a commit changing `design/` or `presets/` unless its subject starts `look-fix:` (`ci/look-fix.sh`), and never gives a `release/*` push the release key.
 
+## The daily security watch
+
+The workflow "Security watch" (`.github/workflows/watch.yml`, M8.43) runs at 05:41 UTC every day. For `main` it downloads the bills of materials of the newest published release (the preview's while none is published), images and add-ons, with `ci/monthly.sh fetch`, and checks them with `ci/bom.sh advisories` against Alpine's security database. When Alpine ships a fix that release lacks, it starts "Monthly rebuild" for that base at once, with a branch of its own day, `monthly/YYYY-MM-DD`, whose merge tags `vYYYY.MM.D`; the rebuild then goes through the full run and the checklist as the month's does. When nothing is missing it starts nothing. A kept `release/YYYY` publishes no release of its own yet, so the watch has nothing to check there until it does. Started by hand with `dry_run` set to `yes`, it only says which rebuilds it would start.
+
+So one fix, once Alpine ships it, reaches every live version within a day, through a full tested rebuild, and the monthly rebuild still catches everything else.
+
 A pull request or tag made by a workflow's own token starts no workflow, so the monthly workflow starts "CI" itself (`workflow_dispatch`), on the branch and on the tag. A dispatched run on a tag is signed and published as a pushed tag is; a dispatched run on a branch is a dry run, as a pull request's is.
 
 **One switch for Alimardon:** GitHub lets a workflow open pull requests only once the repository allows it (Settings, Actions, General, Workflow permissions, "Allow GitHub Actions to create and approve pull requests"). Until then the rebuild still pushes its branch and runs CI, and its run summary links the page where the pull request is opened by hand with one button.

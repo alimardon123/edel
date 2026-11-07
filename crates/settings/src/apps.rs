@@ -16,7 +16,9 @@
 //! whenever a file changes. shell-ui lays the choices onto Flatpak's own
 //! state. An app with uses in the record shell-ui keeps on this computer has
 //! a Recent use part too (M6.14b), read when its page opens. `--app ID` opens
-//! one app's page when the page is built.
+//! one app's page when the page is built. The Version part (M7.20) says the
+//! app's version and, when its last update can be undone, offers Undo update,
+//! from `edel app undo-update --check`; a held app offers Update.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,18 +31,50 @@ use gtk::{gdk, glib};
 
 use edel::app_icons::Icons;
 use edel::app_permissions::{self, ALLOW, ASK, NEVER, PERMISSIONS, Permission, Place};
+use edel::app_undo::Check;
 use edel::app_use::{self, Use};
 use edel::apps::{self, App};
 use edel::i18n::{n_, tr, trf};
 use edel::places;
 use edel::settings::{self, PAGES};
 
+use crate::ask::{self, Ask};
 use crate::files::Files;
-use crate::{icon, widgets};
+use crate::{cmd, icon, widgets};
 
 /// The side of an app's icon in the list, and on its page, in logical pixels.
 const LIST_ICON: i32 = 32;
 const PAGE_ICON: i32 = 64;
+
+/// Undo update, as the administrator for a default app (`edel app
+/// undo-update ID`), and what its dialog says (M7.20).
+const UNDO: Ask = Ask {
+    title: n_("Undo update"),
+    prompt: n_(
+        "Undoing the update of a default app changes it for everyone, so Edel OS asks for your password.",
+    ),
+    button: n_("Undo update"),
+    args: &["app", "undo-update"],
+    detail: &[],
+    note: None,
+    name: false,
+    danger: false,
+};
+
+/// Update a held default app, as the administrator (`edel app update ID`),
+/// and what its dialog says (M7.20).
+const UPDATE: Ask = Ask {
+    title: n_("Update"),
+    prompt: n_(
+        "Updating a default app changes it for everyone, so Edel OS asks for your password.",
+    ),
+    button: n_("Update"),
+    args: &["app", "update"],
+    detail: &[],
+    note: None,
+    name: false,
+    danger: false,
+};
 
 thread_local! {
     /// The app `--app ID` asked for, taken when the page is built (M6.14a).
@@ -91,6 +125,11 @@ struct Section {
 /// The parts of an app's page, in the order they show. Two parts share a
 /// heading: each shows for one kind of app.
 const SECTIONS: &[Section] = &[
+    Section {
+        title: n_("Version"),
+        shown: |app, _| sandboxed(app),
+        build: version,
+    },
     Section {
         title: n_("What it may use"),
         shown: |app, _| sandboxed(app),
@@ -593,6 +632,139 @@ fn permissions(content: &gtk::Box, app: &App, ui: &Rc<Ui>) {
     }
 }
 
+/// The Version part (M7.20): the app's version, and Undo update when its
+/// last update can be undone, or Update when the app is held. What `edel app
+/// undo-update --check` says is read off the page, in the background. A
+/// default app's change asks for the password (`ask.rs`); the person's own
+/// app runs as the person. The page is built again after a change.
+fn version(content: &gtk::Box, app: &App, ui: &Rc<Ui>) {
+    let group = widgets::group(content);
+    let button = widgets::action(tr("Undo update"), false);
+    button.set_visible(false);
+    let row = widgets::row(&group, tr("Version"), button.upcast_ref());
+    row.reset.set_visible(false);
+    row.copy.set_visible(false);
+    row.subtitle.set_label(tr("Looking for its last update"));
+    let id = app.id.clone();
+    let weak = Rc::downgrade(ui);
+    let subtitle = row.subtitle.clone();
+    glib::spawn_future_local(async move {
+        let arg = id.clone();
+        let Ok(outcome) =
+            gio::spawn_blocking(move || cmd::edel(&["app", "undo-update", "--check", &arg])).await
+        else {
+            return;
+        };
+        let check = outcome.ok.then(|| Check::read(&outcome.out)).flatten();
+        // CI reads this line to know the page showed the version.
+        let (held, undo) = check
+            .as_ref()
+            .map_or((false, false), |c| (c.held, !c.undo.is_empty()));
+        eprintln!("edel-settings: app {id} version held {held} undo {undo}");
+        let Some(check) = check else {
+            subtitle.set_label(tr("Its version could not be read"));
+            return;
+        };
+        subtitle.set_label(&version_words(&check));
+        if !(check.held || !check.undo.is_empty()) {
+            return;
+        }
+        button.set_label(if check.held {
+            tr("Update")
+        } else {
+            tr("Undo update")
+        });
+        button.set_visible(true);
+        let verb = if check.held { "update" } else { "undo-update" };
+        let (default, held) = (check.default, check.held);
+        let done = {
+            let (weak, id) = (weak.clone(), id.clone());
+            move |outcome: cmd::Outcome| {
+                eprintln!(
+                    "edel-settings: app {id} {verb} exit {}",
+                    outcome.code.map_or("none".into(), |c| c.to_string())
+                );
+                let Some(ui) = weak.upgrade() else { return };
+                ui.report(if outcome.ok {
+                    Ok(())
+                } else {
+                    Err(outcome.shown())
+                });
+                // The page is built again, so its version is read anew.
+                if let Some(at) = ui.apps.iter().position(|app| app.id == id) {
+                    ui.open(at);
+                }
+            }
+        };
+        let weak_button = button.downgrade();
+        button.connect_clicked(move |_| {
+            let Some(button) = weak_button.upgrade() else {
+                return;
+            };
+            if default {
+                let what: &'static Ask = if held { &UPDATE } else { &UNDO };
+                ask::ask_with(
+                    button.upcast_ref(),
+                    what,
+                    vec![id.clone()],
+                    |_| {},
+                    done.clone(),
+                );
+            } else {
+                // Only a person's own app runs without the password, so only
+                // its button waits for the command.
+                button.set_sensitive(false);
+                let (arg, done) = (id.clone(), done.clone());
+                glib::spawn_future_local(async move {
+                    let Ok(outcome) =
+                        gio::spawn_blocking(move || cmd::edel(&["app", verb, &arg])).await
+                    else {
+                        return;
+                    };
+                    done(outcome);
+                });
+            }
+        });
+    });
+}
+
+/// The words of the Version part's line under the name (M7.20), from what
+/// `edel app undo-update --check` says: the held version, the version an
+/// undo brings back, or the version alone when there is no undo.
+fn version_words(check: &Check) -> String {
+    if check.held {
+        trf(
+            "Stays on {version} until you update it",
+            &[("version", &check.version)],
+        )
+    } else if check.undo.is_empty() {
+        check.version.clone()
+    } else if check.undo == "before" {
+        trf(
+            "{version}; Undo update brings back the version before it, with your data as it is",
+            &[("version", &check.version)],
+        )
+    } else if check.data {
+        trf(
+            "{version}, updated on {date}; Undo update brings back {before} and your data from just before",
+            &[
+                ("version", &check.version),
+                ("date", &check.date),
+                ("before", &check.undo),
+            ],
+        )
+    } else {
+        trf(
+            "{version}, updated on {date}; Undo update brings back {before}, your data as it is",
+            &[
+                ("version", &check.version),
+                ("date", &check.date),
+                ("before", &check.undo),
+            ],
+        )
+    }
+}
+
 /// What an app that is not a Flatpak app may use: everything, so there is
 /// nothing to allow or refuse here (M6.14a).
 fn not_sandboxed(content: &gtk::Box, _app: &App, _ui: &Rc<Ui>) {
@@ -1073,7 +1245,8 @@ mod tests {
         assert!(sandboxed(&flatpak));
         assert!(!sandboxed(&plain));
         assert!(!sandboxed(&ours));
-        assert_eq!(shown(&flatpak), 1);
+        // A Flatpak app has its Version and What it may use parts (M7.20).
+        assert_eq!(shown(&flatpak), 2);
         assert_eq!(shown(&plain), 1);
     }
 
@@ -1096,6 +1269,35 @@ mod tests {
         let plain = desktop_app("example");
         assert!(!(recent.shown)(&plain, &[]));
         assert!((recent.shown)(&plain, &[one_use("example")]));
+    }
+
+    #[test]
+    fn the_version_line_says_what_an_undo_brings_back() {
+        let check = |held: bool, undo: &str, data: bool| Check {
+            default: true,
+            version: "1.2".into(),
+            held,
+            undo: undo.into(),
+            date: "2026-11-01".into(),
+            data,
+        };
+        assert_eq!(
+            version_words(&check(true, "1.1", false)),
+            "Stays on 1.2 until you update it"
+        );
+        assert_eq!(
+            version_words(&check(false, "before", true)),
+            "1.2; Undo update brings back the version before it, with your data as it is"
+        );
+        assert_eq!(
+            version_words(&check(false, "1.1", true)),
+            "1.2, updated on 2026-11-01; Undo update brings back 1.1 and your data from just before"
+        );
+        assert_eq!(
+            version_words(&check(false, "1.1", false)),
+            "1.2, updated on 2026-11-01; Undo update brings back 1.1, your data as it is"
+        );
+        assert_eq!(version_words(&check(false, "", false)), "1.2");
     }
 
     #[test]

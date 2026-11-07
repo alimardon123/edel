@@ -25,6 +25,7 @@
 | `edel preset` | preset: a layout, built in or your own, kept as the layout in use; the Layout page of Settings shows the same ones |
 | `edel addon` | addon: software beside the system, such as more fonts or printing, that comes at the next restart and goes as easily; the same as in the settings file's addons.installed |
 | `edel web-app` | web-app: a website made an app, with its own window, name and icon in the launcher; it runs in Firefox with a profile of its own |
+| `edel app` | app: put an app back on its version before its last update, with its data, or let it update again (your own apps; doas for the default apps) |
 
 ## `edel update [RELEASE] [OPTIONS]`
 
@@ -328,3 +329,24 @@ Remove one of your web apps and its own profile, by its name.
 ### `edel web-app list`
 
 List your web apps, with their websites.
+
+## `edel app`
+
+app: put an app back on its version before its last update, with its data, or let it update again (your own apps; doas for the default apps).
+
+### `edel app undo-update ID [OPTIONS]`
+
+Put an app back on its version before its last update, with its data from just before it, and keep it there until edel app update.
+
+| | What it does |
+|---|---|
+| `ID` | The app's id, such as org.mozilla.firefox |
+| `--check` | Only say what an undo would bring back, changing nothing |
+
+### `edel app update ID`
+
+Let an app that stays on an older version update again, and update it now.
+
+| | What it does |
+|---|---|
+| `ID` | The app's id, such as org.mozilla.firefox |

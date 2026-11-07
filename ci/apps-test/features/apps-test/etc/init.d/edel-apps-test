@@ -7,7 +7,11 @@
 #
 #   1. Slot A: TestA is in the default apps' installation, outside the
 #      slot (whose used size is printed). Person `used` gets TestA's data
-#      folder, as if they had run it; install the update and restart.
+#      folder, as if they had run it, with a mark in it; install the
+#      update, which also updates TestA to its second commit (M7.20): its
+#      data is copied first, `edel app undo-update` brings the first
+#      commit and the mark back and holds it there through a whole
+#      update, and `edel app update` takes the second again; restart.
 #   2. Slot B: edel update again (no newer system, so only the apps
 #      follow): TestB is installed and TestA taken out of the default
 #      apps, `used` keeps TestA in their own apps, and a new person,
@@ -26,6 +30,42 @@ say() {
 end() {
 	say "$1"
 	(sleep 1 && poweroff) &
+}
+
+# commit: the commit of TestA deployed in the default apps' installation.
+commit() {
+	flatpak --installation=edel list --app --columns=application,active 2>/dev/null | awk '$1 == "org.edel.TestA" { print $2 }'
+}
+
+# mark FILE: what FILE in used's home says.
+mark() {
+	su -s /bin/sh used -c "cat \"\$HOME/$1\"" 2>/dev/null
+}
+
+# undo_test: step 1's undo of TestA's update, after edel update took it;
+# on a failure it says why in $why.
+undo_test() {
+	data=.var/app/org.edel.TestA
+	undo=.local/share/edel/undo/org.edel.TestA
+	[ -n "$v1" ] && [ "$(commit)" != "$v1" ] || { why="expected edel update to update TestA from $v1, it has $(commit)"; return 1; }
+	[ "$(mark "$undo/data/mark")" = v1 ] || { why="expected TestA's data copied before its update"; return 1; }
+	su -s /bin/sh used -c "echo v2 >\"\$HOME/$data/mark\""
+	edel app undo-update org.edel.TestA >/tmp/apps-undo.log 2>&1
+	status=$?
+	sed 's/^/APPS-TEST: undo: /' /tmp/apps-undo.log
+	[ "$status" = 0 ] || { why="edel app undo-update failed with $status"; return 1; }
+	[ "$(commit)" = "$v1" ] || { why="expected TestA back on $v1, it has $(commit)"; return 1; }
+	[ "$(mark "$data/mark")" = v1 ] || { why="expected TestA's data from before its update back"; return 1; }
+	[ "$(mark "$undo/newer/mark")" = v2 ] || { why="expected TestA's newer data kept in $undo/newer"; return 1; }
+	flatpak --installation=edel mask 2>/dev/null | grep -q org.edel.TestA || { why="expected TestA held"; return 1; }
+	flatpak --installation=edel update -y >/dev/null 2>&1
+	[ "$(commit)" = "$v1" ] || { why="expected a whole update to leave TestA held on $v1"; return 1; }
+	edel app update org.edel.TestA >/tmp/apps-again.log 2>&1
+	status=$?
+	sed 's/^/APPS-TEST: update again: /' /tmp/apps-again.log
+	[ "$status" = 0 ] || { why="edel app update failed with $status"; return 1; }
+	[ "$(commit)" != "$v1" ] || { why="expected edel app update to take TestA's update again"; return 1; }
+	! flatpak --installation=edel mask 2>/dev/null | grep -q org.edel.TestA || { why="expected TestA no longer held"; return 1; }
 }
 
 # has WHO ID: whether `flatpak list` run as WHO (root: the default apps'
@@ -51,9 +91,12 @@ start() {
 		has root org.edel.TestA || { end "FAIL: step 1 expected TestA among the default apps"; return 0; }
 		say "slot used $(df -m / | awk 'NR == 2 { print $3 }') MiB"
 		adduser -D used
-		su -s /bin/sh used -c 'mkdir -p "$HOME/.var/app/org.edel.TestA"'
+		su -s /bin/sh used -c 'mkdir -p "$HOME/.var/app/org.edel.TestA" && echo v1 >"$HOME/.var/app/org.edel.TestA/mark"'
+		v1=$(commit)
 		echo 2 >"$marker"
 		edel update --allow-http "$release" || { end "FAIL: step 1 could not install the update"; return 0; }
+		undo_test || { end "FAIL: step 1: $why"; return 0; }
+		say "step 1 undid TestA's update with its data and took it again"
 		say "step 1 done, restarting into slot B"
 		(sleep 1 && reboot) &
 		;;

@@ -12,6 +12,7 @@ Each level is one file, `platform/level-N.toml`, at the root of the repository (
 | Part | What it promises | How it is kept |
 |---|---|---|
 | The kernel | The oldest kernel an image of the level boots, so a runtime may use what that kernel offers | `edel image build` refuses an image whose kernel package is older |
+| The processor | The oldest processor of each architecture the level runs on: the instruction set Alpine builds its packages for (`x86-64` and `armv8-a` for level 1), so a computer that runs one release of the level runs every later one (M8.45) | `edel image build` refuses an image whose architecture the level names no floor for, and CI boots the image under emulation on the QEMU model with only those instructions (`ci/boot-test.sh`) |
 | Flatpak | The oldest Flatpak that installs and runs the level's apps | The same build check, for every image that carries Flatpak |
 | The portals | The oldest `xdg-desktop-portal` and the backends that answer it (the file chooser, screen sharing), the system's interfaces apps call; portals only ever add versions | The same build check, for every image with the feature that brings each one |
 | The runtimes | The Flatpak runtimes apps of the level run on | CI's Flatpak test installs and runs the newest branch Flathub serves on every change |

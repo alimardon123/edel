@@ -1,0 +1,71 @@
+name: Security watch
+
+# The daily security watch (roadmap M8.43, docs/SECURITY.md). Once a day it
+# checks the bills of materials of every live version's newest published
+# release, images and add-ons, against Alpine's security database
+# (ci/bom.sh advisories); when Alpine ships a fix a published version
+# lacks, it starts that base's rebuild at once ("Monthly rebuild" with
+# day=yes) instead of waiting for the first of the month. It builds
+# nothing, and starts nothing, when nothing is missing. One small job, so
+# the shared limit of 20 jobs at once is left to the full runs.
+on:
+  schedule:
+    # 05:41 UTC, off the hour most schedules take.
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "yes: say which rebuilds it would start, start none"
+        required: false
+        default: "no"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Check every published version for missing fixes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Check main and every kept release
+        # For each base: fetch its newest release's bills of materials
+        # (ci/monthly.sh fetch, status 4 when it has none to watch), check
+        # them in the Alpine container the images are built in (status 3
+        # when a fix Alpine ships is missing) and start that base's rebuild.
+        # bash with pipefail, so tee keeps each command's status.
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          alpine=$(sed -n 's/^branch = "v\(.*\)"$/\1/p' features/base.toml)
+          bases="main $(git ls-remote --heads origin 'release/*' | sed 's|.*refs/heads/||')"
+          for base in $bases; do
+            dir=out/watch/$(echo "$base" | tr / -)
+            status=0
+            sh ci/monthly.sh fetch "$base" "$dir" | tee -a "$GITHUB_STEP_SUMMARY" || status=$?
+            [ "$status" = 4 ] && continue
+            [ "$status" = 0 ] || exit "$status"
+            status=0
+            docker run --rm -v "$PWD:/src" -w /src "mirror.gcr.io/library/alpine:$alpine" sh ci/bom.sh advisories "$dir" | tee -a "$GITHUB_STEP_SUMMARY" || status=$?
+            case $status in
+            0) echo "Nothing missing on $base." | tee -a "$GITHUB_STEP_SUMMARY" ;;
+            3)
+              if [ "$DRY_RUN" = yes ]; then
+                echo "Would start the rebuild of $base (dry run)." | tee -a "$GITHUB_STEP_SUMMARY"
+              else
+                gh workflow run monthly.yml -f base="$base" -f day=yes
+                echo "Started the rebuild of $base." | tee -a "$GITHUB_STEP_SUMMARY"
+              fi
+              ;;
+            *) exit "$status" ;;
+            esac
+          done
