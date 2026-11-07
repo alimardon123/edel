@@ -26,20 +26,65 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-/// How fine the histogram is: a tenth of a millisecond.
+/// How fine the frames' histogram is: a tenth of a millisecond.
 const STEP_US: u64 = 100;
-/// The histogram's buckets: a frame time of a second or more is counted in
-/// the last.
+/// The frames' histogram's buckets: a frame time of a second or more is
+/// counted in the last.
 const BUCKETS: usize = 10_000;
+/// How fine [`Work`]'s histogram is, 10 microseconds, and its buckets: a
+/// frame drawn in 100 ms or more is counted in the last.
+const WORK_STEP_US: u64 = 10;
+const WORK_BUCKETS: usize = 10_000;
 /// How many frames a game shows before it has a record: a window that
 /// went fullscreen for a moment is no game.
 pub const LEAST_FRAMES: u64 = 60;
 
+/// Durations counted in fixed steps, so an hour costs no more memory
+/// than a minute.
+#[derive(Debug, Clone)]
+struct Histogram {
+    /// How many durations fell in each step of `step_us`.
+    buckets: Vec<u32>,
+    step_us: u64,
+    count: u64,
+}
+
+impl Histogram {
+    fn new(step_us: u64, buckets: usize) -> Self {
+        Histogram {
+            buckets: vec![0; buckets],
+            step_us,
+            count: 0,
+        }
+    }
+
+    fn add(&mut self, took: Duration) {
+        let last = self.buckets.len() - 1;
+        let step = usize::try_from(took.as_micros() / u128::from(self.step_us)).unwrap_or(last);
+        self.buckets[step.min(last)] += 1;
+        self.count += 1;
+    }
+
+    /// The duration in ms that `part` in `whole` of the counted ones reach
+    /// or pass: the nearest rank from the slow end, as the compositor's
+    /// telemetry takes its percentiles, at the top of its step.
+    fn slowest(&self, part: u64, whole: u64) -> f64 {
+        let from_top = (self.count * part).div_ceil(whole).max(1);
+        let mut seen = 0;
+        for (step, count) in self.buckets.iter().enumerate().rev() {
+            seen += u64::from(*count);
+            if seen >= from_top {
+                return (step as u64 * self.step_us + self.step_us) as f64 / 1000.0;
+            }
+        }
+        0.0
+    }
+}
+
 /// One game's frames as they reached the screen.
 #[derive(Debug, Clone)]
 pub struct Frames {
-    /// How many frame times fell in each step of [`STEP_US`].
-    buckets: Vec<u32>,
+    gaps: Histogram,
     shown: u64,
     last: Option<Duration>,
     total: Duration,
@@ -48,7 +93,7 @@ pub struct Frames {
 impl Default for Frames {
     fn default() -> Self {
         Frames {
-            buckets: vec![0; BUCKETS],
+            gaps: Histogram::new(STEP_US, BUCKETS),
             shown: 0,
             last: None,
             total: Duration::ZERO,
@@ -64,8 +109,7 @@ impl Frames {
         if let Some(last) = self.last.replace(at) {
             let gap = at.saturating_sub(last);
             self.total += gap;
-            let step = usize::try_from(gap.as_micros() / u128::from(STEP_US)).unwrap_or(BUCKETS);
-            self.buckets[step.min(BUCKETS - 1)] += 1;
+            self.gaps.add(gap);
         }
     }
 
@@ -81,24 +125,47 @@ impl Frames {
             frames: self.shown,
             seconds: round(seconds, 1),
             average_fps: round(gaps as f64 / seconds, 1),
-            slowest_1_percent_ms: round(self.slowest(gaps, 1, 100), 1),
-            slowest_0_1_percent_ms: round(self.slowest(gaps, 1, 1000), 1),
+            slowest_1_percent_ms: round(self.gaps.slowest(1, 100), 1),
+            slowest_0_1_percent_ms: round(self.gaps.slowest(1, 1000), 1),
         })
     }
+}
 
-    /// The frame time in ms that `part` in `whole` of the `gaps` frame
-    /// times reach or pass: the nearest rank from the slow end, as the
-    /// compositor's telemetry takes its percentiles.
-    fn slowest(&self, gaps: u64, part: u64, whole: u64) -> f64 {
-        let from_top = (gaps * part).div_ceil(whole).max(1);
-        let mut seen = 0;
-        for (step, count) in self.buckets.iter().enumerate().rev() {
-            seen += u64::from(*count);
-            if seen >= from_top {
-                return (step as u64 * STEP_US + STEP_US) as f64 / 1000.0;
-            }
+/// How long the compositor took to draw each frame of a game's screen
+/// (M7.7e): our own work, apart from the game's pace and the machine's.
+/// CI's smoothness gate reads its slowest 1 percent.
+#[derive(Debug, Clone)]
+pub struct Work {
+    took: Histogram,
+}
+
+impl Default for Work {
+    fn default() -> Self {
+        Work {
+            took: Histogram::new(WORK_STEP_US, WORK_BUCKETS),
         }
-        0.0
+    }
+}
+
+impl Work {
+    /// The compositor drew one frame in `took`.
+    pub fn drawn(&mut self, took: Duration) {
+        self.took.add(took);
+    }
+
+    /// How many frames were drawn.
+    pub fn frames(&self) -> u64 {
+        self.took.count
+    }
+
+    /// The time the median frame took, in ms, to 10 microseconds.
+    pub fn median_ms(&self) -> f64 {
+        round(self.took.slowest(1, 2), 2)
+    }
+
+    /// The time the slowest 1 percent of frames reach, in ms.
+    pub fn slowest_1_percent_ms(&self) -> f64 {
+        round(self.took.slowest(1, 100), 2)
     }
 }
 
@@ -217,6 +284,23 @@ mod tests {
         frames.shown(at + Duration::from_secs(5));
         let record = frames.record().unwrap();
         assert_eq!(record.slowest_0_1_percent_ms, 1000.0);
+    }
+
+    #[test]
+    fn our_work_counts_each_frame_to_ten_microseconds() {
+        let mut work = Work::default();
+        assert_eq!(work.slowest_1_percent_ms(), 0.0);
+        // 990 frames drawn in 0.8 ms, 9 in 3 ms and 1 in 250 ms.
+        for _ in 0..990 {
+            work.drawn(ms(0.8));
+        }
+        for _ in 0..9 {
+            work.drawn(ms(3.0));
+        }
+        work.drawn(ms(250.0));
+        assert_eq!(work.frames(), 1000);
+        assert_eq!(work.median_ms(), 0.81);
+        assert_eq!(work.slowest_1_percent_ms(), 3.01);
     }
 
     #[test]
