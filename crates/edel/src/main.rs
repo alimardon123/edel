@@ -46,6 +46,7 @@ mod settings_source;
 mod shell;
 mod speaker_boot;
 mod system_power;
+mod trust;
 mod update;
 mod xattrs;
 
@@ -942,6 +943,7 @@ fn run(command: Commands) -> Result<()> {
             } => release::make(
                 &version,
                 &channel,
+                release::base_fixes_until().as_deref(),
                 base_url.as_deref(),
                 out.as_deref(),
                 &images,
@@ -989,7 +991,15 @@ fn run(command: Commands) -> Result<()> {
             } else {
                 // A release that is the running version is no failure:
                 // edel update says so and ends well (M8.15).
+                // Nor is a release updates.version holds back (M8.41).
                 let system = update::install(&location, &accept, unsigned).or_else(|err| {
+                    let err = match err.downcast::<release::Held>() {
+                        Ok(held) => {
+                            println!("edel update: {held}");
+                            return Ok(());
+                        }
+                        Err(err) => err,
+                    };
                     let up = err.downcast::<release::UpToDate>()?;
                     println!("edel update: {up}");
                     Ok(())

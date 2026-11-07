@@ -46,6 +46,12 @@ pub struct Manifest {
     /// (M3.8); set when it is signed. A list from before M3.8 has none.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub expires: String,
+    /// The last day, `YYYY-MM-DD`, on which this version gets fixes
+    /// (M8.44): its Alpine branch's, from `features/base.toml`'s
+    /// `[alpine]`, as its images' os-release says too. A list from before
+    /// M8.44 has none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub fixes_until: String,
     #[serde(default)]
     pub images: Vec<ImageEntry>,
     /// The add-ons of this release (M7.2a), in the order they were given.
@@ -384,6 +390,97 @@ impl std::fmt::Display for UpToDate {
 
 impl std::error::Error for UpToDate {}
 
+/// What `updates.version` does to a newer release (M8.41): the one hold.
+/// It keeps the running version's branch, so the fixes on that branch,
+/// lists with the same `fixes_until`, are still taken, and a newer branch
+/// waits until the running version's fixes end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Hold {
+    /// Not held; with a warning when the key is set but holds nothing.
+    Take(Option<String>),
+    /// Held: nothing is installed, and the line says why until when.
+    Held(String),
+}
+
+/// The hold for `offered`, newer than `running`, whose own last day of
+/// fixes is `until`, on `today` (`YYYY-MM-DD`), with `held` the value of
+/// `updates.version`.
+pub fn hold(
+    held: Option<&str>,
+    running: &str,
+    until: Option<&str>,
+    offered: &Manifest,
+    today: &str,
+) -> Hold {
+    let Some(held) = held.filter(|h| !h.is_empty()) else {
+        return Hold::Take(None);
+    };
+    if compare_versions(held, running) == Ordering::Greater {
+        return Hold::Take(Some(trf(
+            "updates.version names {held}, not the running {running}, so it holds nothing; edel settings reset updates.version stops this note",
+            &[("held", held), ("running", running)],
+        )));
+    }
+    if let Some(day) = until.filter(|day| today > *day) {
+        return Hold::Take(Some(trf(
+            "{running}'s fixes ended on {day}, so updates.version no longer holds it and the newest version is taken; edel settings reset updates.version stops this note",
+            &[("running", running), ("day", day)],
+        )));
+    }
+    // The same last day is the same branch: a fix, taken while held.
+    if until.is_some_and(|day| offered.fixes_until == day) {
+        return Hold::Take(None);
+    }
+    Hold::Held(match until {
+        Some(day) => trf(
+            "holding {held} as updates.version says; it gets fixes until {day}, so {offered} waits",
+            &[("held", held), ("day", day), ("offered", &offered.version)],
+        ),
+        None => trf(
+            "holding {held} as updates.version says, so {offered} waits",
+            &[("held", held), ("offered", &offered.version)],
+        ),
+    })
+}
+
+/// The running version, from os-release.
+pub(crate) fn running_version() -> String {
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    os_release_value(&os_release, "VERSION_ID").unwrap_or_default()
+}
+
+/// [`hold`] for this machine: its `updates.version`, its running version
+/// and last day of fixes from os-release, and today.
+pub fn hold_here(offered: &Manifest) -> Hold {
+    let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
+    let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
+    if compare_versions(&offered.version, &running) != Ordering::Greater {
+        return Hold::Take(None);
+    }
+    hold(
+        edel::settings::on_machine("updates.version").as_deref(),
+        &running,
+        edel::version::fixes_until(&os_release).as_deref(),
+        offered,
+        &today_text(),
+    )
+}
+
+/// What `edel update` meets when `updates.version` holds the release
+/// (M8.41): nothing to do, which is not a failure, as [`UpToDate`] is.
+#[derive(Debug)]
+pub struct Held {
+    pub line: String,
+}
+
+impl std::fmt::Display for Held {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.line)
+    }
+}
+
+impl std::error::Error for Held {}
+
 /// The entry for `image` in `manifest`: [`UpToDate`] when the version is
 /// the running one, refused when it is older (unless `allow_downgrade`).
 fn pick_image<'a>(
@@ -430,17 +527,27 @@ fn local_path(location: &str) -> &str {
     location.strip_prefix("file://").unwrap_or(location)
 }
 
-/// The HTTP client for `location`: a mirror that does not answer fails the
-/// download instead of hanging it (the image body itself may take as long
-/// as it takes), and an `https://` download never follows a redirect to
-/// plain http (the review of 2026-10-25).
-fn agent(location: &str) -> ureq::Agent {
+/// The HTTP client for `location`, checking servers against `roots`: a
+/// mirror that does not answer fails the download instead of hanging it
+/// (the image body itself may take as long as it takes), and an `https://`
+/// download never follows a redirect to plain http (the review of
+/// 2026-10-25).
+fn agent(location: &str, roots: ureq::tls::RootCerts) -> ureq::Agent {
     ureq::Agent::config_builder()
         .https_only(location.starts_with("https://"))
+        .tls_config(ureq::tls::TlsConfig::builder().root_certs(roots).build())
         .timeout_connect(Some(Duration::from_secs(30)))
         .timeout_recv_response(Some(Duration::from_secs(60)))
         .build()
         .into()
+}
+
+/// Starts the download of `location`, trusting the machine's certificate
+/// authorities first and the built-in ones second (M8.40), so a company's
+/// own mirror and GitHub both work; the signature is checked after.
+fn get(location: &str) -> Result<ureq::http::Response<ureq::Body>> {
+    crate::trust::get_either(|roots| agent(location, roots).get(location).call())
+        .with_context(|| edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location)))
 }
 
 /// What a download that failed says: the address and what to try; the
@@ -460,9 +567,7 @@ fn could_not_read(path: &str) -> String {
 /// Reads a small file (a manifest or a signature) from a path or a URL.
 fn fetch(location: &str) -> Result<Vec<u8>> {
     if is_url(location) {
-        let mut response = agent(location).get(location).call().with_context(|| {
-            edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
-        })?;
+        let mut response = get(location)?;
         Ok(response.body_mut().read_to_vec()?)
     } else {
         let path = local_path(location);
@@ -473,9 +578,7 @@ fn fetch(location: &str) -> Result<Vec<u8>> {
 /// Opens an image for streaming, decompressing a `.gz` file on the way.
 fn open_image(location: &str) -> Result<Box<dyn Read>> {
     let raw: Box<dyn Read> = if is_url(location) {
-        let response = agent(location).get(location).call().with_context(|| {
-            edel::exit::Coded::new(edel::exit::OFFLINE, download_failed(location))
-        })?;
+        let response = get(location)?;
         Box::new(response.into_body().into_reader())
     } else {
         let path = local_path(location);
@@ -549,6 +652,11 @@ pub struct Checked {
 /// image for this machine.
 pub fn open_checked(location: &str, accept: &Accept) -> Result<Checked> {
     let manifest = verified(location, accept)?;
+    match hold_here(&manifest) {
+        Hold::Held(line) => return Err(Held { line }.into()),
+        Hold::Take(Some(note)) => eprintln!("warning: {note}"),
+        Hold::Take(None) => {}
+    }
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE")
         .context(tr("this system's /usr/lib/os-release has no EDEL_IMAGE, so edel cannot tell which image of the release to take"))?;
@@ -615,12 +723,29 @@ pub(crate) fn record_check(version: &str) {
 /// `edel update --check`: the running version and the one at `location`.
 pub fn check(location: &str, accept: &Accept) -> Result<()> {
     let manifest = verified(location, accept)?;
-    record_check(&manifest.version);
     let os_release = fs::read_to_string("/usr/lib/os-release").unwrap_or_default();
     let running = os_release_value(&os_release, "VERSION_ID").unwrap_or_default();
     let image = os_release_value(&os_release, "EDEL_IMAGE");
-    for line in check_lines(&manifest, &running, image.as_deref()) {
+    let (held, said) = match hold_here(&manifest) {
+        Hold::Held(line) => (edel::settings::on_machine("updates.version"), Some(line)),
+        Hold::Take(Some(note)) => {
+            eprintln!("warning: {note}");
+            (None, None)
+        }
+        Hold::Take(None) => (None, None),
+    };
+    // A held release is not one this machine is behind on (M8.41), so the
+    // security facts say up to date rather than that it is available.
+    record_check(if held.is_some() {
+        &running
+    } else {
+        &manifest.version
+    });
+    for line in check_lines(&manifest, &running, image.as_deref(), held.as_deref()) {
         println!("{line}");
+    }
+    if let Some(line) = said {
+        println!("edel update: {line}");
     }
     Ok(())
 }
@@ -630,17 +755,30 @@ pub fn check(location: &str, accept: &Accept) -> Result<()> {
 /// are, so they stay English: `newer: yes` or `no`, `released: DATE` when
 /// the list has one and `size: BYTES`, the image of this system as it
 /// lands in a slot, when the list holds one (Settings' Updates page, M5.8d).
-fn check_lines(manifest: &Manifest, running: &str, image: Option<&str>) -> Vec<String> {
-    let newer = compare_versions(&manifest.version, running) == Ordering::Greater;
+fn check_lines(
+    manifest: &Manifest,
+    running: &str,
+    image: Option<&str>,
+    held: Option<&str>,
+) -> Vec<String> {
+    // A held release is not offered (M8.41): `newer: no`, and `held:`.
+    let newer = held.is_none() && compare_versions(&manifest.version, running) == Ordering::Greater;
     let mut lines = vec![
         format!("running: {running}"),
         format!(
             "available: {} ({})",
             manifest.version,
-            if newer { tr("newer") } else { tr("not newer") }
+            match (newer, held) {
+                (true, _) => tr("newer"),
+                (false, Some(_)) => tr("held by updates.version"),
+                (false, None) => tr("not newer"),
+            }
         ),
         format!("newer: {}", if newer { "yes" } else { "no" }),
     ];
+    if let Some(held) = held {
+        lines.push(format!("held: {held}"));
+    }
     if !manifest.date.is_empty() {
         lines.push(format!("released: {}", manifest.date));
     }
@@ -697,9 +835,12 @@ pub fn addon_parts(file_name: &str) -> Option<(&str, &str)> {
 /// it can be served from somewhere else (a channel, M3.4), and goes into
 /// `out_dir` when given. `addons` are add-on files beside the images, each
 /// with its feature file `IMAGE.NAME.toml` beside it (M7.2a).
+/// `fixes_until` is the base's last day of fixes ([`base_fixes_until`]).
+#[allow(clippy::too_many_arguments)]
 pub fn make(
     version: &str,
     channel: &str,
+    fixes_until: Option<&str>,
     base_url: Option<&str>,
     out_dir: Option<&Path>,
     images: &[PathBuf],
@@ -814,6 +955,7 @@ pub fn make(
         channel: channel.to_string(),
         date,
         expires: String::new(),
+        fixes_until: fixes_until.unwrap_or_default().to_string(),
         images: entries,
         addons: addon_entries,
         downloads: download_entries,
@@ -824,6 +966,30 @@ pub fn make(
     fs::write(&path, toml::to_string(&manifest)?)?;
     println!("{}", path.display());
     Ok(path)
+}
+
+/// The base's last day of fixes (M8.44), from the repository's
+/// `features/base.toml` when `edel release make` runs at its root, as CI's
+/// build does, beside the images built from that same tree. None, with a
+/// warning, anywhere else: the list then says no date, as one from before
+/// M8.44 does.
+pub fn base_fixes_until() -> Option<String> {
+    let day = crate::def::feature_dirs(Path::new("images"))
+        .and_then(|dirs| crate::def::find_features(&dirs))
+        .ok()
+        .and_then(|found| {
+            let alpine = found.get("base")?.feature.alpine.as_ref()?;
+            alpine.fixes_until().map(str::to_string)
+        });
+    if day.is_none() {
+        eprintln!(
+            "{}",
+            tr(
+                "warning: release.toml says no last day of fixes, as features/base.toml was not found here or names none; run edel release make from the repository's root"
+            )
+        );
+    }
+    day
 }
 
 /// `edel release sign`: writes `FILE.sig`; with `expires_in`, first sets
@@ -900,6 +1066,7 @@ mod tests {
                 channel: String::new(),
                 date: String::new(),
                 expires: "2020-01-01".into(),
+                fixes_until: String::new(),
                 images: Vec::new(),
                 addons: Vec::new(),
                 downloads: Vec::new(),
@@ -1122,13 +1289,13 @@ mod tests {
         let mut manifest = parse_manifest(MANIFEST).unwrap();
         let size = manifest.images[0].size;
         let name = manifest.images[0].name.clone();
-        let lines = check_lines(&manifest, "2026.10.1", Some(&name));
+        let lines = check_lines(&manifest, "2026.10.1", Some(&name), None);
         assert!(
             !lines.iter().any(|l| l.starts_with("released:")),
             "{lines:?}"
         );
         manifest.date = "2026-10-08".into();
-        let lines = check_lines(&manifest, "2026.10.1", Some(&name));
+        let lines = check_lines(&manifest, "2026.10.1", Some(&name), None);
         assert!(
             lines.contains(&"released: 2026-10-08".to_string()),
             "{lines:?}"
@@ -1141,12 +1308,91 @@ mod tests {
             "the size of this system's image: {lines:?}"
         );
         // Not newer, and an image the list lacks: no size.
-        let lines = check_lines(&manifest, "2026.10.2", Some("edel-nothing"));
+        let lines = check_lines(&manifest, "2026.10.2", Some("edel-nothing"), None);
         assert_eq!(lines[1], "available: 2026.10.2 (not newer)");
         assert_eq!(lines[2], "newer: no");
         assert!(!lines.iter().any(|l| l.starts_with("size:")), "{lines:?}");
-        let lines = check_lines(&manifest, "2026.10.1", None);
+        let lines = check_lines(&manifest, "2026.10.1", None, None);
         assert!(!lines.iter().any(|l| l.starts_with("size:")), "{lines:?}");
+    }
+
+    #[test]
+    fn updates_version_holds_a_branch_and_lets_its_fixes_through() {
+        let offered = |version: &str, until: &str| {
+            let mut list = parse_manifest(MANIFEST).unwrap();
+            list.version = version.into();
+            list.fixes_until = until.into();
+            list
+        };
+        let day = Some("2029-05-01");
+        // Not set: taken.
+        let crossing = offered("2029.05.0", "2031-05-01");
+        assert_eq!(
+            hold(None, "2027.10.1", day, &crossing, "2028-01-01"),
+            Hold::Take(None)
+        );
+        // Set to the running version: a newer branch waits, and says so.
+        assert_eq!(
+            hold(Some("2027.10.1"), "2027.10.1", day, &crossing, "2028-01-01"),
+            Hold::Held(
+                "holding 2027.10.1 as updates.version says; it gets fixes until 2029-05-01, so 2029.05.0 waits".into()
+            )
+        );
+        // A fix on the same branch, the same last day, is still taken, and
+        // the hold keeps holding once the machine runs it.
+        let fix = offered("2027.11.0", "2029-05-01");
+        assert_eq!(
+            hold(Some("2027.10.1"), "2027.10.1", day, &fix, "2028-01-01"),
+            Hold::Take(None)
+        );
+        assert!(matches!(
+            hold(Some("2027.10.1"), "2027.11.0", day, &crossing, "2028-01-01"),
+            Hold::Held(_)
+        ));
+        // A list from before M8.44 says no day, so it may be a crossing: held.
+        assert!(matches!(
+            hold(
+                Some("2027.10.1"),
+                "2027.10.1",
+                day,
+                &offered("2027.11.0", ""),
+                "2028-01-01"
+            ),
+            Hold::Held(_)
+        ));
+        // Past its day the hold lets go, with a note on how to stop it.
+        let Hold::Take(Some(note)) =
+            hold(Some("2027.10.1"), "2027.10.1", day, &crossing, "2029-05-02")
+        else {
+            panic!("a version past its fixes is not held");
+        };
+        assert!(
+            note.starts_with("2027.10.1's fixes ended on 2029-05-01"),
+            "{note}"
+        );
+        // A newer version than the running one holds nothing.
+        let Hold::Take(Some(note)) =
+            hold(Some("2027.12.0"), "2027.10.1", day, &crossing, "2028-01-01")
+        else {
+            panic!("a version not yet running holds nothing");
+        };
+        assert!(note.contains("not the running 2027.10.1"), "{note}");
+        // An image from before M8.44 knows no day: held, without one.
+        assert_eq!(
+            hold(
+                Some("2027.10.1"),
+                "2027.10.1",
+                None,
+                &crossing,
+                "2028-01-01"
+            ),
+            Hold::Held("holding 2027.10.1 as updates.version says, so 2029.05.0 waits".into())
+        );
+        // A held check offers nothing, so shell-ui and Settings stay quiet.
+        let lines = check_lines(&crossing, "2027.10.1", None, Some("2027.10.1"));
+        assert_eq!(lines[1], "available: 2029.05.0 (held by updates.version)");
+        assert_eq!(lines[2], "newer: no");
+        assert!(lines.contains(&"held: 2027.10.1".to_string()), "{lines:?}");
     }
 
     #[test]
@@ -1335,6 +1581,7 @@ mod tests {
         let path = make(
             "2026.10.1",
             "stable",
+            Some("2028-06-01"),
             None,
             None,
             std::slice::from_ref(&image),
@@ -1343,6 +1590,7 @@ mod tests {
         )
         .unwrap();
         let list = parse_manifest(&fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(list.fixes_until, "2028-06-01");
         // A download is listed by its bytes as downloaded, not unpacked.
         let download = &list.downloads[0];
         assert_eq!(download.file, "edel-vm-x86_64.img.gz");

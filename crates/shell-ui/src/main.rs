@@ -1116,6 +1116,7 @@ fn check_updates(handle: &LoopHandle<'static, Shell>) {
     let watching = handle.insert_source(news, |event, _, shell: &mut Shell| {
         if let channel::Event::Msg(answer) = event {
             shell.update_checked(answer);
+            shell.tell_fixes();
         }
     });
     if let Err(e) = watching {

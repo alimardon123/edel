@@ -8,7 +8,8 @@
 //! (`cmd.rs`): changing the machine runs as root through doas (M6.5), and
 //! a click that lacks the right reads `edel`'s refusal. The page runs
 //! nothing in the background; its Security group (M8.14) reads three facts
-//! from files, as `edel status` does.
+//! from files, as `edel status` does, and until when this version gets
+//! fixes (M8.44), from os-release.
 
 use std::cell::{Cell, RefCell};
 use std::fs;
@@ -38,6 +39,40 @@ fn security(content: &gtk::Box) {
     for (title, value) in facts.rows() {
         widgets::fact_row(&group, title, &status::capital(&value));
     }
+    // Until when this version gets fixes (M8.44), as `edel status` says.
+    let today = glib::DateTime::now_local()
+        .ok()
+        .and_then(|t| t.format("%Y-%m-%d").ok())
+        .map_or_else(String::new, |t| t.to_string());
+    let release = fs::read_to_string(crate::about::OS_RELEASE).unwrap_or_default();
+    if let Some(fixes) =
+        edel::version::fixes_until(&release).and_then(|day| fixes_words(&day, &today))
+    {
+        widgets::fact_row(&group, tr("Fixes"), &fixes);
+    }
+}
+
+/// The Fixes row (M8.44): until when this version gets fixes, in words, for
+/// the last day `day` and today `today`, both `YYYY-MM-DD`. None when `day`
+/// is no date or `today` is not one.
+fn fixes_words(day: &str, today: &str) -> Option<String> {
+    if !edel::version::is_date(today) {
+        return None;
+    }
+    let date = long_date(day)?;
+    Some(if day >= today {
+        trf("Gets fixes until {date}", &[("date", &date)])
+    } else {
+        trf("Fixes ended on {date}", &[("date", &date)])
+    })
+}
+
+/// `YYYY-MM-DD` as a person reads it, `1 June 2028`, the month named by glib
+/// in the person's language; None when it is not a day of the calendar.
+fn long_date(day: &str) -> Option<String> {
+    let part = |i: usize| day.split('-').nth(i)?.parse::<i32>().ok();
+    let at = glib::DateTime::from_local(part(0)?, part(1)?, part(2)?, 0, 0, 0.0).ok()?;
+    Some(at.format("%-d %B %Y").ok()?.to_string())
 }
 
 const INTRO: &str = n_("Copy this machine to another, or set it up from a file.");
@@ -709,6 +744,27 @@ fn save(path: &std::path::Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fixes_say_until_when_or_that_they_ended() {
+        assert_eq!(
+            fixes_words("2028-06-01", "2026-11-03").as_deref(),
+            Some("Gets fixes until 1 June 2028")
+        );
+        assert_eq!(
+            fixes_words("2028-06-01", "2028-06-01").as_deref(),
+            Some("Gets fixes until 1 June 2028"),
+            "the day itself still gets fixes"
+        );
+        assert_eq!(
+            fixes_words("2026-11-01", "2026-11-02").as_deref(),
+            Some("Fixes ended on 1 November 2026"),
+            "the day after"
+        );
+        assert_eq!(fixes_words("soon", "2026-11-03"), None);
+        assert_eq!(fixes_words("2028-02-30", "2026-11-03"), None);
+        assert_eq!(fixes_words("2028-06-01", "today"), None);
+    }
 
     fn run(ok: bool, out: &str, err: &str) -> cmd::Outcome {
         cmd::Outcome {

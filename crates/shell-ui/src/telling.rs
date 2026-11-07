@@ -2,14 +2,17 @@
 //! own list: that the last update did not start and the machine went back
 //! (once for each person, for each record), that a newer release is out
 //! (once for each version), and that an add-on serves this computer's
-//! hardware (once for each set of packs, M7.11). Apps never send these; the
-//! ids are ones the server never hands out, so a press on them stays inside
+//! hardware (once for each set of packs, M7.11), and that this version gets
+//! fixes only until a day, sixty days before that day and again once it has
+//! passed (once for each version, M8.44). Apps never send these; the ids
+//! are ones the server never hands out, so a press on them stays inside
 //! shell-ui and no app is told (`notify_card.rs`).
 //!
-//! This file is plain data and tested without a display: the two
-//! notifications, the texts of the record and of the update check's
-//! output (`edel update --check`, read leniently), the two stamps that
-//! remember what a person has seen, and the timing of the check.
+//! This file is plain data and tested without a display: the four
+//! notices, the texts of the record, of the update check's output
+//! (`edel update --check`, read leniently) and of the fixes' day, the
+//! stamps that remember what a person has seen, and the timing of the
+//! check.
 
 use std::fs;
 use std::io;
@@ -18,15 +21,21 @@ use std::path::Path;
 use edel::hardware::Pack;
 use edel::i18n::{tr, trf};
 use edel::places;
+use edel::version::{fixes_until, is_date, os_release_value};
 
 use crate::notify::{Notification, Urgency};
 
 /// The id of the notice that the last update went back, of the notice
-/// that a newer release is out, and of the notice that a hardware pack
-/// serves this computer: ids the server never hands out.
+/// that a newer release is out, of the notice that a hardware pack
+/// serves this computer, and of the notice that this version gets fixes
+/// only until a day: ids the server never hands out.
 pub const FALLBACK_ID: u32 = u32::MAX;
 pub const UPDATE_ID: u32 = u32::MAX - 1;
 pub const HARDWARE_ID: u32 = u32::MAX - 2;
+pub const FIXES_ID: u32 = u32::MAX - 3;
+
+/// How many days before the day it gets fixes until a version is told.
+const FIXES_WARN_DAYS: i64 = 60;
 
 /// What the notices say they come from.
 pub const APP: &str = "Edel OS";
@@ -37,14 +46,16 @@ pub const FIRST_CHECK_SECS: u64 = 600;
 pub const CHECK_EVERY_SECS: u64 = 6 * 3600;
 
 /// The stamps in the person's state folder: the record's date last shown,
-/// the version last announced, and the hardware packs last named.
+/// the version last announced, the hardware packs last named, and the
+/// version whose fixes day was last told.
 pub const FALLBACK_SEEN: &str = "fallback-seen";
 pub const UPDATE_SEEN: &str = "update-seen";
 pub const HARDWARE_SEEN: &str = "hardware-seen";
+pub const FIXES_SEEN: &str = "fixes-seen";
 
 /// Whether `id` is one of the notices shell-ui makes itself.
 pub fn is_ours(id: u32) -> bool {
-    id == FALLBACK_ID || id == UPDATE_ID || id == HARDWARE_ID
+    id == FALLBACK_ID || id == UPDATE_ID || id == HARDWARE_ID || id == FIXES_ID
 }
 
 /// The record's `date` value, as the stamp holds it; empty when the
@@ -134,6 +145,76 @@ pub fn update(lines: &str) -> Option<(String, Notification)> {
         urgency: Urgency::Normal,
     };
     Some((version, n))
+}
+
+/// The notice that this version gets fixes only until a day (M8.44), from
+/// os-release: `SUPPORT_END` is the day (`edel::version::fixes_until`) and
+/// `VERSION_ID` the version. Only an image that names an `EDEL_CHANNEL`
+/// is told, so another distribution's os-release says nothing. Told from
+/// `FIXES_WARN_DAYS` before the day, through the day ("gets fixes until"),
+/// and once the day has passed ("no longer gets fixes"); a version already
+/// told (`shown`, the stamp) is not told again. `today` is `YYYY-MM-DD`.
+pub fn fixes_notice(os_release: &str, today: &str, shown: Option<&str>) -> Option<Notification> {
+    os_release_value(os_release, "EDEL_CHANNEL").filter(|channel| !channel.is_empty())?;
+    let day = fixes_until(os_release)?;
+    let version = os_release_value(os_release, "VERSION_ID").filter(|v| !v.is_empty())?;
+    if shown == Some(version.as_str()) {
+        return None;
+    }
+    let today_days = day_number(today)?;
+    let day_days = day_number(&day)?;
+    if today_days < day_days - FIXES_WARN_DAYS {
+        return None;
+    }
+    let summary = if today_days <= day_days {
+        trf(
+            "Edel OS {version} gets fixes until {day}",
+            &[("version", &version), ("day", &day)],
+        )
+    } else {
+        trf(
+            "Edel OS {version} no longer gets fixes",
+            &[("version", &version)],
+        )
+    };
+    Some(Notification {
+        id: FIXES_ID,
+        app: APP.to_string(),
+        icon: "status-new".to_string(),
+        summary,
+        body: tr(
+            "Move to the newest version to keep getting fixes. Your apps, files and settings stay.",
+        )
+        .to_string(),
+        actions: open_updates(),
+        timeout: -1,
+        urgency: Urgency::Normal,
+    })
+}
+
+/// A `YYYY-MM-DD` day as a count of days since 1970-01-01; None when the
+/// text is no date.
+fn day_number(text: &str) -> Option<i64> {
+    if !is_date(text) {
+        return None;
+    }
+    let mut parts = text.split('-').map(|p| p.parse::<i64>().ok());
+    let y = parts.next()??;
+    let m = parts.next()??;
+    let d = parts.next()??;
+    Some(days_from_civil(y, m, d))
+}
+
+/// Days from 1970-01-01 to the civil date `y`-`m`-`d` (Howard Hinnant's
+/// `days_from_civil`), for day arithmetic without a date crate.
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let mp = (m + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }
 
 /// The notice that an add-on serves this computer's hardware and is not
@@ -331,5 +412,83 @@ mod tests {
         );
         assert!(!dir.join("fallback-seen.new").exists());
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    const FIXES: &str =
+        "NAME=\"Edel OS\"\nVERSION_ID=2026.10.1\nEDEL_CHANNEL=stable\nSUPPORT_END=2026-12-31\n";
+
+    #[test]
+    fn days_are_counted_from_the_epoch() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(2000, 3, 1), 11017);
+        // 2026-11-01 is 60 days before 2026-12-31 (October and November
+        // are 31 and 30 days).
+        assert_eq!(
+            day_number("2026-12-31").unwrap() - day_number("2026-11-01").unwrap(),
+            60
+        );
+        assert!(day_number("2026-13-01").is_none());
+        assert_eq!(day_number("soon"), None);
+    }
+
+    #[test]
+    fn sixty_one_days_before_the_day_nothing_is_said() {
+        assert!(fixes_notice(FIXES, "2026-10-31", None).is_none());
+    }
+
+    #[test]
+    fn sixty_days_before_the_day_it_is_said_until_the_day() {
+        let n = fixes_notice(FIXES, "2026-11-01", None).expect("60 days before gives a notice");
+        assert_eq!(n.id, FIXES_ID);
+        assert!(is_ours(n.id));
+        assert_eq!(n.summary, "Edel OS 2026.10.1 gets fixes until 2026-12-31");
+        assert_eq!(
+            n.body,
+            "Move to the newest version to keep getting fixes. Your apps, files and settings stay."
+        );
+        let buttons: Vec<&str> = n.buttons().map(|(key, _)| key.as_str()).collect();
+        assert_eq!(buttons, ["updates", "later"]);
+        assert!(
+            fixes_notice(FIXES, "2026-12-31", None)
+                .unwrap()
+                .summary
+                .contains("gets fixes until")
+        );
+    }
+
+    #[test]
+    fn the_day_after_it_is_said_that_fixes_are_over() {
+        let n = fixes_notice(FIXES, "2027-01-01", None).expect("the day after gives a notice");
+        assert_eq!(n.summary, "Edel OS 2026.10.1 no longer gets fixes");
+    }
+
+    #[test]
+    fn a_version_already_told_is_not_told_again() {
+        assert!(fixes_notice(FIXES, "2026-12-01", Some("2026.10.1")).is_none());
+    }
+
+    #[test]
+    fn a_version_told_before_is_told_for_the_new_one() {
+        let n =
+            fixes_notice(FIXES, "2026-12-01", Some("2026.9.1")).expect("an older version was told");
+        assert_eq!(n.summary, "Edel OS 2026.10.1 gets fixes until 2026-12-31");
+    }
+
+    #[test]
+    fn the_fixes_notice_is_one_of_ours() {
+        assert!(is_ours(FIXES_ID));
+        assert!(!is_ours(FIXES_ID - 1));
+    }
+
+    #[test]
+    fn no_channel_means_nothing_is_said() {
+        let other = "VERSION_ID=\"24.04\"\nSUPPORT_END=2026-12-31\n";
+        assert!(fixes_notice(other, "2026-12-01", None).is_none());
+    }
+
+    #[test]
+    fn no_support_end_means_nothing_is_said() {
+        let text = "VERSION_ID=2026.10.1\nEDEL_CHANNEL=stable\n";
+        assert!(fixes_notice(text, "2026-12-01", None).is_none());
     }
 }

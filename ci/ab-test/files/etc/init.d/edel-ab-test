@@ -319,6 +319,26 @@ start() {
 			ab_end "FAIL: step 1 expected refused: signature"
 			return 0
 		}
+		# M8.41: updates.version keeps the running version's branch, so a
+		# newer branch waits, and nothing is written; reset, the update
+		# below takes the newer release.
+		running=$(sed -n 's/^VERSION_ID=//p' /usr/lib/os-release)
+		/usr/bin/edel settings set "updates.version=$running" || {
+			ab_end "FAIL: step 1 could not set updates.version=$running"
+			return 0
+		}
+		if ! held=$(/usr/bin/edel update --allow-http http://10.0.2.2:8000/newbranch.toml 2>&1); then
+			ab_end "FAIL: step 1 expected the held update to end well: $held"
+			return 0
+		fi
+		echo "$held"
+		echo "$held" | grep -q "holding $running as updates.version says" || {
+			ab_end "FAIL: step 1 expected edel update to say it holds $running"
+			return 0
+		}
+		slots=$(/usr/bin/edel status)
+		ab_expect "running: A" "order: A B" "B: ok=0" || return 0
+		/usr/bin/edel settings reset updates.version
 		echo marker >/home/ab-marker
 		echo marker >/var/ab-marker
 		rm -r /var/lib/ci-new
