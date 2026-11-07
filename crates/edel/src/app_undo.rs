@@ -208,6 +208,9 @@ pub struct Installed {
 }
 
 /// The columns [`installed`] reads, in its order.
+/// Flatpak cuts `active` to 12 characters, even with `:f`, and `flatpak
+/// update --commit` needs the whole commit, so the command reads each one
+/// again with `flatpak info --show-commit`.
 pub const LIST_COLUMNS: &str = "--columns=application,ref,active,version,runtime";
 
 /// The apps of a `flatpak list --app` listing with [`LIST_COLUMNS`] (its
