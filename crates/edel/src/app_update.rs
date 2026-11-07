@@ -84,8 +84,18 @@ fn output(command: &mut Command) -> String {
     }
 }
 
+/// The installed apps, each with its whole commit: `flatpak list` gives
+/// only its first 12 characters, which `--commit` cannot fetch.
 fn installed(of: Of) -> Vec<Installed> {
-    app_undo::installed(&output(flatpak(of).args(["list", "--app", LIST_COLUMNS])))
+    let mut apps = app_undo::installed(&output(flatpak(of).args(["list", "--app", LIST_COLUMNS])));
+    for app in &mut apps {
+        let whole = output(flatpak(of).args(["info", "--show-commit", &app.reference]));
+        let whole = whole.trim();
+        if whole.starts_with(&app.now.commit) {
+            app.now.commit = whole.to_string();
+        }
+    }
+    apps
 }
 
 fn held(of: Of) -> std::collections::BTreeSet<String> {
