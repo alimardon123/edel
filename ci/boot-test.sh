@@ -12,6 +12,8 @@
 # for the first person before the login prompt (M6.6b): the first boot
 # answers over a serial socket with ci/serial.py, giving `ci` a fresh ssh
 # key, and ci then logs in over ssh. The other boots stop at that question.
+# The last boot is emulated on the oldest processor the newest platform
+# level promises (M8.45), with no KVM.
 set -eu
 . ci/vm.sh
 
@@ -120,5 +122,27 @@ if [ "$found" = 1 ] &&
 	echo "PASS: with the clock set to 2020, edel-clock set it from the network in ${waited}s: ${clock_line}"
 else
 	echo "FAIL: expected a line 'edel-clock: set the clock from SERVER: YYYY-MM-DD HH:MM UTC' with a year of 2026 or later on serial within ${BOOT_TIMEOUT:-300}s after booting with -rtc base=2020-01-01, saw '${clock_line:-no edel-clock line}'"
+	exit 1
+fi
+
+# The level's oldest processor (M8.45): one boot under emulation, as KVM
+# hands the guest the runner's newer instructions, on the QEMU model the
+# newest platform level names for x86_64, which has only the instructions
+# the level promises, to the question for the first person. A package
+# built for a newer processor stops there with an illegal instruction.
+level_file=$(ls platform/level-*.toml | sort -V | tail -n 1)
+model=$(awk '/^\[\[/ { arch = "" } /^arch = / { arch = $3 } /^qemu = / && arch == "\"x86_64\"" { gsub(/"/, "", $3); print $3 }' "$level_file")
+[ -n "$model" ] || { echo "FAIL: $level_file names no QEMU model for x86_64's processor floor"; exit 1; }
+kept_accel=$accel
+accel=tcg
+run_vm out/boot-oldest-cpu.log 'Username: ' "${OLDEST_CPU_TIMEOUT:-1200}" -no-reboot -snapshot -vga none -cpu "$model" \
+	-drive if=none,id=disk0,format=raw,file=out/edel-x86_64.img \
+	-device virtio-blk-pci,drive=disk0,bootindex=0
+accel=$kept_accel
+if [ "$found" = 1 ] && ! grep -qi 'illegal instruction\|invalid opcode' out/boot-oldest-cpu.log; then
+	echo "PASS: emulated on $model, the oldest processor $level_file promises, the image reached the question for the first person in ${waited}s"
+else
+	cat out/boot-oldest-cpu.log
+	echo "FAIL: emulated on $model, the oldest processor $level_file promises, the image did not reach the question for the first person within ${OLDEST_CPU_TIMEOUT:-1200}s, or something stopped on an instruction that processor lacks"
 	exit 1
 fi

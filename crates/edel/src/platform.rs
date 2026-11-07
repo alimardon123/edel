@@ -41,6 +41,31 @@ pub struct Level {
     /// The app platform's packages, each at least its version.
     #[serde(default)]
     pub packages: Vec<Floor>,
+    /// The oldest processor of each architecture the level runs on (M8.45).
+    #[serde(default)]
+    pub cpu: Vec<Cpu>,
+}
+
+/// The oldest processor an architecture's images of the level run on: the
+/// instruction set Alpine builds its packages for, and the QEMU model with
+/// only those instructions, which CI boots the image on (M8.45).
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Cpu {
+    pub arch: String,
+    pub baseline: String,
+    pub qemu: String,
+}
+
+/// The level's processor floor for `arch`, or the message saying it is
+/// missing: an image of the level must have one, so the first release of
+/// a level fixes it for the level's ten years (M8.45). Pure.
+pub fn processor<'a>(number: u32, level: &'a Level, arch: &str) -> Result<&'a Cpu, String> {
+    level.cpu.iter().find(|c| c.arch == arch).ok_or_else(|| {
+        format!(
+            "platform level {number} names no processor floor for {arch}; add a [[cpu]] row for it to platform/level-{number}.toml, as the first release of a level fixes it"
+        )
+    })
 }
 
 /// A package the level promises at least a version of, wherever the
@@ -221,7 +246,31 @@ mod tests {
             kernel: "6.18".into(),
             runtimes: vec!["org.freedesktop.Platform".into()],
             packages,
+            cpu: vec![Cpu {
+                arch: "x86_64".into(),
+                baseline: "x86-64".into(),
+                qemu: "qemu64".into(),
+            }],
         }
+    }
+
+    #[test]
+    fn every_architecture_needs_a_processor_floor() {
+        let level = sample(Vec::new());
+        assert_eq!(processor(1, &level, "x86_64").unwrap().qemu, "qemu64");
+        let missing = processor(1, &level, "aarch64").unwrap_err();
+        assert!(
+            missing.contains("no processor floor for aarch64"),
+            "{missing}"
+        );
+        let built_in = level_of_this_release();
+        for arch in ["x86_64", "aarch64"] {
+            assert!(processor(LEVEL, &built_in, arch).is_ok(), "{arch}");
+        }
+    }
+
+    fn level_of_this_release() -> Level {
+        level(LEVEL).expect("the newest level parses")
     }
 
     fn floor(name: &str, at_least: &str, feature: &str) -> Floor {

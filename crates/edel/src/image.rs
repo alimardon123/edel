@@ -341,7 +341,8 @@ impl Build<'_> {
 
     /// Refuses an image that falls below the platform level it promises
     /// (ADR-005, M8.8): its kernel and the app platform's packages, read
-    /// from the level's file, against the packages apk recorded.
+    /// from the level's file, against the packages apk recorded, and the
+    /// level's processor floor for its architecture (M8.45).
     fn check_platform(&self, packages: &[crate::bom::Package], features: &[&str]) -> Result<()> {
         let number = edel::platform::LEVEL;
         let Some(level) = edel::platform::level(number) else {
@@ -356,7 +357,11 @@ impl Build<'_> {
             .vm
             .as_ref()
             .map(|vm| format!("linux-{}", vm.kernel));
-        let short = edel::platform::shortfalls(number, &level, &pairs, kernel.as_deref(), features);
+        let mut short =
+            edel::platform::shortfalls(number, &level, &pairs, kernel.as_deref(), features);
+        if let Err(missing) = edel::platform::processor(number, &level, &self.def.arch) {
+            short.push(missing);
+        }
         if !short.is_empty() {
             bail!(
                 "the image falls below platform level {number} (platform/level-{number}.toml): {}",
