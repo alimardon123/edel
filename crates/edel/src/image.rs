@@ -75,8 +75,15 @@ pub struct Build<'a> {
 
 /// `os-release` with the build's version and channel (M3.1): the version
 /// replaces `VERSION_ID`, `VERSION` and `PRETTY_NAME` when given, and
-/// `EDEL_CHANNEL`, `EDEL_ARCH` and `EDEL_PLATFORM_LEVEL` are added.
-pub fn with_version(os_release: &str, version: Option<&str>, channel: &str, arch: &str) -> String {
+/// `EDEL_CHANNEL`, `EDEL_ARCH` and `EDEL_PLATFORM_LEVEL` are added, and
+/// `SUPPORT_END`, the last day of fixes, when the base knows it (M8.44).
+pub fn with_version(
+    os_release: &str,
+    version: Option<&str>,
+    channel: &str,
+    arch: &str,
+    fixes_until: Option<&str>,
+) -> String {
     let mut out = String::new();
     for line in os_release.lines() {
         let key = line.split('=').next().unwrap_or_default();
@@ -94,17 +101,14 @@ pub fn with_version(os_release: &str, version: Option<&str>, channel: &str, arch
     out.push_str(&format!(
         "EDEL_CHANNEL=\"{channel}\"\nEDEL_ARCH=\"{arch}\"\n{key}={level}\n"
     ));
+    if let Some(day) = fixes_until {
+        out.push_str(&format!("{}={day}\n", edel::version::SUPPORT_END));
+    }
     out
 }
 
-/// `YYYY.MM.N` and the like: numbers joined by dots, as
-/// `release::compare_versions` orders them.
-pub fn is_version(version: &str) -> bool {
-    !version.is_empty()
-        && version
-            .split('.')
-            .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
-}
+/// `YYYY.MM.N` and the like (`edel::version::is_version`).
+pub use edel::version::is_version;
 
 /// How many times the build fetches a file from the network before it
 /// fails, and how long it waits between tries.
@@ -895,6 +899,7 @@ impl Build<'_> {
             self.version.as_deref(),
             &self.channel,
             &self.def.arch,
+            self.def.alpine.fixes_until(),
         );
         if let Some(keys) = &health {
             text += keys;
@@ -2712,7 +2717,7 @@ mod tests {
     #[test]
     fn writes_the_version_into_os_release() {
         let os = "NAME=\"Edel OS\"\nVERSION_ID=0.1\nVERSION=\"0.1 (development)\"\nPRETTY_NAME=\"Edel OS 0.1 (development)\"\n";
-        let text = with_version(os, Some("2026.10.57"), "preview", "x86_64");
+        let text = with_version(os, Some("2026.10.57"), "preview", "x86_64", None);
         assert!(text.contains("\nVERSION_ID=2026.10.57\n"));
         assert!(text.contains("\nVERSION=\"2026.10.57 (preview)\"\n"));
         assert!(text.contains("\nPRETTY_NAME=\"Edel OS 2026.10.57\"\n"));
@@ -2721,8 +2726,22 @@ mod tests {
                 "EDEL_CHANNEL=\"preview\"\nEDEL_ARCH=\"x86_64\"\nEDEL_PLATFORM_LEVEL=1\n"
             )
         );
-        let dev = with_version(os, None, "dev", "x86_64");
+        let dev = with_version(os, None, "dev", "x86_64", None);
         assert!(dev.starts_with(os), "{dev}");
+        // The base's last day of fixes, read back by the one reader (M8.44).
+        let dated = with_version(
+            os,
+            Some("2026.11.1"),
+            "stable",
+            "x86_64",
+            Some("2026-11-01"),
+        );
+        assert!(dated.ends_with("EDEL_PLATFORM_LEVEL=1\nSUPPORT_END=2026-11-01\n"));
+        assert_eq!(
+            edel::version::fixes_until(&dated).as_deref(),
+            Some("2026-11-01")
+        );
+        assert_eq!(edel::version::fixes_until(os), None);
     }
 
     #[test]

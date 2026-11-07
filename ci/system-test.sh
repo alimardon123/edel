@@ -136,6 +136,11 @@ ssh_root 'adduser -D visitor' >out/doas-setup.log 2>&1 ||
 ssh_ci doas -n edel status >out/doas-status.log 2>&1 || fail "ci could not run doas -n edel status: $(cat out/doas-status.log)"
 grep -q '^running: ' out/doas-status.log || fail "doas -n edel status printed no status: $(cat out/doas-status.log)"
 echo "PASS: ci (in group admin) ran doas -n edel status with no password and got the status"
+# M8.44: the status says until when this version gets fixes, the base's
+# day from features/base.toml's [alpine], written into os-release.
+grep -Eq '^fixes: (until|ended on) [0-9]{4}-[0-9]{2}-[0-9]{2} \(channel ' out/doas-status.log ||
+	fail "edel status did not say until when this version gets fixes: $(cat out/doas-status.log)"
+echo "PASS: edel status said $(grep '^fixes: ' out/doas-status.log)"
 ssh_ci sudo -n edel status >out/sudo-status.log 2>&1 || fail "ci could not run sudo -n edel status: $(cat out/sudo-status.log)"
 grep -q '^running: ' out/sudo-status.log || fail "sudo -n edel status printed no status: $(cat out/sudo-status.log)"
 echo "PASS: sudo, doas's second name, ran edel status for ci with the same rule"

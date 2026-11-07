@@ -326,6 +326,9 @@ pub enum Kind {
     Hosts,
     /// A release channel's name, such as `"stable"` ([`is_channel`], M5.8c)
     Channel,
+    /// A release version, such as `"2027.10.1"`
+    /// ([`crate::version::is_version`], M8.41)
+    Version,
     /// Hours of the day in local time, such as `"02:00-04:00"`, which may
     /// pass midnight ([`hours`], M7.5)
     Hours,
@@ -1738,12 +1741,14 @@ pub const KEYS: &[Key] = &[
             retired: None,
         },
     ),
-    later(
+    // The one hold (M8.41): the running version's branch is kept, its
+    // fixes still taken, until its fixes end.
+    now(
         "updates.version",
-        Kind::Text,
+        Kind::Version,
         Help {
             help: n_(
-                "A release to stay on instead of following the channel; this release does not act on it yet.",
+                "The version to stay on, such as 2027.10.1: edel update takes its fixes but no newer branch until this version's fixes end.",
             ),
             default: "follows the channel",
             from: DecidedBy::Release,
@@ -5471,6 +5476,12 @@ fn normalize(kind: Kind, value: &Value) -> Result<Value, String> {
             &[("value", &format!("{s:?}"))],
         )),
         (Kind::Channel, _) => fail(tr("a channel name in quotes, such as \"stable\"")),
+        (Kind::Version, Value::String(s)) if crate::version::is_version(s) => Ok(value.clone()),
+        (Kind::Version, Value::String(s)) => Err(trf(
+            "{value} is not a version; write one such as \"2027.10.1\", as edel status shows",
+            &[("value", &format!("{s:?}"))],
+        )),
+        (Kind::Version, _) => fail(tr("a version in quotes, such as \"2027.10.1\"")),
         (Kind::Hours, Value::String(s)) if hours(s).is_some() => Ok(value.clone()),
         (Kind::Hours, Value::String(s)) => Err(trf(
             "{value} is not a span of hours; write the start and the end in 24-hour time, such as \"02:00-04:00\"",
@@ -6303,6 +6314,7 @@ mod tests {
             Kind::Profiles => value_from_arg(r#"["gaming"]"#),
             Kind::Without => value_from_arg(r#"["com.valvesoftware.Steam"]"#),
             Kind::Channel => Value::String("stable".into()),
+            Kind::Version => Value::String("2027.10.1".into()),
             Kind::Hours => Value::String("02:00-04:00".into()),
             Kind::CursorTheme => Value::String("default".into()),
             Kind::IconTheme => Value::String(ICON_THEME_DEFAULT.into()),
@@ -6373,8 +6385,8 @@ cursor_size = 11
 [power]
 lock_after_minutes = 11
 
-[updates]
-version = "1.2"
+[system]
+variant = "server"
 "#;
 
     #[test]
@@ -6407,7 +6419,7 @@ version = "1.2"
         assert!(lines.contains(
             &"appearance.mode: unknown value \"sepia\"; use light, dark or auto".to_string()
         ));
-        assert!(lines.contains(&"updates.version: not supported yet".to_string()));
+        assert!(lines.contains(&"system.variant: not supported yet".to_string()));
         assert!(!lines.iter().any(|line| line.starts_with("network.")));
     }
 
@@ -7045,9 +7057,14 @@ version = "1.2"
             "network.hostname: \"not valid\" is not a computer name; give letters, digits and hyphens, up to 63, such as lab-1"
         );
         assert_eq!(
-            error("updates.version", "\"1.2\""),
-            "updates.version: not supported yet; this release does not act on it, so it cannot be set"
+            error("system.variant", "\"server\""),
+            "system.variant: not supported yet; this release does not act on it, so it cannot be set"
         );
+        assert_eq!(
+            error("updates.version", "\"27.x\""),
+            "updates.version: \"27.x\" is not a version; write one such as \"2027.10.1\", as edel status shows"
+        );
+        assert!(set(EDITED, "updates.version", "\"2027.10.1\"").is_ok());
         assert!(
             error("users.Ali.admin", "true").contains("\"Ali\" is not a username: use up to 32")
         );

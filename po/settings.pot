@@ -260,6 +260,18 @@ msgstr ""
 msgid "Any hour"
 msgstr ""
 
+msgid "Takes each new version as it comes."
+msgstr ""
+
+msgid "Edel OS {version} and its fixes until {day}"
+msgstr ""
+
+msgid "Edel OS {version} and its fixes"
+msgstr ""
+
+msgid "Holding {held}, as the settings file says"
+msgstr ""
+
 msgid "When an update may restart this computer by itself, in local time."
 msgstr ""
 
@@ -1592,6 +1604,9 @@ msgstr ""
 msgid "Channel"
 msgstr ""
 
+msgid "Stay on this version"
+msgstr ""
+
 msgid "Automatic updates"
 msgstr ""
 
@@ -2034,6 +2049,15 @@ msgid "Can't reach the update server. Check your internet connection and try aga
 msgstr ""
 
 msgid "Security"
+msgstr ""
+
+msgid "Fixes"
+msgstr ""
+
+msgid "Gets fixes until {date}"
+msgstr ""
+
+msgid "Fixes ended on {date}"
 msgstr ""
 
 msgid "Copy this machine to another, or set it up from a file."

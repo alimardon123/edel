@@ -14,6 +14,13 @@ modules = ["ext4", "overlay"]
 branch = "v3.24"
 mirror = "https://dl-cdn.alpinelinux.org/alpine"
 repositories = ["main", "community"]
+# The last day Alpine fixes each repository of the branch (M8.44): main's
+# is the branch's eol_date and community's its repository's, both from
+# https://alpinelinux.org/releases.json, read 2026-11-03. An image's
+# os-release SUPPORT_END and each release.toml's fixes_until are main's;
+# community is fixed until the next branch is out, which the newest
+# channel moves to. Copy both again at the next branch bump (M8.4).
+fixes_until = { main = "2028-06-01", community = "2026-11-01" }
 # Alpine edge's community, tagged @edge, for one package taken from edge
 # while the branch lacks its fix: oo7-portal (the keyring feature), which
 # in v3.24 cannot answer an app that hands it a pipe, as libsecret does

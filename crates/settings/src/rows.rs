@@ -480,6 +480,12 @@ pub const ROWS: &[Row] = &[
         key: "updates.channel",
         title: n_("Channel"),
     },
+    // The one hold (M8.41), under Channel: a switch that sets the running
+    // version, the machine's key, as root.
+    Row {
+        key: "updates.version",
+        title: n_("Stay on this version"),
+    },
     // Updates by themselves (M7.5b), the machine's keys, as root.
     Row {
         key: "updates.automatic",

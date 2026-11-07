@@ -659,6 +659,15 @@ msgstr ""
 msgid "Open Updates to install it; your apps and files stay as they are."
 msgstr ""
 
+msgid "Edel OS {version} gets fixes until {day}"
+msgstr ""
+
+msgid "Edel OS {version} no longer gets fixes"
+msgstr ""
+
+msgid "Move to the newest version to keep getting fixes. Your apps, files and settings stay."
+msgstr ""
+
 msgid "An add-on serves this computer's hardware"
 msgstr ""
 

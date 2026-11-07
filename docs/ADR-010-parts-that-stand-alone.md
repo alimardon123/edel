@@ -77,7 +77,7 @@ CI checks the seams (M8.13): the dependency rules above with `cargo tree`, no Ed
 | What each setting means, its default and who decides it (M6.11) | each key's entry in `edel::settings::KEYS`, read through `edel::key_help` | `edel settings get`, `docs/settings.md` and `docs/defaults.md` (generated) |
 | The `edel` command each Settings button runs, and its page (M6.11) | `crates/settings/src/actions.rs` | the Settings pages; a test holds it to the command reference |
 | Which key a Settings row shows, and why a key has none (M6.11) | `crates/settings/src/rows.rs` | the Settings pages and search; a test holds it to the key table |
-| The Alpine branch and the build container | one owner M5.27 names (today written in 24 files) | the image definitions, CI, docs |
+| The Alpine branch and the build container, and the branch's last days of fixes (M8.44) | one owner M5.27 names (today written in 24 files) | the image definitions, CI, docs; the days, through os-release's `SUPPORT_END` (`edel::version::fixes_until`) and `release.toml`'s `fixes_until` |
 | Decisions | the ADRs | everything |
 | The plan | `docs/ROADMAP.md` | every session |
 | How we work | the CLAUDE.md files | every session |

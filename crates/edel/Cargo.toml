@@ -66,3 +66,8 @@ sha2 = { version = "0.11", optional = true }
 toml = "1.1.6"
 toml_edit = "0.25"
 ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
+
+[dev-dependencies]
+# A local HTTPS server for `trust.rs`'s tests (M8.40); the same crate ureq
+# already links, so nothing new is downloaded.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }

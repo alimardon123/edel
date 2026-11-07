@@ -532,11 +532,49 @@ pub fn platform_status() -> Result<()> {
 }
 
 /// Prints both slots and which one is running.
+/// What `edel status` says after `fixes:` (M8.44): until when the running
+/// version gets fixes, from its os-release, on `today` (`YYYY-MM-DD`), and
+/// once that day has passed, how to move on. None for an image from before
+/// M8.44, which does not know.
+fn fixes_line(os_release: &str, today: &str, channel: &str) -> Option<String> {
+    let day = edel::version::fixes_until(os_release)?;
+    let args = [("day", day.as_str()), ("channel", channel)];
+    // Days written YYYY-MM-DD order as text.
+    if today <= day.as_str() {
+        return Some(trf("until {day} (channel {channel})", &args));
+    }
+    // A kept year (M8.5) is named by its year; it moves on to the newest.
+    let kept = channel.bytes().all(|b| b.is_ascii_digit());
+    Some(if kept {
+        trf(
+            "ended on {day} (channel {channel}); doas edel settings set updates.channel={newest} moves on, keeping apps, files and settings",
+            &[
+                ("day", day.as_str()),
+                ("channel", channel),
+                ("newest", edel::settings::DEFAULT_CHANNEL),
+            ],
+        )
+    } else {
+        trf(
+            "ended on {day} (channel {channel}); the next version gets them again, so check with edel update --check",
+            &args,
+        )
+    })
+}
+
 pub fn status() -> Result<()> {
     // The three facts a person reads first (M8.14), before anything that
     // needs root, so a person without it sees them too.
     for line in edel::security::now().lines() {
         println!("{line}");
+    }
+    // Until when this version gets fixes (M8.44), for everyone too.
+    if let Some(line) = fixes_line(
+        &fs::read_to_string("/usr/lib/os-release").unwrap_or_default(),
+        &crate::release::today_text(),
+        &crate::release::machine_channel(),
+    ) {
+        println!("fixes: {line}");
     }
     // The versions installed need the start-up partition, which only root
     // reads; a person sees the facts above and how to see the rest (the
@@ -640,6 +678,10 @@ pub fn install(location: &str, accept: &crate::release::Accept, unsigned: bool) 
             // Up to date is a check that worked: the security status says so.
             if let Some(up) = err.downcast_ref::<crate::release::UpToDate>() {
                 crate::release::record_check(&up.version);
+            }
+            // So is a release updates.version holds back (M8.41).
+            if err.downcast_ref::<crate::release::Held>().is_some() {
+                crate::release::record_check(&crate::release::running_version());
             }
         })?;
         crate::release::record_check(&release.manifest.version);
@@ -1012,6 +1054,15 @@ pub fn automatic(location: Option<String>, accept: &crate::release::Accept) -> R
         {
             return Ok(());
         }
+        // updates.version holds a newer branch back (M8.41).
+        match crate::release::hold_here(&manifest) {
+            crate::release::Hold::Held(line) => {
+                say(&line);
+                return Ok(());
+            }
+            crate::release::Hold::Take(Some(note)) => say(&note),
+            crate::release::Hold::Take(None) => {}
+        }
         if mode == Automatic::Check {
             say(&trf(
                 "{version} is available; edel update installs it",
@@ -1338,7 +1389,56 @@ mod tests {
     }
 
     #[test]
+    fn status_says_until_when_this_version_gets_fixes() {
+        let os = "VERSION_ID=2027.10.1\nSUPPORT_END=2029-05-01\n";
+        assert_eq!(
+            fixes_line(os, "2029-05-01", "2027").unwrap(),
+            "until 2029-05-01 (channel 2027)"
+        );
+        let kept = fixes_line(os, "2029-05-02", "2027").unwrap();
+        assert!(
+            kept.starts_with("ended on 2029-05-01 (channel 2027); doas edel settings set updates.channel=stable moves on"),
+            "{kept}"
+        );
+        let newest = fixes_line(os, "2029-05-02", "stable").unwrap();
+        assert!(
+            newest.contains("the next version gets them again"),
+            "{newest}"
+        );
+        // An image from before M8.44 says nothing.
+        assert_eq!(
+            fixes_line("VERSION_ID=2026.10.1\n", "2026-11-03", "stable"),
+            None
+        );
+    }
+
+    #[test]
     fn one_command_at_a_time_holds_a_lock_even_after_a_crash() {
+        // The kernel's lock belongs to the open file, and a process another
+        // test starts at the same moment gets a copy of every open file
+        // until it runs its program, the lock with it: then a lock let go
+        // here still looks held. So the test runs again alone, in a test
+        // process of its own, where nothing else starts a process.
+        const ALONE: &str = "EDEL_LOCK_TEST_ALONE";
+        if std::env::var_os(ALONE).is_none() {
+            let out = Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "update::tests::one_command_at_a_time_holds_a_lock_even_after_a_crash",
+                    "--exact",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(ALONE, "1")
+                .output()
+                .unwrap();
+            let said = String::from_utf8_lossy(&out.stdout);
+            assert!(
+                out.status.success() && said.contains("1 passed"),
+                "{said}{}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("edel-lock-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("update.lock");

@@ -255,6 +255,10 @@ sed 's/^version = "\(.*\)"$/version = "\1x"/' "$update/release.toml" >"$update/b
 cp "$update/release.toml.sig" "$update/bad.toml.sig"
 sed 's/^expires = .*$/expires = "2020-01-01"/' "$update/release.toml" >"$update/expired.toml"
 ./target/release/edel release sign --key out/keys/ci-1.key "$update/expired.toml"
+# newbranch.toml: signed, as of a newer branch, its fixes until a later
+# day, which updates.version holds back (M8.41).
+sed 's/^fixes_until = .*$/fixes_until = "2099-12-31"/' "$update/release.toml" >"$update/newbranch.toml"
+./target/release/edel release sign --key out/keys/ci-1.key "$update/newbranch.toml"
 
 # The desktop test image here too, for desktop-test.sh rollback, which
 # runs in the VM test lane: its own update image and desktop add-on,
