@@ -32,6 +32,8 @@ pub mod addon_state;
 #[cfg(feature = "icons")]
 pub mod app_icons;
 pub mod app_permissions;
+#[cfg(feature = "os")]
+pub mod app_undo;
 pub mod app_use;
 pub mod apps;
 pub mod backlight;
