@@ -185,6 +185,15 @@ report() {
 	# memory, and what zram holds compressed, MiB.
 	say "memory_slab $(awk 'NR > 2 { printf "%d %s\n", $3 * $4 / 1024, $1 }' /proc/slabinfo 2>/dev/null | sort -rn | head -n 5 | awk '{ printf "%s %.1f, ", $2, $1 / 1024 }')"
 	say "memory_kernel $(awk '/^(VmallocUsed|Percpu):/ { printf "%s %.0f, ", $1, $2 / 1024 }' /proc/meminfo)zram $(awk '{ printf "%.1f", $3 / 1048576 }' /sys/block/zram0/mm_stat 2>/dev/null)"
+	# What the 58 MiB of Shmem no tmpfs and no app's mapping holds (M8.46
+	# part b): the graphics buffers each process holds through its DRM
+	# files (fdinfo's drm-total and drm-resident, KiB summed per kind),
+	# the dma-bufs the kernel lists, and the compositor's eight largest
+	# anonymous mappings (NAME:KIB), so its 43 MiB of heap names its owner.
+	say "memory_drm $(for d in /proc/[0-9]*; do n=$(cat "$d/comm" 2>/dev/null); cat "$d"/fdinfo/* 2>/dev/null | awk -v n="$n" '/^drm-(total|resident)-[a-z0-9]+:/ { k[$1] += $2 } END { for (x in k) if (k[x] >= 512) printf "%s %s %d, ", n, x, k[x] }'; done)"
+	mountpoint -q /sys/kernel/debug 2>/dev/null || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+	say "memory_dmabuf $(awk 'NR > 2 && $1 ~ /^[0-9]+$/ { n++; k += $1 } END { printf "%d buffers %.1f MiB", n, k / 1048576 }' /sys/kernel/debug/dma_buf/bufinfo 2>/dev/null)"
+	say "memory_compositor_anon $(pid=$(pidof edel-compositor | cut -d' ' -f1); awk '/^[0-9a-f]+-[0-9a-f]+ / { name = ($6 == "" ? "[anon]" : $6) } /^Anonymous:/ { if ($2 > 0) print name ":" $2 }' "/proc/$pid/smaps" 2>/dev/null | sort -t: -k2 -n -r | head -n 8 | tr '\n' ' ')"
 	# Every screen's first frame, not only the first screen's (M4.6c).
 	grep 'edel-compositor: output .* ready' "$session_log" | while IFS= read -r line; do
 		say "screen ${line#edel-compositor: }"
