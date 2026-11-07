@@ -78,7 +78,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Make room on the disk
-        # The crates' cache unpacks to several GB (ci/disk.sh).
+        # The crates' cache and the builds (ci/disk.sh): 11 GiB on
+        # 2026-11-07.
         run: sh ci/disk.sh free 25
       - name: Name this month's package cache
         id: apt
@@ -255,8 +256,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Make room on the disk
-        # The images, their archives and Docker's layers (ci/disk.sh).
-        run: sh ci/disk.sh free 25
+        # The images, their archives and Docker's layers (ci/disk.sh):
+        # 58 GiB on 2026-11-07, from 85 free down to 27.
+        run: sh ci/disk.sh free 70
 
       - name: Keep the Rust build between runs
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
