@@ -651,6 +651,9 @@ case_compositor() {
 	echo "memory shared through memfd, /dev/shm and SysV (MiB): $(value memory_memfd)"
 	echo "memory in the largest slab caches (MiB): $(value memory_slab)"
 	echo "memory of the kernel's own (MiB): $(value memory_kernel)"
+	echo "graphics buffers held through DRM files (KiB): $(value memory_drm)"
+	echo "dma-bufs: $(value memory_dmabuf)"
+	echo "the compositor's largest anonymous mappings (KiB): $(value memory_compositor_anon)"
 	if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 		cat >>"$GITHUB_STEP_SUMMARY" <<-EOF
 			### Desktop budgets (our compositor under llvmpipe, M4.2b)
