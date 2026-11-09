@@ -332,7 +332,8 @@ jobs:
         run: sh ci/repro-check.sh
 
       - name: Every image has a valid bill of materials
-        # M8.12: out/IMAGE.cdx.json, CycloneDX, beside each package list.
+        # M8.12: out/IMAGE.cdx.json, CycloneDX, beside each package list, and
+        # its security status out/IMAGE.vex.json.
         run: sh ci/bom.sh validate >> "$GITHUB_STEP_SUMMARY"
 
       - name: No image lacks a security fix Alpine ships
@@ -488,6 +489,7 @@ jobs:
             out/*.log
             out/*.packages
             out/*.cdx.json
+            out/*.vex.json
             out/desktop-live/*.png
       - name: How much disk was left
         # The measure the thresholds of ci/disk.sh free are set by.
