@@ -19,7 +19,9 @@ pub struct Package {
     pub version: String,
     /// The architecture (apk's `A` line).
     pub arch: String,
-    /// The licence as apk writes it (apk's `L` line), not always SPDX.
+    /// The licence as apk writes it (apk's `L` line), not always SPDX. The
+    /// document writes it as an SPDX id or expression when every id in it is
+    /// SPDX's (`spdx.txt`), else as apk's words.
     pub licence: String,
     /// The origin package the name was built from (apk's `o` line).
     pub origin: String,
@@ -93,6 +95,137 @@ pub fn added(before: &[Package], after: &[Package]) -> Vec<Package> {
         .collect()
 }
 
+/// SPDX's licence and exception ids, one a line, with `#` comments.
+const SPDX_IDS: &str = include_str!("spdx.txt");
+
+/// Whether `id` is one of the ids in `spdx.txt`, exactly as written.
+fn in_spdx_list(id: &str) -> bool {
+    SPDX_IDS
+        .lines()
+        .filter(|line| !line.starts_with('#'))
+        .any(|line| line == id)
+}
+
+/// Whether `id` is an SPDX id, or a `LicenseRef-` id of our own: the
+/// prefix, then one or more ASCII letters, digits, `.` or `-`.
+fn is_spdx_id(id: &str) -> bool {
+    if in_spdx_list(id) {
+        return true;
+    }
+    id.strip_prefix("LicenseRef-").is_some_and(|rest| {
+        !rest.is_empty()
+            && rest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+    })
+}
+
+/// Whether a token is one of the operators or brackets of an SPDX expression.
+fn is_operator(token: &str) -> bool {
+    matches!(token, "AND" | "OR" | "WITH" | "(" | ")")
+}
+
+/// apk's licence text as an SPDX expression, or `None` when its words are
+/// not one (`GPL` alone, a misspelt id, a broken bracket). apk lists several
+/// licences side by side, all of which apply, so `MIT ISC` becomes
+/// `MIT AND ISC`. `custom` and `Public Domain` become `LicenseRef-` ids.
+pub fn spdx_expression(licence: &str) -> Option<String> {
+    let text = licence.replace("Public Domain", "Public-Domain");
+    let spaced = text.replace('(', " ( ").replace(')', " ) ");
+    let mut tokens: Vec<String> = spaced
+        .split_whitespace()
+        .map(|t| {
+            if t == "custom" || t.starts_with("custom:") {
+                "LicenseRef-custom".to_string()
+            } else if t == "Public-Domain" {
+                "LicenseRef-Public-Domain".to_string()
+            } else {
+                t.to_string()
+            }
+        })
+        .collect();
+    if tokens.is_empty() {
+        return None;
+    }
+    if tokens.len() >= 2 && !tokens.iter().any(|t| is_operator(t)) {
+        let mut ids: Vec<String> = Vec::new();
+        for t in tokens {
+            if !ids.contains(&t) {
+                ids.push(t);
+            }
+        }
+        tokens = ids.join(" AND ").split(' ').map(String::from).collect();
+    }
+
+    // Each token is an operand (an id, after `(`, `AND`, `OR` or at the
+    // start) or an operator (after an operand or `)`).
+    // `WITH` comes only after an id, and names one of SPDX's own exceptions.
+    let mut depth = 0usize;
+    let mut want_operand = true;
+    let mut after_id = false;
+    let mut i = 0;
+    while i < tokens.len() {
+        let t = tokens[i].as_str();
+        if want_operand {
+            match t {
+                "(" => depth += 1,
+                _ if is_spdx_id(t) => {
+                    want_operand = false;
+                    after_id = true;
+                }
+                _ => return None,
+            }
+        } else {
+            match t {
+                "AND" | "OR" => want_operand = true,
+                ")" => depth = depth.checked_sub(1)?,
+                "WITH" if after_id => {
+                    let exception = tokens.get(i + 1)?;
+                    if !in_spdx_list(exception) {
+                        return None;
+                    }
+                    i += 1;
+                }
+                _ => return None,
+            }
+            after_id = false;
+        }
+        i += 1;
+    }
+    if want_operand || depth != 0 {
+        return None;
+    }
+
+    let mut out = String::new();
+    for (i, t) in tokens.iter().enumerate() {
+        if i > 0 && tokens[i - 1] != "(" && t != ")" {
+            out.push(' ');
+        }
+        out.push_str(t);
+    }
+    Some(out)
+}
+
+/// The `licenses` entry of a component: apk's licence as an SPDX id when it
+/// is one id, as an SPDX expression when it is several, else apk's words
+/// as a name (M8.12).
+fn licences(licence: &str) -> String {
+    match spdx_expression(licence) {
+        Some(id) if in_spdx_list(&id) => format!(
+            "      \"licenses\": [\n        {{\n          \"license\": {{\n            \"id\": {}\n          }}\n        }}\n      ]",
+            json(&id)
+        ),
+        Some(expression) => format!(
+            "      \"licenses\": [\n        {{\n          \"expression\": {}\n        }}\n      ]",
+            json(&expression)
+        ),
+        None => format!(
+            "      \"licenses\": [\n        {{\n          \"license\": {{\n            \"name\": {}\n          }}\n        }}\n      ]",
+            json(licence)
+        ),
+    }
+}
+
 /// Writes the CycloneDX 1.6 document of an image. `image` is the image's
 /// stem, `version` the build's version (empty leaves it out), `distro` the
 /// purl's distro qualifier (`alpine-3.24`). Nothing in it changes between
@@ -129,10 +262,7 @@ fn component(p: &Package, distro: &str) -> String {
         format!("      \"purl\": {}", json(&purl)),
     ];
     if !p.licence.is_empty() {
-        fields.push(format!(
-            "      \"licenses\": [\n        {{\n          \"license\": {{\n            \"name\": {}\n          }}\n        }}\n      ]",
-            json(&p.licence)
-        ));
+        fields.push(licences(&p.licence));
     }
     fields.push(format!(
         "      \"properties\": [\n        {{\n          \"name\": \"apk:origin\",\n          \"value\": {}\n        }}\n      ]",
@@ -291,7 +421,7 @@ L:MIT
       "licenses": [
         {
           "license": {
-            "name": "MIT"
+            "id": "MIT"
           }
         }
       ],
@@ -323,6 +453,64 @@ L:MIT
         );
         assert!(text.contains(r#""GPL-3.0-or-later \"with\" exception\\""#));
         assert_eq!(json("a\u{1}"), r#""a\u0001""#);
+    }
+
+    #[test]
+    fn spdx_expression_follows_apks_licence_lines() {
+        let cases: [(&str, Option<&str>); 16] = [
+            ("MIT", Some("MIT")),
+            (
+                "GPL-2.0-or-later AND LGPL-2.1-or-later",
+                Some("GPL-2.0-or-later AND LGPL-2.1-or-later"),
+            ),
+            (
+                "GPL-2.0-or-later LGPL-2.1-or-later MIT",
+                Some("GPL-2.0-or-later AND LGPL-2.1-or-later AND MIT"),
+            ),
+            (
+                "GPL-3.0-or-later AND ( GPL-2.0-or-later OR LGPL-3.0-or-later )",
+                Some("GPL-3.0-or-later AND (GPL-2.0-or-later OR LGPL-3.0-or-later)"),
+            ),
+            (
+                "GPL-2.0-or-later WITH cryptsetup-OpenSSL-exception",
+                Some("GPL-2.0-or-later WITH cryptsetup-OpenSSL-exception"),
+            ),
+            ("custom", Some("LicenseRef-custom")),
+            ("MIT custom", Some("MIT AND LicenseRef-custom")),
+            (
+                "BSD-3-Clause AND BSD-2-Clause AND ISC AND Beerware AND Public Domain",
+                Some(
+                    "BSD-3-Clause AND BSD-2-Clause AND ISC AND Beerware AND LicenseRef-Public-Domain",
+                ),
+            ),
+            ("GPL", None),
+            (
+                "GPL-2.0-or-later GPL-2.0-or-later-with-sane-exception Public-Domain",
+                None,
+            ),
+            ("MIT AND", None),
+            ("(MIT", None),
+            ("MIT WITH", None),
+            ("(MIT OR ISC) WITH LLVM-exception", None),
+            ("MIT WITH LicenseRef-custom", None),
+            ("", None),
+        ];
+        for (apk, expected) in cases {
+            assert_eq!(spdx_expression(apk).as_deref(), expected, "for {apk:?}");
+        }
+    }
+
+    #[test]
+    fn writes_an_expression_for_several_licences() {
+        let package = Package {
+            name: "libgcc".into(),
+            version: "14.2.0-r6".into(),
+            arch: "x86_64".into(),
+            licence: "GPL-2.0-or-later LGPL-2.1-or-later".into(),
+            origin: "gcc".into(),
+        };
+        let text = cyclonedx("edel-vm-x86_64", "", "alpine-3.24", &[package]);
+        assert!(text.contains(r#""expression": "GPL-2.0-or-later AND LGPL-2.1-or-later""#));
     }
 
     #[test]

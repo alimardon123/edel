@@ -130,12 +130,17 @@ fi
 # newest platform level names for x86_64, which has only the instructions
 # the level promises, to the question for the first person. A package
 # built for a newer processor stops there with an illegal instruction.
+# The guest's clock counts the instructions it ran (-icount), not the
+# runner's time: on 2026-11-09 the runner stalled one emulated processor
+# for 23 s while the clock ran on, and the kernel's soft lockup watchdog
+# stopped a boot that had passed in 89 s the day before on the same
+# kernel. A real hang still runs into the timeout.
 level_file=$(ls platform/level-*.toml | sort -V | tail -n 1)
 model=$(awk '/^\[\[/ { arch = "" } /^arch = / { arch = $3 } /^qemu = / && arch == "\"x86_64\"" { gsub(/"/, "", $3); print $3 }' "$level_file")
 [ -n "$model" ] || { echo "FAIL: $level_file names no QEMU model for x86_64's processor floor"; exit 1; }
 kept_accel=$accel
 accel=tcg
-run_vm out/boot-oldest-cpu.log 'Username: ' "${OLDEST_CPU_TIMEOUT:-1200}" -no-reboot -snapshot -vga none -cpu "$model" \
+run_vm out/boot-oldest-cpu.log 'Username: ' "${OLDEST_CPU_TIMEOUT:-1200}" -no-reboot -snapshot -vga none -cpu "$model" -icount shift=auto \
 	-drive if=none,id=disk0,format=raw,file=out/edel-x86_64.img \
 	-device virtio-blk-pci,drive=disk0,bootindex=0
 accel=$kept_accel

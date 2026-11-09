@@ -310,6 +310,12 @@ cat out/build-tests.log out/build-tests2.log
 	exit 1
 }
 
+# Each image's and add-on's security status (CycloneDX VEX, from Alpine's
+# secdb, M8.12) beside its bill of materials, so a scanner knows which
+# known issues are fixed, open or not ours. A missing fix that Alpine
+# ships does not stop the build: CI's advisories step fails it.
+sh ci/bom.sh vex out >/dev/null
+
 # The release (roadmap M3.4), made on every run so every PR proves it can be
 # made: out/release/ holds what a GitHub release publishes (the update
 # images and their release.toml, the disks, the container image, the
@@ -321,7 +327,7 @@ cat out/build-tests.log out/build-tests2.log
 tag=${EDEL_TAG:-v$version}
 rm -rf out/release out/channel
 mkdir -p out/release out/channel
-for f in out/*.ext4.gz out/*.img.gz out/*.qcow2 out/*.tar.gz out/*.packages out/*.cdx.json out/*.*.toml; do
+for f in out/*.ext4.gz out/*.img.gz out/*.qcow2 out/*.tar.gz out/*.packages out/*.cdx.json out/*.vex.json out/*.*.toml; do
 	ln "$f" out/release/
 done
 # The update images are IMAGE.ext4.gz; the add-ons IMAGE.NAME.ext4.gz, each

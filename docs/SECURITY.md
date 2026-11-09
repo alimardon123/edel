@@ -37,12 +37,13 @@ A pull request or tag made by a workflow's own token starts no workflow, so the 
 
 ## Reading the package lists and the bills of materials
 
-Every image comes with two files, in the release and in each CI run's artefact `edel-images`, and so does every add-on, as `IMAGE.ADDON.packages` and `IMAGE.ADDON.cdx.json`, holding only the packages the add-on adds to its image (M8.42); CI checks every one of them against Alpine's advisories:
+Every image comes with three files, in the release and in each CI run's artefact `edel-images`, and so does every add-on, as `IMAGE.ADDON.packages`, `IMAGE.ADDON.cdx.json` and `IMAGE.ADDON.vex.json`, holding only the packages the add-on adds to its image (M8.42); CI checks every one of them against Alpine's advisories:
 
 | File | What it holds | Use it to |
 |---|---|---|
 | `IMAGE.packages` | One installed package a line, `name-version`, for example `musl-1.2.5-r10` | Compare two releases with `diff`, or check one package with `grep '^openssl-' IMAGE.packages` |
-| `IMAGE.cdx.json` | The same packages as a CycloneDX 1.6 bill of materials: each one's version, licence, `purl` (`pkg:apk/alpine/NAME@VERSION`) and apk origin (its source package) | Feed a scanner that reads CycloneDX, or find which source package an installed one comes from |
+| `IMAGE.cdx.json` | The same packages as a CycloneDX 1.6 bill of materials: each one's version, licence (an SPDX id or expression where apk's words are SPDX's), `purl` (`pkg:apk/alpine/NAME@VERSION`) and apk origin (its source package) | Feed a scanner that reads CycloneDX, or find which source package an installed one comes from |
+| `IMAGE.vex.json` | Its security status (CycloneDX VEX), made from Alpine's security database when the image was built: each known CVE of its packages as `resolved` (the image has the fix), `in_triage` (a fix the image lacks, with the response `update` when Alpine already ships it, which the next rebuild takes) or `not_affected` (Alpine lists it as never affecting its package) | Give a scanner the statuses with the bill of materials, so it stops flagging what is fixed |
 
 Alpine's advisories name source packages (`openssl`), while images install the packages built from them (`libcrypto3`, `libssl3`); the bill of materials' origin joins the two. An apk version ends in `-rN`, the package's own build number: `openssl-3.5.8-r0` is newer than `openssl-3.5.1-r0`, and `-r1` is a rebuild of the same version, often for a fix.
 
